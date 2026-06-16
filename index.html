@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>World Cup Sweepstake</title>
+    <meta
+      name="description"
+      content="A static GitHub Pages app for tracking a World Cup sweepstake with live match updates and payouts."
+    />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="masthead">
+        <div class="masthead__title">
+          <p class="eyebrow">World Cup sweepstake</p>
+          <h1>Prize money, danger watch, wooden spoon.</h1>
+        </div>
+        <div class="pitch-mark" aria-hidden="true">
+          <span></span>
+        </div>
+      </header>
+
+      <main>
+        <section id="payoutPanel" class="payout-panel" aria-label="Prize payouts"></section>
+
+        <div class="dashboard-grid">
+          <section class="leaderboard-panel" aria-label="Sweepstake leaderboard">
+            <div class="section-heading">
+              <p class="eyebrow">Sweepstake ranking</p>
+              <h2>Entrants</h2>
+            </div>
+            <div id="leaderboard" class="leaderboard"></div>
+          </section>
+
+          <aside class="live-panel" aria-label="Live match updates">
+            <div class="section-heading">
+              <p class="eyebrow">Group danger</p>
+              <h2>At risk</h2>
+            </div>
+            <div id="statusMessage" class="status-message" role="status"></div>
+            <div id="dangerList" class="danger-list"></div>
+            <div class="section-heading section-heading--compact">
+              <p class="eyebrow">Latest</p>
+              <h2>Matches</h2>
+            </div>
+            <div id="matchList" class="match-list"></div>
+          </aside>
+        </div>
+      </main>
+    </div>
+
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
