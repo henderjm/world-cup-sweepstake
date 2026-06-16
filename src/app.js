@@ -6,6 +6,7 @@ import {
   mapFootballDataMatches,
   mapFootballDataStandings,
   mergeStandingsIntoPerformance,
+  normalizeTeamName,
 } from "./domain.js";
 
 const ENTRANTS = [
@@ -33,6 +34,10 @@ const PAYOUTS = {
   splits: { second: 30, woodenSpoon: 30 },
 };
 
+const OWNER_BY_TEAM = new Map(
+  ENTRANTS.flatMap((entrant) => entrant.teams.map((team) => [normalizeTeamName(team), entrant.name])),
+);
+
 const EMPTY_LIVE_DATA = {
   source: "Live data pending",
   lastUpdated: "",
@@ -42,6 +47,7 @@ const EMPTY_LIVE_DATA = {
 };
 
 const elements = {
+  liveNowList: document.querySelector("#liveNowList"),
   payoutPanel: document.querySelector("#payoutPanel"),
   leaderboard: document.querySelector("#leaderboard"),
   statusMessage: document.querySelector("#statusMessage"),
@@ -97,6 +103,7 @@ function render(data) {
   const payouts = calculatePayouts(PAYOUTS);
 
   renderPayouts(leaderboard, payouts);
+  renderLiveNow(data.matches);
   renderLeaderboard(leaderboard);
   renderDangerList(leaderboard);
   renderMatches(data.matches);
@@ -120,6 +127,7 @@ function renderPendingState(data) {
     </div>
   `;
   elements.leaderboard.innerHTML = `<p class="empty-note">Waiting for real World Cup data before ranking entrants.</p>`;
+  elements.liveNowList.innerHTML = `<p class="empty-note">No real live games loaded yet.</p>`;
   elements.dangerList.innerHTML = `<p class="empty-note">No group danger shown until live standings are published.</p>`;
   elements.matchList.innerHTML = `<p class="empty-note">No live matches loaded yet.</p>`;
   elements.statusMessage.textContent = `${data.source}. ${data.error}`;
@@ -140,6 +148,13 @@ function renderPayouts(leaderboard, payouts) {
       <em>16 entries x ${money(PAYOUTS.stake)}</em>
     </div>
   `;
+}
+
+function renderLiveNow(matches) {
+  const liveMatches = matches.filter(isLiveNowMatch).sort(compareMatchDate);
+  elements.liveNowList.innerHTML = liveMatches.length
+    ? liveMatches.map(liveMatchCard).join("")
+    : `<p class="empty-note">No games are live right now.</p>`;
 }
 
 function renderLeaderboard(leaderboard) {
@@ -168,6 +183,33 @@ function renderLeaderboard(leaderboard) {
       `;
     })
     .join("");
+}
+
+function liveMatchCard(matchItem) {
+  return `
+    <article class="live-now-card">
+      <div class="live-now-card__meta">
+        <span class="match-status">${liveNowLabel(matchItem)}</span>
+        <span>${formatStage(matchItem.stage)}</span>
+      </div>
+      <div class="live-scoreline">
+        ${liveTeamLine(matchItem.homeTeam, scorePart(matchItem.score, "home"))}
+        <span class="live-scoreline__divider">v</span>
+        ${liveTeamLine(matchItem.awayTeam, scorePart(matchItem.score, "away"))}
+      </div>
+    </article>
+  `;
+}
+
+function liveTeamLine(team, score) {
+  const owner = OWNER_BY_TEAM.get(normalizeTeamName(team)) ?? "Unowned";
+  return `
+    <div class="live-team">
+      <strong>${team}</strong>
+      <span>${owner}</span>
+      <b>${score || "-"}</b>
+    </div>
+  `;
 }
 
 function renderDangerList(leaderboard) {
@@ -261,6 +303,10 @@ function compareMatchPriority(a, b) {
   return statusWeight(a.status) - statusWeight(b.status) || new Date(a.utcDate) - new Date(b.utcDate);
 }
 
+function compareMatchDate(a, b) {
+  return new Date(a.utcDate) - new Date(b.utcDate);
+}
+
 function statusWeight(status) {
   if (isLive(status)) return 0;
   if (status === "TIMED" || status === "SCHEDULED") return 1;
@@ -273,6 +319,21 @@ function dangerWeight(team) {
 
 function isLive(status) {
   return ["IN_PLAY", "PAUSED", "LIVE", "EXTRA_TIME", "PENALTY_SHOOTOUT", "BREAK"].includes(status);
+}
+
+function isLiveNowMatch(matchItem) {
+  if (isLive(matchItem.status)) return true;
+  if (matchItem.status !== "TIMED" && matchItem.status !== "SCHEDULED") return false;
+
+  const kickOff = new Date(matchItem.utcDate).getTime();
+  const now = Date.now();
+  const liveWindowMs = 2.5 * 60 * 60 * 1000;
+  return now >= kickOff && now <= kickOff + liveWindowMs;
+}
+
+function liveNowLabel(matchItem) {
+  if (isLive(matchItem.status)) return statusLabel(matchItem);
+  return "Started";
 }
 
 function statusLabel(matchItem) {

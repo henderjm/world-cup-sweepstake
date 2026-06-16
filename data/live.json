@@ -1,6 +1,6 @@
 {
   "source": "football-data.org",
-  "lastUpdated": "2026-06-16T21:50:40.449Z",
+  "lastUpdated": "2026-06-16T22:06:09.221Z",
   "competition": "WC",
   "season": "2026",
   "matches": [
@@ -37,7 +37,7 @@
       "stage": "GROUP_STAGE",
       "group": "GROUP_B",
       "homeTeam": "Canada",
-      "awayTeam": "Bosnia-Herzegovina",
+      "awayTeam": "Bosnia",
       "score": {
         "home": 1,
         "away": 1
@@ -115,7 +115,7 @@
       "stage": "GROUP_STAGE",
       "group": "GROUP_E",
       "homeTeam": "Germany",
-      "awayTeam": "Curaçao",
+      "awayTeam": "Curacao",
       "score": {
         "home": 7,
         "away": 1
@@ -167,7 +167,7 @@
       "stage": "GROUP_STAGE",
       "group": "GROUP_H",
       "homeTeam": "Spain",
-      "awayTeam": "Cape Verde Islands",
+      "awayTeam": "Cape Verde",
       "score": {
         "home": 0,
         "away": 0
@@ -336,7 +336,7 @@
       "stage": "GROUP_STAGE",
       "group": "GROUP_B",
       "homeTeam": "Switzerland",
-      "awayTeam": "Bosnia-Herzegovina",
+      "awayTeam": "Bosnia",
       "score": {
         "home": null,
         "away": null
@@ -453,7 +453,7 @@
       "stage": "GROUP_STAGE",
       "group": "GROUP_E",
       "homeTeam": "Ecuador",
-      "awayTeam": "Curaçao",
+      "awayTeam": "Curacao",
       "score": {
         "home": null,
         "away": null
@@ -505,7 +505,7 @@
       "stage": "GROUP_STAGE",
       "group": "GROUP_H",
       "homeTeam": "Uruguay",
-      "awayTeam": "Cape Verde Islands",
+      "awayTeam": "Cape Verde",
       "score": {
         "home": null,
         "away": null
@@ -647,7 +647,7 @@
       "minute": null,
       "stage": "GROUP_STAGE",
       "group": "GROUP_B",
-      "homeTeam": "Bosnia-Herzegovina",
+      "homeTeam": "Bosnia",
       "awayTeam": "Qatar",
       "score": {
         "home": null,
@@ -725,7 +725,7 @@
       "minute": null,
       "stage": "GROUP_STAGE",
       "group": "GROUP_E",
-      "homeTeam": "Curaçao",
+      "homeTeam": "Curacao",
       "awayTeam": "Ivory Coast",
       "score": {
         "home": null,
@@ -829,7 +829,7 @@
       "minute": null,
       "stage": "GROUP_STAGE",
       "group": "GROUP_H",
-      "homeTeam": "Cape Verde Islands",
+      "homeTeam": "Cape Verde",
       "awayTeam": "Saudi Arabia",
       "score": {
         "home": null,
@@ -2055,12 +2055,12 @@
             "tla": "IRQ",
             "crest": "https://crests.football-data.org/iraq.svg"
           },
-          "playedGames": 0,
+          "playedGames": 1,
           "form": null,
           "won": 0,
-          "draw": 0,
+          "draw": 1,
           "lost": 0,
-          "points": 0,
+          "points": 1,
           "goalsFor": 0,
           "goalsAgainst": 0,
           "goalDifference": 0
@@ -2074,12 +2074,12 @@
             "tla": "NOR",
             "crest": "https://crests.football-data.org/813.svg"
           },
-          "playedGames": 0,
+          "playedGames": 1,
           "form": null,
           "won": 0,
-          "draw": 0,
+          "draw": 1,
           "lost": 0,
-          "points": 0,
+          "points": 1,
           "goalsFor": 0,
           "goalsAgainst": 0,
           "goalDifference": 0

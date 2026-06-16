@@ -125,9 +125,82 @@ h2 {
   transform: translate(-50%, -50%);
 }
 
+.live-now-panel,
 .payout-panel,
 .dashboard-grid {
   margin-top: 18px;
+}
+
+.live-now-panel {
+  border: 1px solid var(--line);
+  padding: 16px;
+  background: rgb(255 254 249 / 0.92);
+}
+
+.live-now-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.live-now-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-left: 6px solid var(--clay);
+  padding: 12px;
+  background: rgb(199 90 70 / 0.08);
+}
+
+.live-now-card__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: rgb(16 21 20 / 0.62);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.live-scoreline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.live-scoreline__divider {
+  display: grid;
+  place-items: center;
+  color: rgb(16 21 20 / 0.5);
+  font-weight: 900;
+}
+
+.live-team {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 10px;
+  background: rgb(255 254 249 / 0.9);
+}
+
+.live-team strong,
+.live-team span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.live-team span {
+  color: rgb(16 21 20 / 0.62);
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.live-team b {
+  grid-row: 1 / 3;
+  grid-column: 2;
+  font-size: 1.7rem;
 }
 
 .payout-panel {
@@ -464,6 +537,14 @@ h2 {
 
   .payout-panel {
     grid-template-columns: 1fr;
+  }
+
+  .live-scoreline {
+    grid-template-columns: 1fr;
+  }
+
+  .live-scoreline__divider {
+    display: none;
   }
 
   .leader-row {
