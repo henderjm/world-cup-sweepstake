@@ -110,7 +110,7 @@ export function buildLeaderboard(entrants, performance) {
   return ranked.map((entrant, index) => ({
     ...entrant,
     rank: index + 1,
-    isWoodenSpoon: index === ranked.length - 1,
+    isCurrentBottom: index === ranked.length - 1,
   }));
 }
 
@@ -164,6 +164,7 @@ export function mapFootballDataMatches(payload) {
       home: scoreValue(match.score?.fullTime?.home ?? match.score?.fullTime?.homeTeam),
       away: scoreValue(match.score?.fullTime?.away ?? match.score?.fullTime?.awayTeam),
     },
+    winner: match.score?.winner ?? null,
   }));
 }
 

@@ -101,11 +101,12 @@ function render(data) {
   const performance = mergeStandingsIntoPerformance(buildTeamPerformance(data.matches), standings);
   const leaderboard = buildLeaderboard(ENTRANTS, performance);
   const payouts = calculatePayouts(PAYOUTS);
+  const woodenSpoon = getWoodenSpoonPrize(leaderboard, data.matches);
 
-  renderPayouts(leaderboard, payouts);
+  renderPayouts(leaderboard, payouts, data.matches, woodenSpoon);
   renderLiveNow(data.matches);
-  renderLeaderboard(leaderboard);
-  renderDangerList(leaderboard);
+  renderLeaderboard(leaderboard, woodenSpoon);
+  renderDangerList(leaderboard, woodenSpoon);
   renderMatches(data.matches);
   renderStatus(data);
 }
@@ -117,8 +118,8 @@ function hasLiveData(data, standings) {
 function renderPendingState(data) {
   const payouts = calculatePayouts(PAYOUTS);
   elements.payoutPanel.innerHTML = `
-    ${prizeTile("1st", "TBC", payouts.first, "gold")}
-    ${prizeTile("2nd", "TBC", payouts.second, "silver")}
+    ${prizeTile("World Cup winner", "TBC", payouts.first, "gold")}
+    ${prizeTile("Runner-up", "TBC", payouts.second, "silver")}
     ${prizeTile("Wooden spoon", "TBC", payouts.woodenSpoon, "spoon")}
     <div class="pot-tile">
       <span>Total pot</span>
@@ -133,21 +134,115 @@ function renderPendingState(data) {
   elements.statusMessage.textContent = `${data.source}. ${data.error}`;
 }
 
-function renderPayouts(leaderboard, payouts) {
-  const first = leaderboard[0];
-  const second = leaderboard[1];
-  const spoon = leaderboard.at(-1);
+function renderPayouts(leaderboard, payouts, matches, woodenSpoon) {
+  const finalPrizes = getFinalPrizes(matches);
 
   elements.payoutPanel.innerHTML = `
-    ${prizeTile("1st", first?.name, payouts.first, "gold")}
-    ${prizeTile("2nd", second?.name, payouts.second, "silver")}
-    ${prizeTile("Wooden spoon", spoon?.name, payouts.woodenSpoon, "spoon", spoon?.teams)}
+    ${prizeTile("World Cup winner", finalPrizes.winner.owner, payouts.first, "gold", [], finalPrizes.winner.team)}
+    ${prizeTile("Runner-up", finalPrizes.runnerUp.owner, payouts.second, "silver", [], finalPrizes.runnerUp.team)}
+    ${prizeTile(
+      "Wooden spoon",
+      woodenSpoon.owner,
+      payouts.woodenSpoon,
+      "spoon",
+      woodenSpoon.team ? [woodenSpoon.team] : [],
+      woodenSpoon.status,
+    )}
     <div class="pot-tile">
       <span>Total pot</span>
       <strong>${money(payouts.pot)}</strong>
       <em>16 entries x ${money(PAYOUTS.stake)}</em>
     </div>
   `;
+}
+
+function getWoodenSpoonPrize(leaderboard, matches) {
+  const confirmedLastTeams = leaderboard
+    .flatMap((entrant) =>
+      entrant.teams.map((team) => ({
+        owner: entrant.name,
+        team,
+      })),
+    )
+    .filter(({ team }) => isConfirmedGroupLast(team, matches))
+    .sort(compareWoodenSpoonTeams);
+
+  if (!confirmedLastTeams.length) {
+    return {
+      owner: "TBC",
+      team: null,
+      status: "Waiting for a confirmed group-stage last place",
+    };
+  }
+
+  const winner = confirmedLastTeams[0];
+  return {
+    owner: winner.owner,
+    team: winner.team,
+    status: "Confirmed out in group",
+  };
+}
+
+function isConfirmedGroupLast(team, matches) {
+  if (team.position !== 4) return false;
+  const teamName = normalizeTeamName(team.name);
+  const teamMatches = matches.filter(
+    (matchItem) =>
+      matchItem.stage === "GROUP_STAGE" &&
+      [matchItem.homeTeam, matchItem.awayTeam].map(normalizeTeamName).includes(teamName),
+  );
+  return teamMatches.length >= 3 && teamMatches.every((matchItem) => isFinished(matchItem.status));
+}
+
+function compareWoodenSpoonTeams(a, b) {
+  return (
+    a.team.score - b.team.score ||
+    a.team.points - b.team.points ||
+    a.team.goalDifference - b.team.goalDifference ||
+    a.team.goalsFor - b.team.goalsFor ||
+    a.owner.localeCompare(b.owner) ||
+    a.team.name.localeCompare(b.team.name)
+  );
+}
+
+function getFinalPrizes(matches) {
+  const final = matches.find((matchItem) => matchItem.stage === "FINAL" && isDecided(matchItem));
+  if (!final) {
+    return {
+      winner: prizeRecipient(),
+      runnerUp: prizeRecipient(),
+    };
+  }
+
+  const winnerTeam = getMatchWinner(final);
+  const runnerUpTeam = winnerTeam === normalizeTeamName(final.homeTeam) ? final.awayTeam : final.homeTeam;
+
+  return {
+    winner: prizeRecipient(winnerTeam),
+    runnerUp: prizeRecipient(runnerUpTeam),
+  };
+}
+
+function prizeRecipient(team = "") {
+  const normalizedTeam = team ? normalizeTeamName(team) : "";
+  return {
+    team: normalizedTeam,
+    owner: normalizedTeam ? (OWNER_BY_TEAM.get(normalizedTeam) ?? "Unowned") : "TBC",
+  };
+}
+
+function isDecided(matchItem) {
+  return isFinished(matchItem.status) && Boolean(getMatchWinner(matchItem));
+}
+
+function getMatchWinner(matchItem) {
+  if (matchItem.winner === "HOME_TEAM") return normalizeTeamName(matchItem.homeTeam);
+  if (matchItem.winner === "AWAY_TEAM") return normalizeTeamName(matchItem.awayTeam);
+  if (Number.isFinite(matchItem.score?.home) && Number.isFinite(matchItem.score?.away)) {
+    if (matchItem.score.home > matchItem.score.away) return normalizeTeamName(matchItem.homeTeam);
+    if (matchItem.score.away > matchItem.score.home) return normalizeTeamName(matchItem.awayTeam);
+  }
+  return "";
 }
 
 function renderLiveNow(matches) {
@@ -157,11 +252,11 @@ function renderLiveNow(matches) {
     : `<p class="empty-note">No games are live right now.</p>`;
 }
 
-function renderLeaderboard(leaderboard) {
+function renderLeaderboard(leaderboard, woodenSpoon) {
   elements.leaderboard.innerHTML = leaderboard
     .map((entrant) => {
       const modifier = entrant.rank === 1 ? "is-first" : entrant.rank === 2 ? "is-second" : "";
-      const spoon = entrant.isWoodenSpoon ? "is-spoon" : "";
+      const spoon = entrant.teams.some((team) => isWoodenSpoonTeam(team, woodenSpoon)) ? "is-spoon" : "";
       return `
         <article class="leader-row ${modifier} ${spoon}">
           <div class="rank">${entrant.rank}</div>
@@ -171,7 +266,7 @@ function renderLeaderboard(leaderboard) {
               <strong>${entrant.score}</strong>
             </div>
             <div class="team-strip">
-              ${entrant.teams.map((team) => teamChip(team, entrant.isWoodenSpoon)).join("")}
+              ${entrant.teams.map((team) => teamChip(team, isWoodenSpoonTeam(team, woodenSpoon))).join("")}
             </div>
           </div>
           <dl class="leader-stats">
@@ -212,12 +307,12 @@ function liveTeamLine(team, score) {
   `;
 }
 
-function renderDangerList(leaderboard) {
+function renderDangerList(leaderboard, woodenSpoon) {
   const dangerTeams = leaderboard
     .flatMap((entrant) =>
       entrant.teams.map((team) => ({
         owner: entrant.name,
-        isWoodenSpoonTeam: entrant.isWoodenSpoon,
+        isWoodenSpoonTeam: isWoodenSpoonTeam(team, woodenSpoon),
         ...team,
       })),
     )
@@ -285,15 +380,17 @@ function teamChip(team, isWoodenSpoonTeam = false) {
   `;
 }
 
-function prizeTile(label, name, amount, variant, teams = []) {
+function prizeTile(label, name, amount, variant, teams = [], teamName = "") {
   const teamList = teams.length
     ? `<div class="prize-teams">${teams.map((team) => teamChip(team, true)).join("")}</div>`
     : "";
+  const teamLine = teamName ? `<small class="prize-team-name">${teamName}</small>` : "";
   return `
     <article class="prize-tile prize-tile--${variant}">
       <span>${label}</span>
       <strong>${money(amount)}</strong>
       <em>${name ?? "TBC"}</em>
+      ${teamLine}
       ${teamList}
     </article>
   `;
@@ -315,6 +412,14 @@ function statusWeight(status) {
 
 function dangerWeight(team) {
   return team.dangerLevel === "out" ? 2 : 1;
+}
+
+function isFinished(status) {
+  return status === "FINISHED" || status === "AWARDED";
+}
+
+function isWoodenSpoonTeam(team, woodenSpoon) {
+  return Boolean(woodenSpoon.team) && normalizeTeamName(team.name) === normalizeTeamName(woodenSpoon.team.name);
 }
 
 function isLive(status) {

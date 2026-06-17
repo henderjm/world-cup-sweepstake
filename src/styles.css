@@ -251,6 +251,13 @@ h2 {
   font-weight: 850;
 }
 
+.prize-team-name {
+  display: block;
+  margin-top: 5px;
+  color: rgb(16 21 20 / 0.62);
+  font-weight: 850;
+}
+
 .prize-tile--gold {
   border-top: 6px solid var(--gold);
 }

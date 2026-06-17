@@ -4,9 +4,9 @@ A static GitHub Pages app for the sweepstake in the screenshot. It tracks the dr
 
 The pot is fixed at 16 entries x €10 = €160:
 
-- 1st: €100
-- 2nd: €30
-- Wooden spoon: €30
+- World Cup winner owner: €100
+- World Cup runner-up owner: €30
+- Wooden spoon: €30, only after an owned team is confirmed last in its group with all three group matches finished
 
 ## Host On GitHub Pages
 
