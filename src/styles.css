@@ -912,6 +912,17 @@ button {
   font-style: normal;
 }
 
+.score-pending {
+  color: var(--live);
+  font-weight: 800;
+  animation: live-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
 .mrow__tag {
   color: var(--faint);
   font-size: 0.72rem;

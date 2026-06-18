@@ -53,6 +53,24 @@ function mergedRows(model) {
   }));
 }
 
+function hasScore(score) {
+  return Number.isFinite(score?.home) && Number.isFinite(score?.away);
+}
+
+// Score for a row. Finished/decided games show the number (0-0 included). Live games
+// whose score the free feed withholds show a pulsing live marker instead of a blank.
+function scoreCell(match) {
+  if (hasScore(match.score)) return `${match.score.home} <i>-</i> ${match.score.away}`;
+  if (isLive(match.status)) {
+    return `<span class="score-pending" title="Live, score not in the free feed yet">●</span>`;
+  }
+  return `<i>-</i>`;
+}
+
+function tickerScore(match) {
+  return hasScore(match.score) ? `${match.score.home}-${match.score.away}` : "●";
+}
+
 // -- Ticker -----------------------------------------------------------------
 
 export function renderTicker(model) {
@@ -77,7 +95,7 @@ export function renderTicker(model) {
       return `<span class="ticker__item ${live ? "is-live" : ""}">
         <span class="ticker__status">${live ? `${statusLabel(match)} ●` : "FT"}</span>
         ${flagFor(match.homeTeam)} ${esc(match.homeTeam)}
-        <b>${scorePart(match.score, "home")}-${scorePart(match.score, "away")}</b>
+        <b>${tickerScore(match)}</b>
         ${esc(match.awayTeam)} ${flagFor(match.awayTeam)}
       </span>`;
     })
@@ -257,7 +275,7 @@ function matchRow(match) {
   return `<div class="mrow ${live ? "is-live" : ""}">
       <span class="mrow__status">${statusLabel(match)}</span>
       <span class="mrow__side">${teamCell(match.homeTeam)}</span>
-      <span class="mrow__score">${scorePart(match.score, "home")} <i>-</i> ${scorePart(match.score, "away")}</span>
+      <span class="mrow__score">${scoreCell(match)}</span>
       <span class="mrow__side mrow__side--away">${teamCell(match.awayTeam)}</span>
       <span class="mrow__tag">${match.group ? esc(match.group) : formatStage(match.stage)}</span>
     </div>`;
@@ -410,7 +428,7 @@ export function renderFixtures(model, ownerFilter = "all") {
             (match) => `<div class="fx ${isLive(match.status) ? "is-live" : ""}">
               <span class="fx__time">${isFinished(match.status) ? "FT" : timeLabel(match.utcDate)}</span>
               <span class="fx__side">${teamCell(match.homeTeam)}</span>
-              <span class="fx__score">${scorePart(match.score, "home")}<i>-</i>${scorePart(match.score, "away")}</span>
+              <span class="fx__score">${scoreCell(match)}</span>
               <span class="fx__side fx__side--away">${teamCell(match.awayTeam)}</span>
               <span class="fx__tag">${match.group ? esc(match.group.replace("GROUP_", "Grp ")) : formatStage(match.stage)}</span>
             </div>`,

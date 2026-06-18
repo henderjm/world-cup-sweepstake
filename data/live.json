@@ -1,13 +1,13 @@
 {
   "source": "football-data.org",
-  "lastUpdated": "2026-06-18T19:24:03.298Z",
+  "lastUpdated": "2026-06-18T20:24:28.440Z",
   "competition": "WC",
   "season": "2026",
   "matches": [
     {
       "utcDate": "2026-06-11T19:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_A",
       "homeTeam": "Mexico",
@@ -21,7 +21,7 @@
     {
       "utcDate": "2026-06-12T02:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_A",
       "homeTeam": "South Korea",
@@ -35,7 +35,7 @@
     {
       "utcDate": "2026-06-12T19:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_B",
       "homeTeam": "Canada",
@@ -49,7 +49,7 @@
     {
       "utcDate": "2026-06-13T01:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_D",
       "homeTeam": "USA",
@@ -63,7 +63,7 @@
     {
       "utcDate": "2026-06-13T19:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_B",
       "homeTeam": "Qatar",
@@ -77,7 +77,7 @@
     {
       "utcDate": "2026-06-13T22:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_C",
       "homeTeam": "Brazil",
@@ -91,7 +91,7 @@
     {
       "utcDate": "2026-06-14T01:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_C",
       "homeTeam": "Haiti",
@@ -105,7 +105,7 @@
     {
       "utcDate": "2026-06-14T04:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_D",
       "homeTeam": "Australia",
@@ -119,7 +119,7 @@
     {
       "utcDate": "2026-06-14T17:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_E",
       "homeTeam": "Germany",
@@ -133,7 +133,7 @@
     {
       "utcDate": "2026-06-14T20:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_F",
       "homeTeam": "Netherlands",
@@ -147,7 +147,7 @@
     {
       "utcDate": "2026-06-14T23:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_E",
       "homeTeam": "Ivory Coast",
@@ -161,7 +161,7 @@
     {
       "utcDate": "2026-06-15T02:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_F",
       "homeTeam": "Sweden",
@@ -175,7 +175,7 @@
     {
       "utcDate": "2026-06-15T16:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_H",
       "homeTeam": "Spain",
@@ -189,7 +189,7 @@
     {
       "utcDate": "2026-06-15T19:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_G",
       "homeTeam": "Belgium",
@@ -203,7 +203,7 @@
     {
       "utcDate": "2026-06-15T22:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_H",
       "homeTeam": "Saudi Arabia",
@@ -217,7 +217,7 @@
     {
       "utcDate": "2026-06-16T01:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_G",
       "homeTeam": "Iran",
@@ -231,7 +231,7 @@
     {
       "utcDate": "2026-06-16T19:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_I",
       "homeTeam": "France",
@@ -245,7 +245,7 @@
     {
       "utcDate": "2026-06-16T22:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_I",
       "homeTeam": "Iraq",
@@ -259,7 +259,7 @@
     {
       "utcDate": "2026-06-17T01:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_J",
       "homeTeam": "Argentina",
@@ -273,7 +273,7 @@
     {
       "utcDate": "2026-06-17T04:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_J",
       "homeTeam": "Austria",
@@ -287,7 +287,7 @@
     {
       "utcDate": "2026-06-17T17:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_K",
       "homeTeam": "Portugal",
@@ -301,7 +301,7 @@
     {
       "utcDate": "2026-06-17T20:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_L",
       "homeTeam": "England",
@@ -315,7 +315,7 @@
     {
       "utcDate": "2026-06-17T23:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_L",
       "homeTeam": "Ghana",
@@ -329,7 +329,7 @@
     {
       "utcDate": "2026-06-18T02:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_K",
       "homeTeam": "Uzbekistan",
@@ -343,7 +343,7 @@
     {
       "utcDate": "2026-06-18T16:00:00Z",
       "status": "FINISHED",
-      "minute": null,
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_A",
       "homeTeam": "Czech",
@@ -356,17 +356,17 @@
     },
     {
       "utcDate": "2026-06-18T19:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "IN_PLAY",
+      "minute": 65,
       "stage": "GROUP_STAGE",
       "group": "GROUP_B",
       "homeTeam": "Switzerland",
       "awayTeam": "Bosnia",
       "score": {
-        "home": null,
-        "away": null
+        "home": 0,
+        "away": 0
       },
-      "winner": null
+      "winner": "DRAW"
     },
     {
       "utcDate": "2026-06-18T22:00:00Z",
