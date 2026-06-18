@@ -5,7 +5,10 @@ on:
     branches:
       - main
   schedule:
-    - cron: "*/30 * * * *"
+    # As frequent as GitHub Actions allows. The scheduler enforces a 5 minute
+    # minimum and runs are best effort, so true per-minute refresh is not possible
+    # here. Runs also fire on every push to main and via manual dispatch.
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
