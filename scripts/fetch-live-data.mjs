@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 
 import { mapFootballDataMatches } from "../src/domain.js";
+import { mapMatchDetail } from "../src/mapDetail.js";
 
 const token = process.env.FOOTBALL_DATA_TOKEN;
 const competition = process.env.FOOTBALL_DATA_COMPETITION ?? "WC";
@@ -62,7 +63,7 @@ let written = 0;
 for (const match of relevant) {
   try {
     const detail = await fetchFootballData(`/v4/matches/${match.id}`);
-    await writeFile(new URL(`${match.id}.json`, matchesDir), `${JSON.stringify(mapDetail(detail))}\n`);
+    await writeFile(new URL(`${match.id}.json`, matchesDir), `${JSON.stringify(mapMatchDetail(detail))}\n`);
     written += 1;
   } catch (error) {
     console.warn(`detail ${match.id} failed: ${error.message}`);
@@ -70,67 +71,6 @@ for (const match of relevant) {
   await sleep(2200);
 }
 console.log(`Wrote ${written} match detail files.`);
-
-function mapDetail(match) {
-  return {
-    id: match.id,
-    status: match.status,
-    utcDate: match.utcDate,
-    stage: match.stage ?? null,
-    group: match.group ?? null,
-    venue: match.venue ?? null,
-    attendance: match.attendance ?? null,
-    minute: match.minute ?? null,
-    score: {
-      home: match.score?.fullTime?.home ?? null,
-      away: match.score?.fullTime?.away ?? null,
-      htHome: match.score?.halfTime?.home ?? null,
-      htAway: match.score?.halfTime?.away ?? null,
-    },
-    home: mapTeam(match.homeTeam),
-    away: mapTeam(match.awayTeam),
-    goals: (match.goals ?? []).map((goal) => ({
-      minute: goal.minute,
-      injuryTime: goal.injuryTime ?? null,
-      type: goal.type ?? "REGULAR",
-      team: goal.team?.name ?? "",
-      scorer: goal.scorer?.name ?? "",
-      assist: goal.assist?.name ?? null,
-      home: goal.score?.home ?? null,
-      away: goal.score?.away ?? null,
-    })),
-    cards: (match.bookings ?? []).map((booking) => ({
-      minute: booking.minute,
-      team: booking.team?.name ?? "",
-      player: booking.player?.name ?? "",
-      card: booking.card ?? "",
-    })),
-    subs: (match.substitutions ?? []).map((sub) => ({
-      minute: sub.minute,
-      team: sub.team?.name ?? "",
-      in: sub.playerIn?.name ?? "",
-      out: sub.playerOut?.name ?? "",
-    })),
-    referee:
-      (match.referees ?? []).find((ref) => ref.type === "REFEREE")?.name ??
-      (match.referees ?? [])[0]?.name ??
-      null,
-  };
-}
-
-function mapTeam(team) {
-  return {
-    name: team?.name ?? "",
-    formation: team?.formation ?? null,
-    coach: team?.coach?.name ?? null,
-    lineup: (team?.lineup ?? []).map(mapPlayer),
-    bench: (team?.bench ?? []).map(mapPlayer),
-  };
-}
-
-function mapPlayer(player) {
-  return { name: player?.name ?? "", pos: player?.position ?? null, num: player?.shirtNumber ?? null };
-}
 
 async function fetchFootballData(path) {
   const response = await fetch(`https://api.football-data.org${path}`, {

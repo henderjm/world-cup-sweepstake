@@ -6,6 +6,12 @@ const reducedMotion =
   typeof window !== "undefined" &&
   window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
+let h2hModel = null;
+
+export function setH2hModel(model) {
+  h2hModel = model;
+}
+
 // -- Confetti ----------------------------------------------------------------
 
 const COLORS = ["#f5c84b", "#36d399", "#4ea8ff", "#ff5e7a", "#c084fc", "#f6f2df"];
@@ -117,12 +123,13 @@ function entrantColumn(model, name) {
 
 export function setupHeadToHead(model, { trigger, modal }) {
   if (!trigger || !modal) return;
+  h2hModel = model;
 
   const names = ENTRANTS.map((entrant) => entrant.name);
   const options = (selected) =>
     names.map((name) => `<option value="${name}" ${name === selected ? "selected" : ""}>${name}</option>`).join("");
 
-  const top = [...model.forecast.entrants.values()].sort((a, b) => b.winPct - a.winPct);
+  const top = [...h2hModel.forecast.entrants.values()].sort((a, b) => b.winPct - a.winPct);
   let left = top[0]?.name ?? names[0];
   let right = top[1]?.name ?? names[1];
 
@@ -139,8 +146,8 @@ export function setupHeadToHead(model, { trigger, modal }) {
           <select data-h2h="right">${options(right)}</select>
         </div>
         <div class="h2h__grid">
-          ${entrantColumn(model, left)}
-          ${entrantColumn(model, right)}
+          ${entrantColumn(h2hModel, left)}
+          ${entrantColumn(h2hModel, right)}
         </div>
       </div>`;
   };

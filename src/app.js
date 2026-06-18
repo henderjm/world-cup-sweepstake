@@ -12,10 +12,11 @@ import {
 import {
   celebrationBanner,
   confettiBurst,
+  setH2hModel,
   setupHeadToHead,
   shouldCelebrate,
 } from "./interactions.js";
-import { setupMatchDetail, openMatch } from "./matchDetail.js";
+import { setMatchModel, setupMatchDetail, openMatch } from "./matchDetail.js";
 import { isLive } from "./format.js";
 import "./background.js";
 
@@ -42,6 +43,8 @@ const state = {
 };
 let model = null;
 let appLoadMetricSent = false;
+let pollTimer = null;
+let lastSignature = "";
 
 const SHELL_IDS = ["ticker", "hero", "tabs", "panel", "footer", "banner", "updated", "h2hOpen", "h2hModal"];
 const RELOAD_FLAG = "wc-shell-reloaded";
@@ -78,11 +81,7 @@ async function start() {
     return;
   }
 
-  elements.updated.textContent = model.lastUpdated
-    ? new Intl.DateTimeFormat("en-IE", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(
-        new Date(model.lastUpdated),
-      )
-    : "loaded";
+  setUpdatedLabel();
   elements.ticker.innerHTML = renderTicker(model);
   elements.hero.innerHTML = renderHero(model);
   elements.footer.innerHTML = renderFooter(model);
@@ -101,6 +100,56 @@ async function start() {
     const match = model.matches.find((item) => String(item.id) === matchParam);
     if (match) openMatch(match);
   }
+
+  startPolling();
+}
+
+function setUpdatedLabel() {
+  elements.updated.textContent = model.lastUpdated
+    ? new Intl.DateTimeFormat("en-IE", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(
+        new Date(model.lastUpdated),
+      )
+    : "loaded";
+}
+
+// Live refresh without a deploy: re-pull the model on an interval and update the
+// always-visible parts (plus the live tab) only when a score or status actually
+// changed. Polls faster while a game is live, slower when nothing is on.
+function matchSignature(data) {
+  return (data.matches ?? [])
+    .map((item) => `${item.id}:${item.status}:${item.score?.home}:${item.score?.away}:${item.minute ?? ""}`)
+    .join("|");
+}
+
+function startPolling() {
+  lastSignature = matchSignature(model);
+  scheduleNextPoll();
+}
+
+function scheduleNextPoll() {
+  const hasLive = (model.matches ?? []).some((item) => isLive(item.status));
+  pollTimer = window.setTimeout(poll, hasLive ? 30000 : 300000);
+}
+
+async function poll() {
+  try {
+    const fresh = await loadModel();
+    const signature = matchSignature(fresh);
+    if (fresh.hasData && signature !== lastSignature) {
+      lastSignature = signature;
+      model = fresh;
+      setMatchModel(model);
+      setH2hModel(model);
+      setUpdatedLabel();
+      elements.ticker.innerHTML = renderTicker(model);
+      elements.hero.innerHTML = renderHero(model);
+      elements.footer.innerHTML = renderFooter(model);
+      if (state.tab === "live") renderPanel();
+    }
+  } catch {
+    // keep the last good model and try again next cycle
+  }
+  scheduleNextPoll();
 }
 
 function renderPanel() {

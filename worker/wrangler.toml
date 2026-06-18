@@ -1,0 +1,10 @@
+name = "goon-squad-data"
+main = "worker.js"
+compatibility_date = "2026-06-01"
+workers_dev = true
+
+# Non-secret config. The API token is a secret, set with:
+#   npx wrangler secret put FOOTBALL_DATA_TOKEN
+[vars]
+FOOTBALL_DATA_COMPETITION = "WC"
+FOOTBALL_DATA_SEASON = "2026"

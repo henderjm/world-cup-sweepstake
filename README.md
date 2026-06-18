@@ -47,3 +47,26 @@ Optional workflow variables:
 
 - `FOOTBALL_DATA_COMPETITION`, default `WC`
 - `FOOTBALL_DATA_SEASON`, default `2026`
+
+## Live Data Without Deploys (Cloudflare Worker)
+
+The GitHub Action bakes data into each deploy, so the static `data/live.json` only
+refreshes as often as the site redeploys. For minute-by-minute live scores, deploy the
+Worker in `worker/`: it proxies football-data with the token kept server-side, edge-
+caches each upstream call briefly (so many pollers collapse into roughly one upstream
+call per cache window, staying under the 30/min plan limit), and serves `/live` and
+`/match/:id` with CORS. The site then polls it (about every 30 seconds while a game is
+live) and updates in place, no deploy involved.
+
+1. `cd worker`
+2. `npx wrangler login`
+3. `npx wrangler secret put FOOTBALL_DATA_TOKEN` and paste your token.
+4. `npx wrangler deploy`. Note the URL it prints, e.g.
+   `https://goon-squad-data.<your-subdomain>.workers.dev`.
+5. Set `DATA_API` in `src/data.js` to that URL and push.
+
+The site falls back to the static `data/live.json` whenever the Worker is unset or
+unreachable, so it keeps working either way. The token never reaches the browser.
+
+Note: football-data.org does not provide expected goals (xG) on any tier, so the match
+detail shows lineups, scorers, subs and cards, but not xG.

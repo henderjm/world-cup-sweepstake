@@ -1,5 +1,5 @@
 import { flagFor } from "./flags.js";
-import { ENTRANTS, ownerOf } from "./data.js";
+import { DATA_API, ENTRANTS, ownerOf } from "./data.js";
 import { buildLeaderboard, buildTeamPerformance, normalizeTeamName } from "./domain.js";
 import { dayLabel, formatStage, isFinished, isLive, timeLabel } from "./format.js";
 
@@ -47,22 +47,34 @@ function close() {
   }, 220);
 }
 
+export function setMatchModel(activeModel) {
+  model = activeModel;
+}
+
 async function loadDetail(match) {
   const slot = panel.querySelector("#mdEvents");
   if (!slot || match.id == null) {
     if (slot) slot.innerHTML = scheduledNote(match);
     return;
   }
-  try {
-    const response = await fetch(`./data/matches/${match.id}.json?cache=${Date.now()}`, { cache: "no-store" });
-    if (!response.ok) throw new Error(String(response.status));
-    const detail = await response.json();
-    if (openId !== match.id) return; // a different match was opened meanwhile
-    panel.querySelector("#mdEvents").innerHTML = renderEvents(match, detail);
-  } catch {
-    if (openId === match.id && panel.querySelector("#mdEvents")) {
-      panel.querySelector("#mdEvents").innerHTML = scheduledNote(match);
+  const sources = [];
+  if (DATA_API) sources.push(`${DATA_API}/match/${match.id}`);
+  sources.push(`./data/matches/${match.id}.json?cache=${Date.now()}`);
+
+  for (const src of sources) {
+    try {
+      const response = await fetch(src, { cache: "no-store" });
+      if (!response.ok) continue;
+      const detail = await response.json();
+      if (openId !== match.id) return; // a different match was opened meanwhile
+      panel.querySelector("#mdEvents").innerHTML = renderEvents(match, detail);
+      return;
+    } catch {
+      // try the next source
     }
+  }
+  if (openId === match.id && panel.querySelector("#mdEvents")) {
+    panel.querySelector("#mdEvents").innerHTML = scheduledNote(match);
   }
 }
 

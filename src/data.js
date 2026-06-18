@@ -9,6 +9,11 @@ import {
 import { isFinished, isLive } from "./format.js";
 import { runForecast } from "./forecast.js";
 
+// Set this to your deployed Cloudflare Worker origin to serve live data without a
+// deploy, e.g. "https://goon-squad-data.<your-subdomain>.workers.dev". Leave empty to
+// use the static data/live.json baked by the GitHub Action (refreshed every 5 min).
+export const DATA_API = "";
+
 export const ENTRANTS = [
   { name: "Ois", teams: ["Tunisia", "Sweden", "Colombia"] },
   { name: "Mark", teams: ["Bosnia", "Ecuador", "Spain"] },
@@ -86,6 +91,14 @@ export function buildModel(raw) {
 }
 
 async function loadLiveData() {
+  if (DATA_API) {
+    try {
+      const response = await fetch(`${DATA_API}/live`, { cache: "no-store" });
+      if (response.ok) return await response.json();
+    } catch {
+      // Worker unreachable, fall through to the static baseline.
+    }
+  }
   try {
     const response = await fetch(`./data/live.json?cache=${Date.now()}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
