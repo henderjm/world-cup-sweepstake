@@ -45,6 +45,7 @@ let model = null;
 let appLoadMetricSent = false;
 let pollTimer = null;
 let lastSignature = "";
+let lastFetchAt = 0;
 
 const SHELL_IDS = ["ticker", "hero", "tabs", "panel", "footer", "banner", "updated", "h2hOpen", "h2hModal"];
 const RELOAD_FLAG = "wc-shell-reloaded";
@@ -81,7 +82,9 @@ async function start() {
     return;
   }
 
+  lastFetchAt = Date.now();
   setUpdatedLabel();
+  window.setInterval(setUpdatedLabel, 1000);
   elements.ticker.innerHTML = renderTicker(model);
   elements.hero.innerHTML = renderHero(model);
   elements.footer.innerHTML = renderFooter(model);
@@ -104,12 +107,19 @@ async function start() {
   startPolling();
 }
 
+// Relative "updated Xs ago" that ticks every second, so it is always visibly live.
 function setUpdatedLabel() {
-  elements.updated.textContent = model.lastUpdated
-    ? new Intl.DateTimeFormat("en-IE", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(
-        new Date(model.lastUpdated),
-      )
-    : "loaded";
+  if (!lastFetchAt) {
+    elements.updated.textContent = "loading";
+    return;
+  }
+  const secs = Math.max(0, Math.round((Date.now() - lastFetchAt) / 1000));
+  let label;
+  if (secs < 5) label = "just now";
+  else if (secs < 60) label = `${secs}s ago`;
+  else if (secs < 3600) label = `${Math.floor(secs / 60)}m ago`;
+  else label = new Intl.DateTimeFormat("en-IE", { hour: "2-digit", minute: "2-digit" }).format(new Date(lastFetchAt));
+  elements.updated.textContent = label;
 }
 
 // Live refresh without a deploy: re-pull the model on an interval and update the
@@ -128,23 +138,26 @@ function startPolling() {
 
 function scheduleNextPoll() {
   const hasLive = (model.matches ?? []).some((item) => isLive(item.status));
-  pollTimer = window.setTimeout(poll, hasLive ? 30000 : 300000);
+  pollTimer = window.setTimeout(poll, hasLive ? 20000 : 60000);
 }
 
 async function poll() {
   try {
     const fresh = await loadModel();
-    const signature = matchSignature(fresh);
-    if (fresh.hasData && signature !== lastSignature) {
-      lastSignature = signature;
-      model = fresh;
-      setMatchModel(model);
-      setH2hModel(model);
+    if (fresh.hasData) {
+      lastFetchAt = Date.now();
+      const signature = matchSignature(fresh);
+      if (signature !== lastSignature) {
+        lastSignature = signature;
+        model = fresh;
+        setMatchModel(model);
+        setH2hModel(model);
+        elements.ticker.innerHTML = renderTicker(model);
+        elements.hero.innerHTML = renderHero(model);
+        elements.footer.innerHTML = renderFooter(model);
+        renderPanel();
+      }
       setUpdatedLabel();
-      elements.ticker.innerHTML = renderTicker(model);
-      elements.hero.innerHTML = renderHero(model);
-      elements.footer.innerHTML = renderFooter(model);
-      if (state.tab === "live") renderPanel();
     }
   } catch {
     // keep the last good model and try again next cycle
