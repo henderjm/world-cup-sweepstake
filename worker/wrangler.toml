@@ -11,8 +11,9 @@ FOOTBALL_DATA_SEASON = "2026"
 
 # Per-IP rate limit: 200 requests / 60s. A real poller uses ~2/min plus a few match
 # opens, so this is generous for shared office/home NATs while blocking floods.
-# period must be 10 or 60.
-[[ratelimit]]
+# Needs Wrangler 4.36.0+. period must be 10 or 60. The Worker no-ops if it is absent.
+[[unsafe.bindings]]
 name = "LIMITER"
+type = "ratelimit"
 namespace_id = "1001"
 simple = { limit = 200, period = 60 }
