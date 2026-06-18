@@ -11,6 +11,13 @@
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
+    <div class="bg" aria-hidden="true">
+      <div class="bg__glow"></div>
+      <div class="bg__pitch"></div>
+      <div class="bg__embers" id="bgEmbers"></div>
+      <div class="bg__vignette"></div>
+    </div>
+    <div class="bunting" id="bunting" aria-hidden="true"></div>
     <canvas id="confetti" aria-hidden="true"></canvas>
 
     <div class="app">
@@ -59,6 +66,10 @@
       if (window.Sentry?.init) {
         window.Sentry.init({
           dsn: "https://1a7a3df5710a91c4eb0b649c303519a2@o4511587918479360.ingest.de.sentry.io/4511587923066960",
+          integrations: [window.Sentry.replayIntegration()],
+          replaysSessionSampleRate: 1.0,
+          replaysOnErrorSampleRate: 1.0,
+          enableLogs: true,
           tracesSampleRate: 0,
         });
         window.dispatchEvent(new Event("sentry-ready"));

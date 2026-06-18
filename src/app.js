@@ -15,6 +15,8 @@ import {
   setupHeadToHead,
   shouldCelebrate,
 } from "./interactions.js";
+import { isLive } from "./format.js";
+import "./background.js";
 
 const elements = {
   ticker: document.querySelector("#ticker"),
@@ -65,8 +67,9 @@ async function start() {
     // sessionStorage can be unavailable (private mode); the app still runs.
   }
 
+  const buildStart = performance.now();
   model = await loadModel();
-  trackAppLoad(model);
+  trackAppLoad(model, Math.round(performance.now() - buildStart));
 
   if (!model.hasData) {
     renderPending(model);
@@ -124,6 +127,7 @@ function wireTabs() {
     if (!button) return;
     state.tab = button.dataset.tab;
     window.history.replaceState(null, "", `#${state.tab}`);
+    metric("count", "tab_view", 1, { tags: { tab: state.tab } });
     syncActiveTab();
     renderPanel();
   });
@@ -166,19 +170,39 @@ function renderPending(data) {
   elements.footer.innerHTML = `<p class="footer__src">Data source: ${data.source ?? "pending"}.</p>`;
 }
 
-// App-load instrumentation. The vendored SDK initialises synchronously before this
-// module runs, so Sentry is ready here. Uses stable v10 APIs (the old metrics.count
-// beta was removed), and tags help slice errors by data state.
-function trackAppLoad(data) {
+// Telemetry helpers. Guarded so instrumentation never throws and a blocked Sentry
+// ingest (tracker blockers) simply no-ops.
+function metric(kind, name, value, options) {
+  try {
+    window.Sentry?.metrics?.[kind]?.(name, value, options);
+  } catch {
+    /* telemetry must never break the app */
+  }
+}
+
+function log(level, message, attributes) {
+  try {
+    window.Sentry?.logger?.[level]?.(message, attributes);
+  } catch {
+    /* telemetry must never break the app */
+  }
+}
+
+// App-load instrumentation via the vendored Replay/Logs/Metrics SDK.
+function trackAppLoad(data, buildMs) {
   if (appLoadMetricSent) return;
   appLoadMetricSent = true;
-  const sentry = window.Sentry;
-  if (!sentry?.addBreadcrumb) return;
-  try {
-    sentry.setTag?.("data_source", data.source ?? "unknown");
-    sentry.setTag?.("has_live_data", String(Boolean(data.hasData)));
-    sentry.addBreadcrumb({ category: "app", level: "info", message: "app_load" });
-  } catch (error) {
-    sentry.captureException?.(error);
+  const source = data.source ?? "unknown";
+  const hasData = Boolean(data.hasData);
+  window.Sentry?.setTag?.("data_source", source);
+  window.Sentry?.setTag?.("has_live_data", String(hasData));
+  metric("count", "app_load", 1, { tags: { source, has_data: String(hasData) } });
+  if (Number.isFinite(buildMs)) {
+    metric("distribution", "model_build_ms", buildMs, { unit: "millisecond" });
   }
+  if (hasData) {
+    const liveCount = data.matches.filter((item) => isLive(item.status)).length;
+    metric("gauge", "live_matches", liveCount);
+  }
+  log("info", "app loaded", { source, has_data: hasData, build_ms: buildMs });
 }

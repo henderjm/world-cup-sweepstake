@@ -50,9 +50,11 @@ button {
 }
 
 .app {
+  position: relative;
+  z-index: 1;
   width: min(1280px, 100%);
   margin: 0 auto;
-  padding: 18px clamp(12px, 3vw, 28px) 60px;
+  padding: 46px clamp(12px, 3vw, 28px) 60px;
 }
 
 #confetti {
@@ -62,6 +64,151 @@ button {
   height: 100%;
   pointer-events: none;
   z-index: 60;
+}
+
+/* Goon Squad ambient background ------------------------------------------- */
+/* A quiet pub-meets-stadium layer behind the content. Opaque cards sit on top,
+   so it only shows through the gutters and behind the hero. Reworked in CSS from
+   the Goon Squad pub animation design. */
+
+.bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.bg__glow {
+  position: absolute;
+  left: 50%;
+  top: -10%;
+  width: min(1200px, 130vw);
+  height: 900px;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    closest-side,
+    rgb(233 184 74 / 0.16),
+    rgb(184 127 41 / 0.05) 48%,
+    transparent 72%
+  );
+  filter: blur(8px);
+  animation: bg-glow 16s ease-in-out infinite;
+}
+
+@keyframes bg-glow {
+  0%, 100% { opacity: 0.55; transform: translateX(-50%) scale(1); }
+  50% { opacity: 0.9; transform: translateX(-50%) scale(1.06); }
+}
+
+.bg__pitch {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: min(760px, 88vw);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px solid rgb(243 230 196 / 0.05);
+  animation: bg-breathe 16s ease-in-out infinite;
+}
+
+.bg__pitch::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -32%;
+  bottom: -32%;
+  width: 2px;
+  margin-left: -1px;
+  background: rgb(243 230 196 / 0.045);
+}
+
+.bg__pitch::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: rgb(243 230 196 / 0.07);
+}
+
+@keyframes bg-breathe {
+  0%, 100% { transform: translate(-50%, -50%) rotate(-1.5deg) scale(1); }
+  50% { transform: translate(-50%, -50%) rotate(1.5deg) scale(1.02); }
+}
+
+.bg__ember {
+  position: absolute;
+  bottom: -40px;
+  border-radius: 50%;
+  background: radial-gradient(
+    closest-side,
+    rgb(247 213 126 / 0.9),
+    rgb(233 184 74 / 0.25) 45%,
+    transparent 72%
+  );
+  animation: ember-rise linear infinite;
+}
+
+@keyframes ember-rise {
+  0% { transform: translateY(0) translateX(0); }
+  100% { transform: translateY(-112vh) translateX(22px); }
+}
+
+.bg__vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(140% 110% at 50% 38%, transparent 48%, rgb(4 6 10 / 0.72) 100%);
+}
+
+.bunting {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 46px;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.bunting::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(243 230 196 / 0.28) 7%,
+    rgb(243 230 196 / 0.28) 93%,
+    transparent
+  );
+}
+
+.bunting__flag {
+  position: absolute;
+  top: 7px;
+  width: 0;
+  height: 0;
+  border-left: 11px solid transparent;
+  border-right: 11px solid transparent;
+  border-top: 20px solid var(--c, var(--gold));
+  transform-origin: top center;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.45));
+  opacity: 0.95;
+  animation: bunting-sway 4.5s ease-in-out infinite;
+}
+
+@keyframes bunting-sway {
+  0%, 100% { transform: translateX(-50%) rotate(-5deg); }
+  50% { transform: translateX(-50%) rotate(5deg); }
 }
 
 /* Topbar ------------------------------------------------------------------ */
