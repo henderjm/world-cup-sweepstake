@@ -3,62 +3,63 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>World Cup Sweepstake</title>
+    <title>World Cup Sweepstake HQ</title>
     <meta
       name="description"
-      content="A static GitHub Pages app for tracking a World Cup sweepstake with live match updates and payouts."
+      content="The group's World Cup hub: live scores, group tables, knockout bracket and a Monte Carlo projection of who is on for the sweepstake prize money."
     />
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <header class="masthead">
-        <div class="masthead__title">
-          <p class="eyebrow">World Cup sweepstake</p>
-          <h1>Prize money, danger watch, wooden spoon.</h1>
+    <canvas id="confetti" aria-hidden="true"></canvas>
+
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand__mark">⚽</span>
+          <div>
+            <strong>World Cup Sweepstake HQ</strong>
+            <span class="brand__sub">16 entrants · €160 pot · live</span>
+          </div>
         </div>
-        <div class="pitch-mark" aria-hidden="true">
-          <span></span>
+        <div class="topbar__right">
+          <span class="updated">Updated <time id="updated">…</time></span>
+          <button class="btn" id="h2hOpen" type="button">Head to head</button>
         </div>
       </header>
 
+      <div class="ticker" id="ticker" aria-label="Live and recent scores"></div>
+
+      <p class="banner" id="banner" role="status" hidden></p>
+
       <main>
-        <section class="live-now-panel" aria-label="Live games">
-          <div class="section-heading">
-            <p class="eyebrow">Live now</p>
-            <h2>Games and owners</h2>
-          </div>
-          <div id="liveNowList" class="live-now-list"></div>
-        </section>
+        <section class="hero" id="hero" aria-label="Sweepstake race"></section>
 
-        <section id="payoutPanel" class="payout-panel" aria-label="Prize payouts"></section>
+        <nav class="tabs" id="tabs" aria-label="Sections">
+          <button class="tab is-active" data-tab="live" aria-selected="true" type="button">Live &amp; today</button>
+          <button class="tab" data-tab="leaderboard" aria-selected="false" type="button">Leaderboard</button>
+          <button class="tab" data-tab="tables" aria-selected="false" type="button">Group tables</button>
+          <button class="tab" data-tab="bracket" aria-selected="false" type="button">Knockout</button>
+          <button class="tab" data-tab="fixtures" aria-selected="false" type="button">Fixtures</button>
+        </nav>
 
-        <div class="dashboard-grid">
-          <section class="leaderboard-panel" aria-label="Sweepstake leaderboard">
-            <div class="section-heading">
-              <p class="eyebrow">Sweepstake ranking</p>
-              <h2>Entrants</h2>
-            </div>
-            <div id="leaderboard" class="leaderboard"></div>
-          </section>
-
-          <aside class="live-panel" aria-label="Live match updates">
-            <div class="section-heading">
-              <p class="eyebrow">Group danger</p>
-              <h2>At risk</h2>
-            </div>
-            <div id="statusMessage" class="status-message" role="status"></div>
-            <div id="dangerList" class="danger-list"></div>
-            <div class="section-heading section-heading--compact">
-              <p class="eyebrow">Latest</p>
-              <h2>Matches</h2>
-            </div>
-            <div id="matchList" class="match-list"></div>
-          </aside>
-        </div>
+        <section class="panel" id="panel" aria-live="polite"></section>
       </main>
+
+      <footer class="footer" id="footer"></footer>
     </div>
 
+    <div class="modal" id="h2hModal" hidden></div>
+
+    <script>
+      window.sentryOnLoad = function () {
+        window.dispatchEvent(new Event("sentry-ready"));
+      };
+    </script>
+    <script
+      src="https://js-de.sentry-cdn.com/1a7a3df5710a91c4eb0b649c303519a2.min.js"
+      crossorigin="anonymous"
+    ></script>
     <script type="module" src="./src/app.js"></script>
   </body>
 </html>

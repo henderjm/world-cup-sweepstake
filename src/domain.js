@@ -9,7 +9,7 @@ const LIVE_STATUSES = new Set([
 
 const FINISHED_STATUSES = new Set(["FINISHED", "AWARDED"]);
 
-const STAGE_BONUSES = {
+export const STAGE_BONUSES = {
   GROUP_STAGE: 0,
   LAST_32: 15,
   ROUND_OF_32: 15,

@@ -1,0 +1,58 @@
+import { normalizeTeamName } from "./domain.js";
+
+// Flag emoji keyed by the normalized team name used across the app.
+// Emoji are offline-safe and never render as a broken image, unlike crest URLs.
+const FLAGS = {
+  Tunisia: "🇹🇳",
+  Sweden: "🇸🇪",
+  Colombia: "🇨🇴",
+  Bosnia: "🇧🇦",
+  Ecuador: "🇪🇨",
+  Spain: "🇪🇸",
+  "New Zealand": "🇳🇿",
+  Algeria: "🇩🇿",
+  Belgium: "🇧🇪",
+  "South Africa": "🇿🇦",
+  Switzerland: "🇨🇭",
+  Portugal: "🇵🇹",
+  Haiti: "🇭🇹",
+  Australia: "🇦🇺",
+  Croatia: "🇭🇷",
+  "Cape Verde": "🇨🇻",
+  "South Korea": "🇰🇷",
+  Mexico: "🇲🇽",
+  Curacao: "🇨🇼",
+  Paraguay: "🇵🇾",
+  Senegal: "🇸🇳",
+  Ghana: "🇬🇭",
+  Canada: "🇨🇦",
+  Brazil: "🇧🇷",
+  Scotland: "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+  "Ivory Coast": "🇨🇮",
+  Uruguay: "🇺🇾",
+  DRC: "🇨🇩",
+  Japan: "🇯🇵",
+  Netherlands: "🇳🇱",
+  Uzbekistan: "🇺🇿",
+  Panama: "🇵🇦",
+  England: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+  Qatar: "🇶🇦",
+  Egypt: "🇪🇬",
+  Germany: "🇩🇪",
+  Czech: "🇨🇿",
+  Iran: "🇮🇷",
+  Morocco: "🇲🇦",
+  Jordan: "🇯🇴",
+  Norway: "🇳🇴",
+  Argentina: "🇦🇷",
+  "Saudi Arabia": "🇸🇦",
+  Austria: "🇦🇹",
+  France: "🇫🇷",
+  Iraq: "🇮🇶",
+  Turkey: "🇹🇷",
+  USA: "🇺🇸",
+};
+
+export function flagFor(team) {
+  return FLAGS[normalizeTeamName(team)] ?? "🏴";
+}

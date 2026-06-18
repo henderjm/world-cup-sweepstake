@@ -1,6 +1,18 @@
-# World Cup Sweepstake
+# World Cup Sweepstake HQ
 
-A static GitHub Pages app for the sweepstake in the screenshot. It tracks the draw, ranks entrants from match and standings data, highlights teams in trouble of going out in the group stage, and uses fixed euro payouts.
+A static GitHub Pages app that is the group's hub for everything World Cup, with the
+sweepstake money race as the centerpiece. FotMob-style live scores, group tables, a
+knockout bracket and full fixtures, every team tagged with its owner.
+
+The hero answers one question: who is on for winning. The payouts are tied to
+tournament outcomes, not the points table, so the app runs a Monte Carlo projection
+(5,000 simulations on load, seeded from the data timestamp so the odds are stable) to
+estimate each entrant's chance at the winner, runner-up and wooden-spoon prizes. See
+`docs/superpowers/specs/` for the full design and the projection methodology.
+
+Sections (single page, tabbed): Live & today, Leaderboard (current points plus
+projected odds), Group tables, Knockout bracket, Fixtures. Extras: a live score
+ticker, owner head-to-head compare, and confetti when a final is decided.
 
 The pot is fixed at 16 entries x €10 = €160:
 

@@ -1,473 +1,168 @@
+import { loadModel } from "./data.js";
 import {
-  buildLeaderboard,
-  buildTeamPerformance,
-  calculatePayouts,
-  formatStage,
-  mapFootballDataMatches,
-  mapFootballDataStandings,
-  mergeStandingsIntoPerformance,
-  normalizeTeamName,
-} from "./domain.js";
-
-const ENTRANTS = [
-  { name: "Ois", teams: ["Tunisia", "Sweden", "Colombia"] },
-  { name: "Mark", teams: ["Bosnia", "Ecuador", "Spain"] },
-  { name: "Sinead", teams: ["New Zealand", "Algeria", "Belgium"] },
-  { name: "Chris", teams: ["South Africa", "Switzerland", "Portugal"] },
-  { name: "Dockrell", teams: ["Haiti", "Australia", "Croatia"] },
-  { name: "Les", teams: ["Cape Verde", "South Korea", "Mexico"] },
-  { name: "Eoin", teams: ["Curacao", "Paraguay", "Senegal"] },
-  { name: "Cal", teams: ["Ghana", "Canada", "Brazil"] },
-  { name: "Sarah", teams: ["Scotland", "Ivory Coast", "Uruguay"] },
-  { name: "Carys", teams: ["DRC", "Japan", "Netherlands"] },
-  { name: "Al", teams: ["Uzbekistan", "Panama", "England"] },
-  { name: "Rachel", teams: ["Qatar", "Egypt", "Germany"] },
-  { name: "April", teams: ["Czech", "Iran", "Morocco"] },
-  { name: "Jean", teams: ["Jordan", "Norway", "Argentina"] },
-  { name: "Joe", teams: ["Saudi Arabia", "Austria", "France"] },
-  { name: "Dymps", teams: ["Iraq", "Turkey", "USA"] },
-];
-
-const PAYOUTS = {
-  entrantCount: 16,
-  stake: 10,
-  splits: { second: 30, woodenSpoon: 30 },
-};
-
-const OWNER_BY_TEAM = new Map(
-  ENTRANTS.flatMap((entrant) => entrant.teams.map((team) => [normalizeTeamName(team), entrant.name])),
-);
-
-const EMPTY_LIVE_DATA = {
-  source: "Live data pending",
-  lastUpdated: "",
-  matches: [],
-  standings: [],
-  error: "No live data has been published yet.",
-};
+  renderBracket,
+  renderFixtures,
+  renderFooter,
+  renderGroupTables,
+  renderHero,
+  renderLeaderboard,
+  renderLive,
+  renderTicker,
+} from "./views.js";
+import {
+  celebrationBanner,
+  confettiBurst,
+  setupHeadToHead,
+  shouldCelebrate,
+} from "./interactions.js";
 
 const elements = {
-  liveNowList: document.querySelector("#liveNowList"),
-  payoutPanel: document.querySelector("#payoutPanel"),
-  leaderboard: document.querySelector("#leaderboard"),
-  statusMessage: document.querySelector("#statusMessage"),
-  dangerList: document.querySelector("#dangerList"),
-  matchList: document.querySelector("#matchList"),
+  ticker: document.querySelector("#ticker"),
+  hero: document.querySelector("#hero"),
+  tabs: document.querySelector("#tabs"),
+  panel: document.querySelector("#panel"),
+  footer: document.querySelector("#footer"),
+  banner: document.querySelector("#banner"),
+  confetti: document.querySelector("#confetti"),
+  h2hOpen: document.querySelector("#h2hOpen"),
+  h2hModal: document.querySelector("#h2hModal"),
+  updated: document.querySelector("#updated"),
 };
+
+const TABS = ["live", "leaderboard", "tables", "bracket", "fixtures"];
+const initialTab = window.location.hash.replace("#", "");
+const state = {
+  tab: TABS.includes(initialTab) ? initialTab : "live",
+  leaderboardSort: "now",
+  fixtureOwner: "all",
+};
+let model = null;
+let appLoadMetricSent = false;
 
 start();
 
 async function start() {
-  const liveData = await loadLiveData();
-  render(liveData);
-}
+  model = await loadModel();
+  trackAppLoad(model);
 
-async function loadLiveData() {
-  try {
-    const response = await fetch(`./data/live.json?cache=${Date.now()}`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-    const data = await response.json();
-    return normalizeLiveData(data);
-  } catch (error) {
-    return {
-      ...EMPTY_LIVE_DATA,
-      error: `Live data is not available yet: ${error.message}`,
-    };
-  }
-}
-
-function normalizeLiveData(data) {
-  return {
-    source: data.source ?? "football-data.org",
-    lastUpdated: data.lastUpdated ?? "",
-    matches: Array.isArray(data.matches) ? data.matches : mapFootballDataMatches(data.matchesPayload ?? {}),
-    standings:
-      data.standings instanceof Map
-        ? data.standings
-        : Array.isArray(data.standings)
-          ? data.standings
-          : mapFootballDataStandings(data.standingsPayload ?? {}),
-  };
-}
-
-function render(data) {
-  const standings = data.standings instanceof Map ? data.standings : mapFootballDataStandings({ standings: data.standings });
-
-  if (!hasLiveData(data, standings)) {
-    renderPendingState(data);
+  if (!model.hasData) {
+    renderPending(model);
     return;
   }
 
-  const performance = mergeStandingsIntoPerformance(buildTeamPerformance(data.matches), standings);
-  const leaderboard = buildLeaderboard(ENTRANTS, performance);
-  const payouts = calculatePayouts(PAYOUTS);
-  const woodenSpoon = getWoodenSpoonPrize(leaderboard, data.matches);
+  elements.updated.textContent = model.lastUpdated
+    ? new Intl.DateTimeFormat("en-IE", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(
+        new Date(model.lastUpdated),
+      )
+    : "loaded";
+  elements.ticker.innerHTML = renderTicker(model);
+  elements.hero.innerHTML = renderHero(model);
+  elements.footer.innerHTML = renderFooter(model);
 
-  renderPayouts(leaderboard, payouts, data.matches, woodenSpoon);
-  renderLiveNow(data.matches);
-  renderLeaderboard(leaderboard, woodenSpoon);
-  renderDangerList(leaderboard, woodenSpoon);
-  renderMatches(data.matches);
-  renderStatus(data);
+  syncActiveTab();
+  renderPanel();
+  wireTabs();
+  wirePanelControls();
+  setupHeadToHead(model, { trigger: elements.h2hOpen, modal: elements.h2hModal });
+  runCelebration();
 }
 
-function hasLiveData(data, standings) {
-  return data.matches.length > 0 || standings.size > 0;
-}
-
-function renderPendingState(data) {
-  const payouts = calculatePayouts(PAYOUTS);
-  elements.payoutPanel.innerHTML = `
-    ${prizeTile("World Cup winner", "TBC", payouts.first, "gold")}
-    ${prizeTile("Runner-up", "TBC", payouts.second, "silver")}
-    ${prizeTile("Wooden spoon", "TBC", payouts.woodenSpoon, "spoon")}
-    <div class="pot-tile">
-      <span>Total pot</span>
-      <strong>${money(payouts.pot)}</strong>
-      <em>16 entries x ${money(PAYOUTS.stake)}</em>
-    </div>
-  `;
-  elements.leaderboard.innerHTML = `<p class="empty-note">Waiting for real World Cup data before ranking entrants.</p>`;
-  elements.liveNowList.innerHTML = `<p class="empty-note">No real live games loaded yet.</p>`;
-  elements.dangerList.innerHTML = `<p class="empty-note">No group danger shown until live standings are published.</p>`;
-  elements.matchList.innerHTML = `<p class="empty-note">No live matches loaded yet.</p>`;
-  elements.statusMessage.textContent = `${data.source}. ${data.error}`;
-}
-
-function renderPayouts(leaderboard, payouts, matches, woodenSpoon) {
-  const finalPrizes = getFinalPrizes(matches);
-
-  elements.payoutPanel.innerHTML = `
-    ${prizeTile("World Cup winner", finalPrizes.winner.owner, payouts.first, "gold", [], finalPrizes.winner.team)}
-    ${prizeTile("Runner-up", finalPrizes.runnerUp.owner, payouts.second, "silver", [], finalPrizes.runnerUp.team)}
-    ${prizeTile(
-      "Wooden spoon",
-      woodenSpoon.owner,
-      payouts.woodenSpoon,
-      "spoon",
-      woodenSpoon.team ? [woodenSpoon.team] : [],
-      woodenSpoon.status,
-    )}
-    <div class="pot-tile">
-      <span>Total pot</span>
-      <strong>${money(payouts.pot)}</strong>
-      <em>16 entries x ${money(PAYOUTS.stake)}</em>
-    </div>
-  `;
-}
-
-function getWoodenSpoonPrize(leaderboard, matches) {
-  const confirmedLastTeams = leaderboard
-    .flatMap((entrant) =>
-      entrant.teams.map((team) => ({
-        owner: entrant.name,
-        team,
-      })),
-    )
-    .filter(({ team }) => isConfirmedGroupLast(team, matches))
-    .sort(compareWoodenSpoonTeams);
-
-  if (!confirmedLastTeams.length) {
-    return {
-      owner: "TBC",
-      team: null,
-      status: "Waiting for a confirmed group-stage last place",
-    };
+function renderPanel() {
+  const panel = elements.panel;
+  switch (state.tab) {
+    case "leaderboard":
+      panel.innerHTML = renderLeaderboard(model, state.leaderboardSort);
+      break;
+    case "tables":
+      panel.innerHTML = renderGroupTables(model);
+      break;
+    case "bracket":
+      panel.innerHTML = renderBracket(model);
+      break;
+    case "fixtures":
+      panel.innerHTML = renderFixtures(model, state.fixtureOwner);
+      break;
+    default:
+      panel.innerHTML = renderLive(model);
   }
-
-  const winner = confirmedLastTeams[0];
-  return {
-    owner: winner.owner,
-    team: winner.team,
-    status: "Confirmed out in group",
-  };
 }
 
-function isConfirmedGroupLast(team, matches) {
-  if (team.position !== 4) return false;
-  const teamName = normalizeTeamName(team.name);
-  const teamMatches = matches.filter(
-    (matchItem) =>
-      matchItem.stage === "GROUP_STAGE" &&
-      [matchItem.homeTeam, matchItem.awayTeam].map(normalizeTeamName).includes(teamName),
-  );
-  return teamMatches.length >= 3 && teamMatches.every((matchItem) => isFinished(matchItem.status));
+function syncActiveTab() {
+  elements.tabs.querySelectorAll("[data-tab]").forEach((tab) => {
+    const active = tab.dataset.tab === state.tab;
+    tab.classList.toggle("is-active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+  });
 }
 
-function compareWoodenSpoonTeams(a, b) {
-  return (
-    a.team.score - b.team.score ||
-    a.team.points - b.team.points ||
-    a.team.goalDifference - b.team.goalDifference ||
-    a.team.goalsFor - b.team.goalsFor ||
-    a.owner.localeCompare(b.owner) ||
-    a.team.name.localeCompare(b.team.name)
-  );
+function wireTabs() {
+  elements.tabs.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-tab]");
+    if (!button) return;
+    state.tab = button.dataset.tab;
+    window.history.replaceState(null, "", `#${state.tab}`);
+    syncActiveTab();
+    renderPanel();
+  });
 }
 
-function getFinalPrizes(matches) {
-  const final = matches.find((matchItem) => matchItem.stage === "FINAL" && isDecided(matchItem));
-  if (!final) {
-    return {
-      winner: prizeRecipient(),
-      runnerUp: prizeRecipient(),
-    };
+function wirePanelControls() {
+  elements.panel.addEventListener("click", (event) => {
+    const sortButton = event.target.closest("[data-sort]");
+    if (sortButton) {
+      state.leaderboardSort = sortButton.dataset.sort;
+      renderPanel();
+    }
+  });
+  elements.panel.addEventListener("change", (event) => {
+    if (event.target.matches("[data-control='fixture-owner']")) {
+      state.fixtureOwner = event.target.value;
+      renderPanel();
+    }
+  });
+}
+
+function runCelebration() {
+  const banner = celebrationBanner(model);
+  if (banner) {
+    elements.banner.textContent = banner;
+    elements.banner.hidden = false;
   }
-
-  const winnerTeam = getMatchWinner(final);
-  const runnerUpTeam = winnerTeam === normalizeTeamName(final.homeTeam) ? final.awayTeam : final.homeTeam;
-
-  return {
-    winner: prizeRecipient(winnerTeam),
-    runnerUp: prizeRecipient(runnerUpTeam),
-  };
-}
-
-function prizeRecipient(team = "") {
-  const normalizedTeam = team ? normalizeTeamName(team) : "";
-  return {
-    team: normalizedTeam,
-    owner: normalizedTeam ? (OWNER_BY_TEAM.get(normalizedTeam) ?? "Unowned") : "TBC",
-  };
-}
-
-function isDecided(matchItem) {
-  return isFinished(matchItem.status) && Boolean(getMatchWinner(matchItem));
-}
-
-function getMatchWinner(matchItem) {
-  if (matchItem.winner === "HOME_TEAM") return normalizeTeamName(matchItem.homeTeam);
-  if (matchItem.winner === "AWAY_TEAM") return normalizeTeamName(matchItem.awayTeam);
-  if (Number.isFinite(matchItem.score?.home) && Number.isFinite(matchItem.score?.away)) {
-    if (matchItem.score.home > matchItem.score.away) return normalizeTeamName(matchItem.homeTeam);
-    if (matchItem.score.away > matchItem.score.home) return normalizeTeamName(matchItem.awayTeam);
+  if (shouldCelebrate(model)) {
+    confettiBurst(elements.confetti);
   }
-  return "";
 }
 
-function renderLiveNow(matches) {
-  const liveMatches = matches.filter(isLiveNowMatch).sort(compareMatchDate);
-  elements.liveNowList.innerHTML = liveMatches.length
-    ? liveMatches.map(liveMatchCard).join("")
-    : `<p class="empty-note">No games are live right now.</p>`;
+function renderPending(data) {
+  elements.updated.textContent = "waiting for data";
+  elements.ticker.innerHTML = `<div class="ticker__track"><span class="ticker__item ticker__item--idle">Live feed not available yet.</span></div>`;
+  elements.hero.innerHTML = `
+    <div class="hero__head"><div><p class="hero__eyebrow">The race for the pot</p><h1 class="hero__title">Waiting for the first results</h1></div></div>
+    <p class="panel__note">${data.error ?? "No live data has been published yet."}</p>`;
+  elements.panel.innerHTML = `<p class="panel__note">Group tables, the leaderboard and the projection appear once the feed publishes results.</p>`;
+  elements.footer.innerHTML = `<p class="footer__src">Data source: ${data.source ?? "pending"}.</p>`;
 }
 
-function renderLeaderboard(leaderboard, woodenSpoon) {
-  elements.leaderboard.innerHTML = leaderboard
-    .map((entrant) => {
-      const modifier = entrant.rank === 1 ? "is-first" : entrant.rank === 2 ? "is-second" : "";
-      const spoon = entrant.teams.some((team) => isWoodenSpoonTeam(team, woodenSpoon)) ? "is-spoon" : "";
-      return `
-        <article class="leader-row ${modifier} ${spoon}">
-          <div class="rank">${entrant.rank}</div>
-          <div class="leader-row__main">
-            <div class="leader-row__topline">
-              <h3>${entrant.name}</h3>
-              <strong>${entrant.score}</strong>
-            </div>
-            <div class="team-strip">
-              ${entrant.teams.map((team) => teamChip(team, isWoodenSpoonTeam(team, woodenSpoon))).join("")}
-            </div>
-          </div>
-          <dl class="leader-stats">
-            <div><dt>Risk</dt><dd>${entrant.dangerCount}</dd></div>
-            <div><dt>GD</dt><dd>${signed(entrant.goalDifference)}</dd></div>
-            <div><dt>P</dt><dd>${entrant.played}</dd></div>
-          </dl>
-        </article>
-      `;
-    })
-    .join("");
-}
-
-function liveMatchCard(matchItem) {
-  return `
-    <article class="live-now-card">
-      <div class="live-now-card__meta">
-        <span class="match-status">${liveNowLabel(matchItem)}</span>
-        <span>${formatStage(matchItem.stage)}</span>
-      </div>
-      <div class="live-scoreline">
-        ${liveTeamLine(matchItem.homeTeam, scorePart(matchItem.score, "home"))}
-        <span class="live-scoreline__divider">v</span>
-        ${liveTeamLine(matchItem.awayTeam, scorePart(matchItem.score, "away"))}
-      </div>
-    </article>
-  `;
-}
-
-function liveTeamLine(team, score) {
-  const owner = OWNER_BY_TEAM.get(normalizeTeamName(team)) ?? "Unowned";
-  return `
-    <div class="live-team">
-      <strong>${team}</strong>
-      <span>${owner}</span>
-      <b>${score || "-"}</b>
-    </div>
-  `;
-}
-
-function renderDangerList(leaderboard, woodenSpoon) {
-  const dangerTeams = leaderboard
-    .flatMap((entrant) =>
-      entrant.teams.map((team) => ({
-        owner: entrant.name,
-        isWoodenSpoonTeam: isWoodenSpoonTeam(team, woodenSpoon),
-        ...team,
-      })),
-    )
-    .filter((team) => team.dangerLevel === "danger" || team.dangerLevel === "out")
-    .sort((a, b) => dangerWeight(b) - dangerWeight(a) || a.owner.localeCompare(b.owner));
-
-  elements.dangerList.innerHTML = dangerTeams.length
-    ? dangerTeams
-        .map(
-          (team) => `
-            <article class="danger-card danger-card--${team.dangerLevel} ${team.isWoodenSpoonTeam ? "is-wooden-spoon-team" : ""}">
-              <div>
-                <strong>${team.name}</strong>
-                <span>${team.isWoodenSpoonTeam ? `${team.owner} - spoon` : team.owner}</span>
-              </div>
-              <p>${team.dangerLabel}</p>
-              <small>${team.group || "Group"} - ${team.points} pts - GD ${signed(team.goalDifference)}</small>
-            </article>
-          `,
-        )
-        .join("")
-    : `<p class="empty-note">No sweepstake teams are in the bottom half of their group yet.</p>`;
-}
-
-function renderMatches(matches) {
-  const visibleMatches = [...matches].sort(compareMatchPriority).slice(0, 8);
-  elements.matchList.innerHTML = visibleMatches
-    .map(
-      (matchItem) => `
-        <article class="match-row ${isLive(matchItem.status) ? "is-live" : ""}">
-          <div>
-            <span class="match-status">${statusLabel(matchItem)}</span>
-            <strong>${matchItem.homeTeam} ${scorePart(matchItem.score, "home")}</strong>
-            <strong>${matchItem.awayTeam} ${scorePart(matchItem.score, "away")}</strong>
-          </div>
-          <div>
-            <span>${formatStage(matchItem.stage)}</span>
-            <time datetime="${matchItem.utcDate}">${dateLabel(matchItem.utcDate)}</time>
-          </div>
-        </article>
-      `,
-    )
-    .join("");
-}
-
-function renderStatus(data) {
-  const updated = data.lastUpdated ? ` Updated ${dateLabel(data.lastUpdated)}.` : "";
-  elements.statusMessage.textContent = `${data.source}.${updated} Group positions mark teams outside the top two.`;
-}
-
-function teamChip(team, isWoodenSpoonTeam = false) {
-  const classes = [
-    "team-chip",
-    team.dangerLevel ? `team-chip--${team.dangerLevel}` : "",
-    isWoodenSpoonTeam ? "team-chip--wooden-spoon" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const meta = team.position ? `#${team.position}` : `${team.points} pts`;
-  return `
-    <span class="${classes}">
-      ${team.name}
-      <small>${meta}</small>
-    </span>
-  `;
-}
-
-function prizeTile(label, name, amount, variant, teams = [], teamName = "") {
-  const teamList = teams.length
-    ? `<div class="prize-teams">${teams.map((team) => teamChip(team, true)).join("")}</div>`
-    : "";
-  const teamLine = teamName ? `<small class="prize-team-name">${teamName}</small>` : "";
-  return `
-    <article class="prize-tile prize-tile--${variant}">
-      <span>${label}</span>
-      <strong>${money(amount)}</strong>
-      <em>${name ?? "TBC"}</em>
-      ${teamLine}
-      ${teamList}
-    </article>
-  `;
-}
-
-function compareMatchPriority(a, b) {
-  return statusWeight(a.status) - statusWeight(b.status) || new Date(a.utcDate) - new Date(b.utcDate);
-}
-
-function compareMatchDate(a, b) {
-  return new Date(a.utcDate) - new Date(b.utcDate);
-}
-
-function statusWeight(status) {
-  if (isLive(status)) return 0;
-  if (status === "TIMED" || status === "SCHEDULED") return 1;
-  return 2;
-}
-
-function dangerWeight(team) {
-  return team.dangerLevel === "out" ? 2 : 1;
-}
-
-function isFinished(status) {
-  return status === "FINISHED" || status === "AWARDED";
-}
-
-function isWoodenSpoonTeam(team, woodenSpoon) {
-  return Boolean(woodenSpoon.team) && normalizeTeamName(team.name) === normalizeTeamName(woodenSpoon.team.name);
-}
-
-function isLive(status) {
-  return ["IN_PLAY", "PAUSED", "LIVE", "EXTRA_TIME", "PENALTY_SHOOTOUT", "BREAK"].includes(status);
-}
-
-function isLiveNowMatch(matchItem) {
-  if (isLive(matchItem.status)) return true;
-  if (matchItem.status !== "TIMED" && matchItem.status !== "SCHEDULED") return false;
-
-  const kickOff = new Date(matchItem.utcDate).getTime();
-  const now = Date.now();
-  const liveWindowMs = 2.5 * 60 * 60 * 1000;
-  return now >= kickOff && now <= kickOff + liveWindowMs;
-}
-
-function liveNowLabel(matchItem) {
-  if (isLive(matchItem.status)) return statusLabel(matchItem);
-  return "Started";
-}
-
-function statusLabel(matchItem) {
-  if (isLive(matchItem.status)) return matchItem.minute ? `${matchItem.minute}'` : "Live";
-  if (matchItem.status === "FINISHED") return "FT";
-  return "Next";
-}
-
-function scorePart(score, side) {
-  return Number.isFinite(score?.[side]) ? score[side] : "";
-}
-
-function money(value) {
-  return new Intl.NumberFormat("en-IE", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: Number.isInteger(value) ? 0 : 2,
-  }).format(value);
-}
-
-function signed(value) {
-  return value > 0 ? `+${value}` : String(value);
-}
-
-function dateLabel(value) {
-  return new Intl.DateTimeFormat("en-IE", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
+// Preserves the existing Sentry app-load instrumentation.
+function trackAppLoad(data) {
+  let attempts = 0;
+  const send = () => {
+    if (appLoadMetricSent) return;
+    const metrics = window.Sentry?.metrics;
+    if (!metrics?.count) {
+      attempts += 1;
+      if (attempts < 20) window.setTimeout(send, 500);
+      return;
+    }
+    appLoadMetricSent = true;
+    try {
+      metrics.count("world_cup_sweepstake_app_load", 1, {
+        tags: { source: data.source, hasLiveData: String(Boolean(data.hasData)) },
+      });
+    } catch (error) {
+      window.Sentry?.captureException?.(error);
+    }
+  };
+  window.addEventListener("sentry-ready", send, { once: true });
+  send();
 }
