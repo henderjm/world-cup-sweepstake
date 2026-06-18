@@ -70,6 +70,9 @@
       if (window.Sentry?.init) {
         window.Sentry.init({
           dsn: "https://1a7a3df5710a91c4eb0b649c303519a2@o4511587918479360.ingest.de.sentry.io/4511587923066960",
+          // Relay events through our Worker so tracker blockers that block the Sentry
+          // ingest domain can't drop them. Must match the deployed Worker origin.
+          tunnel: "https://goon-squad-data.gs-wc.workers.dev/tunnel",
           integrations: [window.Sentry.replayIntegration()],
           replaysSessionSampleRate: 1.0,
           replaysOnErrorSampleRate: 1.0,
