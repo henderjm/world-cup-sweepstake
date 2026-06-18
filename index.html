@@ -76,7 +76,44 @@
           enableLogs: true,
           tracesSampleRate: 0,
         });
+        // Stable per-browser id so repeat visits count as one user, not a new one each
+        // time. Persisted in a first-party cookie (1 year) with a localStorage mirror.
+        try {
+          window.Sentry.setUser({ id: goonSquadVisitorId() });
+        } catch (error) {
+          /* setUser is best-effort */
+        }
         window.dispatchEvent(new Event("sentry-ready"));
+      }
+
+      function goonSquadVisitorId() {
+        var key = "gs_uid";
+        var id = null;
+        try {
+          id = window.localStorage.getItem(key);
+        } catch (error) {
+          /* storage may be blocked */
+        }
+        if (!id) id = readGsCookie(key);
+        if (!id) {
+          id =
+            window.crypto && window.crypto.randomUUID
+              ? window.crypto.randomUUID()
+              : "u-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+        }
+        try {
+          window.localStorage.setItem(key, id);
+        } catch (error) {
+          /* storage may be blocked */
+        }
+        var expires = new Date(Date.now() + 365 * 864e5).toUTCString();
+        document.cookie = key + "=" + encodeURIComponent(id) + "; expires=" + expires + "; path=/; SameSite=Lax";
+        return id;
+      }
+
+      function readGsCookie(name) {
+        var match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+        return match ? decodeURIComponent(match[1]) : null;
       }
     </script>
     <script type="module" src="./src/app.js"></script>
