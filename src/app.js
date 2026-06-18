@@ -39,9 +39,32 @@ const state = {
 let model = null;
 let appLoadMetricSent = false;
 
+const SHELL_IDS = ["ticker", "hero", "tabs", "panel", "footer", "banner", "updated", "h2hOpen", "h2hModal"];
+const RELOAD_FLAG = "wc-shell-reloaded";
+
 start();
 
 async function start() {
+  // A freshly deployed app.js can briefly load against a stale, cached index.html
+  // that lacks the new elements. Rather than throw on a null element, reload once to
+  // pull the matching HTML, then bail quietly so we never error or loop.
+  if (!SHELL_IDS.every((id) => document.getElementById(id))) {
+    try {
+      if (!sessionStorage.getItem(RELOAD_FLAG)) {
+        sessionStorage.setItem(RELOAD_FLAG, "1");
+        window.location.reload();
+      }
+    } catch (error) {
+      window.Sentry?.captureException?.(error);
+    }
+    return;
+  }
+  try {
+    sessionStorage.removeItem(RELOAD_FLAG);
+  } catch {
+    // sessionStorage can be unavailable (private mode); the app still runs.
+  }
+
   model = await loadModel();
   trackAppLoad(model);
 
@@ -143,26 +166,19 @@ function renderPending(data) {
   elements.footer.innerHTML = `<p class="footer__src">Data source: ${data.source ?? "pending"}.</p>`;
 }
 
-// Preserves the existing Sentry app-load instrumentation.
+// App-load instrumentation. The vendored SDK initialises synchronously before this
+// module runs, so Sentry is ready here. Uses stable v10 APIs (the old metrics.count
+// beta was removed), and tags help slice errors by data state.
 function trackAppLoad(data) {
-  let attempts = 0;
-  const send = () => {
-    if (appLoadMetricSent) return;
-    const metrics = window.Sentry?.metrics;
-    if (!metrics?.count) {
-      attempts += 1;
-      if (attempts < 20) window.setTimeout(send, 500);
-      return;
-    }
-    appLoadMetricSent = true;
-    try {
-      metrics.count("world_cup_sweepstake_app_load", 1, {
-        tags: { source: data.source, hasLiveData: String(Boolean(data.hasData)) },
-      });
-    } catch (error) {
-      window.Sentry?.captureException?.(error);
-    }
-  };
-  window.addEventListener("sentry-ready", send, { once: true });
-  send();
+  if (appLoadMetricSent) return;
+  appLoadMetricSent = true;
+  const sentry = window.Sentry;
+  if (!sentry?.addBreadcrumb) return;
+  try {
+    sentry.setTag?.("data_source", data.source ?? "unknown");
+    sentry.setTag?.("has_live_data", String(Boolean(data.hasData)));
+    sentry.addBreadcrumb({ category: "app", level: "info", message: "app_load" });
+  } catch (error) {
+    sentry.captureException?.(error);
+  }
 }

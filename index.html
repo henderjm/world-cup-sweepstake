@@ -51,15 +51,19 @@
 
     <div class="modal" id="h2hModal" hidden></div>
 
+    <!-- Sentry served first-party (vendored) so tracker blockers cannot block the
+         sentry-cdn.com domain. Events still POST to the Sentry ingest host, which an
+         aggressive blocker may also block; that cannot be tunnelled on a static host. -->
+    <script src="./vendor/sentry.min.js"></script>
     <script>
-      window.sentryOnLoad = function () {
+      if (window.Sentry?.init) {
+        window.Sentry.init({
+          dsn: "https://1a7a3df5710a91c4eb0b649c303519a2@o4511587918479360.ingest.de.sentry.io/4511587923066960",
+          tracesSampleRate: 0,
+        });
         window.dispatchEvent(new Event("sentry-ready"));
-      };
+      }
     </script>
-    <script
-      src="https://js-de.sentry-cdn.com/1a7a3df5710a91c4eb0b649c303519a2.min.js"
-      crossorigin="anonymous"
-    ></script>
     <script type="module" src="./src/app.js"></script>
   </body>
 </html>
