@@ -21,11 +21,27 @@ export function setupMatchDetail(activeModel, { drawer }) {
   if (!root) return;
   panel = root.querySelector(".mdrawer__panel");
   root.addEventListener("click", (event) => {
-    if (event.target === root || event.target.closest("[data-md-close]")) close();
+    if (event.target === root || event.target.closest("[data-md-close]")) {
+      close();
+      return;
+    }
+    const tab = event.target.closest("[data-md-tab]");
+    if (tab) selectTab(tab.dataset.mdTab);
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !root.hidden) close();
   });
+}
+
+function selectTab(name) {
+  if (!panel) return;
+  panel.querySelectorAll("[data-md-tab]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.mdTab === name);
+  });
+  panel.querySelectorAll(".md-pane").forEach((pane) => {
+    pane.hidden = pane.dataset.pane !== name;
+  });
+  panel.scrollTop = 0;
 }
 
 export function openMatch(match) {
@@ -140,29 +156,37 @@ function renderShell(match) {
     : `<span class="md-score">${match.score.home} <i>-</i> ${match.score.away}</span><span class="md-sub">${live ? `${match.minute ? `${match.minute}'` : "Live"}` : "Full time"}</span>`;
 
   return `
-    <header class="md-bar">
-      <div class="md-where">
-        <strong>${esc(groupName(match.group) || formatStage(match.stage))}</strong>
-        <span>${esc(dayLabel(match.utcDate))} · ${esc(timeLabel(match.utcDate))}</span>
+    <div class="md-top">
+      <header class="md-bar">
+        <div class="md-where">
+          <strong>${esc(groupName(match.group) || formatStage(match.stage))}</strong>
+          <span>${esc(dayLabel(match.utcDate))} · ${esc(timeLabel(match.utcDate))}</span>
+        </div>
+        <div class="md-bar__right">${statusPill}<button class="md-close" data-md-close aria-label="Close">✕</button></div>
+      </header>
+      <div class="md-tabs" role="tablist">
+        <button class="md-tab is-active" data-md-tab="race" type="button">Race</button>
+        <button class="md-tab" data-md-tab="match" type="button">Match</button>
       </div>
-      <div class="md-bar__right">${statusPill}<button class="md-close" data-md-close aria-label="Close">✕</button></div>
-    </header>
-
-    <div class="md-duel">
-      ${sideCard("home", match, winner, stake)}
-      <div class="md-centre">${centre}</div>
-      ${sideCard("away", match, winner, stake)}
     </div>
 
-    <p class="md-story">${esc(storyline(match, live, finished, winner))}</p>
+    <div class="md-scoreline">${centre}</div>
 
-    <div class="md-facts">${facts(match, live, finished, winner, now).map(factCard).join("")}</div>
+    <div class="md-pane" data-pane="race">
+      <div class="md-duel">
+        ${sideCard("home", match, winner, stake)}
+        ${sideCard("away", match, winner, stake)}
+      </div>
+      <p class="md-story">${esc(storyline(match, live, finished, winner))}</p>
+      <div class="md-facts">${facts(match, live, finished, winner, now).map(factCard).join("")}</div>
+      ${groupTable(match)}
+    </div>
 
-    <section class="md-events" id="mdEvents">
-      <div class="md-loading">Loading match detail…</div>
-    </section>
-
-    ${groupTable(match)}
+    <div class="md-pane" data-pane="match" hidden>
+      <section class="md-events" id="mdEvents">
+        <div class="md-loading">Loading match detail…</div>
+      </section>
+    </div>
   `;
 }
 
