@@ -104,6 +104,7 @@ async function loadLiveData() {
 
 function normalizeMatch(match) {
   return {
+    id: match.id ?? null,
     utcDate: match.utcDate,
     status: match.status,
     minute: match.minute ?? null,

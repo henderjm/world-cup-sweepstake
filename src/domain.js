@@ -153,6 +153,7 @@ export function buildTeamPerformance(matches) {
 
 export function mapFootballDataMatches(payload) {
   return (payload.matches ?? []).map((match) => ({
+    id: match.id ?? null,
     utcDate: match.utcDate,
     status: match.status,
     minute: match.minute ?? null,

@@ -272,7 +272,7 @@ export function renderLeaderboard(model, sortKey = "now") {
 
 function matchRow(match) {
   const live = isLive(match.status);
-  return `<div class="mrow ${live ? "is-live" : ""}">
+  return `<div class="mrow ${live ? "is-live" : ""}" data-match-id="${match.id ?? ""}" role="button" tabindex="0">
       <span class="mrow__status">${statusLabel(match)}</span>
       <span class="mrow__side">${teamCell(match.homeTeam)}</span>
       <span class="mrow__score">${scoreCell(match)}</span>
@@ -425,7 +425,7 @@ export function renderFixtures(model, ownerFilter = "all") {
         <h3>${day}</h3>
         ${matches
           .map(
-            (match) => `<div class="fx ${isLive(match.status) ? "is-live" : ""}">
+            (match) => `<div class="fx ${isLive(match.status) ? "is-live" : ""}" data-match-id="${match.id ?? ""}" role="button" tabindex="0">
               <span class="fx__time">${isFinished(match.status) ? "FT" : timeLabel(match.utcDate)}</span>
               <span class="fx__side">${teamCell(match.homeTeam)}</span>
               <span class="fx__score">${scoreCell(match)}</span>

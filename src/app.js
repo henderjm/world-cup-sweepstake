@@ -15,6 +15,7 @@ import {
   setupHeadToHead,
   shouldCelebrate,
 } from "./interactions.js";
+import { setupMatchDetail, openMatch } from "./matchDetail.js";
 import { isLive } from "./format.js";
 import "./background.js";
 
@@ -28,6 +29,7 @@ const elements = {
   confetti: document.querySelector("#confetti"),
   h2hOpen: document.querySelector("#h2hOpen"),
   h2hModal: document.querySelector("#h2hModal"),
+  matchDrawer: document.querySelector("#matchDrawer"),
   updated: document.querySelector("#updated"),
 };
 
@@ -89,8 +91,16 @@ async function start() {
   renderPanel();
   wireTabs();
   wirePanelControls();
+  wireMatchClicks();
   setupHeadToHead(model, { trigger: elements.h2hOpen, modal: elements.h2hModal });
+  setupMatchDetail(model, { drawer: elements.matchDrawer });
   runCelebration();
+
+  const matchParam = new URLSearchParams(window.location.search).get("match");
+  if (matchParam) {
+    const match = model.matches.find((item) => String(item.id) === matchParam);
+    if (match) openMatch(match);
+  }
 }
 
 function renderPanel() {
@@ -145,6 +155,27 @@ function wirePanelControls() {
     if (event.target.matches("[data-control='fixture-owner']")) {
       state.fixtureOwner = event.target.value;
       renderPanel();
+    }
+  });
+}
+
+function wireMatchClicks() {
+  const open = (row) => {
+    const id = row.getAttribute("data-match-id");
+    if (!id) return;
+    const match = model.matches.find((item) => String(item.id) === id);
+    if (match) openMatch(match);
+  };
+  elements.panel.addEventListener("click", (event) => {
+    const row = event.target.closest("[data-match-id]");
+    if (row) open(row);
+  });
+  elements.panel.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const row = event.target.closest("[data-match-id]");
+    if (row) {
+      event.preventDefault();
+      open(row);
     }
   });
 }
