@@ -143,7 +143,10 @@ export function renderHero(model) {
         <h1 class="hero__title">Who is on for the ${money(model.payouts.pot)}</h1>
       </div>
       <div class="hero__meta">
-        <span class="chip chip--sim">Projected from ${model.forecast.iterations.toLocaleString("en-IE")} simulations</span>
+        <button type="button" class="chip chip--sim" aria-label="How the projection works">
+          Projected from ${model.forecast.iterations.toLocaleString("en-IE")} simulations
+          <span class="chip__tip" role="tooltip">We play the rest of the tournament out ${model.forecast.iterations.toLocaleString("en-IE")} times from the current results, giving each remaining game a plausible scoreline based on team strength, then count how often each entrant's teams take each prize. A model for fun, not a prediction: strengths are estimated and the real knockout draw is not in the feed yet.</span>
+        </button>
         ${topMover ? `<span class="chip chip--mover">On the up: ${esc(topMover.name)} ▲</span>` : ""}
       </div>
     </div>

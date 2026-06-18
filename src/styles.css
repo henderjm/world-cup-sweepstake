@@ -409,6 +409,43 @@ button {
   color: var(--up);
 }
 
+.chip--sim {
+  position: relative;
+  cursor: help;
+}
+
+.chip__tip {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(330px, 84vw);
+  padding: 11px 13px;
+  background: var(--surface-3);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.5;
+  text-align: left;
+  white-space: normal;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.chip--sim:hover .chip__tip,
+.chip--sim:focus .chip__tip,
+.chip--sim:focus-visible .chip__tip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
 .hero__grid {
   display: grid;
   grid-template-columns: 1.4fr 1fr 1fr;
