@@ -414,5 +414,5 @@ export function runForecast({
     pins,
   );
 
-  return { iterations, entrants: entrantsForecast, teamTitleOdds, projectedBracket };
+  return { seed, iterations, entrants: entrantsForecast, teamTitleOdds, projectedBracket };
 }

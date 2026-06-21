@@ -55,10 +55,10 @@ const state = {
   },
 };
 
-// What-if recompute settings: its own seed and iteration count so a scenario and its
-// no-pin baseline share the same RNG, making the deltas reflect the pins, not noise.
-const WHATIF_SEED = 20260628;
-const WHATIF_ITERS = 4000;
+// What-if recompute reuses the hero forecast's exact seed and iteration count (see
+// scenarioParams). That makes the no-pin baseline reproduce the headline odds instead
+// of contradicting them, while a scenario and its baseline still share the same RNG, so
+// the deltas reflect the pins, not noise.
 let model = null;
 let appLoadMetricSent = false;
 let pollTimer = null;
@@ -315,7 +315,7 @@ function wireMatchClicks() {
 // -- What-if explorer compute -------------------------------------------------
 // The forecast is re-run off the main thread in a module Web Worker so pinning stays
 // smooth. If workers are unavailable (or fail to load), we fall back to running it
-// inline. A scenario and its baseline share WHATIF_SEED so deltas are pin-driven.
+// inline. A scenario and its baseline share the hero's seed so deltas are pin-driven.
 
 let whatifWorker; // undefined: not tried, null: unavailable, else a Worker
 let scenarioTimer = null;
@@ -347,8 +347,8 @@ function scenarioParams(pins) {
     groupMatches: model.matches.filter((item) => item.stage === "GROUP_STAGE"),
     ownerByTeam: OWNER_BY_TEAM,
     entrants: ENTRANTS,
-    seed: WHATIF_SEED,
-    iterations: WHATIF_ITERS,
+    seed: model.forecast.seed,
+    iterations: model.forecast.iterations,
     pins,
   };
 }
