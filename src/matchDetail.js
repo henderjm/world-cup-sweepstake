@@ -172,7 +172,7 @@ function renderShell(match) {
 
     <div class="md-scoreline">${centre}</div>
 
-    <div class="md-pane" data-pane="race">
+    <div class="md-pane" data-pane="race" hidden>
       <div class="md-duel">
         ${sideCard("home", match, winner, stake)}
         ${sideCard("away", match, winner, stake)}
@@ -182,7 +182,7 @@ function renderShell(match) {
       ${groupTable(match)}
     </div>
 
-    <div class="md-pane" data-pane="match" hidden>
+    <div class="md-pane" data-pane="match">
       <section class="md-events" id="mdEvents">
         <div class="md-loading">Loading match detail…</div>
       </section>
