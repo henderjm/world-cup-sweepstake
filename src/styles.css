@@ -689,6 +689,17 @@ button {
   color: var(--text);
 }
 
+.seg__count {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--faint);
+  margin-left: 2px;
+}
+
+.seg.is-active .seg__count {
+  color: var(--muted);
+}
+
 /* Team cell --------------------------------------------------------------- */
 
 .team {
@@ -1172,6 +1183,13 @@ button {
   font-size: 0.72rem;
   font-weight: 650;
   text-align: right;
+}
+
+.fx-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .fx-filter {

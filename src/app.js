@@ -40,6 +40,7 @@ const state = {
   tab: TABS.includes(initialTab) ? initialTab : "live",
   leaderboardSort: "now",
   fixtureOwner: "all",
+  fixtureView: "results",
 };
 let model = null;
 let appLoadMetricSent = false;
@@ -178,7 +179,7 @@ function renderPanel() {
       panel.innerHTML = renderBracket(model);
       break;
     case "fixtures":
-      panel.innerHTML = renderFixtures(model, state.fixtureOwner);
+      panel.innerHTML = renderFixtures(model, state.fixtureOwner, state.fixtureView);
       break;
     default:
       panel.innerHTML = renderLive(model);
@@ -210,6 +211,12 @@ function wirePanelControls() {
     const sortButton = event.target.closest("[data-sort]");
     if (sortButton) {
       state.leaderboardSort = sortButton.dataset.sort;
+      renderPanel();
+      return;
+    }
+    const fixtureViewButton = event.target.closest("[data-fixture-view]");
+    if (fixtureViewButton) {
+      state.fixtureView = fixtureViewButton.dataset.fixtureView;
       renderPanel();
     }
   });

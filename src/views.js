@@ -11,7 +11,6 @@ import {
   scorePart,
   signed,
   statusLabel,
-  timeLabel,
 } from "./format.js";
 
 const KNOCKOUT_ORDER = ["LAST_32", "LAST_16", "QUARTER_FINALS", "SEMI_FINALS", "THIRD_PLACE", "FINAL"];
@@ -398,21 +397,48 @@ export function renderBracket(model) {
 
 // -- Fixtures ----------------------------------------------------------------
 
-export function renderFixtures(model, ownerFilter = "all") {
-  const options = ["all", ...ENTRANTS.map((entrant) => entrant.name)]
+function fixtureRow(match) {
+  return `<div class="fx ${isLive(match.status) ? "is-live" : ""}" data-match-id="${match.id ?? ""}" role="button" tabindex="0">
+      <span class="fx__time">${statusLabel(match)}</span>
+      <span class="fx__side">${teamCell(match.homeTeam)}</span>
+      <span class="fx__score">${scoreCell(match)}</span>
+      <span class="fx__side fx__side--away">${teamCell(match.awayTeam)}</span>
+      <span class="fx__tag">${match.group ? esc(match.group.replace("GROUP_", "Grp ")) : formatStage(match.stage)}</span>
+    </div>`;
+}
+
+export function renderFixtures(model, ownerFilter = "all", view = "results") {
+  const ownerOptions = ["all", ...ENTRANTS.map((entrant) => entrant.name)]
     .map(
       (name) =>
         `<option value="${esc(name)}" ${name === ownerFilter ? "selected" : ""}>${name === "all" ? "All owners" : esc(name)}</option>`,
     )
     .join("");
 
+  const ownedByFilter = (match) =>
+    ownerFilter === "all" ||
+    [match.homeTeam, match.awayTeam].some((team) => ownerOf(team) === ownerFilter);
+  // A result is anything kicked off: finished or in play. Everything else is upcoming.
+  const isUpcoming = (match) => !isFinished(match.status) && !isLive(match.status);
+
+  const filtered = model.matches.filter(ownedByFilter);
+  const upcoming = view === "upcoming";
+  const counts = {
+    results: filtered.filter((match) => !isUpcoming(match)).length,
+    upcoming: filtered.filter(isUpcoming).length,
+  };
+
+  // Results read newest-first so the latest result (and any live game) sits at the top
+  // with no scrolling; upcoming reads soonest-first so the next kickoff is at the top.
+  // Bucketing in sorted order makes the day sections fall out in the same direction.
   const byDay = new Map();
-  model.matches
-    .filter((match) => {
-      if (ownerFilter === "all") return true;
-      return [match.homeTeam, match.awayTeam].some((team) => ownerOf(team) === ownerFilter);
-    })
-    .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))
+  filtered
+    .filter((match) => (upcoming ? isUpcoming(match) : !isUpcoming(match)))
+    .sort((a, b) =>
+      upcoming
+        ? new Date(a.utcDate) - new Date(b.utcDate)
+        : new Date(b.utcDate) - new Date(a.utcDate),
+    )
     .forEach((match) => {
       const day = dayLabel(match.utcDate);
       if (!byDay.has(day)) byDay.set(day, []);
@@ -421,31 +447,36 @@ export function renderFixtures(model, ownerFilter = "all") {
 
   const days = [...byDay.entries()]
     .map(
-      ([day, matches]) => `<section class="fx-day">
+      ([day, dayMatches]) => `<section class="fx-day">
         <h3>${day}</h3>
-        ${matches
-          .map(
-            (match) => `<div class="fx ${isLive(match.status) ? "is-live" : ""}" data-match-id="${match.id ?? ""}" role="button" tabindex="0">
-              <span class="fx__time">${isFinished(match.status) ? "FT" : timeLabel(match.utcDate)}</span>
-              <span class="fx__side">${teamCell(match.homeTeam)}</span>
-              <span class="fx__score">${scoreCell(match)}</span>
-              <span class="fx__side fx__side--away">${teamCell(match.awayTeam)}</span>
-              <span class="fx__tag">${match.group ? esc(match.group.replace("GROUP_", "Grp ")) : formatStage(match.stage)}</span>
-            </div>`,
-          )
-          .join("")}
+        ${dayMatches.map(fixtureRow).join("")}
       </section>`,
     )
     .join("");
 
+  const segments = [
+    ["results", "Results", counts.results],
+    ["upcoming", "Upcoming", counts.upcoming],
+  ]
+    .map(
+      ([key, label, count]) =>
+        `<button class="seg ${key === view ? "is-active" : ""}" data-fixture-view="${key}">${label} <span class="seg__count">${count}</span></button>`,
+    )
+    .join("");
+
+  const empty = `No ${upcoming ? "upcoming fixtures" : "results yet"}${ownerFilter === "all" ? "." : " for that owner."}`;
+
   return `
     <div class="panel__head">
       <h2>Fixtures</h2>
-      <label class="fx-filter">Owner
-        <select data-control="fixture-owner">${options}</select>
-      </label>
+      <div class="fx-controls">
+        <div class="seg-group" data-control="fixture-view">${segments}</div>
+        <label class="fx-filter">Owner
+          <select data-control="fixture-owner">${ownerOptions}</select>
+        </label>
+      </div>
     </div>
-    ${days || `<p class="panel__note">No fixtures match that filter.</p>`}`;
+    ${days || `<p class="panel__note">${empty}</p>`}`;
 }
 
 // -- Footer ------------------------------------------------------------------
