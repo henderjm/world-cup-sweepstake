@@ -1,12 +1,18 @@
 import { STAGE_BONUSES, normalizeTeamName } from "./domain.js";
 import { isFinished } from "./format.js";
+import { R16, QF, SF, THIRD, FINAL, groupLetter, seedR32 } from "./bracket.js";
 
 // Monte Carlo projection of where the prize money lands.
 //
-// The data feed never carries the real 2026 knockout pairings (every knockout slot
-// is "Unknown"), so this simulates remaining group games into final tables, takes the
-// 32 qualifiers, and runs a strength-seeded generic bracket. The output is a
-// projection, surfaced as such in the UI, not a claim about the real draw.
+// Remaining group games are simulated into final group tables; the 32 qualifiers are
+// then slotted into the *real* fixed 2026 knockout bracket (see bracket.js) and played
+// to a champion. Earlier this used a generic strength-seeded bracket because the real
+// pairings are not in the feed; the pathways are public and fixed, so we now seed them
+// for real. The output is still a projection (team strengths are estimated), surfaced
+// as such in the UI.
+//
+// `pins` (optional) is a Map<matchId, "home"|"away"|"draw"> of forced outcomes for
+// remaining group games, powering the what-if explorer.
 
 // Seeded strength prior on a 0..10 scale. Adjusted at runtime by tournament goal
 // difference so far. Defaults to 5 for anything unmapped.
@@ -23,7 +29,7 @@ const RATINGS = {
   "Cape Verde": 4.0, Bosnia: 5.0, Czech: 5.2, Haiti: 3.6, Curacao: 3.4, DRC: 4.6,
 };
 
-const KNOCKOUT_ENTRY_BONUS = STAGE_BONUSES.LAST_32;
+const ENTRY_BONUS = STAGE_BONUSES.LAST_32;
 const ROUND_BONUS = {
   r16: STAGE_BONUSES.LAST_16,
   qf: STAGE_BONUSES.QUARTER_FINALS,
@@ -32,6 +38,8 @@ const ROUND_BONUS = {
 const THIRD_PLACE_BONUS = STAGE_BONUSES.THIRD_PLACE;
 const FINAL_WINNER_BONUS = STAGE_BONUSES.FINAL_WINNER;
 const FINAL_RUNNER_UP_BONUS = STAGE_BONUSES.FINAL_RUNNER_UP;
+
+const FACTORIAL = [1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800];
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -92,6 +100,20 @@ function simulateScoreline(rng, ratingA, ratingB) {
   return [poisson(rng, lambdaA), poisson(rng, lambdaB)];
 }
 
+// Scoreline for a pinned group game: sample from the model but keep only scorelines
+// that match the forced outcome, so goal margins stay plausible. Falls back to a
+// minimal scoreline if the constrained draw is unlucky.
+function pinnedScoreline(rng, ratingA, ratingB, outcome) {
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    const [gh, ga] = simulateScoreline(rng, ratingA, ratingB);
+    if (outcome === "home" && gh > ga) return [gh, ga];
+    if (outcome === "away" && ga > gh) return [gh, ga];
+    if (outcome === "draw" && gh === ga) return [gh, ga];
+  }
+  if (outcome === "draw") return [1, 1];
+  return outcome === "home" ? [1, 0] : [0, 1];
+}
+
 function decideKnockout(rng, a, b, ratingOf) {
   const [ga, gb] = simulateScoreline(rng, ratingOf(a), ratingOf(b));
   if (ga > gb) return a;
@@ -100,20 +122,22 @@ function decideKnockout(rng, a, b, ratingOf) {
   return rng() < pA ? a : b;
 }
 
-// Standard bracket seed order so the strongest qualifiers are spread apart
-// (seed 1 only meets seed 2 in the final).
-function bracketSeedOrder(size) {
-  let order = [1, 2];
-  while (order.length < size) {
-    const sum = order.length * 2 + 1;
-    const next = [];
-    for (const seed of order) {
-      next.push(seed);
-      next.push(sum - seed);
+// Closed-form match outcome probabilities from the same Poisson model, used for the
+// deterministic projected bracket's per-tie odds (no RNG, so it is stable).
+function knockoutWinProbability(ratingA, ratingB) {
+  const [lambdaA, lambdaB] = expectedGoals(ratingA, ratingB);
+  let homeWin = 0;
+  let draw = 0;
+  for (let i = 0; i < FACTORIAL.length; i += 1) {
+    const pi = Math.exp(-lambdaA) * Math.pow(lambdaA, i) / FACTORIAL[i];
+    for (let j = 0; j < FACTORIAL.length; j += 1) {
+      const pj = Math.exp(-lambdaB) * Math.pow(lambdaB, j) / FACTORIAL[j];
+      if (i > j) homeWin += pi * pj;
+      else if (i === j) draw += pi * pj;
     }
-    order = next;
   }
-  return order;
+  const share = ratingA / (ratingA + ratingB);
+  return homeWin + draw * share;
 }
 
 function buildBaseRecords(groups, groupMatches) {
@@ -133,6 +157,98 @@ function buildBaseRecords(groups, groupMatches) {
   return records;
 }
 
+// Final group tables from a set of records: the sorted table per group, the eight best
+// thirds (their group letters, best first) and the group-last teams worst-first.
+function finalize(records, groups, groupLetters, ratingOf) {
+  const finalTables = new Map();
+  const thirds = [];
+  const lastPlaced = [];
+  groups.forEach((group, index) => {
+    const letter = groupLetters[index];
+    const table = group.teams
+      .map((team) => ({ ...records.get(team), rating: ratingOf(team) }))
+      .sort(compareRecords);
+    if (letter) finalTables.set(letter, table.map((row) => row.team));
+    thirds.push({ ...table[2], letter });
+    lastPlaced.push(table[3]);
+  });
+  const bestThirdLetters = [...thirds]
+    .sort(compareRecords)
+    .slice(0, 8)
+    .map((row) => row.letter)
+    .filter(Boolean);
+  const worstLast = [...lastPlaced].sort((a, b) => -compareRecords(a, b));
+  return { finalTables, bestThirdLetters, worstLast };
+}
+
+// One deterministic, self-consistent bracket: remaining group games resolve to their
+// most-likely result (favourite wins, near-equal strengths draw), then each tie's
+// favourite advances. Per-tie odds come from knockoutWinProbability. This is the
+// "most-likely" bracket the UI shows by default.
+function deterministicResult(ratingHome, ratingAway, pin) {
+  if (pin === "home") return [1, 0];
+  if (pin === "away") return [0, 1];
+  if (pin === "draw") return [1, 1];
+  const diff = ratingHome - ratingAway;
+  if (Math.abs(diff) < 0.2) return [1, 1];
+  return diff > 0 ? [1, 0] : [0, 1];
+}
+
+function projectBracket(baseRecords, remainingByGroup, groups, groupLetters, ratingOf, pins) {
+  const records = new Map();
+  baseRecords.forEach((record, team) => records.set(team, { ...record }));
+  remainingByGroup.forEach((fixtures) => {
+    fixtures.forEach(({ home, away, id }) => {
+      const pin = pins?.get(String(id)) ?? null;
+      const [gh, ga] = deterministicResult(ratingOf(home), ratingOf(away), pin);
+      applyResult(records.get(home), gh, ga);
+      applyResult(records.get(away), ga, gh);
+    });
+  });
+
+  const { finalTables, bestThirdLetters } = finalize(records, groups, groupLetters, ratingOf);
+  const r32 = seedR32(finalTables, bestThirdLetters);
+
+  const winners = new Map();
+  const byNo = new Map();
+  const known = (team) => team && team !== "Unknown";
+  const play = (no, stage, home, away) => {
+    let homeWin = 0.5;
+    let winner = home;
+    let loser = away;
+    if (known(home) && known(away)) {
+      homeWin = knockoutWinProbability(ratingOf(home), ratingOf(away));
+      if (homeWin >= 0.5) { winner = home; loser = away; } else { winner = away; loser = home; }
+    } else if (known(home)) { winner = home; loser = away; homeWin = 1; }
+    else if (known(away)) { winner = away; loser = home; homeWin = 0; }
+    const match = { no, stage, home, away, homeWin, winner, loser };
+    winners.set(no, winner);
+    byNo.set(no, match);
+    return match;
+  };
+  const teamOf = (no) => winners.get(no);
+
+  const r32Matches = r32.map((m) => play(m.no, "LAST_32", m.home, m.away));
+  const r16Matches = R16.map((m) => play(m.no, "LAST_16", teamOf(m.from[0]), teamOf(m.from[1])));
+  const qfMatches = QF.map((m) => play(m.no, "QUARTER_FINALS", teamOf(m.from[0]), teamOf(m.from[1])));
+  const sfMatches = SF.map((m) => play(m.no, "SEMI_FINALS", teamOf(m.from[0]), teamOf(m.from[1])));
+  const thirdMatch = play(THIRD.no, "THIRD_PLACE", byNo.get(101).loser, byNo.get(102).loser);
+  const finalMatch = play(FINAL.no, "FINAL", teamOf(101), teamOf(102));
+
+  return {
+    rounds: [
+      { stage: "LAST_32", matches: r32Matches },
+      { stage: "LAST_16", matches: r16Matches },
+      { stage: "QUARTER_FINALS", matches: qfMatches },
+      { stage: "SEMI_FINALS", matches: sfMatches },
+      { stage: "THIRD_PLACE", matches: [thirdMatch] },
+      { stage: "FINAL", matches: [finalMatch] },
+    ],
+    champion: finalMatch.winner,
+    runnerUp: finalMatch.loser,
+  };
+}
+
 export function runForecast({
   groups,
   groupMatches,
@@ -140,8 +256,10 @@ export function runForecast({
   entrants,
   seed = 1,
   iterations = 5000,
+  pins = null,
 }) {
   const rng = mulberry32(seed);
+  const groupLetters = groups.map((group) => groupLetter(group.name));
   const teamRatings = new Map();
   const baseRecords = buildBaseRecords(groups, groupMatches);
 
@@ -159,7 +277,7 @@ export function runForecast({
     const home = normalizeTeamName(match.homeTeam);
     const away = normalizeTeamName(match.awayTeam);
     const group = groups.find((g) => g.teams.includes(home) && g.teams.includes(away));
-    if (group) remainingByGroup.get(group.name).push({ home, away });
+    if (group) remainingByGroup.get(group.name).push({ home, away, id: match.id });
   });
 
   const entrantNames = entrants.map((entrant) => entrant.name);
@@ -171,70 +289,63 @@ export function runForecast({
   const pointsSum = new Map(entrantNames.map((name) => [name, 0]));
   const teamTitleCount = new Map([...baseRecords.keys()].map((team) => [team, 0]));
 
-  const seedSlots = bracketSeedOrder(32);
-
   for (let iteration = 0; iteration < iterations; iteration += 1) {
     const records = new Map();
     baseRecords.forEach((record, team) => records.set(team, { ...record }));
 
-    // Remaining group games.
+    // Remaining group games (pinned ones use a constrained scoreline).
     remainingByGroup.forEach((fixtures) => {
-      fixtures.forEach(({ home, away }) => {
-        const [gh, ga] = simulateScoreline(rng, ratingOf(home), ratingOf(away));
+      fixtures.forEach(({ home, away, id }) => {
+        const outcome = pins?.get(String(id)) ?? null;
+        const [gh, ga] = outcome
+          ? pinnedScoreline(rng, ratingOf(home), ratingOf(away), outcome)
+          : simulateScoreline(rng, ratingOf(home), ratingOf(away));
         applyResult(records.get(home), gh, ga);
         applyResult(records.get(away), ga, gh);
       });
     });
 
-    // Final group tables.
-    const thirds = [];
-    const lastPlaced = [];
-    const qualifiers = [];
-    groups.forEach((group) => {
-      const table = group.teams
-        .map((team) => ({ ...records.get(team), rating: ratingOf(team) }))
-        .sort(compareRecords);
-      qualifiers.push(table[0].team, table[1].team);
-      thirds.push(table[2]);
-      lastPlaced.push(table[3]);
-    });
-    thirds.sort(compareRecords);
-    thirds.slice(0, 8).forEach((row) => qualifiers.push(row.team));
+    const { finalTables, bestThirdLetters, worstLast } = finalize(
+      records,
+      groups,
+      groupLetters,
+      ratingOf,
+    );
 
     // Wooden spoon: worst confirmed group-last team.
-    lastPlaced.sort((a, b) => -compareRecords(a, b));
-    const spoonOwner = teamOwner(lastPlaced[0].team);
+    const spoonOwner = teamOwner(worstLast[0].team);
     if (spoonOwner) spoonCount.set(spoonOwner, spoonCount.get(spoonOwner) + 1);
 
-    // Strength-seeded knockout bracket.
-    const seededByStrength = [...qualifiers].sort((a, b) => ratingOf(b) - ratingOf(a));
-    const bracket = seedSlots.map((seed) => seededByStrength[seed - 1]);
-    const bonus = new Map(qualifiers.map((team) => [team, KNOCKOUT_ENTRY_BONUS]));
+    // Seed and play the real 2026 bracket.
+    const r32 = seedR32(finalTables, bestThirdLetters);
+    const bonus = new Map();
+    r32.forEach(({ home, away }) => {
+      bonus.set(home, ENTRY_BONUS);
+      bonus.set(away, ENTRY_BONUS);
+    });
 
-    const playRound = (teams, advanceBonus) => {
-      const winners = [];
-      for (let i = 0; i < teams.length; i += 2) {
-        const winner = decideKnockout(rng, teams[i], teams[i + 1], ratingOf);
-        bonus.set(winner, advanceBonus);
-        winners.push(winner);
-      }
-      return winners;
+    const winners = new Map();
+    const byNo = new Map();
+    const playMatch = (no, home, away, advanceBonus) => {
+      const winner = decideKnockout(rng, home, away, ratingOf);
+      const loser = winner === home ? away : home;
+      if (advanceBonus != null) bonus.set(winner, advanceBonus);
+      winners.set(no, winner);
+      byNo.set(no, { winner, loser });
+      return winner;
     };
+    const teamOf = (no) => winners.get(no);
 
-    const round16 = playRound(bracket, ROUND_BONUS.r16);
-    const round8 = playRound(round16, ROUND_BONUS.qf);
-    const semiFinalists = playRound(round8, ROUND_BONUS.sf);
+    r32.forEach((m) => playMatch(m.no, m.home, m.away, ROUND_BONUS.r16));
+    R16.forEach((m) => playMatch(m.no, teamOf(m.from[0]), teamOf(m.from[1]), ROUND_BONUS.qf));
+    QF.forEach((m) => playMatch(m.no, teamOf(m.from[0]), teamOf(m.from[1]), ROUND_BONUS.sf));
+    SF.forEach((m) => {
+      playMatch(m.no, teamOf(m.from[0]), teamOf(m.from[1]), null);
+      bonus.set(byNo.get(m.no).loser, THIRD_PLACE_BONUS);
+    });
 
-    const finalists = [];
-    for (let i = 0; i < semiFinalists.length; i += 2) {
-      const winner = decideKnockout(rng, semiFinalists[i], semiFinalists[i + 1], ratingOf);
-      const loser = winner === semiFinalists[i] ? semiFinalists[i + 1] : semiFinalists[i];
-      bonus.set(loser, THIRD_PLACE_BONUS);
-      finalists.push(winner);
-    }
-
-    const champion = decideKnockout(rng, finalists[0], finalists[1], ratingOf);
-    const runnerUp = champion === finalists[0] ? finalists[1] : finalists[0];
+    const champion = decideKnockout(rng, teamOf(101), teamOf(102), ratingOf);
+    const runnerUp = champion === teamOf(101) ? teamOf(102) : teamOf(101);
     bonus.set(champion, FINAL_WINNER_BONUS);
     bonus.set(runnerUp, FINAL_RUNNER_UP_BONUS);
 
@@ -281,5 +392,14 @@ export function runForecast({
     });
   });
 
-  return { iterations, entrants: entrantsForecast, teamTitleOdds };
+  const projectedBracket = projectBracket(
+    baseRecords,
+    remainingByGroup,
+    groups,
+    groupLetters,
+    ratingOf,
+    pins,
+  );
+
+  return { iterations, entrants: entrantsForecast, teamTitleOdds, projectedBracket };
 }

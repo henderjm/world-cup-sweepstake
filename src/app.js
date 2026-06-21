@@ -1,13 +1,16 @@
-import { loadModel } from "./data.js";
+import { ENTRANTS, OWNER_BY_TEAM, loadModel } from "./data.js";
+import { runForecast } from "./forecast.js";
 import {
   renderBracket,
   renderFixtures,
   renderFooter,
+  renderGoldenBoot,
   renderGroupTables,
   renderHero,
   renderLeaderboard,
   renderLive,
   renderTicker,
+  renderWhatIf,
 } from "./views.js";
 import {
   celebrationBanner,
@@ -34,14 +37,28 @@ const elements = {
   updated: document.querySelector("#updated"),
 };
 
-const TABS = ["live", "leaderboard", "tables", "bracket", "fixtures"];
+const TABS = ["live", "leaderboard", "tables", "bracket", "whatif", "fixtures", "goldenboot"];
 const initialTab = window.location.hash.replace("#", "");
 const state = {
   tab: TABS.includes(initialTab) ? initialTab : "live",
   leaderboardSort: "now",
   fixtureOwner: "all",
   fixtureView: "results",
+  goldenBootSort: "ga",
+  whatif: {
+    pins: new Map(),
+    baseline: null,
+    baselinePending: false,
+    result: null,
+    computing: false,
+    scenarioReq: 0,
+  },
 };
+
+// What-if recompute settings: its own seed and iteration count so a scenario and its
+// no-pin baseline share the same RNG, making the deltas reflect the pins, not noise.
+const WHATIF_SEED = 20260628;
+const WHATIF_ITERS = 4000;
 let model = null;
 let appLoadMetricSent = false;
 let pollTimer = null;
@@ -153,6 +170,12 @@ async function poll() {
         model = fresh;
         setMatchModel(model);
         setH2hModel(model);
+        // Fresh results change the odds, so the cached what-if baseline and scenario
+        // are stale; drop them and let the what-if tab recompute against new data.
+        state.whatif.baseline = null;
+        state.whatif.baselinePending = false;
+        state.whatif.result = null;
+        state.whatif.computing = false;
         elements.ticker.innerHTML = renderTicker(model);
         elements.hero.innerHTML = renderHero(model);
         elements.footer.innerHTML = renderFooter(model);
@@ -178,8 +201,15 @@ function renderPanel() {
     case "bracket":
       panel.innerHTML = renderBracket(model);
       break;
+    case "whatif":
+      ensureWhatIf();
+      panel.innerHTML = renderWhatIf(model, state.whatif);
+      break;
     case "fixtures":
       panel.innerHTML = renderFixtures(model, state.fixtureOwner, state.fixtureView);
+      break;
+    case "goldenboot":
+      panel.innerHTML = renderGoldenBoot(model, state.goldenBootSort);
       break;
     default:
       panel.innerHTML = renderLive(model);
@@ -218,6 +248,39 @@ function wirePanelControls() {
     if (fixtureViewButton) {
       state.fixtureView = fixtureViewButton.dataset.fixtureView;
       renderPanel();
+      return;
+    }
+    const gbSortButton = event.target.closest("[data-gb-sort]");
+    if (gbSortButton) {
+      state.goldenBootSort = gbSortButton.dataset.gbSort;
+      renderPanel();
+      return;
+    }
+    // Bracket: reveal a tie's odds on tap (hover also reveals them via CSS).
+    const koToggle = event.target.closest("[data-ko-toggle]");
+    if (koToggle) {
+      koToggle.classList.toggle("is-open");
+      return;
+    }
+    // What-if: pin or unpin a remaining group game.
+    const pinButton = event.target.closest("[data-pin-match]");
+    if (pinButton) {
+      const id = pinButton.dataset.pinMatch;
+      const outcome = pinButton.dataset.pinOutcome;
+      const pins = state.whatif.pins;
+      if (pins.get(id) === outcome) pins.delete(id);
+      else pins.set(id, outcome);
+      metric("count", "whatif_pin", 1, { tags: { outcome } });
+      renderPanel();
+      scheduleScenario();
+      return;
+    }
+    const clearButton = event.target.closest("[data-action='clear-whatif']");
+    if (clearButton) {
+      state.whatif.pins.clear();
+      state.whatif.result = null;
+      state.whatif.computing = false;
+      renderPanel();
     }
   });
   elements.panel.addEventListener("change", (event) => {
@@ -247,6 +310,117 @@ function wireMatchClicks() {
       open(row);
     }
   });
+}
+
+// -- What-if explorer compute -------------------------------------------------
+// The forecast is re-run off the main thread in a module Web Worker so pinning stays
+// smooth. If workers are unavailable (or fail to load), we fall back to running it
+// inline. A scenario and its baseline share WHATIF_SEED so deltas are pin-driven.
+
+let whatifWorker; // undefined: not tried, null: unavailable, else a Worker
+let scenarioTimer = null;
+const inflight = new Map();
+
+function getWorker() {
+  if (whatifWorker !== undefined) return whatifWorker;
+  try {
+    whatifWorker = new Worker(new URL("./forecast.worker.js", import.meta.url), { type: "module" });
+    whatifWorker.onmessage = (event) => {
+      inflight.delete(event.data?.id);
+      onForecast(event.data);
+    };
+    whatifWorker.onerror = () => {
+      const pending = [...inflight.entries()];
+      whatifWorker = null;
+      inflight.clear();
+      pending.forEach(([id, params]) => computeOnMain(id, params));
+    };
+  } catch {
+    whatifWorker = null;
+  }
+  return whatifWorker;
+}
+
+function scenarioParams(pins) {
+  return {
+    groups: model.groups,
+    groupMatches: model.matches.filter((item) => item.stage === "GROUP_STAGE"),
+    ownerByTeam: OWNER_BY_TEAM,
+    entrants: ENTRANTS,
+    seed: WHATIF_SEED,
+    iterations: WHATIF_ITERS,
+    pins,
+  };
+}
+
+function dispatch(id, params) {
+  const worker = getWorker();
+  if (worker) {
+    inflight.set(id, params);
+    worker.postMessage({ id, params });
+  } else {
+    computeOnMain(id, params);
+  }
+}
+
+function computeOnMain(id, params) {
+  try {
+    onForecast({ id, forecast: runForecast(params) });
+  } catch (error) {
+    onForecast({ id, error: String(error?.message ?? error) });
+  }
+}
+
+function onForecast(data) {
+  if (!data) return;
+  const [kind, n] = String(data.id).split(":");
+  if (kind === "baseline") {
+    state.whatif.baselinePending = false;
+    if (!data.error) state.whatif.baseline = data.forecast;
+    renderIfWhatIf();
+    return;
+  }
+  if (Number(n) !== state.whatif.scenarioReq) return; // a newer scenario superseded this
+  state.whatif.computing = false;
+  if (!data.error) state.whatif.result = data.forecast;
+  renderIfWhatIf();
+}
+
+// Kick off the baseline on first view, and a scenario if games are already pinned.
+function ensureWhatIf() {
+  if (!state.whatif.baseline && !state.whatif.baselinePending) {
+    state.whatif.baselinePending = true;
+    dispatch("baseline:0", scenarioParams(new Map()));
+  }
+  if (state.whatif.pins.size > 0 && !state.whatif.result && !state.whatif.computing) {
+    computeScenario();
+  }
+}
+
+function computeScenario() {
+  const pins = state.whatif.pins;
+  if (pins.size === 0) {
+    state.whatif.result = null;
+    state.whatif.computing = false;
+    renderIfWhatIf();
+    return;
+  }
+  state.whatif.computing = true;
+  state.whatif.scenarioReq += 1;
+  renderIfWhatIf();
+  dispatch(`scenario:${state.whatif.scenarioReq}`, scenarioParams(new Map(pins)));
+}
+
+function scheduleScenario() {
+  if (scenarioTimer) clearTimeout(scenarioTimer);
+  scenarioTimer = setTimeout(() => {
+    scenarioTimer = null;
+    computeScenario();
+  }, 150);
+}
+
+function renderIfWhatIf() {
+  if (state.tab === "whatif") renderPanel();
 }
 
 function runCelebration() {

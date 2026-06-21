@@ -1,5 +1,6 @@
 import { flagFor } from "./flags.js";
 import { ENTRANTS, ownerOf } from "./data.js";
+import { compareByGoals, compareByInvolvements } from "./scorers.js";
 import {
   dateLabel,
   dayLabel,
@@ -8,12 +9,9 @@ import {
   isLive,
   money,
   percent,
-  scorePart,
   signed,
   statusLabel,
 } from "./format.js";
-
-const KNOCKOUT_ORDER = ["LAST_32", "LAST_16", "QUARTER_FINALS", "SEMI_FINALS", "THIRD_PLACE", "FINAL"];
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"]/g, (char) => ({
@@ -351,30 +349,50 @@ export function renderGroupTables(model) {
 
 // -- Knockout bracket --------------------------------------------------------
 
-export function renderBracket(model) {
-  const byStage = new Map(KNOCKOUT_ORDER.map((stage) => [stage, []]));
-  model.matches.forEach((match) => {
-    if (byStage.has(match.stage)) byStage.get(match.stage).push(match);
-  });
+// Date range across the feed's real fixtures for a stage, e.g. "28 Jun to 03 Jul".
+function stageDateRange(model, stage) {
+  const times = model.matches
+    .filter((match) => match.stage === stage && match.utcDate)
+    .map((match) => new Date(match.utcDate).getTime());
+  if (!times.length) return "";
+  const fmt = (time) =>
+    new Intl.DateTimeFormat("en-IE", { day: "2-digit", month: "short" }).format(new Date(time));
+  const min = Math.min(...times);
+  const max = Math.max(...times);
+  return min === max ? fmt(min) : `${fmt(min)} to ${fmt(max)}`;
+}
 
-  const columns = KNOCKOUT_ORDER.filter((stage) => byStage.get(stage).length)
-    .map((stage) => {
-      const matches = byStage.get(stage).sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate));
-      const cards = matches
-        .map(
-          (match) => `<div class="ko-match">
-            <span class="ko-slot">${teamCell(match.homeTeam)}<b>${scorePart(match.score, "home")}</b></span>
-            <span class="ko-slot">${teamCell(match.awayTeam)}<b>${scorePart(match.score, "away")}</b></span>
-            <span class="ko-date">${dayLabel(match.utcDate)}</span>
-          </div>`,
-        )
-        .join("");
+// A single projected tie: the matchup with the favourite highlighted, and the win-odds
+// split revealed on hover or tap.
+function koMatchCard(match) {
+  const homePct = Math.round((match.homeWin ?? 0.5) * 100);
+  const awayPct = 100 - homePct;
+  const homeWin = match.winner && match.winner === match.home;
+  const awayWin = match.winner && match.winner === match.away;
+  return `<div class="ko-match" data-ko-toggle tabindex="0" role="button" aria-label="${esc(match.home)} ${homePct}% to beat ${esc(match.away)} ${awayPct}%">
+      <span class="ko-slot ${homeWin ? "is-win" : ""}">${teamCell(match.home)}<b class="ko-pct">${homePct}%</b></span>
+      <span class="ko-slot ${awayWin ? "is-win" : ""}">${teamCell(match.away)}<b class="ko-pct">${awayPct}%</b></span>
+    </div>`;
+}
+
+export function renderBracket(model) {
+  const projection = model.forecast?.projectedBracket;
+  const columns = (projection?.rounds ?? [])
+    .filter((round) => round.matches.length)
+    .map((round) => {
+      const cards = round.matches.map(koMatchCard).join("");
+      const when = stageDateRange(model, round.stage);
       return `<div class="ko-col">
-          <h3>${formatStage(stage)}</h3>
+          <h3>${formatStage(round.stage)}${when ? `<span class="ko-when">${when}</span>` : ""}</h3>
           ${cards}
         </div>`;
     })
     .join("");
+
+  const champ =
+    projection && isKnown(projection.champion)
+      ? `<p class="ko-proj__champ">Projected champion: <span class="prize__flag">${flagFor(projection.champion)}</span> <strong>${esc(projection.champion)}</strong>${ownerOf(projection.champion) ? ` (${esc(ownerOf(projection.champion))})` : ""}</p>`
+      : "";
 
   const favourites = [...model.forecast.teamTitleOdds.entries()]
     .sort((a, b) => b[1] - a[1])
@@ -386,12 +404,122 @@ export function renderBracket(model) {
     .join("");
 
   return `
-    <div class="panel__head"><h2>Knockout bracket</h2></div>
-    <div class="ko-wrap">${columns || `<p class="panel__note">No knockout fixtures yet.</p>`}</div>
+    <div class="panel__head"><h2>Knockout bracket</h2><span class="panel__hint">Most likely path · tap a tie for odds</span></div>
+    ${champ}
+    <div class="ko-wrap">${columns || `<p class="panel__note">No knockout projection yet.</p>`}</div>
     <div class="ko-fav">
       <h3>Projected to lift the trophy</h3>
       <ul>${favourites}</ul>
-      <p class="panel__note">The real 2026 pairings are not in the feed yet, so slots show TBD and fill in as teams qualify. Trophy odds come from the simulation.</p>
+      <p class="panel__note">Projected group finishes are seeded into the real, fixed 2026 bracket pathways. Teams and odds are a Monte Carlo projection and sharpen as group results land.</p>
+    </div>`;
+}
+
+// -- What-if explorer --------------------------------------------------------
+
+export function renderWhatIf(model, scenario) {
+  const pins = scenario?.pins ?? new Map();
+  const remaining = model.matches
+    .filter((match) => match.stage === "GROUP_STAGE" && !isFinished(match.status))
+    .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate));
+
+  const byGroup = new Map();
+  remaining.forEach((match) => {
+    const key = match.group ?? "Group";
+    if (!byGroup.has(key)) byGroup.set(key, []);
+    byGroup.get(key).push(match);
+  });
+
+  const groups = [...byGroup.entries()]
+    .map(([group, matches]) => {
+      const rows = matches
+        .map((match) => {
+          const pin = pins.get(String(match.id)) ?? null;
+          const btn = (outcome, label, title) =>
+            `<button type="button" class="pin ${pin === outcome ? "is-on" : ""}" data-pin-match="${esc(match.id)}" data-pin-outcome="${outcome}" title="${esc(title)}">${label}</button>`;
+          return `<div class="wif-fx">
+              <span class="wif-fx__teams">${flagFor(match.homeTeam)} ${esc(match.homeTeam)} <i>v</i> ${esc(match.awayTeam)} ${flagFor(match.awayTeam)}</span>
+              <span class="wif-fx__pins">
+                ${btn("home", `${flagFor(match.homeTeam)}`, `${match.homeTeam} win`)}
+                ${btn("draw", "X", "Draw")}
+                ${btn("away", `${flagFor(match.awayTeam)}`, `${match.awayTeam} win`)}
+              </span>
+            </div>`;
+        })
+        .join("");
+      return `<section class="wif-group"><h4>${esc(group.replace("GROUP_", "Group "))}</h4>${rows}</section>`;
+    })
+    .join("");
+
+  const pinned = pins.size;
+  const left = `
+    <div class="wif-left">
+      <div class="wif-left__head">
+        <h3>Pin remaining group games</h3>
+        <button type="button" class="btn btn--ghost" data-action="clear-whatif" ${pinned ? "" : "disabled"}>Clear${pinned ? ` (${pinned})` : ""}</button>
+      </div>
+      ${groups || `<p class="panel__note">All group games are done; the knockout bracket is set.</p>`}
+    </div>`;
+
+  return `
+    <div class="panel__head"><h2>What-if explorer</h2><span class="panel__hint">Pin results, watch the money move</span></div>
+    <div class="wif-grid">${left}${renderWhatIfRace(model, scenario)}</div>`;
+}
+
+function renderWhatIfRace(model, scenario) {
+  const baseline = scenario?.baseline ?? null;
+  const result = scenario?.result ?? null;
+  if (!baseline) {
+    return `<div class="wif-right"><p class="panel__note">${scenario?.computing ? "Simulating the baseline…" : "Preparing the baseline…"}</p></div>`;
+  }
+  const current = result ?? baseline;
+
+  const rows = model.leaderboard
+    .map((entrant) => {
+      const base = baseline.entrants.get(entrant.name);
+      const now = current.entrants.get(entrant.name);
+      return {
+        name: entrant.name,
+        win: now.winPct,
+        winDelta: now.winPct - base.winPct,
+        spoon: now.spoonPct,
+        spoonDelta: now.spoonPct - base.spoonPct,
+      };
+    })
+    .sort((a, b) => b.win - a.win);
+
+  const deltaTag = (delta, goodWhenUp = true) => {
+    if (Math.abs(delta) < 0.5) return "";
+    const increased = delta > 0;
+    const good = goodWhenUp ? increased : !increased;
+    return `<span class="wif-d ${good ? "wif-d--good" : "wif-d--bad"}">${increased ? "▲" : "▼"}${Math.abs(Math.round(delta))}</span>`;
+  };
+
+  const body = rows
+    .map(
+      (row) => `<tr>
+        <td class="wif-r__name">${esc(row.name)}</td>
+        <td class="wif-r__num">${percent(row.win)} ${result ? deltaTag(row.winDelta, true) : ""}</td>
+        <td class="wif-r__num wif-r__num--spoon">${percent(row.spoon)} ${result ? deltaTag(row.spoonDelta, false) : ""}</td>
+      </tr>`,
+    )
+    .join("");
+
+  const proj = current.projectedBracket;
+  const champLine =
+    proj && isKnown(proj.champion)
+      ? `<p class="wif-champ">Projected champion: ${flagFor(proj.champion)} <strong>${esc(proj.champion)}</strong>${ownerOf(proj.champion) ? ` · ${esc(ownerOf(proj.champion))}` : ""}</p>`
+      : "";
+
+  return `<div class="wif-right">
+      <div class="wif-right__head"><h3>The money race</h3>${scenario.computing ? `<span class="wif-spin">simulating…</span>` : ""}</div>
+      ${champLine}
+      <div class="table-wrap">
+        <table class="wif-race">
+          <thead><tr><th>Entrant</th><th>Win ${money(model.payouts.first)}</th><th>Spoon</th></tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>
+      <p class="panel__note">${result ? "Change shown is versus the no-pin baseline." : "Pin some games on the left to see the odds move."}</p>
     </div>`;
 }
 
@@ -477,6 +605,66 @@ export function renderFixtures(model, ownerFilter = "all", view = "results") {
       </div>
     </div>
     ${days || `<p class="panel__note">${empty}</p>`}`;
+}
+
+// -- Golden Boot -------------------------------------------------------------
+
+const GOLDEN_BOOT_SORTS = {
+  ga: { label: "Goals + assists", compare: compareByInvolvements },
+  goals: { label: "Goals", compare: compareByGoals },
+};
+
+export function renderGoldenBoot(model, sortKey = "ga") {
+  const sort = GOLDEN_BOOT_SORTS[sortKey] ?? GOLDEN_BOOT_SORTS.ga;
+  const scorers = [...(model.scorers ?? [])].sort(sort.compare);
+
+  const controls = Object.entries(GOLDEN_BOOT_SORTS)
+    .map(
+      ([key, def]) =>
+        `<button class="seg ${key === sortKey ? "is-active" : ""}" data-gb-sort="${key}">${def.label}</button>`,
+    )
+    .join("");
+
+  const head = `
+    <div class="panel__head">
+      <h2>Golden Boot</h2>
+      <div class="seg-group" data-control="golden-boot-sort">${controls}</div>
+    </div>`;
+
+  if (!scorers.length) {
+    return `${head}
+    <p class="panel__note">No goals yet. The scorer board appears once the first goals are in.</p>`;
+  }
+
+  const body = scorers
+    .map((row, index) => {
+      const owner = ownerOf(row.team);
+      return `<tr>
+          <td class="lb__rank">${index + 1}</td>
+          <td class="gb__player">
+            <span class="gb__flag">${flagFor(row.team)}</span>
+            <span class="gb__id">
+              <strong>${esc(row.player)}</strong>
+              <span class="gb__team">${esc(row.team)}${owner ? ` · ${esc(owner)}` : ""}</span>
+            </span>
+          </td>
+          <td class="lb__num">${row.goals}</td>
+          <td class="lb__num lb__num--muted">${row.assists}</td>
+          <td class="lb__num gb__pts">${row.points}</td>
+        </tr>`;
+    })
+    .join("");
+
+  return `${head}
+    <div class="table-wrap">
+      <table class="lb gb">
+        <thead>
+          <tr><th></th><th>Player</th><th>G</th><th>A</th><th>G+A</th></tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+    <p class="panel__note">Goal involvements across the tournament. Penalties count; own goals and penalty-shootout kicks do not. Updates every few minutes.</p>`;
 }
 
 // -- Footer ------------------------------------------------------------------

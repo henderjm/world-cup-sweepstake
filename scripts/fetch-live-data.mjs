@@ -1,7 +1,8 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 
 import { mapFootballDataMatches } from "../src/domain.js";
 import { mapMatchDetail } from "../src/mapDetail.js";
+import { aggregateScorers } from "../src/scorers.js";
 
 const token = process.env.FOOTBALL_DATA_TOKEN;
 const competition = process.env.FOOTBALL_DATA_COMPETITION ?? "WC";
@@ -71,6 +72,29 @@ for (const match of relevant) {
   await sleep(2200);
 }
 console.log(`Wrote ${written} match detail files.`);
+
+// Golden Boot aggregate. Tally from every detail file on disk (not just the matches
+// refreshed this run) so the board covers the whole tournament, then bake a small
+// data/scorers.json next to live.json. Reuses detail already fetched: no extra API calls.
+const detailFiles = (await readdir(matchesDir)).filter((file) => file.endsWith(".json"));
+const details = [];
+for (const file of detailFiles) {
+  try {
+    details.push(JSON.parse(await readFile(new URL(file, matchesDir), "utf8")));
+  } catch (error) {
+    console.warn(`scorers: skipping ${file}: ${error.message}`);
+  }
+}
+const scorers = aggregateScorers(details);
+await writeFile(
+  new URL("scorers.json", dataDir),
+  `${JSON.stringify(
+    { source: "football-data.org", lastUpdated: new Date().toISOString(), scorers },
+    null,
+    2,
+  )}\n`,
+);
+console.log(`Wrote scorers.json (${scorers.length} scorers).`);
 
 async function fetchFootballData(path) {
   const response = await fetch(`https://api.football-data.org${path}`, {

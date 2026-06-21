@@ -44,10 +44,11 @@ export function ownerOf(team) {
 }
 
 export async function loadModel() {
-  return buildModel(await loadLiveData());
+  const [raw, scorerData] = await Promise.all([loadLiveData(), loadScorers()]);
+  return buildModel(raw, scorerData);
 }
 
-export function buildModel(raw) {
+export function buildModel(raw, scorerData = {}) {
   const matches = (raw.matches ?? []).map(normalizeMatch);
   const groups = buildGroups(raw.standings ?? []);
   const standings = mapFootballDataStandings({ standings: raw.standings ?? [] });
@@ -56,6 +57,8 @@ export function buildModel(raw) {
   if (!hasData) {
     return { source: raw.source, lastUpdated: raw.lastUpdated, error: raw.error, hasData: false };
   }
+
+  const scorers = scorerData.scorers ?? [];
 
   const performance = mergeStandingsIntoPerformance(buildTeamPerformance(matches), standings);
   const leaderboard = buildLeaderboard(ENTRANTS, performance);
@@ -87,7 +90,21 @@ export function buildModel(raw) {
     spoon,
     momentum,
     forecast,
+    scorers,
   };
+}
+
+// Goal involvements are baked into a separate static file (data/scorers.json) by the
+// fetch script. It always reads from static: the Worker live path has no scorers
+// endpoint. Missing or unreachable means an empty board, never a broken app.
+async function loadScorers() {
+  try {
+    const response = await fetch(`./data/scorers.json?cache=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    return await response.json();
+  } catch {
+    return { scorers: [] };
+  }
 }
 
 async function loadLiveData() {
