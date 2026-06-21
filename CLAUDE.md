@@ -37,22 +37,32 @@ Live updates without a deploy: `app.js` re-runs `loadModel()` on a timer (20s wh
 
 - **Prizes track outcomes, not the points table.** The winner/runner-up come from the actual `FINAL` result; the wooden spoon only resolves once a team is confirmed last in its group with all three group games finished (`isConfirmedGroupLast` in `data.js`). The points leaderboard is bragging rights only.
 
-- **The forecast is a projection, not the real draw.** The feed never carries real 2026 knockout pairings (every knockout slot is "Unknown"), so `runForecast` simulates remaining group games into final tables, takes the 32 qualifiers, and runs a generic strength-seeded bracket. It is seeded from `lastUpdated` (`seedFrom`) so the odds are stable across reloads of the same data. Surface it as a projection in the UI.
+- **The forecast is a projection, not the real draw.** The feed never carries the knockout *pairings* (every slot is "Unknown"), so `runForecast` simulates remaining group games into final tables, takes the 32 qualifiers, and slots them into the real fixed 2026 knockout bracket encoded in `src/bracket.js` (`seedR32`, `R16`/`QF`/`SF`/`FINAL`, FIFA match numbers 73 to 104). It is seeded from `lastUpdated` (`seedFrom`) so the odds are stable across reloads of the same data. Surface it as a projection in the UI.
 
 - **`mapFootballDataMatches` (`src/domain.js`) and `mapMatchDetail` (`src/mapDetail.js`) are a cross-environment contract.** Both the Worker and the Node fetch script import them from `../src/`, so the Worker and the baked JSON produce identical shapes. Edits affect both runtimes. football-data.org provides no xG on any tier, so match detail has lineups/scorers/subs/cards but never xG.
+
+- **Scorer data is not in the live feed; the Golden Boot is aggregated at build time.** Goals and assists exist only in per-match detail (`data/matches/<id>.json`). `scripts/fetch-live-data.mjs` tallies every detail file on disk through the shared pure `aggregateScorers` (`src/scorers.js`) into `data/scorers.json`, which the client loads separately from the live feed (`loadModel` fetches both in parallel; the Worker has no scorers endpoint). It refreshes on the 5-min Action cadence, not live. General pattern: when the live feed lacks a datum that match detail carries, aggregate it at build time into its own static JSON and load it client-side in parallel.
 
 ## Module map (`src/`)
 
 - `app.js` orchestration: boot, tab routing via hash, polling, event delegation, Sentry telemetry helpers.
-- `data.js` data loading, `buildModel`, entrants/pot config, prize and wooden-spoon resolution.
+- `data.js` data loading (`loadModel` fetches the live feed and `data/scorers.json` in parallel), `buildModel(raw, scorerData)`, entrants/pot config, prize and wooden-spoon resolution.
 - `domain.js` pure scoring/standings logic, team-name normalization, stage bonuses.
-- `forecast.js` Monte Carlo projection (seeded RNG, Poisson scorelines, seeded bracket).
-- `views.js` HTML-string renderers (ticker, hero, leaderboard, tables, bracket, fixtures, footer).
+- `forecast.js` Monte Carlo projection (seeded RNG, Poisson scorelines). Runs off the main thread via `forecast.worker.js` for the What-if explorer, with an inline fallback.
+- `forecast.worker.js` ES-module Web Worker that runs `runForecast` off-thread (What-if recompute on each pin change); `app.js` falls back to inline if module workers are unavailable.
+- `bracket.js` the real fixed 2026 knockout structure (R32 to final, group-position feeds), encoded so the forecast seeds the real bracket instead of a generic one.
+- `scorers.js` pure Golden Boot aggregation (`aggregateScorers`, `compareByInvolvements`, `compareByGoals`); shared by the fetch script and the browser.
+- `views.js` HTML-string renderers (ticker, hero, leaderboard, tables, bracket, what-if, fixtures, Golden Boot, footer).
 - `format.js` pure formatters and live/finished status helpers (no DOM).
 - `flags.js` flag emoji by canonical team name (emoji, not crest images, so nothing renders broken offline).
 - `interactions.js` head-to-head modal, confetti, celebration banner.
 - `matchDetail.js` match drawer; fetches per-match detail on open (Worker `/match/:id` or static `data/matches/<id>.json`).
 - `background.js` ambient bunting/embers layer (DOM + CSS only).
+
+## Adding a tab or panel control
+
+- **New tab:** add a `<button data-tab="x">` to the nav in `index.html`, add `"x"` to `TABS` in `src/app.js`, add a `case "x"` to `renderPanel`, and write `renderX` in `src/views.js`. Tabs route via the URL hash.
+- **New in-panel control** (sort toggle, filter): give it a unique `data-*` attribute (not a shared one), keep its state in the `state` object in `app.js`, read it in the renderer, and handle it in `wirePanelControls` (click delegation with an early `return` per handler; `change` for a `<select>`). Reuse the `.seg-group` / `.seg` segmented-toggle markup; see `data-sort` (leaderboard), `data-fixture-view` (fixtures), `data-gb-sort` (Golden Boot).
 
 ## Telemetry and the Sentry tunnel
 

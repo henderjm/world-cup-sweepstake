@@ -192,7 +192,7 @@ export function renderHero(model) {
         label: "Wooden spoon",
         rows,
         valueKey: "spoonPct",
-        teamKey: "bestTeam",
+        teamKey: "spoonTeam",
         footnote:
           model.spoon.owner !== "TBC"
             ? `Confirmed: ${esc(model.spoon.owner)} (${esc(model.spoon.team)})`
