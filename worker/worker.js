@@ -33,6 +33,12 @@ const ALLOWED_ORIGINS = new Set([
   "http://127.0.0.1:8731",
 ]);
 
+// Banter: the allowed reaction set and how long reactions/messages live in KV. A fixed
+// allowlist stops the store being used to stash arbitrary strings, and the TTL means
+// banter self-cleans after the tournament with no maintenance.
+const REACTIONS = ["🔥", "😂", "😱", "🧂", "🐐", "💀"];
+const BANTER_TTL = 60 * 24 * 60 * 60; // 60 days
+
 // Best-effort stale fallback held in the isolate's memory.
 let lastLive = null;
 
@@ -60,12 +66,21 @@ export default {
     if (url.pathname === "/tunnel" && request.method === "POST") {
       return tunnelToSentry(request, cors);
     }
-    if (request.method !== "GET") return json({ error: "method not allowed" }, 405, cors);
 
     const token = env.FOOTBALL_DATA_TOKEN;
     if (!token) return json({ error: "service not configured" }, 500, cors);
     const competition = env.FOOTBALL_DATA_COMPETITION || "WC";
     const season = env.FOOTBALL_DATA_SEASON || "2026";
+
+    // Banter: shared per-match reactions and one-line messages in KV. GET reads the
+    // current state, POST toggles a reaction or appends a message. The match id is
+    // validated against the real fixtures so junk ids cannot fill storage.
+    const banterRoute = url.pathname.match(/^\/banter\/(\d{1,12})$/);
+    if (banterRoute) {
+      return handleBanter(request, env, Number(banterRoute[1]), competition, season, token, cors);
+    }
+
+    if (request.method !== "GET") return json({ error: "method not allowed" }, 405, cors);
 
     try {
       if (url.pathname === "/live") {
@@ -133,6 +148,107 @@ async function tunnelToSentry(request, cors) {
   } catch {
     return json({ error: "bad envelope" }, 400, cors);
   }
+}
+
+// -- Banter (KV-backed) ------------------------------------------------------
+// Reactions are stored one key per user per match (react:<id>:<uid>, the emoji set in
+// the key's metadata), so each person only ever writes their own key and there is no
+// read-modify-write race. Messages are append-only keys (msg:<id>:<ts>-<rand>).
+
+async function handleBanter(request, env, id, competition, season, token, cors) {
+  if (!env.BANTER) return json({ error: "banter not configured" }, 503, cors);
+  try {
+    const live = await getLive(competition, season, token);
+    if (!live.matches.some((match) => match.id === id)) {
+      return json({ error: "unknown match" }, 404, cors);
+    }
+  } catch {
+    return json({ error: "upstream unavailable" }, 502, cors);
+  }
+
+  if (request.method === "GET") {
+    const uid = cleanUid(new URL(request.url).searchParams.get("uid"));
+    return json(await readBanter(env, id, uid), 200, cors);
+  }
+  if (request.method === "POST") {
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return json({ error: "bad body" }, 400, cors);
+    }
+    const uid = cleanUid(body.uid);
+    if (!uid) return json({ error: "missing uid" }, 400, cors);
+    if (body.action === "react") {
+      if (!REACTIONS.includes(body.emoji)) return json({ error: "bad emoji" }, 400, cors);
+      await toggleReaction(env, id, uid, body.emoji);
+    } else if (body.action === "message") {
+      const text = cleanText(body.text);
+      if (!text) return json({ error: "empty message" }, 400, cors);
+      await addMessage(env, id, uid, cleanName(body.name), text);
+    } else {
+      return json({ error: "bad action" }, 400, cors);
+    }
+    return json(await readBanter(env, id, uid), 200, cors);
+  }
+  return json({ error: "method not allowed" }, 405, cors);
+}
+
+async function readBanter(env, id, uid) {
+  const [reacts, msgs] = await Promise.all([
+    env.BANTER.list({ prefix: `react:${id}:` }),
+    env.BANTER.list({ prefix: `msg:${id}:` }),
+  ]);
+  const counts = {};
+  let mine = [];
+  for (const key of reacts.keys) {
+    const emojis = key.metadata?.e ?? [];
+    for (const emoji of emojis) counts[emoji] = (counts[emoji] ?? 0) + 1;
+    if (key.name === `react:${id}:${uid}`) mine = emojis;
+  }
+  const messages = msgs.keys
+    .map((key) => key.metadata)
+    .filter((meta) => meta && meta.text)
+    .sort((a, b) => a.ts - b.ts)
+    .slice(-50)
+    .map((meta) => ({ name: meta.name, text: meta.text, ts: meta.ts }));
+  return { reactions: { counts, mine }, messages };
+}
+
+async function toggleReaction(env, id, uid, emoji) {
+  const key = `react:${id}:${uid}`;
+  const current = await env.BANTER.getWithMetadata(key);
+  const set = new Set(current.metadata?.e ?? []);
+  if (set.has(emoji)) set.delete(emoji);
+  else set.add(emoji);
+  if (set.size === 0) {
+    await env.BANTER.delete(key);
+  } else {
+    await env.BANTER.put(key, "", { metadata: { e: [...set] }, expirationTtl: BANTER_TTL });
+  }
+}
+
+async function addMessage(env, id, uid, name, text) {
+  const ts = Date.now();
+  const key = `msg:${id}:${ts}-${Math.random().toString(36).slice(2, 8)}`;
+  await env.BANTER.put(key, "", { metadata: { name, text, ts, uid }, expirationTtl: BANTER_TTL });
+}
+
+function cleanUid(value) {
+  return String(value ?? "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
+}
+
+function cleanName(value) {
+  const name = String(value ?? "").replace(/[<>]/g, "").trim().slice(0, 24);
+  return name || "Someone";
+}
+
+function cleanText(value) {
+  return String(value ?? "")
+    .replace(/[\u0000-\u001f<>]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 140);
 }
 
 function corsHeaders(request) {

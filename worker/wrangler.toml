@@ -17,3 +17,12 @@ name = "LIMITER"
 type = "ratelimit"
 namespace_id = "1001"
 simple = { limit = 200, period = 60 }
+
+# Banter storage (shared per-match reactions + one-line messages). To switch it on:
+#   1. npx wrangler kv namespace create BANTER
+#   2. paste the printed id below and uncomment this block
+#   3. npx wrangler deploy
+# Until then the Worker returns 503 for /banter and the site hides the Banter tab.
+# [[kv_namespaces]]
+# binding = "BANTER"
+# id = "PASTE_KV_NAMESPACE_ID_HERE"

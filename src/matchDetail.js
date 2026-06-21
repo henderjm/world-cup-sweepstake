@@ -2,6 +2,7 @@ import { flagFor } from "./flags.js";
 import { DATA_API, ENTRANTS, ownerOf } from "./data.js";
 import { buildLeaderboard, buildTeamPerformance, normalizeTeamName } from "./domain.js";
 import { dayLabel, formatStage, isFinished, isLive, timeLabel } from "./format.js";
+import { banterAvailable, mountBanter, unmountBanter } from "./banter.js";
 
 // Match detail drawer. Combines the real feed detail (scorers, lineups, subs, cards)
 // with the Goon Squad framing from the Match Centre design: every fixture is a duel
@@ -42,10 +43,14 @@ function selectTab(name) {
     pane.hidden = pane.dataset.pane !== name;
   });
   panel.scrollTop = 0;
+  // Lazily wire banter the first time its tab is opened, so an unopened drawer never
+  // hits the Worker. mountBanter is a no-op if it is already mounted for this match.
+  if (name === "banter") mountBanter(panel.querySelector("[data-banter]"), openId);
 }
 
 export function openMatch(match) {
   if (!root || !panel || !match) return;
+  unmountBanter(); // tear down any banter from a previously opened match
   openId = match.id;
   root.hidden = false;
   requestAnimationFrame(() => root.classList.add("is-open"));
@@ -56,6 +61,7 @@ export function openMatch(match) {
 
 function close() {
   if (!root) return;
+  unmountBanter();
   root.classList.remove("is-open");
   openId = null;
   window.setTimeout(() => {
@@ -167,6 +173,7 @@ function renderShell(match) {
       <div class="md-tabs" role="tablist">
         <button class="md-tab is-active" data-md-tab="match" type="button">Match</button>
         <button class="md-tab" data-md-tab="race" type="button">Race</button>
+        ${banterAvailable() ? `<button class="md-tab" data-md-tab="banter" type="button">Banter</button>` : ""}
       </div>
     </div>
 
@@ -187,6 +194,8 @@ function renderShell(match) {
         <div class="md-loading">Loading match detail…</div>
       </section>
     </div>
+
+    ${banterAvailable() ? `<div class="md-pane" data-pane="banter" hidden><div class="md-banter" data-banter></div></div>` : ""}
   `;
 }
 
