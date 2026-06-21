@@ -165,8 +165,8 @@ function renderShell(match) {
         <div class="md-bar__right">${statusPill}<button class="md-close" data-md-close aria-label="Close">✕</button></div>
       </header>
       <div class="md-tabs" role="tablist">
-        <button class="md-tab is-active" data-md-tab="race" type="button">Race</button>
-        <button class="md-tab" data-md-tab="match" type="button">Match</button>
+        <button class="md-tab is-active" data-md-tab="match" type="button">Match</button>
+        <button class="md-tab" data-md-tab="race" type="button">Race</button>
       </div>
     </div>
 
