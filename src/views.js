@@ -112,10 +112,10 @@ function contenderBar(row, max) {
     </li>`;
 }
 
-function prizeCard({ variant, amount, label, rows, valueKey, teamKey, footnote }) {
+function prizeCard({ variant, amount, label, rows, valueKey, teamKey, footnote, exclude = null }) {
   const ranked = rows
     .map((row) => ({ name: row.forecast.name, value: row.forecast[valueKey], team: row.forecast[teamKey] }))
-    .filter((row) => row.value > 0)
+    .filter((row) => row.value > 0 && row.name !== exclude)
     .sort((a, b) => b.value - a.value)
     .slice(0, 4);
 
@@ -148,6 +148,14 @@ export function renderHero(model) {
   const topMover = rows
     .filter((row) => row.momentum > 0)
     .sort((a, b) => b.momentum - a.momentum)[0];
+
+  // The strongest team's owner naturally tops both win and runner-up odds, so the two
+  // cards would otherwise show the same owner/team. Keep the title favourite to the
+  // winner card and show the runner-up race among everyone else (the losing finalist).
+  const titleFavourite = rows
+    .map((row) => ({ name: row.forecast.name, value: row.forecast.winPct }))
+    .filter((row) => row.value > 0)
+    .sort((a, b) => b.value - a.value)[0]?.name ?? null;
 
   const championConfirmed = model.prizes.champion.owner !== "TBC";
 
@@ -183,8 +191,9 @@ export function renderHero(model) {
         label: "Runner-up",
         rows,
         valueKey: "runnerUpPct",
-        teamKey: "bestTeam",
-        footnote: "Owner of the losing finalist",
+        teamKey: "runnerUpTeam",
+        exclude: titleFavourite,
+        footnote: "Most likely losing finalist, bar the title favourite",
       })}
       ${prizeCard({
         variant: "spoon",
