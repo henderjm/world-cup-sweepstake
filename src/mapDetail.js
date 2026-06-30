@@ -2,7 +2,10 @@
 // consumes. Shared by the Cloudflare Worker (live) and the fetch script (fallback) so
 // both produce identical detail JSON.
 
+import { regulationScore } from "./domain.js";
+
 export function mapMatchDetail(match) {
+  const reg = regulationScore(match.score);
   return {
     id: match.id,
     status: match.status,
@@ -13,10 +16,12 @@ export function mapMatchDetail(match) {
     attendance: match.attendance ?? null,
     minute: match.minute ?? null,
     score: {
-      home: match.score?.fullTime?.home ?? null,
-      away: match.score?.fullTime?.away ?? null,
+      home: reg.home,
+      away: reg.away,
       htHome: match.score?.halfTime?.home ?? null,
       htAway: match.score?.halfTime?.away ?? null,
+      penHome: reg.penalties?.home ?? null,
+      penAway: reg.penalties?.away ?? null,
     },
     home: mapTeam(match.homeTeam),
     away: mapTeam(match.awayTeam),

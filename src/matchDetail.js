@@ -146,7 +146,19 @@ function renderShell(match) {
   const live = isLive(match.status);
   const finished = isFinished(match.status);
   const decided = Number.isFinite(match.score?.home) && Number.isFinite(match.score?.away);
-  const winner = decided ? (match.score.home > match.score.away ? "home" : match.score.away > match.score.home ? "away" : "draw") : null;
+  // Prefer the feed's winner so a level tie decided on penalties highlights the side that
+  // actually went through, not a draw.
+  const winner = decided
+    ? match.winner === "HOME_TEAM"
+      ? "home"
+      : match.winner === "AWAY_TEAM"
+        ? "away"
+        : match.score.home > match.score.away
+          ? "home"
+          : match.score.away > match.score.home
+            ? "away"
+            : "draw"
+    : null;
 
   const now = leaderboardFrom(model.matches);
   const stake = stakeBuilder(match, live, finished, winner, now);
@@ -157,9 +169,11 @@ function renderShell(match) {
       ? `<span class="md-pill md-pill--fin">Result</span>`
       : `<span class="md-pill md-pill--up">Upcoming</span>`;
 
+  const pens = Number.isFinite(match.penalties?.home) && Number.isFinite(match.penalties?.away);
+  const fullTimeSub = pens ? `Penalties ${match.penalties.home}-${match.penalties.away}` : "Full time";
   const centre = !decided
     ? `<span class="md-vs">vs</span><span class="md-sub">${match.status === "TIMED" ? timeLabel(match.utcDate) : ""}</span>`
-    : `<span class="md-score">${match.score.home} <i>-</i> ${match.score.away}</span><span class="md-sub">${live ? `${match.minute ? `${match.minute}'` : "Live"}` : "Full time"}</span>`;
+    : `<span class="md-score">${match.score.home} <i>-</i> ${match.score.away}</span><span class="md-sub">${live ? `${match.minute ? `${match.minute}'` : "Live"}` : fullTimeSub}</span>`;
 
   return `
     <div class="md-top">

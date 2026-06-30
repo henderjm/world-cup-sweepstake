@@ -1,6 +1,7 @@
 import { ENTRANTS, OWNER_BY_TEAM, loadModel } from "./data.js";
 import { runForecast } from "./forecast.js";
 import {
+  drawBracketConnectors,
   renderBracket,
   renderFixtures,
   renderFooter,
@@ -129,6 +130,7 @@ async function start() {
   wireTabs();
   wirePanelControls();
   wireMatchClicks();
+  wireBracketResize();
   setupHeadToHead(model, { trigger: elements.h2hOpen, modal: elements.h2hModal });
   setupMatchDetail(model, { drawer: elements.matchDrawer });
   runCelebration();
@@ -229,6 +231,7 @@ function renderPanel() {
       break;
     case "bracket":
       panel.innerHTML = renderBracket(model);
+      requestAnimationFrame(drawBracketConnectors);
       break;
     case "whatif":
       ensureWhatIf();
@@ -342,6 +345,16 @@ function wireTabs() {
     metric("count", "tab_view", 1, { tags: { tab: state.tab } });
     syncActiveTab();
     renderPanel();
+  });
+}
+
+// Connectors are measured from the DOM, so redraw on reflow.
+function wireBracketResize() {
+  let frame = null;
+  window.addEventListener("resize", () => {
+    if (state.tab !== "bracket") return;
+    if (frame) cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(drawBracketConnectors);
   });
 }
 

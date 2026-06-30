@@ -65,10 +65,22 @@ function hasScore(score) {
   return Number.isFinite(score?.home) && Number.isFinite(score?.away);
 }
 
-// Score for a row. Finished/decided games show the number (0-0 included). Live games
-// whose score the free feed withholds show a pulsing live marker instead of a blank.
+function hasPenalties(match) {
+  return Number.isFinite(match?.penalties?.home) && Number.isFinite(match?.penalties?.away);
+}
+
+// Shootout marker for a decided knockout tie. Penalties are shown home-away to match the
+// score, so the leading number names the team that went through.
+function penaltyTag(match) {
+  if (!hasPenalties(match)) return "";
+  return ` <span class="pens" title="Decided on penalties">(${match.penalties.home}-${match.penalties.away} pens)</span>`;
+}
+
+// Score for a row. Finished/decided games show the number (0-0 included), plus a shootout
+// tag when a level tie went to penalties. Live games whose score the free feed withholds
+// show a pulsing live marker instead of a blank.
 function scoreCell(match) {
-  if (hasScore(match.score)) return `${match.score.home} <i>-</i> ${match.score.away}`;
+  if (hasScore(match.score)) return `${match.score.home} <i>-</i> ${match.score.away}${penaltyTag(match)}`;
   if (isLive(match.status)) {
     return `<span class="score-pending" title="Live, score not in the free feed yet">●</span>`;
   }
@@ -76,7 +88,8 @@ function scoreCell(match) {
 }
 
 function tickerScore(match) {
-  return hasScore(match.score) ? `${match.score.home}-${match.score.away}` : "●";
+  if (!hasScore(match.score)) return "●";
+  return `${match.score.home}-${match.score.away}${hasPenalties(match) ? ` (${match.penalties.home}-${match.penalties.away}p)` : ""}`;
 }
 
 // -- Ticker -----------------------------------------------------------------
@@ -373,23 +386,10 @@ const KNOCKOUT_MATCH_DEFS = new Map(
   KNOCKOUT_ROUNDS.flatMap((round) => round.matches.map((match) => [match.no, match])),
 );
 
-const LEFT_DRAW = [
-  { stage: "LAST_32", matches: defsByNo([74, 77, 73, 75, 83, 84, 81, 82]) },
-  { stage: "LAST_16", matches: defsByNo([89, 90, 93, 94]) },
-  { stage: "QUARTER_FINALS", matches: defsByNo([97, 98]) },
-  { stage: "SEMI_FINALS", matches: defsByNo([101]) },
-];
-
-const RIGHT_DRAW = [
-  { stage: "SEMI_FINALS", matches: defsByNo([102]) },
-  { stage: "QUARTER_FINALS", matches: defsByNo([99, 100]) },
-  { stage: "LAST_16", matches: defsByNo([91, 92, 95, 96]) },
-  { stage: "LAST_32", matches: defsByNo([76, 78, 79, 80, 86, 88, 85, 87]) },
-];
-
-function defsByNo(numbers) {
-  return numbers.map((number) => KNOCKOUT_MATCH_DEFS.get(number)).filter(Boolean);
-}
+// Canonical stage for each match number, so a column can look up how to label its routes.
+const STAGE_BY_NO = new Map(
+  KNOCKOUT_ROUNDS.flatMap((round) => round.matches.map((match) => [match.no, round.stage])),
+);
 
 function knockoutFixturesByNo(model) {
   const fixturesByNo = new Map();
@@ -410,11 +410,24 @@ function r32SlotLabel(slot) {
   return `Third place ${slot.from.join("/")}`;
 }
 
-function koSlot(team, route, isWinner) {
-  return `<span class="ko-slot ${isWinner ? "is-win" : ""}">
-      ${isKnown(team) ? teamCell(team) : `<span class="ko-route">${esc(route)}</span>`}
-      ${isKnown(team) ? `<small>${esc(route)}</small>` : ""}
-    </span>`;
+// One team line inside a knockout card: flag + name + owner (or the match-number route
+// when the team is still unknown), with its score on the right and a (pens) marker when
+// the tie went to a shootout.
+function koRow(team, route, isWinner, fixture, side) {
+  const body = isKnown(team)
+    ? teamCell(team)
+    : `<span class="ko-route">${esc(route)}</span>`;
+  return `<div class="ko-row ${isWinner ? "is-win" : ""}">
+      ${body}
+      ${koRowScore(fixture, side)}
+    </div>`;
+}
+
+function koRowScore(fixture, side) {
+  if (!fixture || !hasScore(fixture.score)) return "";
+  const goals = side === "home" ? fixture.score.home : fixture.score.away;
+  const pen = hasPenalties(fixture) ? (side === "home" ? fixture.penalties.home : fixture.penalties.away) : null;
+  return `<span class="ko-row__score">${goals}${pen !== null ? ` <i>(${pen})</i>` : ""}</span>`;
 }
 
 function fixtureTeam(fixture, def, side) {
@@ -468,63 +481,131 @@ function buildKnockoutOutcomes(fixturesByNo) {
   return outcomes;
 }
 
-function koMatchCard(def, stage, fixture, source = "winner", outcomes = new Map()) {
+// One compact knockout card: a header (match number + kick-off / live), then a team line
+// each, score on the right and a (pens) marker on shootouts. Carries data-ko-no so the
+// connector overlay can find it and data-match-id so the existing click delegation opens
+// the drawer.
+function koMatchCard(def, stage, fixture, source, ctx) {
   const r32 = stage === "LAST_32";
+  const homeTeam = r32
+    ? fixtureTeam(fixture, def, "home")
+    : resolvedKnockoutTeam(def, stage, fixture, "home", source, ctx.outcomes);
+  const awayTeam = r32
+    ? fixtureTeam(fixture, def, "away")
+    : resolvedKnockoutTeam(def, stage, fixture, "away", source, ctx.outcomes);
   const homeRoute = knockoutRoute(def, stage, "home", source);
   const awayRoute = knockoutRoute(def, stage, "away", source);
-  const homeTeam = r32 ? fixtureTeam(fixture, def, "home") : resolvedKnockoutTeam(def, stage, fixture, "home", source, outcomes);
-  const awayTeam = r32 ? fixtureTeam(fixture, def, "away") : resolvedKnockoutTeam(def, stage, fixture, "away", source, outcomes);
   const winner = knockoutWinnerSide(fixture);
-  const score = fixture
-    ? hasScore(fixture.score)
-      ? scoreCell(fixture)
-      : isLive(fixture.status)
-        ? statusLabel(fixture)
-        : ""
-    : "";
-  const when = fixture?.utcDate ? `${dayLabel(fixture.utcDate)} · ${timeLabel(fixture.utcDate)}` : "";
+  const live = fixture && isLive(fixture.status);
+  const meta = live
+    ? `<span class="ko-card__live">${esc(statusLabel(fixture))}</span>`
+    : fixture?.utcDate
+      ? `<span>${esc(dayLabel(fixture.utcDate))}</span>`
+      : "";
   const openable = fixture?.id != null;
-
-  return `<div class="ko-match ${openable ? "ko-match--openable" : ""}" ${openable ? `data-match-id="${fixture.id}" role="button" tabindex="0"` : ""}>
-      <header class="ko-match__head">
-        <span>M${def.no}</span>
-        ${when ? `<span>${esc(when)}</span>` : ""}
-      </header>
-      ${koSlot(homeTeam, homeRoute, winner === "home")}
-      ${score ? `<div class="ko-score">${score}</div>` : ""}
-      ${koSlot(awayTeam, awayRoute, winner === "away")}
+  return `<div class="ko-card ${openable ? "ko-card--openable" : ""}" data-ko-no="${def.no}" ${openable ? `data-match-id="${fixture.id}" role="button" tabindex="0"` : ""}>
+      <div class="ko-card__head"><span>M${def.no}</span>${meta}</div>
+      ${koRow(homeTeam, homeRoute, winner === "home", fixture, "home")}
+      ${koRow(awayTeam, awayRoute, winner === "away", fixture, "away")}
     </div>`;
 }
 
-function renderKoColumn(round, fixturesByNo, outcomes) {
-  const cards = round.matches
-    .map((match) => koMatchCard(match, round.stage, fixturesByNo.get(match.no), round.source, outcomes))
+function koColumn(title, nos, ctx) {
+  const cards = nos
+    .map((no) => {
+      const def = KNOCKOUT_MATCH_DEFS.get(no);
+      return koMatchCard(def, ctx.stageByNo.get(no), ctx.fixturesByNo.get(no), "winner", ctx);
+    })
     .join("");
-  return `<div class="ko-col ko-col--${round.stage}">
-      <h3>${formatStage(round.stage)}</h3>
-      ${cards}
-    </div>`;
+  return `<div class="ko-col"><h3>${title}</h3><div class="ko-col__body">${cards}</div></div>`;
 }
 
 export function renderBracket(model) {
   const fixturesByNo = knockoutFixturesByNo(model);
-  const outcomes = buildKnockoutOutcomes(fixturesByNo);
-  const left = LEFT_DRAW.map((round) => renderKoColumn(round, fixturesByNo, outcomes)).join("");
-  const right = RIGHT_DRAW.map((round) => renderKoColumn(round, fixturesByNo, outcomes)).join("");
-  const final = koMatchCard(FINAL, "FINAL", fixturesByNo.get(FINAL.no), "winner", outcomes);
-  const thirdPlace = koMatchCard(THIRD, "THIRD_PLACE", fixturesByNo.get(THIRD.no), "loser", outcomes);
+  const ctx = {
+    fixturesByNo,
+    outcomes: buildKnockoutOutcomes(fixturesByNo),
+    stageByNo: STAGE_BY_NO,
+  };
+
+  const left =
+    koColumn("Round of 32", [74, 77, 73, 75, 83, 84, 81, 82], ctx) +
+    koColumn("Round of 16", [89, 90, 93, 94], ctx) +
+    koColumn("Quarter-finals", [97, 98], ctx) +
+    koColumn("Semi-finals", [101], ctx);
+  const right =
+    koColumn("Semi-finals", [102], ctx) +
+    koColumn("Quarter-finals", [99, 100], ctx) +
+    koColumn("Round of 16", [91, 92, 95, 96], ctx) +
+    koColumn("Round of 32", [76, 78, 79, 80, 86, 88, 85, 87], ctx);
+  const final = koMatchCard(FINAL, "FINAL", fixturesByNo.get(FINAL.no), "winner", ctx);
+  const third = koMatchCard(THIRD, "THIRD_PLACE", fixturesByNo.get(THIRD.no), "loser", ctx);
 
   return `
-    <div class="panel__head"><h2>Knockout bracket</h2><span class="panel__hint">Official match-number route</span></div>
-    <div class="ko-wrap ko-wrap--classic">
-      <section class="ko-side ko-side--left" aria-label="Left side of the draw">${left}</section>
-      <section class="ko-centre" aria-label="Finals">
-        <div class="ko-col ko-col--FINAL"><h3>Final</h3>${final}</div>
-        <div class="ko-col ko-col--THIRD_PLACE"><h3>Third place</h3>${thirdPlace}</div>
-      </section>
-      <section class="ko-side ko-side--right" aria-label="Right side of the draw">${right}</section>
+    <div class="panel__head"><h2>Knockout bracket</h2><span class="panel__hint">Official 2026 route</span></div>
+    <div class="ko-board" data-ko-board>
+      <svg class="ko-lines" aria-hidden="true"></svg>
+      <div class="ko-half ko-half--left">${left}</div>
+      <div class="ko-centre"><div class="ko-col ko-col--final"><h3>Final</h3>${final}</div></div>
+      <div class="ko-half ko-half--right">${right}</div>
     </div>
-    <p class="panel__note">Official FIFA knockout structure. Results update from the fixture feed; finished winners are carried forward locally until the feed fills later-round team names.</p>`;
+    <div class="ko-third">
+      <h4>Third-place play-off</h4>
+      ${third}
+    </div>
+    <p class="panel__note">Official FIFA knockout structure. Tap a tie for detail. Finished winners are carried forward locally until the feed fills later-round team names; ties level after extra time show the penalty result.</p>`;
+}
+
+// Each match and the two it is fed by, for the connector overlay.
+const KO_CONNECTIONS = [
+  ...R16.map((m) => ({ child: m.no, feeders: m.from })),
+  ...QF.map((m) => ({ child: m.no, feeders: m.from })),
+  ...SF.map((m) => ({ child: m.no, feeders: m.from })),
+  { child: FINAL.no, feeders: FINAL.from },
+];
+
+// Draws the elbow connectors as an SVG overlay measured from the rendered cards, so the
+// lines track real card positions whatever their height or the viewport width. A feeder
+// left of its child connects card-right to card-left; a feeder on the right (the mirrored
+// half, and the final) connects the other way. Re-run after each render and on resize.
+export function drawBracketConnectors() {
+  const board = document.querySelector("[data-ko-board]");
+  if (!board) return;
+  const svg = board.querySelector(".ko-lines");
+  if (!svg) return;
+
+  const cards = new Map();
+  board.querySelectorAll("[data-ko-no]").forEach((el) => cards.set(Number(el.dataset.koNo), el));
+
+  const base = board.getBoundingClientRect();
+  const ox = board.scrollLeft - base.left;
+  const oy = board.scrollTop - base.top;
+  const width = board.scrollWidth;
+  const height = board.scrollHeight;
+  svg.setAttribute("width", width);
+  svg.setAttribute("height", height);
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+  const at = (n) => Math.round(n) + 0.5;
+  const segments = [];
+  for (const { child, feeders } of KO_CONNECTIONS) {
+    const childEl = cards.get(child);
+    if (!childEl) continue;
+    const c = childEl.getBoundingClientRect();
+    for (const feeder of feeders) {
+      const feederEl = cards.get(feeder);
+      if (!feederEl) continue;
+      const f = feederEl.getBoundingClientRect();
+      const feederOnLeft = f.right <= c.left + 1;
+      const cx = at((feederOnLeft ? c.left : c.right) + ox);
+      const cy = at(c.top + c.height / 2 + oy);
+      const fx = at((feederOnLeft ? f.right : f.left) + ox);
+      const fy = at(f.top + f.height / 2 + oy);
+      const midX = at((cx + fx) / 2);
+      segments.push(`M${fx} ${fy}H${midX}V${cy}H${cx}`);
+    }
+  }
+  svg.innerHTML = `<path d="${segments.join("")}" />`;
 }
 
 // -- What-if explorer --------------------------------------------------------

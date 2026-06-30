@@ -152,21 +152,40 @@ export function buildTeamPerformance(matches) {
 }
 
 export function mapFootballDataMatches(payload) {
-  return (payload.matches ?? []).map((match) => ({
-    id: match.id ?? null,
-    utcDate: match.utcDate,
-    status: match.status,
-    minute: match.minute ?? null,
-    stage: match.stage ?? "GROUP_STAGE",
-    group: match.group ?? null,
-    homeTeam: normalizeTeamName(match.homeTeam?.name ?? match.homeTeam?.shortName),
-    awayTeam: normalizeTeamName(match.awayTeam?.name ?? match.awayTeam?.shortName),
-    score: {
-      home: scoreValue(match.score?.fullTime?.home ?? match.score?.fullTime?.homeTeam),
-      away: scoreValue(match.score?.fullTime?.away ?? match.score?.fullTime?.awayTeam),
-    },
-    winner: match.score?.winner ?? null,
-  }));
+  return (payload.matches ?? []).map((match) => {
+    const raw = match.score ?? {};
+    const reg = regulationScore(raw);
+    return {
+      id: match.id ?? null,
+      utcDate: match.utcDate,
+      status: match.status,
+      minute: match.minute ?? null,
+      stage: match.stage ?? "GROUP_STAGE",
+      group: match.group ?? null,
+      homeTeam: normalizeTeamName(match.homeTeam?.name ?? match.homeTeam?.shortName),
+      awayTeam: normalizeTeamName(match.awayTeam?.name ?? match.awayTeam?.shortName),
+      score: { home: reg.home, away: reg.away },
+      penalties: reg.penalties,
+      winner: raw.winner ?? null,
+    };
+  });
+}
+
+// football-data folds penalty-shootout kicks into score.fullTime, so a 1-1 game won 4-3
+// on penalties arrives as fullTime 5-4. Subtract the shootout back out so `score` is the
+// regulation/extra-time result (a draw) and goals aren't inflated, and expose the shootout
+// separately as `penalties`. Returns { home, away, penalties: { home, away } | null }.
+export function regulationScore(raw) {
+  const fullHome = scoreValue(raw?.fullTime?.home ?? raw?.fullTime?.homeTeam);
+  const fullAway = scoreValue(raw?.fullTime?.away ?? raw?.fullTime?.awayTeam);
+  const penHome = scoreValue(raw?.penalties?.home ?? raw?.penalties?.homeTeam);
+  const penAway = scoreValue(raw?.penalties?.away ?? raw?.penalties?.awayTeam);
+  const hasPens = penHome !== null && penAway !== null;
+  return {
+    home: hasPens && fullHome !== null ? fullHome - penHome : fullHome,
+    away: hasPens && fullAway !== null ? fullAway - penAway : fullAway,
+    penalties: hasPens ? { home: penHome, away: penAway } : null,
+  };
 }
 
 export function mapFootballDataStandings(payload) {
