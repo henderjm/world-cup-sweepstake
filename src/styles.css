@@ -1058,7 +1058,7 @@ button {
 }
 
 .ko-col {
-  flex: 0 0 220px;
+  flex: 0 0 240px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1074,75 +1074,65 @@ button {
 
 .ko-match {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 10px;
   background: var(--surface-2);
 }
 
-.ko-slot {
+.ko-match__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-}
-
-.ko-slot b {
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-
-.ko-date {
+  gap: 10px;
   color: var(--faint);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ko-match__head span:last-child {
+  font-weight: 650;
+  letter-spacing: 0;
+  text-align: right;
+  text-transform: none;
+}
+
+.ko-slot {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 4px 0;
+}
+
+.ko-slot small {
+  color: var(--faint);
+  font-size: 0.68rem;
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.ko-fav {
-  margin-top: 20px;
-  border-top: 1px solid var(--line);
-  padding-top: 16px;
-}
-
-.ko-fav h3 {
-  margin-bottom: 10px;
-  font-size: 0.95rem;
+.ko-route {
+  color: var(--muted);
+  font-size: 0.84rem;
   font-weight: 750;
 }
 
-.ko-fav ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 8px;
-}
-
-.ko-fav li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.ko-score {
+  width: max-content;
+  min-width: 46px;
+  justify-self: center;
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 7px 12px;
-  background: var(--surface-2);
-  font-weight: 650;
-}
-
-.ko-fav li span:first-of-type {
-  flex: 1;
-}
-
-.ko-fav__owner {
-  color: var(--faint);
-  font-size: 0.76rem;
-  font-weight: 600;
-}
-
-.ko-fav li b {
-  color: var(--gold);
+  padding: 2px 10px;
+  color: var(--text);
+  background: rgb(255 255 255 / 0.03);
+  font-size: 0.78rem;
+  font-weight: 850;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1710,7 +1700,32 @@ select {
 
 .md-events { padding: 8px 18px 18px; }
 
-.md-venue { margin: 8px 0 14px; color: var(--muted); font-size: 0.8rem; font-weight: 650; }
+.md-venue {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 14px;
+}
+
+.md-venue span {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 10px;
+  color: var(--muted);
+  background: var(--surface-2);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.md-venue b {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--faint);
+  font-size: 0.62rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 
 .md-evblock { margin-bottom: 18px; }
 .md-evblock h3 { margin-bottom: 9px; color: var(--muted); font-size: 0.76rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -1809,7 +1824,7 @@ select {
   }
 }
 
-/* Bracket: projected ties, winner highlight + odds reveal ----------------- */
+/* Bracket: official route interactions ------------------------------------ */
 
 .panel__hint {
   margin-left: auto;
@@ -1824,64 +1839,27 @@ select {
   gap: 8px;
 }
 
-.ko-when {
-  margin-left: auto;
-  color: var(--faint);
-  font-size: 0.68rem;
-  font-weight: 650;
-  letter-spacing: 0;
-  text-transform: none;
+.ko-match--openable {
+  cursor: pointer;
 }
 
 .ko-match {
-  cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.ko-match:hover,
-.ko-match.is-open,
+.ko-match--openable:hover,
 .ko-match:focus-visible {
   border-color: var(--accent);
   outline: none;
 }
 
-.ko-slot:not(.is-win) {
-  color: var(--muted);
-}
-
 .ko-slot.is-win {
+  color: var(--text);
   font-weight: 750;
 }
 
 .ko-slot.is-win .team__name {
   color: var(--text);
-}
-
-.ko-slot b.ko-pct {
-  color: var(--accent);
-  font-size: 0.78rem;
-  opacity: 0;
-  transform: translateX(4px);
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-
-.ko-match:hover b.ko-pct,
-.ko-match.is-open b.ko-pct,
-.ko-match:focus-visible b.ko-pct {
-  opacity: 1;
-  transform: none;
-}
-
-.ko-proj__champ {
-  margin-bottom: 14px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.95rem;
-}
-
-.ko-proj__champ .prize__flag {
-  font-size: 1.2rem;
 }
 
 /* What-if explorer -------------------------------------------------------- */
@@ -2190,4 +2168,325 @@ select {
 .bn__note {
   font-size: 0.74rem;
   color: var(--faint);
+}
+
+/* Daily Shootout ---------------------------------------------------------- */
+
+.shootout {
+  display: grid;
+  gap: 18px;
+}
+
+.shootout__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 360px);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.shootout__head h2 {
+  font-size: clamp(1.8rem, 4vw, 3.3rem);
+  line-height: 0.95;
+}
+
+.shootout__lede {
+  margin-top: 10px;
+  color: var(--muted);
+  max-width: 620px;
+}
+
+.shootout-howto {
+  border: 1px solid rgb(245 200 75 / 0.28);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, rgb(245 200 75 / 0.12), transparent 56%),
+    var(--surface);
+  padding: 16px;
+}
+
+.shootout-howto span,
+.shootout-hud__label,
+.shootout-result span {
+  display: block;
+  color: var(--faint);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.shootout-howto ul {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.shootout-howto strong {
+  color: var(--gold);
+}
+
+.shootout__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(300px, 0.75fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.shootout-game,
+.shootout-board {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.045), transparent),
+    var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.shootout-game {
+  overflow: hidden;
+}
+
+.shootout-hud {
+  display: grid;
+  grid-template-columns: minmax(76px, 0.5fr) minmax(180px, 1fr) minmax(96px, 0.5fr);
+  gap: 10px;
+  align-items: center;
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.shootout-hud strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.shootout-shots {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(34px, 1fr));
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shootout-shots li {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.shootout-shots li.is-goal {
+  border-color: rgb(45 212 167 / 0.7);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.shootout-shots li.is-miss {
+  border-color: rgb(255 107 107 / 0.6);
+  background: rgb(255 107 107 / 0.12);
+  color: var(--clay);
+}
+
+.shootout-canvas-wrap {
+  position: relative;
+  background: #07130f;
+}
+
+.shootout-canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 960 / 620;
+  max-height: min(68vh, 620px);
+  touch-action: none;
+}
+
+.shootout-status {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  display: grid;
+  gap: 2px;
+  max-width: min(360px, calc(100% - 32px));
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 14px;
+  background: rgb(7 13 18 / 0.78);
+  padding: 11px 13px;
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.shootout-status strong {
+  color: var(--gold);
+  font-size: 0.9rem;
+  text-transform: uppercase;
+}
+
+.shootout-status span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.shootout-result {
+  display: grid;
+  gap: 14px;
+  border-top: 1px solid var(--line);
+  padding: 16px;
+}
+
+.shootout-result__score strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--gold);
+  font-size: 2.1rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.shootout-result__score p {
+  margin-top: 6px;
+  font-size: 1.1rem;
+}
+
+.shootout-result small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.shootout-result__save label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--faint);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.shootout-name-row {
+  display: flex;
+  gap: 8px;
+}
+
+.shootout-name-row input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  padding: 9px 12px;
+}
+
+.shootout-name-row .btn {
+  white-space: nowrap;
+}
+
+.shootout-share {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  padding: 10px 12px;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.shootout-board {
+  padding: 14px;
+}
+
+.shootout-board .panel__head {
+  margin-bottom: 12px;
+}
+
+.shootout-board .panel__head span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.shootout-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.shootout-table th,
+.shootout-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.shootout-table th {
+  color: var(--faint);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.shootout-table td {
+  font-weight: 750;
+}
+
+.shootout-table td:nth-child(3),
+.shootout-table td:nth-child(4) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.shootout-table td span {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0;
+}
+
+@media (max-width: 900px) {
+  .shootout__head,
+  .shootout__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .shootout-share,
+  .shootout-result .btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 620px) {
+  .shootout-hud {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .shootout-shots {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+
+  .shootout-canvas {
+    min-height: 360px;
+    object-fit: cover;
+  }
+
+  .shootout-status {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+  }
 }

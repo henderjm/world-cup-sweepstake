@@ -48,6 +48,41 @@ export const SF = [
 export const THIRD = { no: 103, from: [101, 102] };
 export const FINAL = { no: 104, from: [101, 102] };
 
+// Current official Round-of-32 pairings. The football-data.org fixture feed can keep
+// knockout slots as "Unknown" even after FIFA publishes the bracket, so the Knockout
+// tab uses this as a display fallback and still layers live fixture status/scores over
+// it when the feed updates.
+export const OFFICIAL_R32_TEAMS = new Map([
+  [73, { home: "South Africa", away: "Canada" }],
+  [74, { home: "Germany", away: "Paraguay" }],
+  [75, { home: "Netherlands", away: "Morocco" }],
+  [76, { home: "Brazil", away: "Japan" }],
+  [77, { home: "France", away: "Sweden" }],
+  [78, { home: "Ivory Coast", away: "Norway" }],
+  [79, { home: "Mexico", away: "Ecuador" }],
+  [80, { home: "England", away: "DRC" }],
+  [81, { home: "USA", away: "Bosnia" }],
+  [82, { home: "Belgium", away: "Senegal" }],
+  [83, { home: "Portugal", away: "Croatia" }],
+  [84, { home: "Spain", away: "Austria" }],
+  [85, { home: "Switzerland", away: "Algeria" }],
+  [86, { home: "Argentina", away: "Cape Verde" }],
+  [87, { home: "Colombia", away: "Ghana" }],
+  [88, { home: "Australia", away: "Egypt" }],
+]);
+
+// The feed does not expose FIFA match numbers, but its knockout fixtures are listed in
+// schedule order. Map each stage's chronological fixtures back to the official numbers
+// so the UI can open match details while rendering the fixed bracket route.
+export const KNOCKOUT_SCHEDULE_ORDER = {
+  LAST_32: [73, 76, 74, 75, 78, 77, 79, 80, 82, 81, 84, 83, 85, 88, 86, 87],
+  LAST_16: [90, 89, 91, 92, 93, 94, 95, 96],
+  QUARTER_FINALS: [97, 98, 99, 100],
+  SEMI_FINALS: [101, 102],
+  THIRD_PLACE: [103],
+  FINAL: [104],
+};
+
 // The eight Round-of-32 slots that take a third-placed team, with the groups each can
 // accept (the `b.from` set of those matches), keyed by match number.
 const THIRD_SLOTS = R32.filter((m) => m.b.t === "3").map((m) => ({ no: m.no, from: m.b.from }));

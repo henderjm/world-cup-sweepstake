@@ -288,7 +288,6 @@ export function runForecast({
   const spoonCount = new Map(entrantNames.map((name) => [name, 0]));
   const pointsSum = new Map(entrantNames.map((name) => [name, 0]));
   const teamTitleCount = new Map([...baseRecords.keys()].map((team) => [team, 0]));
-  const teamRunnerUpCount = new Map([...baseRecords.keys()].map((team) => [team, 0]));
   const teamSpoonCount = new Map([...baseRecords.keys()].map((team) => [team, 0]));
 
   for (let iteration = 0; iteration < iterations; iteration += 1) {
@@ -359,7 +358,6 @@ export function runForecast({
     teamTitleCount.set(champion, teamTitleCount.get(champion) + 1);
     const championOwner = teamOwner(champion);
     if (championOwner) winCount.set(championOwner, winCount.get(championOwner) + 1);
-    teamRunnerUpCount.set(runnerUp, teamRunnerUpCount.get(runnerUp) + 1);
     const runnerUpOwner = teamOwner(runnerUp);
     if (runnerUpOwner) runnerUpCount.set(runnerUpOwner, runnerUpCount.get(runnerUpOwner) + 1);
 
@@ -377,8 +375,6 @@ export function runForecast({
 
   const teamTitleOdds = new Map();
   teamTitleCount.forEach((count, team) => teamTitleOdds.set(team, (count / iterations) * 100));
-  const teamRunnerUpOdds = new Map();
-  teamRunnerUpCount.forEach((count, team) => teamRunnerUpOdds.set(team, (count / iterations) * 100));
   const teamSpoonOdds = new Map();
   teamSpoonCount.forEach((count, team) => teamSpoonOdds.set(team, (count / iterations) * 100));
 
@@ -390,11 +386,6 @@ export function runForecast({
     const teams = entrant.teams.map((team) => normalizeTeamName(team));
     const bestTeam = teams.reduce((best, team) =>
       (teamTitleOdds.get(team) ?? 0) > (teamTitleOdds.get(best) ?? 0) ? team : best,
-    );
-    // The team most likely to land this entrant the runner-up prize as losing finalist
-    // (drives the runner-up card, distinct from the title-odds team above).
-    const runnerUpTeam = teams.reduce((best, team) =>
-      (teamRunnerUpOdds.get(team) ?? 0) > (teamRunnerUpOdds.get(best) ?? 0) ? team : best,
     );
     // The team most likely to land this entrant the wooden spoon (drives the spoon card).
     const spoonTeam = teams.reduce((worst, team) =>
@@ -409,8 +400,6 @@ export function runForecast({
       expectedWinnings: (winPct / 100) * 100 + (runnerUpPct / 100) * 30 + (spoonPct / 100) * 30,
       bestTeam,
       bestTeamOdds: teamTitleOdds.get(bestTeam) ?? 0,
-      runnerUpTeam,
-      runnerUpTeamOdds: teamRunnerUpOdds.get(runnerUpTeam) ?? 0,
       spoonTeam,
       spoonTeamOdds: teamSpoonOdds.get(spoonTeam) ?? 0,
     });

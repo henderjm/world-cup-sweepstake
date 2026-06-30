@@ -146,6 +146,7 @@ function normalizeMatch(match) {
       home: Number.isFinite(match.score?.home) ? match.score.home : null,
       away: Number.isFinite(match.score?.away) ? match.score.away : null,
     },
+    winner: match.winner ?? null,
   };
 }
 
@@ -290,6 +291,8 @@ function isDecided(match) {
 }
 
 function matchWinner(match) {
+  if (match.winner === "HOME_TEAM") return match.homeTeam;
+  if (match.winner === "AWAY_TEAM") return match.awayTeam;
   if (Number.isFinite(match.score?.home) && Number.isFinite(match.score?.away)) {
     if (match.score.home > match.score.away) return match.homeTeam;
     if (match.score.away > match.score.home) return match.awayTeam;

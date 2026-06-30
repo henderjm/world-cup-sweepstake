@@ -19,6 +19,13 @@
 
 import { mapFootballDataMatches } from "../src/domain.js";
 import { mapMatchDetail } from "../src/mapDetail.js";
+import {
+  cleanName as cleanShootoutName,
+  createShootoutChallenge,
+  normalizeResult,
+  sortLeaderboard,
+  validateClientResult,
+} from "../src/shootoutModel.js";
 
 const API = "https://api.football-data.org";
 
@@ -38,6 +45,7 @@ const ALLOWED_ORIGINS = new Set([
 // banter self-cleans after the tournament with no maintenance.
 const REACTIONS = ["🔥", "😂", "😱", "🧂", "🐐", "💀"];
 const BANTER_TTL = 60 * 24 * 60 * 60; // 60 days
+const SHOOTOUT_TTL = 90 * 24 * 60 * 60; // 90 days
 
 // Best-effort stale fallback held in the isolate's memory.
 let lastLive = null;
@@ -65,6 +73,11 @@ export default {
     // blockers that block the Sentry ingest domain cannot drop them.
     if (url.pathname === "/tunnel" && request.method === "POST") {
       return tunnelToSentry(request, cors);
+    }
+
+    const shootoutRoute = url.pathname.match(/^\/shootout\/(\d{4}-\d{2}-\d{2})$/);
+    if (shootoutRoute) {
+      return handleShootout(request, env, shootoutRoute[1], cors);
     }
 
     const token = env.FOOTBALL_DATA_TOKEN;
@@ -151,15 +164,9 @@ async function tunnelToSentry(request, cors) {
 }
 
 // -- Banter (KV-backed) ------------------------------------------------------
-// Stored as one JSON blob per match under banter:<id>:
-//   { reactions: { <uid>: [emoji, ...] }, messages: [{ name, text, ts }, ...] }
-// Read with get() and written whole. An earlier design used one key per item and read
-// them back with list(), but KV list() is eventually consistent and does not reflect a
-// just-written key for up to ~a minute, so fresh posts vanished on the next read. A
-// single key read with get() reflects the write immediately for the writer, and the
-// POST handler returns the in-memory state it just wrote, so a posted comment never
-// depends on KV propagation to show up. Concurrent writers can clobber (last write
-// wins); acceptable for a small group, and the trade for staying on simple KV.
+// Reactions are stored one key per user per match (react:<id>:<uid>, the emoji set in
+// the key's metadata), so each person only ever writes their own key and there is no
+// read-modify-write race. Messages are append-only keys (msg:<id>:<ts>-<rand>).
 
 async function handleBanter(request, env, id, competition, season, token, cors) {
   if (!env.BANTER) return json({ error: "banter not configured" }, 503, cors);
@@ -174,8 +181,7 @@ async function handleBanter(request, env, id, competition, season, token, cors) 
 
   if (request.method === "GET") {
     const uid = cleanUid(new URL(request.url).searchParams.get("uid"));
-    const state = await readBanterState(env, id);
-    return json(aggregateBanter(state, uid), 200, cors);
+    return json(await readBanter(env, id, uid), 200, cors);
   }
   if (request.method === "POST") {
     let body;
@@ -186,54 +192,174 @@ async function handleBanter(request, env, id, competition, season, token, cors) 
     }
     const uid = cleanUid(body.uid);
     if (!uid) return json({ error: "missing uid" }, 400, cors);
-    const state = await readBanterState(env, id);
-    const error = applyBanter(state, uid, body);
-    if (error) return json({ error }, 400, cors);
-    await env.BANTER.put(`banter:${id}`, JSON.stringify(state), { expirationTtl: BANTER_TTL });
-    return json(aggregateBanter(state, uid), 200, cors);
+    if (body.action === "react") {
+      if (!REACTIONS.includes(body.emoji)) return json({ error: "bad emoji" }, 400, cors);
+      await toggleReaction(env, id, uid, body.emoji);
+    } else if (body.action === "message") {
+      const text = cleanText(body.text);
+      if (!text) return json({ error: "empty message" }, 400, cors);
+      await addMessage(env, id, uid, cleanName(body.name), text);
+    } else {
+      return json({ error: "bad action" }, 400, cors);
+    }
+    return json(await readBanter(env, id, uid), 200, cors);
   }
   return json({ error: "method not allowed" }, 405, cors);
 }
 
-export async function readBanterState(env, id) {
-  const blob = await env.BANTER.get(`banter:${id}`, "json");
-  return {
-    reactions: blob && typeof blob.reactions === "object" && blob.reactions ? blob.reactions : {},
-    messages: Array.isArray(blob?.messages) ? blob.messages : [],
-  };
-}
-
-export function aggregateBanter(state, uid) {
+async function readBanter(env, id, uid) {
+  const [reacts, msgs] = await Promise.all([
+    env.BANTER.list({ prefix: `react:${id}:` }),
+    env.BANTER.list({ prefix: `msg:${id}:` }),
+  ]);
   const counts = {};
-  for (const emojis of Object.values(state.reactions)) {
+  let mine = [];
+  for (const key of reacts.keys) {
+    const emojis = key.metadata?.e ?? [];
     for (const emoji of emojis) counts[emoji] = (counts[emoji] ?? 0) + 1;
+    if (key.name === `react:${id}:${uid}`) mine = emojis;
   }
+  const messages = msgs.keys
+    .map((key) => key.metadata)
+    .filter((meta) => meta && meta.text)
+    .sort((a, b) => a.ts - b.ts)
+    .slice(-50)
+    .map((meta) => ({ name: meta.name, text: meta.text, ts: meta.ts }));
+  return { reactions: { counts, mine }, messages };
+}
+
+async function toggleReaction(env, id, uid, emoji) {
+  const key = `react:${id}:${uid}`;
+  const current = await env.BANTER.getWithMetadata(key);
+  const set = new Set(current.metadata?.e ?? []);
+  if (set.has(emoji)) set.delete(emoji);
+  else set.add(emoji);
+  if (set.size === 0) {
+    await env.BANTER.delete(key);
+  } else {
+    await env.BANTER.put(key, "", { metadata: { e: [...set] }, expirationTtl: BANTER_TTL });
+  }
+}
+
+async function addMessage(env, id, uid, name, text) {
+  const ts = Date.now();
+  const key = `msg:${id}:${ts}-${Math.random().toString(36).slice(2, 8)}`;
+  await env.BANTER.put(key, "", { metadata: { name, text, ts, uid }, expirationTtl: BANTER_TTL });
+}
+
+// -- Daily Shootout (KV-backed) ---------------------------------------------
+
+async function handleShootout(request, env, date, cors) {
+  if (!env.SHOOTOUT) return json({ error: "shootout not configured" }, 503, cors);
+  const challenge = createShootoutChallenge(date);
+
+  if (request.method === "GET") {
+    const uid = cleanUid(new URL(request.url).searchParams.get("uid"));
+    const result = uid ? await env.SHOOTOUT.get(shootoutResultKey(date, uid), "json") : null;
+    const leaderboard = await readShootoutBoard(env, date);
+    return json(
+      {
+        date,
+        challengeNumber: challenge.challengeNumber,
+        seed: challenge.seed,
+        alreadyPlayed: Boolean(result),
+        result: publicShootoutResult(result),
+        leaderboard: publicShootoutBoard(leaderboard),
+      },
+      200,
+      cors,
+    );
+  }
+
+  if (request.method === "POST") {
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return json({ error: "bad body" }, 400, cors);
+    }
+
+    const cleaned = sanitizeShootoutResult(body, date, challenge);
+    if (cleaned.error) return json({ error: cleaned.error }, 400, cors);
+
+    const key = shootoutResultKey(date, cleaned.result.uid);
+    const existing = await env.SHOOTOUT.get(key, "json");
+    if (existing) {
+      return json(
+        {
+          error: "already played",
+          result: publicShootoutResult(existing),
+          leaderboard: publicShootoutBoard(await readShootoutBoard(env, date)),
+        },
+        409,
+        cors,
+      );
+    }
+
+    await env.SHOOTOUT.put(key, JSON.stringify(cleaned.result), { expirationTtl: SHOOTOUT_TTL });
+    const leaderboard = await writeShootoutBoard(env, date, cleaned.result);
+    return json({ result: publicShootoutResult(cleaned.result), leaderboard: publicShootoutBoard(leaderboard) }, 200, cors);
+  }
+
+  return json({ error: "method not allowed" }, 405, cors);
+}
+
+function sanitizeShootoutResult(body, date, challenge) {
+  const uid = cleanUid(body?.uid);
+  if (!uid) return { error: "missing uid" };
+  const raw = {
+    date,
+    name: cleanShootoutName(body?.name),
+    goals: Number(body?.goals),
+    style: Number(body?.style),
+    shots: body?.shots,
+    sdStreak: Number(body?.sdStreak),
+    team: cleanLabel(body?.team, 32) || undefined,
+    submittedAt: Date.now(),
+    clientVersion: Number(body?.clientVersion) || 1,
+  };
+  const valid = validateClientResult(raw);
+  if (!valid.ok) return { error: valid.error };
+  return { result: { ...normalizeResult(raw), uid } };
+}
+
+async function readShootoutBoard(env, date) {
+  const board = await env.SHOOTOUT.get(shootoutBoardKey(date), "json");
+  return Array.isArray(board) ? board : [];
+}
+
+async function writeShootoutBoard(env, date, result) {
+  const current = await readShootoutBoard(env, date);
+  const withoutUser = current.filter((row) => row.uid !== result.uid);
+  const next = sortLeaderboard([...withoutUser, result]).slice(0, 32);
+  await env.SHOOTOUT.put(shootoutBoardKey(date), JSON.stringify(next), { expirationTtl: SHOOTOUT_TTL });
+  return next;
+}
+
+function publicShootoutBoard(rows) {
+  return sortLeaderboard((rows ?? []).map(publicShootoutResult).filter(Boolean));
+}
+
+function publicShootoutResult(result) {
+  if (!result) return null;
   return {
-    reactions: { counts, mine: state.reactions[uid] ?? [] },
-    messages: state.messages.map((message) => ({ name: message.name, text: message.text, ts: message.ts })),
+    name: result.name,
+    goals: result.goals,
+    style: result.style,
+    shots: result.shots,
+    sdStreak: result.sdStreak ?? 0,
+    team: result.team,
+    submittedAt: result.submittedAt,
+    clientVersion: result.clientVersion,
   };
 }
 
-// Mutate the banter state in place for a POST body. Returns an error string, or null on
-// success. Reactions toggle per uid; messages append and keep the most recent 50.
-export function applyBanter(state, uid, body) {
-  if (body.action === "react") {
-    if (!REACTIONS.includes(body.emoji)) return "bad emoji";
-    const mine = new Set(state.reactions[uid] ?? []);
-    if (mine.has(body.emoji)) mine.delete(body.emoji);
-    else mine.add(body.emoji);
-    if (mine.size) state.reactions[uid] = [...mine];
-    else delete state.reactions[uid];
-    return null;
-  }
-  if (body.action === "message") {
-    const text = cleanText(body.text);
-    if (!text) return "empty message";
-    state.messages.push({ name: cleanName(body.name), text, ts: Date.now() });
-    if (state.messages.length > 50) state.messages = state.messages.slice(-50);
-    return null;
-  }
-  return "bad action";
+function shootoutResultKey(date, uid) {
+  return `shootout:${date}:${uid}`;
+}
+
+function shootoutBoardKey(date) {
+  return `shootout-board:${date}`;
 }
 
 function cleanUid(value) {
@@ -243,6 +369,14 @@ function cleanUid(value) {
 function cleanName(value) {
   const name = String(value ?? "").replace(/[<>]/g, "").trim().slice(0, 24);
   return name || "Someone";
+}
+
+function cleanLabel(value, maxLength) {
+  return String(value ?? "")
+    .replace(/[<>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
 }
 
 function cleanText(value) {

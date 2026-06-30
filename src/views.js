@@ -2,6 +2,16 @@ import { flagFor } from "./flags.js";
 import { ENTRANTS, ownerOf } from "./data.js";
 import { compareByGoals, compareByInvolvements } from "./scorers.js";
 import {
+  FINAL,
+  KNOCKOUT_SCHEDULE_ORDER,
+  OFFICIAL_R32_TEAMS,
+  QF,
+  R16,
+  R32,
+  SF,
+  THIRD,
+} from "./bracket.js";
+import {
   dateLabel,
   dayLabel,
   formatStage,
@@ -11,6 +21,7 @@ import {
   percent,
   signed,
   statusLabel,
+  timeLabel,
 } from "./format.js";
 
 function esc(value) {
@@ -112,10 +123,10 @@ function contenderBar(row, max) {
     </li>`;
 }
 
-function prizeCard({ variant, amount, label, rows, valueKey, teamKey, footnote, exclude = null }) {
+function prizeCard({ variant, amount, label, rows, valueKey, teamKey, footnote }) {
   const ranked = rows
     .map((row) => ({ name: row.forecast.name, value: row.forecast[valueKey], team: row.forecast[teamKey] }))
-    .filter((row) => row.value > 0 && row.name !== exclude)
+    .filter((row) => row.value > 0)
     .sort((a, b) => b.value - a.value)
     .slice(0, 4);
 
@@ -149,14 +160,6 @@ export function renderHero(model) {
     .filter((row) => row.momentum > 0)
     .sort((a, b) => b.momentum - a.momentum)[0];
 
-  // The strongest team's owner naturally tops both win and runner-up odds, so the two
-  // cards would otherwise show the same owner/team. Keep the title favourite to the
-  // winner card and show the runner-up race among everyone else (the losing finalist).
-  const titleFavourite = rows
-    .map((row) => ({ name: row.forecast.name, value: row.forecast.winPct }))
-    .filter((row) => row.value > 0)
-    .sort((a, b) => b.value - a.value)[0]?.name ?? null;
-
   const championConfirmed = model.prizes.champion.owner !== "TBC";
 
   return `
@@ -168,7 +171,7 @@ export function renderHero(model) {
       <div class="hero__meta">
         <button type="button" class="chip chip--sim" aria-label="How the projection works">
           Projected from ${model.forecast.iterations.toLocaleString("en-IE")} simulations
-          <span class="chip__tip" role="tooltip">We play the rest of the tournament out ${model.forecast.iterations.toLocaleString("en-IE")} times from the current results, giving each remaining game a plausible scoreline based on team strength, then count how often each entrant's teams take each prize. A model for fun, not a prediction: strengths are estimated and the real knockout draw is not in the feed yet.</span>
+          <span class="chip__tip" role="tooltip">We play the rest of the tournament out ${model.forecast.iterations.toLocaleString("en-IE")} times from the current results, giving each remaining game a plausible scoreline based on team strength, then count how often each entrant's teams take each prize. A model for fun, not a prediction: strengths are estimated and the knockout route is fixed by official match number.</span>
         </button>
         ${topMover ? `<span class="chip chip--mover">On the up: ${esc(topMover.name)} ▲</span>` : ""}
       </div>
@@ -191,9 +194,8 @@ export function renderHero(model) {
         label: "Runner-up",
         rows,
         valueKey: "runnerUpPct",
-        teamKey: "runnerUpTeam",
-        exclude: titleFavourite,
-        footnote: "Most likely losing finalist, bar the title favourite",
+        teamKey: "bestTeam",
+        footnote: "Owner of the losing finalist",
       })}
       ${prizeCard({
         variant: "spoon",
@@ -358,69 +360,101 @@ export function renderGroupTables(model) {
 
 // -- Knockout bracket --------------------------------------------------------
 
-// Date range across the feed's real fixtures for a stage, e.g. "28 Jun to 03 Jul".
-function stageDateRange(model, stage) {
-  const times = model.matches
-    .filter((match) => match.stage === stage && match.utcDate)
-    .map((match) => new Date(match.utcDate).getTime());
-  if (!times.length) return "";
-  const fmt = (time) =>
-    new Intl.DateTimeFormat("en-IE", { day: "2-digit", month: "short" }).format(new Date(time));
-  const min = Math.min(...times);
-  const max = Math.max(...times);
-  return min === max ? fmt(min) : `${fmt(min)} to ${fmt(max)}`;
+const KNOCKOUT_ROUNDS = [
+  { stage: "LAST_32", matches: R32 },
+  { stage: "LAST_16", matches: R16 },
+  { stage: "QUARTER_FINALS", matches: QF },
+  { stage: "SEMI_FINALS", matches: SF },
+  { stage: "THIRD_PLACE", matches: [THIRD], source: "loser" },
+  { stage: "FINAL", matches: [FINAL], source: "winner" },
+];
+
+function knockoutFixturesByNo(model) {
+  const fixturesByNo = new Map();
+  Object.entries(KNOCKOUT_SCHEDULE_ORDER).forEach(([stage, numbers]) => {
+    const fixtures = model.matches
+      .filter((match) => match.stage === stage)
+      .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate));
+    numbers.forEach((no, index) => {
+      if (fixtures[index]) fixturesByNo.set(no, fixtures[index]);
+    });
+  });
+  return fixturesByNo;
 }
 
-// A single projected tie: the matchup with the favourite highlighted, and the win-odds
-// split revealed on hover or tap.
-function koMatchCard(match) {
-  const homePct = Math.round((match.homeWin ?? 0.5) * 100);
-  const awayPct = 100 - homePct;
-  const homeWin = match.winner && match.winner === match.home;
-  const awayWin = match.winner && match.winner === match.away;
-  return `<div class="ko-match" data-ko-toggle tabindex="0" role="button" aria-label="${esc(match.home)} ${homePct}% to beat ${esc(match.away)} ${awayPct}%">
-      <span class="ko-slot ${homeWin ? "is-win" : ""}">${teamCell(match.home)}<b class="ko-pct">${homePct}%</b></span>
-      <span class="ko-slot ${awayWin ? "is-win" : ""}">${teamCell(match.away)}<b class="ko-pct">${awayPct}%</b></span>
+function r32SlotLabel(slot) {
+  if (slot.t === "W") return `Winner Group ${slot.g}`;
+  if (slot.t === "RU") return `Runner-up Group ${slot.g}`;
+  return `Third place ${slot.from.join("/")}`;
+}
+
+function koSlot(team, route, isWinner) {
+  return `<span class="ko-slot ${isWinner ? "is-win" : ""}">
+      ${isKnown(team) ? teamCell(team) : `<span class="ko-route">${esc(route)}</span>`}
+      ${isKnown(team) ? `<small>${esc(route)}</small>` : ""}
+    </span>`;
+}
+
+function fixtureTeam(fixture, def, side) {
+  const feedTeam = fixture?.[side === "home" ? "homeTeam" : "awayTeam"];
+  if (isKnown(feedTeam)) return feedTeam;
+  return OFFICIAL_R32_TEAMS.get(def.no)?.[side] ?? "";
+}
+
+function knockoutWinnerSide(fixture) {
+  if (!fixture || !isFinished(fixture.status)) return "";
+  if (fixture.winner === "HOME_TEAM") return "home";
+  if (fixture.winner === "AWAY_TEAM") return "away";
+  if (!hasScore(fixture.score)) return "";
+  if (fixture.score.home > fixture.score.away) return "home";
+  if (fixture.score.away > fixture.score.home) return "away";
+  return "";
+}
+
+function koMatchCard(def, stage, fixture, source = "winner") {
+  const r32 = stage === "LAST_32";
+  const homeRoute = r32 ? r32SlotLabel(def.a) : `${source === "loser" ? "Loser" : "Winner"} M${def.from[0]}`;
+  const awayRoute = r32 ? r32SlotLabel(def.b) : `${source === "loser" ? "Loser" : "Winner"} M${def.from[1]}`;
+  const homeTeam = r32 ? fixtureTeam(fixture, def, "home") : fixture?.homeTeam;
+  const awayTeam = r32 ? fixtureTeam(fixture, def, "away") : fixture?.awayTeam;
+  const winner = knockoutWinnerSide(fixture);
+  const score = fixture
+    ? hasScore(fixture.score)
+      ? scoreCell(fixture)
+      : statusLabel(fixture)
+    : "";
+  const when = fixture?.utcDate ? `${dayLabel(fixture.utcDate)} · ${timeLabel(fixture.utcDate)}` : "";
+  const openable = fixture?.id != null;
+
+  return `<div class="ko-match ${openable ? "ko-match--openable" : ""}" ${openable ? `data-match-id="${fixture.id}" role="button" tabindex="0"` : ""}>
+      <header class="ko-match__head">
+        <span>M${def.no}</span>
+        ${when ? `<span>${esc(when)}</span>` : ""}
+      </header>
+      ${koSlot(homeTeam, homeRoute, winner === "home")}
+      ${score ? `<div class="ko-score">${score}</div>` : ""}
+      ${koSlot(awayTeam, awayRoute, winner === "away")}
     </div>`;
 }
 
 export function renderBracket(model) {
-  const projection = model.forecast?.projectedBracket;
-  const columns = (projection?.rounds ?? [])
-    .filter((round) => round.matches.length)
+  const fixturesByNo = knockoutFixturesByNo(model);
+  const columns = KNOCKOUT_ROUNDS
     .map((round) => {
-      const cards = round.matches.map(koMatchCard).join("");
-      const when = stageDateRange(model, round.stage);
+      const cards = round.matches
+        .map((match) => koMatchCard(match, round.stage, fixturesByNo.get(match.no), round.source))
+        .join("");
       return `<div class="ko-col">
-          <h3>${formatStage(round.stage)}${when ? `<span class="ko-when">${when}</span>` : ""}</h3>
+          <h3>${formatStage(round.stage)}</h3>
           ${cards}
         </div>`;
     })
     .join("");
 
-  const champ =
-    projection && isKnown(projection.champion)
-      ? `<p class="ko-proj__champ">Projected champion: <span class="prize__flag">${flagFor(projection.champion)}</span> <strong>${esc(projection.champion)}</strong>${ownerOf(projection.champion) ? ` (${esc(ownerOf(projection.champion))})` : ""}</p>`
-      : "";
-
-  const favourites = [...model.forecast.teamTitleOdds.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 6)
-    .map(
-      ([team, odds]) =>
-        `<li>${flagFor(team)} <span>${esc(team)}</span> <span class="ko-fav__owner">${esc(ownerOf(team) ?? "")}</span> <b>${percent(odds)}</b></li>`,
-    )
-    .join("");
-
   return `
-    <div class="panel__head"><h2>Knockout bracket</h2><span class="panel__hint">Most likely path · tap a tie for odds</span></div>
-    ${champ}
-    <div class="ko-wrap">${columns || `<p class="panel__note">No knockout projection yet.</p>`}</div>
-    <div class="ko-fav">
-      <h3>Projected to lift the trophy</h3>
-      <ul>${favourites}</ul>
-      <p class="panel__note">Projected group finishes are seeded into the real, fixed 2026 bracket pathways. Teams and odds are a Monte Carlo projection and sharpen as group results land.</p>
-    </div>`;
+    <div class="panel__head"><h2>Knockout bracket</h2><span class="panel__hint">Official match-number route</span></div>
+    <div class="ko-wrap">${columns}</div>
+    <p class="panel__note">Official FIFA knockout structure. Round-of-32 teams are fixed; later rounds show the match-number route until winners are known.</p>`;
 }
 
 // -- What-if explorer --------------------------------------------------------
@@ -681,5 +715,5 @@ export function renderGoldenBoot(model, sortKey = "ga") {
 export function renderFooter(model) {
   return `
     <p><strong>${money(model.payouts.pot)}</strong> pot · ${money(model.payouts.first)} winner · ${money(model.payouts.second)} runner-up · ${money(model.payouts.woodenSpoon)} wooden spoon</p>
-    <p class="footer__src">Data: ${esc(model.source)}${model.lastUpdated ? ` · updated ${dateLabel(model.lastUpdated)}` : ""}. Win, runner-up and spoon odds are a Monte Carlo projection, not the real draw.</p>`;
+    <p class="footer__src">Data: ${esc(model.source)}${model.lastUpdated ? ` · updated ${dateLabel(model.lastUpdated)}` : ""}. Win, runner-up and spoon odds are Monte Carlo projections, not actual results.</p>`;
 }

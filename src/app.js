@@ -21,6 +21,17 @@ import {
 } from "./interactions.js";
 import { setMatchModel, setupMatchDetail, openMatch } from "./matchDetail.js";
 import { isLive } from "./format.js";
+import { todayShootoutDate } from "./shootoutModel.js";
+import {
+  displayName,
+  loadShootoutDay,
+  rememberName,
+  shareShootout,
+  submitShootoutResult,
+} from "./shootoutApi.js";
+import { cosmeticTeamForName } from "./shootoutContext.js";
+import { renderShootoutPanel, updateShootoutHud } from "./shootoutView.js";
+import { mountShootoutGame } from "./shootoutGame.js";
 import "./background.js";
 
 const elements = {
@@ -37,7 +48,7 @@ const elements = {
   updated: document.querySelector("#updated"),
 };
 
-const TABS = ["live", "leaderboard", "tables", "bracket", "whatif", "fixtures", "goldenboot"];
+const TABS = ["live", "leaderboard", "tables", "bracket", "whatif", "fixtures", "goldenboot", "shootout"];
 const initialTab = window.location.hash.replace("#", "");
 const state = {
   tab: TABS.includes(initialTab) ? initialTab : "live",
@@ -52,6 +63,12 @@ const state = {
     result: null,
     computing: false,
     scenarioReq: 0,
+  },
+  shootout: {
+    date: todayShootoutDate(),
+    day: null,
+    loading: false,
+    mount: null,
   },
 };
 
@@ -179,7 +196,7 @@ async function poll() {
         elements.ticker.innerHTML = renderTicker(model);
         elements.hero.innerHTML = renderHero(model);
         elements.footer.innerHTML = renderFooter(model);
-        renderPanel();
+        if (state.tab !== "shootout") renderPanel();
       }
       setUpdatedLabel();
     }
@@ -190,6 +207,7 @@ async function poll() {
 }
 
 function renderPanel() {
+  if (state.tab !== "shootout") destroyShootoutMount();
   const panel = elements.panel;
   switch (state.tab) {
     case "leaderboard":
@@ -211,9 +229,88 @@ function renderPanel() {
     case "goldenboot":
       panel.innerHTML = renderGoldenBoot(model, state.goldenBootSort);
       break;
+    case "shootout":
+      renderShootout();
+      break;
     default:
       panel.innerHTML = renderLive(model);
   }
+}
+
+function renderShootout() {
+  const today = todayShootoutDate();
+  if (state.shootout.date !== today) {
+    destroyShootoutMount();
+    state.shootout = { date: today, day: null, loading: false, mount: null };
+  }
+  if (!state.shootout.day && !state.shootout.loading) loadShootout();
+  if (!state.shootout.day) {
+    elements.panel.innerHTML = `<p class="panel__note">Loading today's shootout...</p>`;
+    return;
+  }
+  destroyShootoutMount();
+  elements.panel.innerHTML = renderShootoutPanel(state.shootout.day);
+  mountShootout();
+}
+
+async function loadShootout() {
+  const date = state.shootout.date;
+  state.shootout.loading = true;
+  try {
+    const day = await loadShootoutDay(date);
+    if (state.shootout.date !== date) return;
+    state.shootout.day = day;
+  } catch (error) {
+    window.Sentry?.captureException?.(error);
+  } finally {
+    state.shootout.loading = false;
+  }
+  if (state.tab === "shootout") renderPanel();
+}
+
+function mountShootout() {
+  const day = state.shootout.day;
+  if (!day) return;
+  // Mount even when locked so the canvas draws the static done-state pitch
+  // instead of an undrawn black void.
+  if (!day.result) metric("count", "shootout_started", 1);
+  state.shootout.mount = mountShootoutGame(elements.panel, day, {
+    onKick: (gameState) => updateShootoutHud(elements.panel, gameState),
+    onSuddenDeath: () => metric("count", "shootout_sudden_death_entered", 1),
+    onUnavailable: () => {
+      const status = elements.panel.querySelector("[data-shootout-status]");
+      if (status) status.innerHTML = `<strong>Game unavailable</strong><span>This browser cannot start the canvas game.</span>`;
+    },
+    onComplete: async (result) => {
+      const name = displayName();
+      const full = { ...result, name, team: cosmeticTeamForName(name) ?? undefined };
+      metric("count", "shootout_completed", 1, {
+        tags: { goals: String(result.goals), sdStreak: String(result.sdStreak), style: String(result.style) },
+      });
+      await saveShootoutRun(day, full);
+    },
+  });
+}
+
+// Lock the run, submit it, and re-render with the official result and board.
+async function saveShootoutRun(day, result) {
+  const submitted = await submitShootoutResult(day.date, result);
+  if (submitted.conflict) metric("count", "shootout_replay_blocked", 1);
+  state.shootout.day = {
+    ...day,
+    alreadyPlayed: true,
+    result: submitted.result,
+    leaderboard: submitted.leaderboard,
+    localOnly: submitted.localOnly,
+    serverAvailable: submitted.localOnly ? day.serverAvailable : true,
+  };
+  renderPanel();
+}
+
+function destroyShootoutMount() {
+  if (!state.shootout.mount) return;
+  state.shootout.mount.destroy();
+  state.shootout.mount = null;
 }
 
 function syncActiveTab() {
@@ -228,6 +325,7 @@ function wireTabs() {
   elements.tabs.addEventListener("click", (event) => {
     const button = event.target.closest("[data-tab]");
     if (!button) return;
+    if (state.tab === "shootout" && button.dataset.tab !== "shootout") destroyShootoutMount();
     state.tab = button.dataset.tab;
     window.history.replaceState(null, "", `#${state.tab}`);
     metric("count", "tab_view", 1, { tags: { tab: state.tab } });
@@ -256,10 +354,24 @@ function wirePanelControls() {
       renderPanel();
       return;
     }
-    // Bracket: reveal a tie's odds on tap (hover also reveals them via CSS).
-    const koToggle = event.target.closest("[data-ko-toggle]");
-    if (koToggle) {
-      koToggle.classList.toggle("is-open");
+    const shareButton = event.target.closest("[data-shootout-share-button]");
+    if (shareButton) {
+      const text = elements.panel.querySelector("[data-shootout-share]")?.value ?? "";
+      metric("count", "shootout_share_clicked", 1);
+      shareShootout(text).then((status) => {
+        shareButton.textContent = status === "shared" ? "Shared" : status === "copied" ? "Copied" : "Copy unavailable";
+      });
+      return;
+    }
+    const saveButton = event.target.closest("[data-shootout-save]");
+    if (saveButton) {
+      const day = state.shootout.day;
+      if (!day?.result) return;
+      const input = elements.panel.querySelector("[data-shootout-name]");
+      const name = rememberName(input?.value || "") || day.result.name;
+      const team = cosmeticTeamForName(name) ?? undefined;
+      saveButton.disabled = true;
+      saveShootoutRun(day, { ...day.result, name, team });
       return;
     }
     // What-if: pin or unpin a remaining group game.

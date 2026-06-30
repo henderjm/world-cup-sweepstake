@@ -340,8 +340,8 @@ function groupTable(match) {
 // -- events (after fetch) ----------------------------------------------------
 
 function renderEvents(match, detail) {
-  const homeName = detail.home?.name ?? "";
   const sideOf = (teamName) => (normalizeTeamName(teamName) === match.homeTeam ? "home" : "away");
+  const meta = renderMatchMeta(detail);
 
   const goals = (detail.goals ?? [])
     .map((g) => {
@@ -389,12 +389,12 @@ function renderEvents(match, detail) {
   };
 
   const hasAny = goals || cards || subs || detail.home?.lineup?.length;
-  if (!hasAny) return scheduledNote(match);
+  if (!hasAny) return `${meta}${scheduledNote(match)}`;
 
   const block = (title, body) => (body ? `<div class="md-evblock"><h3>${title}</h3><ul class="md-evlist">${body}</ul></div>` : "");
 
   return `
-    ${detail.venue || detail.referee ? `<p class="md-venue">${detail.venue ? `🏟 ${esc(detail.venue)}` : ""}${detail.attendance ? ` · ${Number(detail.attendance).toLocaleString("en-IE")}` : ""}${detail.referee ? ` · ref ${esc(detail.referee)}` : ""}</p>` : ""}
+    ${meta}
     ${block("Goals", goals)}
     ${block("Substitutions", subs)}
     ${block("Cards", cards)}
@@ -403,8 +403,17 @@ function renderEvents(match, detail) {
       ${xi(detail.home)}
       ${xi(detail.away)}
     </div>
-    <p class="md-note md-note--src">Lineups, scorers, subs and cards from football-data.org. Expected goals (xG) is not available from this source.</p>
+    <p class="md-note md-note--src">Lineups, scorers, substitutions and cards from football-data.org.</p>
   `;
+}
+
+function renderMatchMeta(detail) {
+  const items = [
+    detail.venue ? `<span><b>Stadium</b>${esc(detail.venue)}</span>` : "",
+    detail.attendance ? `<span><b>Attendance</b>${Number(detail.attendance).toLocaleString("en-IE")}</span>` : "",
+    detail.referee ? `<span><b>Referee</b>${esc(detail.referee)}</span>` : "",
+  ].filter(Boolean);
+  return items.length ? `<div class="md-venue">${items.join("")}</div>` : "";
 }
 
 function scheduledNote(match) {
