@@ -369,6 +369,28 @@ const KNOCKOUT_ROUNDS = [
   { stage: "FINAL", matches: [FINAL], source: "winner" },
 ];
 
+const KNOCKOUT_MATCH_DEFS = new Map(
+  KNOCKOUT_ROUNDS.flatMap((round) => round.matches.map((match) => [match.no, match])),
+);
+
+const LEFT_DRAW = [
+  { stage: "LAST_32", matches: defsByNo([74, 77, 73, 75, 83, 84, 81, 82]) },
+  { stage: "LAST_16", matches: defsByNo([89, 90, 93, 94]) },
+  { stage: "QUARTER_FINALS", matches: defsByNo([97, 98]) },
+  { stage: "SEMI_FINALS", matches: defsByNo([101]) },
+];
+
+const RIGHT_DRAW = [
+  { stage: "SEMI_FINALS", matches: defsByNo([102]) },
+  { stage: "QUARTER_FINALS", matches: defsByNo([99, 100]) },
+  { stage: "LAST_16", matches: defsByNo([91, 92, 95, 96]) },
+  { stage: "LAST_32", matches: defsByNo([76, 78, 79, 80, 86, 88, 85, 87]) },
+];
+
+function defsByNo(numbers) {
+  return numbers.map((number) => KNOCKOUT_MATCH_DEFS.get(number)).filter(Boolean);
+}
+
 function knockoutFixturesByNo(model) {
   const fixturesByNo = new Map();
   Object.entries(KNOCKOUT_SCHEDULE_ORDER).forEach(([stage, numbers]) => {
@@ -401,6 +423,11 @@ function fixtureTeam(fixture, def, side) {
   return OFFICIAL_R32_TEAMS.get(def.no)?.[side] ?? "";
 }
 
+function knownFixtureTeam(fixture, side) {
+  const team = fixture?.[side === "home" ? "homeTeam" : "awayTeam"];
+  return isKnown(team) ? team : "";
+}
+
 function knockoutWinnerSide(fixture) {
   if (!fixture || !isFinished(fixture.status)) return "";
   if (fixture.winner === "HOME_TEAM") return "home";
@@ -411,17 +438,49 @@ function knockoutWinnerSide(fixture) {
   return "";
 }
 
-function koMatchCard(def, stage, fixture, source = "winner") {
+function knockoutRoute(def, stage, side, source) {
+  if (stage === "LAST_32") return r32SlotLabel(side === "home" ? def.a : def.b);
+  const from = def.from[side === "home" ? 0 : 1];
+  return `${source === "loser" ? "Loser" : "Winner"} M${from}`;
+}
+
+function resolvedKnockoutTeam(def, stage, fixture, side, source, outcomes) {
+  const feedTeam = knownFixtureTeam(fixture, side);
+  if (feedTeam) return feedTeam;
+  if (stage === "LAST_32") return fixtureTeam(fixture, def, side);
+  const from = def.from?.[side === "home" ? 0 : 1];
+  return outcomes.get(from)?.[source] ?? "";
+}
+
+function buildKnockoutOutcomes(fixturesByNo) {
+  const outcomes = new Map();
+  KNOCKOUT_ROUNDS.forEach((round) => {
+    round.matches.forEach((def) => {
+      const fixture = fixturesByNo.get(def.no);
+      const home = resolvedKnockoutTeam(def, round.stage, fixture, "home", round.source ?? "winner", outcomes);
+      const away = resolvedKnockoutTeam(def, round.stage, fixture, "away", round.source ?? "winner", outcomes);
+      const winnerSide = knockoutWinnerSide(fixture);
+      const winner = winnerSide === "home" ? home : winnerSide === "away" ? away : "";
+      const loser = winnerSide === "home" ? away : winnerSide === "away" ? home : "";
+      outcomes.set(def.no, { home, away, winner, loser });
+    });
+  });
+  return outcomes;
+}
+
+function koMatchCard(def, stage, fixture, source = "winner", outcomes = new Map()) {
   const r32 = stage === "LAST_32";
-  const homeRoute = r32 ? r32SlotLabel(def.a) : `${source === "loser" ? "Loser" : "Winner"} M${def.from[0]}`;
-  const awayRoute = r32 ? r32SlotLabel(def.b) : `${source === "loser" ? "Loser" : "Winner"} M${def.from[1]}`;
-  const homeTeam = r32 ? fixtureTeam(fixture, def, "home") : fixture?.homeTeam;
-  const awayTeam = r32 ? fixtureTeam(fixture, def, "away") : fixture?.awayTeam;
+  const homeRoute = knockoutRoute(def, stage, "home", source);
+  const awayRoute = knockoutRoute(def, stage, "away", source);
+  const homeTeam = r32 ? fixtureTeam(fixture, def, "home") : resolvedKnockoutTeam(def, stage, fixture, "home", source, outcomes);
+  const awayTeam = r32 ? fixtureTeam(fixture, def, "away") : resolvedKnockoutTeam(def, stage, fixture, "away", source, outcomes);
   const winner = knockoutWinnerSide(fixture);
   const score = fixture
     ? hasScore(fixture.score)
       ? scoreCell(fixture)
-      : statusLabel(fixture)
+      : isLive(fixture.status)
+        ? statusLabel(fixture)
+        : ""
     : "";
   const when = fixture?.utcDate ? `${dayLabel(fixture.utcDate)} · ${timeLabel(fixture.utcDate)}` : "";
   const openable = fixture?.id != null;
@@ -437,24 +496,35 @@ function koMatchCard(def, stage, fixture, source = "winner") {
     </div>`;
 }
 
+function renderKoColumn(round, fixturesByNo, outcomes) {
+  const cards = round.matches
+    .map((match) => koMatchCard(match, round.stage, fixturesByNo.get(match.no), round.source, outcomes))
+    .join("");
+  return `<div class="ko-col ko-col--${round.stage}">
+      <h3>${formatStage(round.stage)}</h3>
+      ${cards}
+    </div>`;
+}
+
 export function renderBracket(model) {
   const fixturesByNo = knockoutFixturesByNo(model);
-  const columns = KNOCKOUT_ROUNDS
-    .map((round) => {
-      const cards = round.matches
-        .map((match) => koMatchCard(match, round.stage, fixturesByNo.get(match.no), round.source))
-        .join("");
-      return `<div class="ko-col">
-          <h3>${formatStage(round.stage)}</h3>
-          ${cards}
-        </div>`;
-    })
-    .join("");
+  const outcomes = buildKnockoutOutcomes(fixturesByNo);
+  const left = LEFT_DRAW.map((round) => renderKoColumn(round, fixturesByNo, outcomes)).join("");
+  const right = RIGHT_DRAW.map((round) => renderKoColumn(round, fixturesByNo, outcomes)).join("");
+  const final = koMatchCard(FINAL, "FINAL", fixturesByNo.get(FINAL.no), "winner", outcomes);
+  const thirdPlace = koMatchCard(THIRD, "THIRD_PLACE", fixturesByNo.get(THIRD.no), "loser", outcomes);
 
   return `
     <div class="panel__head"><h2>Knockout bracket</h2><span class="panel__hint">Official match-number route</span></div>
-    <div class="ko-wrap">${columns}</div>
-    <p class="panel__note">Official FIFA knockout structure. Round-of-32 teams are fixed; later rounds show the match-number route until winners are known.</p>`;
+    <div class="ko-wrap ko-wrap--classic">
+      <section class="ko-side ko-side--left" aria-label="Left side of the draw">${left}</section>
+      <section class="ko-centre" aria-label="Finals">
+        <div class="ko-col ko-col--FINAL"><h3>Final</h3>${final}</div>
+        <div class="ko-col ko-col--THIRD_PLACE"><h3>Third place</h3>${thirdPlace}</div>
+      </section>
+      <section class="ko-side ko-side--right" aria-label="Right side of the draw">${right}</section>
+    </div>
+    <p class="panel__note">Official FIFA knockout structure. Results update from the fixture feed; finished winners are carried forward locally until the feed fills later-round team names.</p>`;
 }
 
 // -- What-if explorer --------------------------------------------------------

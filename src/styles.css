@@ -1136,6 +1136,46 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+.ko-wrap--classic {
+  display: grid;
+  grid-template-columns: minmax(820px, 1fr) minmax(230px, 0.35fr) minmax(820px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.ko-wrap--classic .ko-col {
+  flex: none;
+  min-width: 0;
+}
+
+.ko-side {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(190px, 1fr));
+  gap: 12px;
+  min-width: 820px;
+}
+
+.ko-centre {
+  display: grid;
+  gap: 20px;
+  min-width: 230px;
+  padding-top: 255px;
+}
+
+.ko-side .ko-col--LAST_16 {
+  gap: 42px;
+  padding-top: 42px;
+}
+
+.ko-side .ko-col--QUARTER_FINALS {
+  gap: 146px;
+  padding-top: 128px;
+}
+
+.ko-side .ko-col--SEMI_FINALS {
+  padding-top: 318px;
+}
+
 /* Fixtures ---------------------------------------------------------------- */
 
 .fx-day {

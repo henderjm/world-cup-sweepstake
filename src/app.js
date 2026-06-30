@@ -162,7 +162,18 @@ function setUpdatedLabel() {
 // changed. Polls faster while a game is live, slower when nothing is on.
 function matchSignature(data) {
   return (data.matches ?? [])
-    .map((item) => `${item.id}:${item.status}:${item.score?.home}:${item.score?.away}:${item.minute ?? ""}`)
+    .map((item) =>
+      [
+        item.id,
+        item.status,
+        item.homeTeam,
+        item.awayTeam,
+        item.score?.home,
+        item.score?.away,
+        item.winner ?? "",
+        item.minute ?? "",
+      ].join(":"),
+    )
     .join("|");
 }
 
