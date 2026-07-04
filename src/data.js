@@ -12,7 +12,7 @@ import { runForecast } from "./forecast.js";
 // Set this to your deployed Cloudflare Worker origin to serve live data without a
 // deploy, e.g. "https://goon-squad-data.<your-subdomain>.workers.dev". Leave empty to
 // use the static data/live.json baked by the GitHub Action (refreshed every 5 min).
-export const DATA_API = ""; // TEMP-LOCAL-TEST
+export const DATA_API = "https://goon-squad-data.gs-wc.workers.dev";
 
 export const ENTRANTS = [
   { name: "Ois", teams: ["Tunisia", "Sweden", "Colombia"] },
