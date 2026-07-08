@@ -481,6 +481,7 @@ function scenarioParams(pins) {
   return {
     groups: model.groups,
     groupMatches: model.matches.filter((item) => item.stage === "GROUP_STAGE"),
+    knockoutMatches: model.matches.filter((item) => item.stage !== "GROUP_STAGE"),
     ownerByTeam: OWNER_BY_TEAM,
     entrants: ENTRANTS,
     seed: model.forecast.seed,

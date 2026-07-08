@@ -71,6 +71,7 @@ export function buildModel(raw, scorerData = {}) {
   const forecast = runForecast({
     groups,
     groupMatches: matches.filter((match) => match.stage === "GROUP_STAGE"),
+    knockoutMatches: matches.filter((match) => match.stage !== "GROUP_STAGE"),
     ownerByTeam: OWNER_BY_TEAM,
     entrants: ENTRANTS,
     seed: seedFrom(raw.lastUpdated),

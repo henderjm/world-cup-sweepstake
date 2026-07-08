@@ -1,6 +1,6 @@
 import { STAGE_BONUSES, normalizeTeamName } from "./domain.js";
 import { isFinished } from "./format.js";
-import { R16, QF, SF, THIRD, FINAL, groupLetter, seedR32 } from "./bracket.js";
+import { FINAL, KNOCKOUT_SCHEDULE_ORDER, QF, R16, SF, THIRD, groupLetter, seedR32 } from "./bracket.js";
 
 // Monte Carlo projection of where the prize money lands.
 //
@@ -38,6 +38,12 @@ const ROUND_BONUS = {
 const THIRD_PLACE_BONUS = STAGE_BONUSES.THIRD_PLACE;
 const FINAL_WINNER_BONUS = STAGE_BONUSES.FINAL_WINNER;
 const FINAL_RUNNER_UP_BONUS = STAGE_BONUSES.FINAL_RUNNER_UP;
+const STAGE_APPEARANCE_BONUS = {
+  LAST_32: ENTRY_BONUS,
+  LAST_16: ROUND_BONUS.r16,
+  QUARTER_FINALS: ROUND_BONUS.qf,
+  SEMI_FINALS: ROUND_BONUS.sf,
+};
 
 const FACTORIAL = [1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800];
 
@@ -122,6 +128,70 @@ function decideKnockout(rng, a, b, ratingOf) {
   return rng() < pA ? a : b;
 }
 
+function knownTeam(team) {
+  const normalized = normalizeTeamName(team);
+  return normalized && normalized !== "Unknown" ? normalized : "";
+}
+
+function canonicalKnockoutStage(stage) {
+  const normalized = String(stage ?? "");
+  if (normalized === "ROUND_OF_32") return "LAST_32";
+  if (normalized === "ROUND_OF_16") return "LAST_16";
+  return normalized;
+}
+
+function knockoutFixturesByNo(knockoutMatches) {
+  const fixturesByNo = new Map();
+  const matches = knockoutMatches ?? [];
+
+  matches.forEach((match) => {
+    const explicitNo = Number(match.matchNo ?? match.matchNumber ?? match.no);
+    if (Number.isFinite(explicitNo)) fixturesByNo.set(explicitNo, match);
+  });
+
+  Object.entries(KNOCKOUT_SCHEDULE_ORDER).forEach(([stage, numbers]) => {
+    const fixtures = matches
+      .filter((match) => canonicalKnockoutStage(match.stage) === stage)
+      .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate));
+    numbers.forEach((no, index) => {
+      if (fixtures[index] && !fixturesByNo.has(no)) fixturesByNo.set(no, fixtures[index]);
+    });
+  });
+
+  return fixturesByNo;
+}
+
+function winnerSide(match) {
+  if (!match || !isFinished(match.status)) return "";
+  if (match.winner === "HOME_TEAM") return "home";
+  if (match.winner === "AWAY_TEAM") return "away";
+  if (!Number.isFinite(match.score?.home) || !Number.isFinite(match.score?.away)) return "";
+  if (match.score.home > match.score.away) return "home";
+  if (match.score.away > match.score.home) return "away";
+  if (!Number.isFinite(match.penalties?.home) || !Number.isFinite(match.penalties?.away)) return "";
+  if (match.penalties.home > match.penalties.away) return "home";
+  if (match.penalties.away > match.penalties.home) return "away";
+  return "";
+}
+
+function buildActualKnockoutOutcomes(knockoutMatches) {
+  const outcomes = new Map();
+  knockoutFixturesByNo(knockoutMatches).forEach((match, no) => {
+    const side = winnerSide(match);
+    if (!side) return;
+    const home = knownTeam(match.homeTeam);
+    const away = knownTeam(match.awayTeam);
+    if (!home || !away) return;
+    outcomes.set(no, {
+      home,
+      away,
+      winner: side === "home" ? home : away,
+      loser: side === "home" ? away : home,
+    });
+  });
+  return outcomes;
+}
+
 // Closed-form match outcome probabilities from the same Poisson model, used for the
 // deterministic projected bracket's per-tie odds (no RNG, so it is stable).
 function knockoutWinProbability(ratingA, ratingB) {
@@ -194,7 +264,7 @@ function deterministicResult(ratingHome, ratingAway, pin) {
   return diff > 0 ? [1, 0] : [0, 1];
 }
 
-function projectBracket(baseRecords, remainingByGroup, groups, groupLetters, ratingOf, pins) {
+function projectBracket(baseRecords, remainingByGroup, groups, groupLetters, ratingOf, pins, actualOutcomes) {
   const records = new Map();
   baseRecords.forEach((record, team) => records.set(team, { ...record }));
   remainingByGroup.forEach((fixtures) => {
@@ -213,6 +283,22 @@ function projectBracket(baseRecords, remainingByGroup, groups, groupLetters, rat
   const byNo = new Map();
   const known = (team) => team && team !== "Unknown";
   const play = (no, stage, home, away) => {
+    const actual = actualOutcomes.get(no);
+    if (actual) {
+      const match = {
+        no,
+        stage,
+        home: actual.home,
+        away: actual.away,
+        homeWin: actual.winner === actual.home ? 1 : 0,
+        winner: actual.winner,
+        loser: actual.loser,
+      };
+      winners.set(no, actual.winner);
+      byNo.set(no, match);
+      return match;
+    }
+
     let homeWin = 0.5;
     let winner = home;
     let loser = away;
@@ -252,6 +338,7 @@ function projectBracket(baseRecords, remainingByGroup, groups, groupLetters, rat
 export function runForecast({
   groups,
   groupMatches,
+  knockoutMatches = [],
   ownerByTeam,
   entrants,
   seed = 1,
@@ -262,6 +349,7 @@ export function runForecast({
   const groupLetters = groups.map((group) => groupLetter(group.name));
   const teamRatings = new Map();
   const baseRecords = buildBaseRecords(groups, groupMatches);
+  const actualOutcomes = buildActualKnockoutOutcomes(knockoutMatches);
 
   baseRecords.forEach((record, team) => {
     const prior = RATINGS[team] ?? 5;
@@ -281,7 +369,7 @@ export function runForecast({
   });
 
   const entrantNames = entrants.map((entrant) => entrant.name);
-  const teamOwner = (team) => ownerByTeam.get(team) ?? null;
+  const teamOwner = (team) => ownerByTeam.get(normalizeTeamName(team)) ?? null;
 
   const winCount = new Map(entrantNames.map((name) => [name, 0]));
   const runnerUpCount = new Map(entrantNames.map((name) => [name, 0]));
@@ -325,37 +413,51 @@ export function runForecast({
     // Seed and play the real 2026 bracket.
     const r32 = seedR32(finalTables, bestThirdLetters);
     const bonus = new Map();
-    r32.forEach(({ home, away }) => {
-      bonus.set(home, ENTRY_BONUS);
-      bonus.set(away, ENTRY_BONUS);
-    });
+    const setBonus = (team, value) => {
+      const normalized = knownTeam(team);
+      if (!normalized || value == null) return;
+      bonus.set(normalized, Math.max(bonus.get(normalized) ?? 0, value));
+    };
 
     const winners = new Map();
     const byNo = new Map();
-    const playMatch = (no, home, away, advanceBonus) => {
+    const playMatch = (no, stage, home, away, advanceBonus) => {
+      const actual = actualOutcomes.get(no);
+      if (actual) {
+        setBonus(actual.home, STAGE_APPEARANCE_BONUS[stage]);
+        setBonus(actual.away, STAGE_APPEARANCE_BONUS[stage]);
+        setBonus(actual.winner, advanceBonus);
+        winners.set(no, actual.winner);
+        byNo.set(no, { winner: actual.winner, loser: actual.loser });
+        return actual.winner;
+      }
+
+      setBonus(home, STAGE_APPEARANCE_BONUS[stage]);
+      setBonus(away, STAGE_APPEARANCE_BONUS[stage]);
       const winner = decideKnockout(rng, home, away, ratingOf);
       const loser = winner === home ? away : home;
-      if (advanceBonus != null) bonus.set(winner, advanceBonus);
+      setBonus(winner, advanceBonus);
       winners.set(no, winner);
       byNo.set(no, { winner, loser });
       return winner;
     };
     const teamOf = (no) => winners.get(no);
 
-    r32.forEach((m) => playMatch(m.no, m.home, m.away, ROUND_BONUS.r16));
-    R16.forEach((m) => playMatch(m.no, teamOf(m.from[0]), teamOf(m.from[1]), ROUND_BONUS.qf));
-    QF.forEach((m) => playMatch(m.no, teamOf(m.from[0]), teamOf(m.from[1]), ROUND_BONUS.sf));
+    r32.forEach((m) => playMatch(m.no, "LAST_32", m.home, m.away, ROUND_BONUS.r16));
+    R16.forEach((m) => playMatch(m.no, "LAST_16", teamOf(m.from[0]), teamOf(m.from[1]), ROUND_BONUS.qf));
+    QF.forEach((m) => playMatch(m.no, "QUARTER_FINALS", teamOf(m.from[0]), teamOf(m.from[1]), ROUND_BONUS.sf));
     SF.forEach((m) => {
-      playMatch(m.no, teamOf(m.from[0]), teamOf(m.from[1]), null);
-      bonus.set(byNo.get(m.no).loser, THIRD_PLACE_BONUS);
+      playMatch(m.no, "SEMI_FINALS", teamOf(m.from[0]), teamOf(m.from[1]), null);
+      setBonus(byNo.get(m.no).loser, THIRD_PLACE_BONUS);
     });
 
-    const champion = decideKnockout(rng, teamOf(101), teamOf(102), ratingOf);
-    const runnerUp = champion === teamOf(101) ? teamOf(102) : teamOf(101);
-    bonus.set(champion, FINAL_WINNER_BONUS);
-    bonus.set(runnerUp, FINAL_RUNNER_UP_BONUS);
+    const finalOutcome = actualOutcomes.get(FINAL.no);
+    const champion = finalOutcome?.winner ?? decideKnockout(rng, teamOf(101), teamOf(102), ratingOf);
+    const runnerUp = finalOutcome?.loser ?? (champion === teamOf(101) ? teamOf(102) : teamOf(101));
+    setBonus(champion, FINAL_WINNER_BONUS);
+    setBonus(runnerUp, FINAL_RUNNER_UP_BONUS);
 
-    teamTitleCount.set(champion, teamTitleCount.get(champion) + 1);
+    if (knownTeam(champion)) teamTitleCount.set(champion, (teamTitleCount.get(champion) ?? 0) + 1);
     const championOwner = teamOwner(champion);
     if (championOwner) winCount.set(championOwner, winCount.get(championOwner) + 1);
     const runnerUpOwner = teamOwner(runnerUp);
@@ -412,6 +514,7 @@ export function runForecast({
     groupLetters,
     ratingOf,
     pins,
+    actualOutcomes,
   );
 
   return { seed, iterations, entrants: entrantsForecast, teamTitleOdds, projectedBracket };
