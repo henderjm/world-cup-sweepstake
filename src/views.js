@@ -47,6 +47,12 @@ function teamCell(team, { owner = true } = {}) {
     </span>`;
 }
 
+function mapLink(match, className = "loc-link") {
+  if (!match?.city || !match?.mapUrl) return "";
+  const label = match.venue ? `${match.city} · ${match.venue}` : match.city;
+  return `<a class="${className}" href="${esc(match.mapUrl)}" target="_blank" rel="noopener noreferrer" data-map-link title="${esc(label)} on Google Maps">${esc(match.city)}</a>`;
+}
+
 function momentumArrow(value) {
   if (value > 0) return `<span class="mover mover--up" title="On the up">▲</span>`;
   if (value < 0) return `<span class="mover mover--down" title="Slipping">▼</span>`;
@@ -298,7 +304,7 @@ function matchRow(match) {
       <span class="mrow__side">${teamCell(match.homeTeam)}</span>
       <span class="mrow__score">${scoreCell(match)}</span>
       <span class="mrow__side mrow__side--away">${teamCell(match.awayTeam)}</span>
-      <span class="mrow__tag">${match.group ? esc(match.group) : formatStage(match.stage)}</span>
+      <span class="mrow__meta">${mapLink(match)}<span class="mrow__tag">${match.group ? esc(match.group) : formatStage(match.stage)}</span></span>
     </div>`;
 }
 
@@ -497,10 +503,12 @@ function koMatchCard(def, stage, fixture, source, ctx) {
   const awayRoute = knockoutRoute(def, stage, "away", source);
   const winner = knockoutWinnerSide(fixture);
   const live = fixture && isLive(fixture.status);
+  const location = mapLink(fixture, "ko-card__map");
+  const date = fixture?.utcDate ? `<span>${esc(dayLabel(fixture.utcDate))}</span>` : "";
   const meta = live
     ? `<span class="ko-card__live">${esc(statusLabel(fixture))}</span>`
-    : fixture?.utcDate
-      ? `<span>${esc(dayLabel(fixture.utcDate))}</span>`
+    : location || date
+      ? `<span class="ko-card__meta">${location}${date}</span>`
       : "";
   const openable = fixture?.id != null;
   return `<div class="ko-card ${openable ? "ko-card--openable" : ""}" data-ko-no="${def.no}" ${openable ? `data-match-id="${fixture.id}" role="button" tabindex="0"` : ""}>
@@ -725,7 +733,7 @@ function fixtureRow(match) {
       <span class="fx__side">${teamCell(match.homeTeam)}</span>
       <span class="fx__score">${scoreCell(match)}</span>
       <span class="fx__side fx__side--away">${teamCell(match.awayTeam)}</span>
-      <span class="fx__tag">${match.group ? esc(match.group.replace("GROUP_", "Grp ")) : formatStage(match.stage)}</span>
+      <span class="fx__meta">${mapLink(match)}<span class="fx__tag">${match.group ? esc(match.group.replace("GROUP_", "Grp ")) : formatStage(match.stage)}</span></span>
     </div>`;
 }
 

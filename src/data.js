@@ -8,6 +8,7 @@ import {
 } from "./domain.js";
 import { isFinished, isLive } from "./format.js";
 import { runForecast } from "./forecast.js";
+import { locationForMatch } from "./locations.js";
 
 // Set this to your deployed Cloudflare Worker origin to serve live data without a
 // deploy, e.g. "https://goon-squad-data.<your-subdomain>.workers.dev". Leave empty to
@@ -134,6 +135,7 @@ async function loadLiveData() {
 }
 
 function normalizeMatch(match) {
+  const location = locationForMatch(match);
   return {
     id: match.id ?? null,
     utcDate: match.utcDate,
@@ -141,6 +143,9 @@ function normalizeMatch(match) {
     minute: match.minute ?? null,
     stage: match.stage ?? "GROUP_STAGE",
     group: match.group ?? null,
+    venue: location?.venue ?? match.venue ?? null,
+    city: location?.city ?? match.city ?? null,
+    mapUrl: location?.mapUrl ?? match.mapUrl ?? null,
     homeTeam: normalizeTeamName(match.homeTeam),
     awayTeam: normalizeTeamName(match.awayTeam),
     score: {

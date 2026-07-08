@@ -3,9 +3,11 @@
 // both produce identical detail JSON.
 
 import { regulationScore } from "./domain.js";
+import { locationForVenue } from "./locations.js";
 
 export function mapMatchDetail(match) {
   const reg = regulationScore(match.score);
+  const location = locationForVenue(match.venue);
   return {
     id: match.id,
     status: match.status,
@@ -13,6 +15,8 @@ export function mapMatchDetail(match) {
     stage: match.stage ?? null,
     group: match.group ?? null,
     venue: match.venue ?? null,
+    city: location?.city || null,
+    mapUrl: location?.mapUrl ?? null,
     attendance: match.attendance ?? null,
     minute: match.minute ?? null,
     score: {

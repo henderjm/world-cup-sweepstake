@@ -435,6 +435,7 @@ function wireMatchClicks() {
     if (match) openMatch(match);
   };
   elements.panel.addEventListener("click", (event) => {
+    if (event.target.closest("[data-map-link]")) return;
     const row = event.target.closest("[data-match-id]");
     if (row) open(row);
   });

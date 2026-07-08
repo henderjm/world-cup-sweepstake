@@ -2,6 +2,7 @@ import { flagFor } from "./flags.js";
 import { DATA_API, ENTRANTS, ownerOf } from "./data.js";
 import { buildLeaderboard, buildTeamPerformance, normalizeTeamName } from "./domain.js";
 import { dayLabel, formatStage, isFinished, isLive, timeLabel } from "./format.js";
+import { locationForMatch } from "./locations.js";
 import { banterAvailable, mountBanter, unmountBanter } from "./banter.js";
 
 // Match detail drawer. Combines the real feed detail (scorers, lineups, subs, cards)
@@ -192,6 +193,7 @@ function renderShell(match) {
     </div>
 
     <div class="md-scoreline">${centre}</div>
+    ${locationCard(match)}
 
     <div class="md-pane" data-pane="race" hidden>
       <div class="md-duel">
@@ -355,7 +357,7 @@ function groupTable(match) {
 
 function renderEvents(match, detail) {
   const sideOf = (teamName) => (normalizeTeamName(teamName) === match.homeTeam ? "home" : "away");
-  const meta = renderMatchMeta(detail);
+  const meta = renderMatchMeta(match, detail);
 
   const goals = (detail.goals ?? [])
     .map((g) => {
@@ -421,13 +423,28 @@ function renderEvents(match, detail) {
   `;
 }
 
-function renderMatchMeta(detail) {
+function renderMatchMeta(match, detail) {
+  const detailLocation = locationForMatch(detail);
   const items = [
+    detailLocation?.city && !match.city
+      ? `<a href="${esc(detailLocation.mapUrl)}" target="_blank" rel="noopener noreferrer" data-map-link><b>City</b>${esc(detailLocation.city)}</a>`
+      : "",
     detail.venue ? `<span><b>Stadium</b>${esc(detail.venue)}</span>` : "",
     detail.attendance ? `<span><b>Attendance</b>${Number(detail.attendance).toLocaleString("en-IE")}</span>` : "",
     detail.referee ? `<span><b>Referee</b>${esc(detail.referee)}</span>` : "",
   ].filter(Boolean);
   return items.length ? `<div class="md-venue">${items.join("")}</div>` : "";
+}
+
+function locationCard(match) {
+  const location = locationForMatch(match);
+  if (!location?.city || !location.mapUrl) return "";
+  const venue = location.venue ? `<span class="md-location__venue">${esc(location.venue)}</span>` : "";
+  return `<a class="md-location" href="${esc(location.mapUrl)}" target="_blank" rel="noopener noreferrer" data-map-link>
+      <span class="md-location__kicker">Maps</span>
+      <strong>${esc(location.city)}</strong>
+      ${venue}
+    </a>`;
 }
 
 function scheduledNote(match) {

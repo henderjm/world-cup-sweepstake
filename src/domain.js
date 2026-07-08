@@ -1,3 +1,5 @@
+import { locationForVenue } from "./locations.js";
+
 const LIVE_STATUSES = new Set([
   "IN_PLAY",
   "PAUSED",
@@ -155,6 +157,7 @@ export function mapFootballDataMatches(payload) {
   return (payload.matches ?? []).map((match) => {
     const raw = match.score ?? {};
     const reg = regulationScore(raw);
+    const location = locationForVenue(match.venue);
     return {
       id: match.id ?? null,
       utcDate: match.utcDate,
@@ -162,6 +165,9 @@ export function mapFootballDataMatches(payload) {
       minute: match.minute ?? null,
       stage: match.stage ?? "GROUP_STAGE",
       group: match.group ?? null,
+      venue: match.venue ?? null,
+      city: location?.city || null,
+      mapUrl: location?.mapUrl ?? null,
       homeTeam: normalizeTeamName(match.homeTeam?.name ?? match.homeTeam?.shortName),
       awayTeam: normalizeTeamName(match.awayTeam?.name ?? match.awayTeam?.shortName),
       score: { home: reg.home, away: reg.away },
