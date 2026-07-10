@@ -22,17 +22,17 @@ import {
 } from "./interactions.js";
 import { setMatchModel, setupMatchDetail, openMatch } from "./matchDetail.js";
 import { isLive } from "./format.js";
-import { todayShootoutDate } from "./shootoutModel.js";
+import { todayPaperRunDate } from "./paperRunModel.js";
 import {
   displayName,
-  loadShootoutDay,
+  loadPaperRunDay,
   rememberName,
-  shareShootout,
-  submitShootoutResult,
-} from "./shootoutApi.js";
-import { cosmeticTeamForName } from "./shootoutContext.js";
-import { renderShootoutPanel, updateShootoutHud } from "./shootoutView.js";
-import { mountShootoutGame } from "./shootoutGame.js";
+  sharePaperRun,
+  submitPaperRunResult,
+} from "./paperRunApi.js";
+import { cosmeticTeamForName } from "./paperRunContext.js";
+import { renderPaperRunPanel, updatePaperRunHud } from "./paperRunView.js";
+import { mountPaperRunGame } from "./paperRunGame.js";
 import "./background.js";
 
 const elements = {
@@ -49,7 +49,7 @@ const elements = {
   updated: document.querySelector("#updated"),
 };
 
-const TABS = ["live", "leaderboard", "tables", "bracket", "whatif", "fixtures", "goldenboot", "shootout"];
+const TABS = ["live", "leaderboard", "tables", "bracket", "whatif", "fixtures", "goldenboot", "paperrun"];
 const initialTab = window.location.hash.replace("#", "");
 const state = {
   tab: TABS.includes(initialTab) ? initialTab : "live",
@@ -65,8 +65,8 @@ const state = {
     computing: false,
     scenarioReq: 0,
   },
-  shootout: {
-    date: todayShootoutDate(),
+  paperrun: {
+    date: todayPaperRunDate(),
     day: null,
     loading: false,
     mount: null,
@@ -209,7 +209,7 @@ async function poll() {
         elements.ticker.innerHTML = renderTicker(model);
         elements.hero.innerHTML = renderHero(model);
         elements.footer.innerHTML = renderFooter(model);
-        if (state.tab !== "shootout") renderPanel();
+        if (state.tab !== "paperrun") renderPanel();
       }
       setUpdatedLabel();
     }
@@ -220,7 +220,7 @@ async function poll() {
 }
 
 function renderPanel() {
-  if (state.tab !== "shootout") destroyShootoutMount();
+  if (state.tab !== "paperrun") destroyPaperRunMount();
   const panel = elements.panel;
   switch (state.tab) {
     case "leaderboard":
@@ -243,74 +243,74 @@ function renderPanel() {
     case "goldenboot":
       panel.innerHTML = renderGoldenBoot(model, state.goldenBootSort);
       break;
-    case "shootout":
-      renderShootout();
+    case "paperrun":
+      renderPaperRun();
       break;
     default:
       panel.innerHTML = renderLive(model);
   }
 }
 
-function renderShootout() {
-  const today = todayShootoutDate();
-  if (state.shootout.date !== today) {
-    destroyShootoutMount();
-    state.shootout = { date: today, day: null, loading: false, mount: null };
+function renderPaperRun() {
+  const today = todayPaperRunDate();
+  if (state.paperrun.date !== today) {
+    destroyPaperRunMount();
+    state.paperrun = { date: today, day: null, loading: false, mount: null };
   }
-  if (!state.shootout.day && !state.shootout.loading) loadShootout();
-  if (!state.shootout.day) {
-    elements.panel.innerHTML = `<p class="panel__note">Loading today's shootout...</p>`;
+  if (!state.paperrun.day && !state.paperrun.loading) loadPaperRun();
+  if (!state.paperrun.day) {
+    elements.panel.innerHTML = `<p class="panel__note">Loading today's paper run...</p>`;
     return;
   }
-  destroyShootoutMount();
-  elements.panel.innerHTML = renderShootoutPanel(state.shootout.day);
-  mountShootout();
+  destroyPaperRunMount();
+  elements.panel.innerHTML = renderPaperRunPanel(state.paperrun.day);
+  mountPaperRun();
 }
 
-async function loadShootout() {
-  const date = state.shootout.date;
-  state.shootout.loading = true;
+async function loadPaperRun() {
+  const date = state.paperrun.date;
+  state.paperrun.loading = true;
   try {
-    const day = await loadShootoutDay(date);
-    if (state.shootout.date !== date) return;
-    state.shootout.day = day;
+    const day = await loadPaperRunDay(date);
+    if (state.paperrun.date !== date) return;
+    state.paperrun.day = day;
   } catch (error) {
     window.Sentry?.captureException?.(error);
   } finally {
-    state.shootout.loading = false;
+    state.paperrun.loading = false;
   }
-  if (state.tab === "shootout") renderPanel();
+  if (state.tab === "paperrun") renderPanel();
 }
 
-function mountShootout() {
-  const day = state.shootout.day;
+function mountPaperRun() {
+  const day = state.paperrun.day;
   if (!day) return;
-  // Mount even when locked so the canvas draws the static done-state pitch
+  // Mount even when locked so the canvas draws the static done-state street
   // instead of an undrawn black void.
-  if (!day.result) metric("count", "shootout_started", 1);
-  state.shootout.mount = mountShootoutGame(elements.panel, day, {
-    onKick: (gameState) => updateShootoutHud(elements.panel, gameState),
-    onSuddenDeath: () => metric("count", "shootout_sudden_death_entered", 1),
+  if (!day.result) metric("count", "paperrun_shown", 1);
+  state.paperrun.mount = mountPaperRunGame(elements.panel, day, {
+    onTick: (snap) => updatePaperRunHud(elements.panel, snap),
+    onStart: () => metric("count", "paperrun_started", 1),
     onUnavailable: () => {
-      const status = elements.panel.querySelector("[data-shootout-status]");
+      const status = elements.panel.querySelector("[data-run-status]");
       if (status) status.innerHTML = `<strong>Game unavailable</strong><span>This browser cannot start the canvas game.</span>`;
     },
     onComplete: async (result) => {
       const name = displayName();
       const full = { ...result, name, team: cosmeticTeamForName(name) ?? undefined };
-      metric("count", "shootout_completed", 1, {
-        tags: { goals: String(result.goals), sdStreak: String(result.sdStreak), style: String(result.style) },
+      metric("count", "paperrun_completed", 1, {
+        tags: { score: String(result.score), deliveries: String(result.deliveries), finished: String(result.finished) },
       });
-      await saveShootoutRun(day, full);
+      await savePaperRun(day, full);
     },
   });
 }
 
 // Lock the run, submit it, and re-render with the official result and board.
-async function saveShootoutRun(day, result) {
-  const submitted = await submitShootoutResult(day.date, result);
-  if (submitted.conflict) metric("count", "shootout_replay_blocked", 1);
-  state.shootout.day = {
+async function savePaperRun(day, result) {
+  const submitted = await submitPaperRunResult(day.date, result);
+  if (submitted.conflict) metric("count", "paperrun_replay_blocked", 1);
+  state.paperrun.day = {
     ...day,
     alreadyPlayed: true,
     result: submitted.result,
@@ -321,10 +321,10 @@ async function saveShootoutRun(day, result) {
   renderPanel();
 }
 
-function destroyShootoutMount() {
-  if (!state.shootout.mount) return;
-  state.shootout.mount.destroy();
-  state.shootout.mount = null;
+function destroyPaperRunMount() {
+  if (!state.paperrun.mount) return;
+  state.paperrun.mount.destroy();
+  state.paperrun.mount = null;
 }
 
 function syncActiveTab() {
@@ -339,7 +339,7 @@ function wireTabs() {
   elements.tabs.addEventListener("click", (event) => {
     const button = event.target.closest("[data-tab]");
     if (!button) return;
-    if (state.tab === "shootout" && button.dataset.tab !== "shootout") destroyShootoutMount();
+    if (state.tab === "paperrun" && button.dataset.tab !== "paperrun") destroyPaperRunMount();
     state.tab = button.dataset.tab;
     window.history.replaceState(null, "", `#${state.tab}`);
     metric("count", "tab_view", 1, { tags: { tab: state.tab } });
@@ -378,24 +378,24 @@ function wirePanelControls() {
       renderPanel();
       return;
     }
-    const shareButton = event.target.closest("[data-shootout-share-button]");
+    const shareButton = event.target.closest("[data-run-share-button]");
     if (shareButton) {
-      const text = elements.panel.querySelector("[data-shootout-share]")?.value ?? "";
-      metric("count", "shootout_share_clicked", 1);
-      shareShootout(text).then((status) => {
+      const text = elements.panel.querySelector("[data-run-share]")?.value ?? "";
+      metric("count", "paperrun_share_clicked", 1);
+      sharePaperRun(text).then((status) => {
         shareButton.textContent = status === "shared" ? "Shared" : status === "copied" ? "Copied" : "Copy unavailable";
       });
       return;
     }
-    const saveButton = event.target.closest("[data-shootout-save]");
+    const saveButton = event.target.closest("[data-run-save]");
     if (saveButton) {
-      const day = state.shootout.day;
+      const day = state.paperrun.day;
       if (!day?.result) return;
-      const input = elements.panel.querySelector("[data-shootout-name]");
+      const input = elements.panel.querySelector("[data-run-name]");
       const name = rememberName(input?.value || "") || day.result.name;
       const team = cosmeticTeamForName(name) ?? undefined;
       saveButton.disabled = true;
-      saveShootoutRun(day, { ...day.result, name, team });
+      savePaperRun(day, { ...day.result, name, team });
       return;
     }
     // What-if: pin or unpin a remaining group game.
