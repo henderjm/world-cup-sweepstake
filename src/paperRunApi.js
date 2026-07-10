@@ -1,10 +1,10 @@
 import { DATA_API } from "./data.js";
 import {
-  createShootoutChallenge,
+  createPaperRunChallenge,
   normalizeResult,
   sortLeaderboard,
-  todayShootoutDate,
-} from "./shootoutModel.js";
+  todayPaperRunDate,
+} from "./paperRunModel.js";
 
 let memoryId = null;
 const UID_KEY = "gs_uid";
@@ -46,8 +46,8 @@ export function rememberName(name) {
   return clean;
 }
 
-export async function loadShootoutDay(date = todayShootoutDate()) {
-  const challenge = createShootoutChallenge(date);
+export async function loadPaperRunDay(date = todayPaperRunDate()) {
+  const challenge = createPaperRunChallenge(date);
   const localResult = loadLocalResult(date);
   const base = {
     date,
@@ -63,7 +63,7 @@ export async function loadShootoutDay(date = todayShootoutDate()) {
   if (!DATA_API) return base;
 
   try {
-    const response = await fetch(`${DATA_API}/shootout/${date}?uid=${encodeURIComponent(visitorId())}`, {
+    const response = await fetch(`${DATA_API}/paperrun/${date}?uid=${encodeURIComponent(visitorId())}`, {
       cache: "no-store",
     });
     if (response.status === 503) {
@@ -88,8 +88,8 @@ export async function loadShootoutDay(date = todayShootoutDate()) {
   }
 }
 
-export async function submitShootoutResult(date, result) {
-  const challenge = createShootoutChallenge(date);
+export async function submitPaperRunResult(date, result) {
+  const challenge = createPaperRunChallenge(date);
   const local = normalizeResult({ ...result, submittedAt: Date.now() }, challenge);
   saveLocalResult(date, local);
 
@@ -103,16 +103,18 @@ export async function submitShootoutResult(date, result) {
   }
 
   try {
-    const response = await fetch(`${DATA_API}/shootout/${date}`, {
+    const response = await fetch(`${DATA_API}/paperrun/${date}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         uid: visitorId(),
         name: local.name,
-        goals: local.goals,
-        style: local.style,
-        shots: local.shots,
-        sdStreak: local.sdStreak,
+        score: local.score,
+        deliveries: local.deliveries,
+        perfects: local.perfects,
+        smashes: local.smashes,
+        finished: local.finished,
+        distancePct: local.distancePct,
         team: local.team,
         clientVersion: local.clientVersion,
       }),
@@ -151,16 +153,16 @@ export function loadLocalResult(date) {
     const raw = window.localStorage.getItem(key) || readCookie(cookieKey(date));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    // Ignore results from the old (v1) game shape so the rebuilt game starts clean.
-    if (Number(parsed?.clientVersion) !== 2) return null;
-    return normalizeResult(parsed);
+    // Ignore results from a different game shape so the board stays clean.
+    if (Number(parsed?.clientVersion) !== 1) return null;
+    return normalizeResult(parsed, createPaperRunChallenge(date));
   } catch {
     return null;
   }
 }
 
 export function saveLocalResult(date, result) {
-  const normalized = normalizeResult(result, createShootoutChallenge(date));
+  const normalized = normalizeResult(result, createPaperRunChallenge(date));
   const value = JSON.stringify(normalized);
   try {
     window.localStorage.setItem(storageKey(date), value);
@@ -171,7 +173,7 @@ export function saveLocalResult(date, result) {
   return normalized;
 }
 
-export async function shareShootout(text) {
+export async function sharePaperRun(text) {
   if (navigator.share) {
     try {
       await navigator.share({ text });
@@ -189,11 +191,11 @@ export async function shareShootout(text) {
 }
 
 function storageKey(date) {
-  return `shootout:${date}`;
+  return `paperrun:${date}`;
 }
 
 function cookieKey(date) {
-  return `shootout_${date}`;
+  return `paperrun_${date}`;
 }
 
 function readCookie(name) {

@@ -20,12 +20,12 @@
 import { mapFootballDataMatches } from "../src/domain.js";
 import { mapMatchDetail } from "../src/mapDetail.js";
 import {
-  cleanName as cleanShootoutName,
-  createShootoutChallenge,
+  cleanName as cleanPaperRunName,
+  createPaperRunChallenge,
   normalizeResult,
   sortLeaderboard,
   validateClientResult,
-} from "../src/shootoutModel.js";
+} from "../src/paperRunModel.js";
 
 const API = "https://api.football-data.org";
 
@@ -45,7 +45,7 @@ const ALLOWED_ORIGINS = new Set([
 // banter self-cleans after the tournament with no maintenance.
 const REACTIONS = ["🔥", "😂", "😱", "🧂", "🐐", "💀"];
 const BANTER_TTL = 60 * 24 * 60 * 60; // 60 days
-const SHOOTOUT_TTL = 90 * 24 * 60 * 60; // 90 days
+const PAPER_RUN_TTL = 90 * 24 * 60 * 60; // 90 days
 
 // Best-effort stale fallback held in the isolate's memory.
 let lastLive = null;
@@ -75,9 +75,9 @@ export default {
       return tunnelToSentry(request, cors);
     }
 
-    const shootoutRoute = url.pathname.match(/^\/shootout\/(\d{4}-\d{2}-\d{2})$/);
-    if (shootoutRoute) {
-      return handleShootout(request, env, shootoutRoute[1], cors);
+    const paperRunRoute = url.pathname.match(/^\/paperrun\/(\d{4}-\d{2}-\d{2})$/);
+    if (paperRunRoute) {
+      return handlePaperRun(request, env, paperRunRoute[1], cors);
     }
 
     const token = env.FOOTBALL_DATA_TOKEN;
@@ -247,24 +247,24 @@ async function addMessage(env, id, uid, name, text) {
   await env.BANTER.put(key, "", { metadata: { name, text, ts, uid }, expirationTtl: BANTER_TTL });
 }
 
-// -- Daily Shootout (KV-backed) ---------------------------------------------
+// -- Daily Paper Run (KV-backed) --------------------------------------------
 
-async function handleShootout(request, env, date, cors) {
-  if (!env.SHOOTOUT) return json({ error: "shootout not configured" }, 503, cors);
-  const challenge = createShootoutChallenge(date);
+async function handlePaperRun(request, env, date, cors) {
+  if (!env.DAILY_GAME) return json({ error: "paper run not configured" }, 503, cors);
+  const challenge = createPaperRunChallenge(date);
 
   if (request.method === "GET") {
     const uid = cleanUid(new URL(request.url).searchParams.get("uid"));
-    const result = uid ? await env.SHOOTOUT.get(shootoutResultKey(date, uid), "json") : null;
-    const leaderboard = await readShootoutBoard(env, date);
+    const result = uid ? await env.DAILY_GAME.get(paperRunResultKey(date, uid), "json") : null;
+    const leaderboard = await readPaperRunBoard(env, date);
     return json(
       {
         date,
         challengeNumber: challenge.challengeNumber,
         seed: challenge.seed,
         alreadyPlayed: Boolean(result),
-        result: publicShootoutResult(result),
-        leaderboard: publicShootoutBoard(leaderboard),
+        result: publicPaperRunResult(result),
+        leaderboard: publicPaperRunBoard(leaderboard),
       },
       200,
       cors,
@@ -279,87 +279,91 @@ async function handleShootout(request, env, date, cors) {
       return json({ error: "bad body" }, 400, cors);
     }
 
-    const cleaned = sanitizeShootoutResult(body, date, challenge);
+    const cleaned = sanitizePaperRunResult(body, date, challenge);
     if (cleaned.error) return json({ error: cleaned.error }, 400, cors);
 
-    const key = shootoutResultKey(date, cleaned.result.uid);
-    const existing = await env.SHOOTOUT.get(key, "json");
+    const key = paperRunResultKey(date, cleaned.result.uid);
+    const existing = await env.DAILY_GAME.get(key, "json");
     if (existing) {
       return json(
         {
           error: "already played",
-          result: publicShootoutResult(existing),
-          leaderboard: publicShootoutBoard(await readShootoutBoard(env, date)),
+          result: publicPaperRunResult(existing),
+          leaderboard: publicPaperRunBoard(await readPaperRunBoard(env, date)),
         },
         409,
         cors,
       );
     }
 
-    await env.SHOOTOUT.put(key, JSON.stringify(cleaned.result), { expirationTtl: SHOOTOUT_TTL });
-    const leaderboard = await writeShootoutBoard(env, date, cleaned.result);
-    return json({ result: publicShootoutResult(cleaned.result), leaderboard: publicShootoutBoard(leaderboard) }, 200, cors);
+    await env.DAILY_GAME.put(key, JSON.stringify(cleaned.result), { expirationTtl: PAPER_RUN_TTL });
+    const leaderboard = await writePaperRunBoard(env, date, cleaned.result);
+    return json({ result: publicPaperRunResult(cleaned.result), leaderboard: publicPaperRunBoard(leaderboard) }, 200, cors);
   }
 
   return json({ error: "method not allowed" }, 405, cors);
 }
 
-function sanitizeShootoutResult(body, date, challenge) {
+function sanitizePaperRunResult(body, date, challenge) {
   const uid = cleanUid(body?.uid);
   if (!uid) return { error: "missing uid" };
   const raw = {
     date,
-    name: cleanShootoutName(body?.name),
-    goals: Number(body?.goals),
-    style: Number(body?.style),
-    shots: body?.shots,
-    sdStreak: Number(body?.sdStreak),
+    name: cleanPaperRunName(body?.name),
+    score: Number(body?.score),
+    deliveries: Number(body?.deliveries),
+    perfects: Number(body?.perfects),
+    smashes: Number(body?.smashes),
+    finished: Boolean(body?.finished),
+    distancePct: Number(body?.distancePct),
     team: cleanLabel(body?.team, 32) || undefined,
     submittedAt: Date.now(),
     clientVersion: Number(body?.clientVersion) || 1,
   };
-  const valid = validateClientResult(raw);
+  const valid = validateClientResult(raw, challenge);
   if (!valid.ok) return { error: valid.error };
-  return { result: { ...normalizeResult(raw), uid } };
+  return { result: { ...normalizeResult(raw, challenge), uid } };
 }
 
-async function readShootoutBoard(env, date) {
-  const board = await env.SHOOTOUT.get(shootoutBoardKey(date), "json");
+async function readPaperRunBoard(env, date) {
+  const board = await env.DAILY_GAME.get(paperRunBoardKey(date), "json");
   return Array.isArray(board) ? board : [];
 }
 
-async function writeShootoutBoard(env, date, result) {
-  const current = await readShootoutBoard(env, date);
+async function writePaperRunBoard(env, date, result) {
+  const current = await readPaperRunBoard(env, date);
   const withoutUser = current.filter((row) => row.uid !== result.uid);
   const next = sortLeaderboard([...withoutUser, result]).slice(0, 32);
-  await env.SHOOTOUT.put(shootoutBoardKey(date), JSON.stringify(next), { expirationTtl: SHOOTOUT_TTL });
+  await env.DAILY_GAME.put(paperRunBoardKey(date), JSON.stringify(next), { expirationTtl: PAPER_RUN_TTL });
   return next;
 }
 
-function publicShootoutBoard(rows) {
-  return sortLeaderboard((rows ?? []).map(publicShootoutResult).filter(Boolean));
+function publicPaperRunBoard(rows) {
+  return sortLeaderboard((rows ?? []).map(publicPaperRunResult).filter(Boolean));
 }
 
-function publicShootoutResult(result) {
+function publicPaperRunResult(result) {
   if (!result) return null;
   return {
     name: result.name,
-    goals: result.goals,
-    style: result.style,
-    shots: result.shots,
-    sdStreak: result.sdStreak ?? 0,
+    score: result.score,
+    deliveries: result.deliveries,
+    perfects: result.perfects ?? 0,
+    smashes: result.smashes ?? 0,
+    finished: Boolean(result.finished),
+    distancePct: result.distancePct ?? 0,
     team: result.team,
     submittedAt: result.submittedAt,
     clientVersion: result.clientVersion,
   };
 }
 
-function shootoutResultKey(date, uid) {
-  return `shootout:${date}:${uid}`;
+function paperRunResultKey(date, uid) {
+  return `paperrun:${date}:${uid}`;
 }
 
-function shootoutBoardKey(date) {
-  return `shootout-board:${date}`;
+function paperRunBoardKey(date) {
+  return `paperrun-board:${date}`;
 }
 
 function cleanUid(value) {

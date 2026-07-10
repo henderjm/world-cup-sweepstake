@@ -27,13 +27,13 @@ simple = { limit = 200, period = 60 }
 # binding = "BANTER"
 # id = "PASTE_KV_NAMESPACE_ID_HERE"
 
-# Daily shootout storage (one result per visitor per day + daily leaderboard).
+# Daily game storage (one paper-run result per visitor per day + daily leaderboard).
 # To switch it on:
-#   1. npx wrangler kv namespace create SHOOTOUT
+#   1. npx wrangler kv namespace create DAILY_GAME
 #   2. paste the printed id below and uncomment this block
 #   3. npx wrangler deploy
-# Until then the game still works locally, but /shootout returns 503 and the shared
+# Until then the game still works locally, but /paperrun returns 503 and the shared
 # daily leaderboard is hidden.
 # [[kv_namespaces]]
-# binding = "SHOOTOUT"
+# binding = "DAILY_GAME"
 # id = "PASTE_KV_NAMESPACE_ID_HERE"
