@@ -12,15 +12,34 @@ export function analysisEligible(match) {
   return isLive(match?.status) || isFinished(match?.status);
 }
 
-// Cache signature: a new analysis is worth generating when the score, status or
-// penalties change, or every 10 live minutes so the narrative keeps up with the clock
-// without burning API credit on near-identical game states (a goal busts the cache
-// immediately via the score part).
+// Cache signature: a new analysis is worth generating whenever the signature changes.
+// Score, status and penalties are always part of it (a goal, half-time, full-time or
+// a fresh penalty kick regenerates on the next cron tick), and the clock component
+// sets the cadence of pure time-passing updates: every 10 minutes in normal play,
+// every 5 in extra time, and none at all during a shootout, where the penalty score
+// itself drives regeneration kick by kick. The cron ticks every minute; this decides
+// which ticks actually spend API credit.
 export function analysisCacheSignature(match) {
   const score = `${match.score?.home ?? "x"}-${match.score?.away ?? "x"}`;
   const pens = match.penalties ? `${match.penalties.home}-${match.penalties.away}` : "np";
-  const clock = isLive(match.status) ? `m${Math.floor((match.minute ?? 0) / 10)}` : "ft";
-  return `${match.status}:${score}:${pens}:${clock}`;
+  return `${match.status}:${score}:${pens}:${clockBucket(match)}`;
+}
+
+function clockBucket(match) {
+  if (!isLive(match.status)) return "ft";
+  if (match.status === "PENALTY_SHOOTOUT") return "pens";
+  const minute = match.minute ?? 0;
+  const step = match.status === "EXTRA_TIME" || minute > 90 ? 5 : 10;
+  return `m${step}x${Math.floor(minute / step)}`;
+}
+
+// Event addendum to the signature, from match detail (the live feed entry carries no
+// cards). A red card changes a game without changing the score, so it deserves a
+// fresh analysis on the next tick rather than at the next clock bucket. Yellows are
+// left to the clock buckets: too frequent to justify a generation each.
+export function analysisEventSignature(detail) {
+  const reds = (detail?.cards ?? []).filter((card) => card.card === "RED").length;
+  return `r${reds}`;
 }
 
 // Structured output schema: the model must return exactly these three strings.
@@ -55,6 +74,7 @@ You get one JSON payload describing a single match plus the sweepstake context a
 
 Rules:
 - Live match: present tense. Finished match: past tense.
+- Extra time or a penalty shootout in progress is the story: lead with that drama and the current shootout score if there is one.
 - Use only facts present in the payload. The feed has no xG or possession stats, so never invent numbers. Do not diagnose injuries beyond a substitution you can see.
 - Tone: sharp, warm, light banter between friends. Plain sentences, no bullet points, no markdown.
 - Write money as "EUR 100". Never use em dashes.`;

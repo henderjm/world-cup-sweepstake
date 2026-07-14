@@ -25,6 +25,7 @@ import {
   ANALYSIS_SYSTEM_PROMPT,
   analysisCacheSignature,
   analysisEligible,
+  analysisEventSignature,
   buildAnalysisPrompt,
 } from "../src/analysisPrompt.js";
 import {
@@ -165,13 +166,15 @@ async function getLive(competition, season, token) {
 }
 
 // -- AI match analysis (Claude) -----------------------------------------------
-// Generation is cron-driven, never visit-driven: every 10 minutes the scheduled
-// handler checks the feed and writes one analysis per live match (plus a single
+// Generation is cron-driven, never visit-driven: the scheduled handler ticks every
+// minute, checks the feed, and writes one analysis per live match (plus a single
 // full-time read once a match finishes) into ANALYSIS_CACHE KV under a stable
-// per-match key. The prompt is assembled server-side from feed data only, and the
-// GET route is a pure KV read, so browsers can never trigger an Anthropic call and
-// cost is fixed per match regardless of visitors. analysisCacheSignature (score,
-// status, pens, 10-minute clock bucket) decides whether a cron tick regenerates.
+// per-match key. Most ticks generate nothing: the signature decides the cadence
+// (10-minute buckets in normal play, 5 in extra time, per kick during a shootout,
+// immediately on any goal, red card or status change). The prompt is assembled
+// server-side from feed data only, and the GET route is a pure KV read, so browsers
+// can never trigger an Anthropic call and cost is fixed per match regardless of
+// visitors.
 
 const ANALYSIS_KV_TTL = 60 * 24 * 60 * 60; // stored analyses self-clean after the tournament
 const ANALYSIS_FINAL_WINDOW_MS = 48 * 60 * 60 * 1000; // full-time reads only for fresh finishes
@@ -199,10 +202,18 @@ async function runScheduledAnalysis(env) {
 
   for (const match of live.matches.filter(analysisWorthGenerating)) {
     try {
-      const signature = analysisCacheSignature(match);
+      // Live matches also fetch detail so event changes the live feed cannot see
+      // (red cards) regenerate on the next tick; the detail is reused for the
+      // generation itself, so a regenerating tick costs no extra upstream call.
+      let detail = null;
+      let signature = analysisCacheSignature(match);
+      if (!isMatchFinished(match)) {
+        detail = mapMatchDetail(await fetchJson(`/v4/matches/${match.id}`, env.FOOTBALL_DATA_TOKEN, 25));
+        signature += `:${analysisEventSignature(detail)}`;
+      }
       const current = await readLatestAnalysis(env, match.id);
       if (current?.signature === signature) continue; // game state unchanged since last tick
-      const body = await generateAnalysis(env, match, live, env.FOOTBALL_DATA_TOKEN);
+      const body = await generateAnalysis(env, match, live, env.FOOTBALL_DATA_TOKEN, detail);
       await writeLatestAnalysis(env, match.id, { signature, body });
     } catch {
       // one broken match must not block the others; the next tick retries
@@ -220,8 +231,8 @@ function analysisWorthGenerating(match) {
   return Number.isFinite(kickoff) && Date.now() - kickoff < ANALYSIS_FINAL_WINDOW_MS;
 }
 
-async function generateAnalysis(env, match, live, token) {
-  const detail = mapMatchDetail(await fetchJson(`/v4/matches/${match.id}`, token, 25));
+async function generateAnalysis(env, match, live, token, detail = null) {
+  detail = detail ?? mapMatchDetail(await fetchJson(`/v4/matches/${match.id}`, token, 25));
 
   // Model override must support adaptive thinking + structured outputs.
   const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 60_000 });

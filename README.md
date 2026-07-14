@@ -75,11 +75,14 @@ detail shows lineups, scorers, subs and cards, but not xG.
 
 The Worker can also serve a Claude-written summary of any live or finished match,
 including what the result means for the pot: the match drawer shows it as an
-"AI analysis" card. Generation is cron-driven, not visit-driven: every 10 minutes
-the Worker checks the feed and pre-generates one analysis per live match (plus a
-full-time read once the match finishes) into KV. Opening the drawer only ever reads
-the stored copy, so browsers can never trigger an API call and the cost is fixed
-per match (a few cents) no matter how many people are watching. To enable it:
+"AI analysis" card. Generation is cron-driven, not visit-driven: the Worker checks
+the feed every minute and pre-generates into KV on an adaptive cadence, every 10
+minutes of normal play, every 5 in extra time, kick by kick during a penalty
+shootout, immediately on any goal, red card or status change, and once after
+full time.
+Opening the drawer only ever reads the stored copy, so browsers can never trigger
+an API call and the cost is fixed per match (a few cents) no matter how many
+people are watching. To enable it:
 
 1. `cd worker`
 2. `npx wrangler kv namespace create ANALYSIS_CACHE` and paste the printed id into
@@ -90,6 +93,5 @@ per match (a few cents) no matter how many people are watching. To enable it:
 
 Without the secret or the KV namespace nothing is generated and the site simply
 hides the card. The prompt is built server-side from feed data only, so the endpoint
-cannot be used as a general LLM proxy. A fresh analysis is written whenever the
-score, status or penalties change, or every 10 minutes of live play. The model
-defaults to `claude-sonnet-5` (`ANTHROPIC_MODEL` in `wrangler.toml`).
+cannot be used as a general LLM proxy. The model defaults to `claude-sonnet-5`
+(`ANTHROPIC_MODEL` in `wrangler.toml`).

@@ -14,12 +14,13 @@ FOOTBALL_DATA_SEASON = "2026"
 # AI analysis model. Any override must support adaptive thinking + structured outputs.
 ANTHROPIC_MODEL = "claude-sonnet-5"
 
-# AI analysis cron: every 10 minutes the Worker checks the feed and pre-generates one
-# analysis per live match (plus a full-time read once a match finishes) into the
-# ANALYSIS_CACHE KV below. User visits only ever read the stored copy, so cost is
-# fixed per match, not per visitor. The tick no-ops when nothing is live.
+# AI analysis cron. Ticks every minute, but the game-state signature decides which
+# ticks actually generate: every 10 minutes of normal play, every 5 in extra time,
+# per kick during a shootout, plus immediately on any goal, red card or status
+# change, and once after full time. User visits only ever read the stored copy, so
+# cost is fixed per match, not per visitor. Idle ticks call no one.
 [triggers]
-crons = ["*/10 * * * *"]
+crons = ["* * * * *"]
 
 # Per-IP rate limit: 200 requests / 60s. A real poller uses ~2/min plus a few match
 # opens, so this is generous for shared office/home NATs while blocking floods.
