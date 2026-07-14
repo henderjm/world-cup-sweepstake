@@ -5,5 +5,8 @@
   "type": "module",
   "scripts": {
     "fetch:live": "node scripts/fetch-live-data.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0"
   }
 }

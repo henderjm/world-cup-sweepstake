@@ -1,6 +1,6 @@
 {
   "source": "football-data.org",
-  "lastUpdated": "2026-06-18T20:33:20.947Z",
+  "lastUpdated": "2026-06-30T22:26:57.843Z",
   "competition": "WC",
   "season": "2026",
   "matches": [
@@ -382,12 +382,42 @@
     {
       "id": 537335,
       "utcDate": "2026-06-18T19:00:00Z",
-      "status": "IN_PLAY",
-      "minute": 74,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_B",
       "homeTeam": "Switzerland",
       "awayTeam": "Bosnia",
+      "score": {
+        "home": 4,
+        "away": 1
+      },
+      "winner": "HOME_TEAM"
+    },
+    {
+      "id": 537336,
+      "utcDate": "2026-06-18T22:00:00Z",
+      "status": "FINISHED",
+      "minute": 90,
+      "stage": "GROUP_STAGE",
+      "group": "GROUP_B",
+      "homeTeam": "Canada",
+      "awayTeam": "Qatar",
+      "score": {
+        "home": 6,
+        "away": 0
+      },
+      "winner": "HOME_TEAM"
+    },
+    {
+      "id": 537330,
+      "utcDate": "2026-06-19T01:00:00Z",
+      "status": "FINISHED",
+      "minute": 90,
+      "stage": "GROUP_STAGE",
+      "group": "GROUP_A",
+      "homeTeam": "Mexico",
+      "awayTeam": "South Korea",
       "score": {
         "home": 1,
         "away": 0
@@ -395,784 +425,762 @@
       "winner": "HOME_TEAM"
     },
     {
-      "id": 537336,
-      "utcDate": "2026-06-18T22:00:00Z",
-      "status": "TIMED",
-      "minute": null,
-      "stage": "GROUP_STAGE",
-      "group": "GROUP_B",
-      "homeTeam": "Canada",
-      "awayTeam": "Qatar",
-      "score": {
-        "home": null,
-        "away": null
-      },
-      "winner": null
-    },
-    {
-      "id": 537330,
-      "utcDate": "2026-06-19T01:00:00Z",
-      "status": "TIMED",
-      "minute": null,
-      "stage": "GROUP_STAGE",
-      "group": "GROUP_A",
-      "homeTeam": "Mexico",
-      "awayTeam": "South Korea",
-      "score": {
-        "home": null,
-        "away": null
-      },
-      "winner": null
-    },
-    {
       "id": 537348,
       "utcDate": "2026-06-19T19:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_D",
       "homeTeam": "USA",
       "awayTeam": "Australia",
       "score": {
-        "home": null,
-        "away": null
+        "home": 2,
+        "away": 0
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537342,
       "utcDate": "2026-06-19T22:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_C",
       "homeTeam": "Scotland",
       "awayTeam": "Morocco",
       "score": {
-        "home": null,
-        "away": null
+        "home": 0,
+        "away": 1
       },
-      "winner": null
+      "winner": "AWAY_TEAM"
     },
     {
       "id": 537341,
       "utcDate": "2026-06-20T00:30:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_C",
       "homeTeam": "Brazil",
       "awayTeam": "Haiti",
       "score": {
-        "home": null,
-        "away": null
+        "home": 3,
+        "away": 0
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537347,
       "utcDate": "2026-06-20T03:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_D",
       "homeTeam": "Turkey",
       "awayTeam": "Paraguay",
       "score": {
-        "home": null,
-        "away": null
+        "home": 0,
+        "away": 1
       },
-      "winner": null
+      "winner": "AWAY_TEAM"
     },
     {
       "id": 537359,
       "utcDate": "2026-06-20T17:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_F",
       "homeTeam": "Netherlands",
       "awayTeam": "Sweden",
       "score": {
-        "home": null,
-        "away": null
+        "home": 5,
+        "away": 1
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537353,
       "utcDate": "2026-06-20T20:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_E",
       "homeTeam": "Germany",
       "awayTeam": "Ivory Coast",
       "score": {
-        "home": null,
-        "away": null
+        "home": 2,
+        "away": 1
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537354,
       "utcDate": "2026-06-21T00:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_E",
       "homeTeam": "Ecuador",
       "awayTeam": "Curacao",
       "score": {
-        "home": null,
-        "away": null
+        "home": 0,
+        "away": 0
       },
-      "winner": null
+      "winner": "DRAW"
     },
     {
       "id": 537360,
       "utcDate": "2026-06-21T04:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_F",
       "homeTeam": "Tunisia",
       "awayTeam": "Japan",
       "score": {
-        "home": null,
-        "away": null
+        "home": 0,
+        "away": 4
       },
-      "winner": null
+      "winner": "AWAY_TEAM"
     },
     {
       "id": 537371,
       "utcDate": "2026-06-21T16:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_H",
       "homeTeam": "Spain",
       "awayTeam": "Saudi Arabia",
       "score": {
-        "home": null,
-        "away": null
+        "home": 4,
+        "away": 0
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537365,
       "utcDate": "2026-06-21T19:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_G",
       "homeTeam": "Belgium",
       "awayTeam": "Iran",
       "score": {
-        "home": null,
-        "away": null
+        "home": 0,
+        "away": 0
       },
-      "winner": null
+      "winner": "DRAW"
     },
     {
       "id": 537372,
       "utcDate": "2026-06-21T22:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_H",
       "homeTeam": "Uruguay",
       "awayTeam": "Cape Verde",
       "score": {
-        "home": null,
-        "away": null
+        "home": 2,
+        "away": 2
       },
-      "winner": null
+      "winner": "DRAW"
     },
     {
       "id": 537366,
       "utcDate": "2026-06-22T01:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_G",
       "homeTeam": "New Zealand",
       "awayTeam": "Egypt",
       "score": {
-        "home": null,
-        "away": null
+        "home": 1,
+        "away": 3
       },
-      "winner": null
+      "winner": "AWAY_TEAM"
     },
     {
       "id": 537399,
       "utcDate": "2026-06-22T17:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_J",
       "homeTeam": "Argentina",
       "awayTeam": "Austria",
       "score": {
-        "home": null,
-        "away": null
+        "home": 2,
+        "away": 0
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537393,
       "utcDate": "2026-06-22T21:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_I",
       "homeTeam": "France",
       "awayTeam": "Iraq",
       "score": {
-        "home": null,
-        "away": null
+        "home": 3,
+        "away": 0
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537394,
       "utcDate": "2026-06-23T00:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_I",
       "homeTeam": "Norway",
       "awayTeam": "Senegal",
       "score": {
-        "home": null,
-        "away": null
+        "home": 3,
+        "away": 2
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537400,
       "utcDate": "2026-06-23T03:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_J",
       "homeTeam": "Jordan",
       "awayTeam": "Algeria",
       "score": {
-        "home": null,
-        "away": null
+        "home": 1,
+        "away": 2
       },
-      "winner": null
+      "winner": "AWAY_TEAM"
     },
     {
       "id": 537405,
       "utcDate": "2026-06-23T17:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_K",
       "homeTeam": "Portugal",
       "awayTeam": "Uzbekistan",
       "score": {
-        "home": null,
-        "away": null
+        "home": 5,
+        "away": 0
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537411,
       "utcDate": "2026-06-23T20:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_L",
       "homeTeam": "England",
       "awayTeam": "Ghana",
       "score": {
-        "home": null,
-        "away": null
+        "home": 0,
+        "away": 0
       },
-      "winner": null
+      "winner": "DRAW"
     },
     {
       "id": 537412,
       "utcDate": "2026-06-23T23:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_L",
       "homeTeam": "Panama",
       "awayTeam": "Croatia",
       "score": {
-        "home": null,
-        "away": null
+        "home": 0,
+        "away": 1
       },
-      "winner": null
+      "winner": "AWAY_TEAM"
     },
     {
       "id": 537406,
       "utcDate": "2026-06-24T02:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_K",
       "homeTeam": "Colombia",
       "awayTeam": "DRC",
       "score": {
-        "home": null,
-        "away": null
+        "home": 1,
+        "away": 0
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537337,
       "utcDate": "2026-06-24T19:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_B",
       "homeTeam": "Switzerland",
       "awayTeam": "Canada",
       "score": {
-        "home": null,
-        "away": null
+        "home": 2,
+        "away": 1
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537338,
       "utcDate": "2026-06-24T19:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_B",
       "homeTeam": "Bosnia",
       "awayTeam": "Qatar",
       "score": {
-        "home": null,
-        "away": null
+        "home": 3,
+        "away": 1
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537344,
       "utcDate": "2026-06-24T22:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_C",
       "homeTeam": "Morocco",
       "awayTeam": "Haiti",
       "score": {
-        "home": null,
-        "away": null
+        "home": 4,
+        "away": 2
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537343,
       "utcDate": "2026-06-24T22:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_C",
       "homeTeam": "Scotland",
       "awayTeam": "Brazil",
       "score": {
-        "home": null,
-        "away": null
+        "home": 0,
+        "away": 3
       },
-      "winner": null
+      "winner": "AWAY_TEAM"
     },
     {
       "id": 537331,
       "utcDate": "2026-06-25T01:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_A",
       "homeTeam": "Czech",
       "awayTeam": "Mexico",
       "score": {
-        "home": null,
-        "away": null
+        "home": 0,
+        "away": 3
       },
-      "winner": null
+      "winner": "AWAY_TEAM"
     },
     {
       "id": 537332,
       "utcDate": "2026-06-25T01:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_A",
       "homeTeam": "South Africa",
       "awayTeam": "South Korea",
       "score": {
-        "home": null,
-        "away": null
+        "home": 1,
+        "away": 0
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537355,
       "utcDate": "2026-06-25T20:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_E",
       "homeTeam": "Ecuador",
       "awayTeam": "Germany",
       "score": {
-        "home": null,
-        "away": null
+        "home": 2,
+        "away": 1
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537356,
       "utcDate": "2026-06-25T20:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_E",
       "homeTeam": "Curacao",
       "awayTeam": "Ivory Coast",
       "score": {
-        "home": null,
-        "away": null
+        "home": 0,
+        "away": 2
       },
-      "winner": null
+      "winner": "AWAY_TEAM"
     },
     {
       "id": 537361,
       "utcDate": "2026-06-25T23:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_F",
       "homeTeam": "Tunisia",
       "awayTeam": "Netherlands",
       "score": {
-        "home": null,
-        "away": null
+        "home": 1,
+        "away": 3
       },
-      "winner": null
+      "winner": "AWAY_TEAM"
     },
     {
       "id": 537362,
       "utcDate": "2026-06-25T23:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_F",
       "homeTeam": "Japan",
       "awayTeam": "Sweden",
       "score": {
-        "home": null,
-        "away": null
+        "home": 1,
+        "away": 1
       },
-      "winner": null
+      "winner": "DRAW"
     },
     {
       "id": 537349,
       "utcDate": "2026-06-26T02:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_D",
       "homeTeam": "Turkey",
       "awayTeam": "USA",
       "score": {
-        "home": null,
-        "away": null
+        "home": 3,
+        "away": 2
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537350,
       "utcDate": "2026-06-26T02:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_D",
       "homeTeam": "Paraguay",
       "awayTeam": "Australia",
       "score": {
-        "home": null,
-        "away": null
+        "home": 0,
+        "away": 0
       },
-      "winner": null
+      "winner": "DRAW"
     },
     {
       "id": 537395,
       "utcDate": "2026-06-26T19:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_I",
       "homeTeam": "Norway",
       "awayTeam": "France",
       "score": {
-        "home": null,
-        "away": null
+        "home": 1,
+        "away": 4
       },
-      "winner": null
+      "winner": "AWAY_TEAM"
     },
     {
       "id": 537396,
       "utcDate": "2026-06-26T19:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_I",
       "homeTeam": "Senegal",
       "awayTeam": "Iraq",
       "score": {
-        "home": null,
-        "away": null
+        "home": 5,
+        "away": 0
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537373,
       "utcDate": "2026-06-27T00:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_H",
       "homeTeam": "Uruguay",
       "awayTeam": "Spain",
       "score": {
-        "home": null,
-        "away": null
+        "home": 0,
+        "away": 1
       },
-      "winner": null
+      "winner": "AWAY_TEAM"
     },
     {
       "id": 537374,
       "utcDate": "2026-06-27T00:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_H",
       "homeTeam": "Cape Verde",
       "awayTeam": "Saudi Arabia",
       "score": {
-        "home": null,
-        "away": null
+        "home": 0,
+        "away": 0
       },
-      "winner": null
+      "winner": "DRAW"
     },
     {
       "id": 537367,
       "utcDate": "2026-06-27T03:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_G",
       "homeTeam": "New Zealand",
       "awayTeam": "Belgium",
       "score": {
-        "home": null,
-        "away": null
+        "home": 1,
+        "away": 5
       },
-      "winner": null
+      "winner": "AWAY_TEAM"
     },
     {
       "id": 537368,
       "utcDate": "2026-06-27T03:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_G",
       "homeTeam": "Egypt",
       "awayTeam": "Iran",
       "score": {
-        "home": null,
-        "away": null
+        "home": 1,
+        "away": 1
       },
-      "winner": null
+      "winner": "DRAW"
     },
     {
       "id": 537413,
       "utcDate": "2026-06-27T21:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_L",
       "homeTeam": "Panama",
       "awayTeam": "England",
       "score": {
-        "home": null,
-        "away": null
+        "home": 0,
+        "away": 2
       },
-      "winner": null
+      "winner": "AWAY_TEAM"
     },
     {
       "id": 537414,
       "utcDate": "2026-06-27T21:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_L",
       "homeTeam": "Croatia",
       "awayTeam": "Ghana",
       "score": {
-        "home": null,
-        "away": null
+        "home": 2,
+        "away": 1
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537407,
       "utcDate": "2026-06-27T23:30:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_K",
       "homeTeam": "Colombia",
       "awayTeam": "Portugal",
       "score": {
-        "home": null,
-        "away": null
+        "home": 0,
+        "away": 0
       },
-      "winner": null
+      "winner": "DRAW"
     },
     {
       "id": 537408,
       "utcDate": "2026-06-27T23:30:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_K",
       "homeTeam": "DRC",
       "awayTeam": "Uzbekistan",
       "score": {
-        "home": null,
-        "away": null
+        "home": 3,
+        "away": 1
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537401,
       "utcDate": "2026-06-28T02:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_J",
       "homeTeam": "Jordan",
       "awayTeam": "Argentina",
       "score": {
-        "home": null,
-        "away": null
+        "home": 1,
+        "away": 3
       },
-      "winner": null
+      "winner": "AWAY_TEAM"
     },
     {
       "id": 537402,
       "utcDate": "2026-06-28T02:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "GROUP_STAGE",
       "group": "GROUP_J",
       "homeTeam": "Algeria",
       "awayTeam": "Austria",
       "score": {
-        "home": null,
-        "away": null
+        "home": 3,
+        "away": 3
       },
-      "winner": null
+      "winner": "DRAW"
     },
     {
       "id": 537417,
       "utcDate": "2026-06-28T19:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "LAST_32",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "South Africa",
+      "awayTeam": "Canada",
       "score": {
-        "home": null,
-        "away": null
+        "home": 0,
+        "away": 1
       },
-      "winner": null
+      "winner": "AWAY_TEAM"
     },
     {
       "id": 537423,
       "utcDate": "2026-06-29T17:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "LAST_32",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "Brazil",
+      "awayTeam": "Japan",
       "score": {
-        "home": null,
-        "away": null
+        "home": 2,
+        "away": 1
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537415,
       "utcDate": "2026-06-29T20:30:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 120,
       "stage": "LAST_32",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "Germany",
+      "awayTeam": "Paraguay",
       "score": {
-        "home": null,
-        "away": null
+        "home": 1,
+        "away": 1
       },
-      "winner": null
+      "winner": "AWAY_TEAM",
+      "penalties": {
+        "home": 3,
+        "away": 4
+      }
     },
     {
       "id": 537418,
       "utcDate": "2026-06-30T01:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 120,
       "stage": "LAST_32",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "Netherlands",
+      "awayTeam": "Morocco",
       "score": {
-        "home": null,
-        "away": null
+        "home": 1,
+        "away": 1
       },
-      "winner": null
+      "winner": "AWAY_TEAM",
+      "penalties": {
+        "home": 2,
+        "away": 3
+      }
     },
     {
       "id": 537424,
       "utcDate": "2026-06-30T17:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "FINISHED",
+      "minute": 90,
       "stage": "LAST_32",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "Ivory Coast",
+      "awayTeam": "Norway",
       "score": {
-        "home": null,
-        "away": null
+        "home": 1,
+        "away": 2
       },
-      "winner": null
+      "winner": "AWAY_TEAM"
     },
     {
       "id": 537416,
       "utcDate": "2026-06-30T21:00:00Z",
-      "status": "TIMED",
-      "minute": null,
+      "status": "IN_PLAY",
+      "minute": 67,
       "stage": "LAST_32",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "France",
+      "awayTeam": "Sweden",
       "score": {
-        "home": null,
-        "away": null
+        "home": 2,
+        "away": 0
       },
-      "winner": null
+      "winner": "HOME_TEAM"
     },
     {
       "id": 537425,
@@ -1181,8 +1189,8 @@
       "minute": null,
       "stage": "LAST_32",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "Mexico",
+      "awayTeam": "Ecuador",
       "score": {
         "home": null,
         "away": null
@@ -1196,8 +1204,8 @@
       "minute": null,
       "stage": "LAST_32",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "England",
+      "awayTeam": "DRC",
       "score": {
         "home": null,
         "away": null
@@ -1211,8 +1219,8 @@
       "minute": null,
       "stage": "LAST_32",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "Belgium",
+      "awayTeam": "Senegal",
       "score": {
         "home": null,
         "away": null
@@ -1226,8 +1234,8 @@
       "minute": null,
       "stage": "LAST_32",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "USA",
+      "awayTeam": "Bosnia",
       "score": {
         "home": null,
         "away": null
@@ -1241,8 +1249,8 @@
       "minute": null,
       "stage": "LAST_32",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "Spain",
+      "awayTeam": "Austria",
       "score": {
         "home": null,
         "away": null
@@ -1256,8 +1264,8 @@
       "minute": null,
       "stage": "LAST_32",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "Portugal",
+      "awayTeam": "Croatia",
       "score": {
         "home": null,
         "away": null
@@ -1271,8 +1279,8 @@
       "minute": null,
       "stage": "LAST_32",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "Switzerland",
+      "awayTeam": "Algeria",
       "score": {
         "home": null,
         "away": null
@@ -1286,8 +1294,8 @@
       "minute": null,
       "stage": "LAST_32",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "Australia",
+      "awayTeam": "Egypt",
       "score": {
         "home": null,
         "away": null
@@ -1301,8 +1309,8 @@
       "minute": null,
       "stage": "LAST_32",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "Argentina",
+      "awayTeam": "Cape Verde",
       "score": {
         "home": null,
         "away": null
@@ -1316,8 +1324,8 @@
       "minute": null,
       "stage": "LAST_32",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "Colombia",
+      "awayTeam": "Ghana",
       "score": {
         "home": null,
         "away": null
@@ -1331,8 +1339,8 @@
       "minute": null,
       "stage": "LAST_16",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "Canada",
+      "awayTeam": "Morocco",
       "score": {
         "home": null,
         "away": null
@@ -1346,7 +1354,7 @@
       "minute": null,
       "stage": "LAST_16",
       "group": null,
-      "homeTeam": "Unknown",
+      "homeTeam": "Paraguay",
       "awayTeam": "Unknown",
       "score": {
         "home": null,
@@ -1361,8 +1369,8 @@
       "minute": null,
       "stage": "LAST_16",
       "group": null,
-      "homeTeam": "Unknown",
-      "awayTeam": "Unknown",
+      "homeTeam": "Brazil",
+      "awayTeam": "Norway",
       "score": {
         "home": null,
         "away": null
@@ -1580,56 +1588,18 @@
             "tla": "MEX",
             "crest": "https://crests.football-data.org/769.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 1,
+          "won": 3,
           "draw": 0,
           "lost": 0,
-          "points": 3,
-          "goalsFor": 2,
+          "points": 9,
+          "goalsFor": 6,
           "goalsAgainst": 0,
-          "goalDifference": 2
+          "goalDifference": 6
         },
         {
           "position": 2,
-          "team": {
-            "id": 772,
-            "name": "South Korea",
-            "shortName": "Korea Republic",
-            "tla": "KOR",
-            "crest": "https://crests.football-data.org/772.png"
-          },
-          "playedGames": 1,
-          "form": null,
-          "won": 1,
-          "draw": 0,
-          "lost": 0,
-          "points": 3,
-          "goalsFor": 2,
-          "goalsAgainst": 1,
-          "goalDifference": 1
-        },
-        {
-          "position": 3,
-          "team": {
-            "id": 798,
-            "name": "Czechia",
-            "shortName": "Czechia",
-            "tla": "CZE",
-            "crest": "https://crests.football-data.org/798.svg"
-          },
-          "playedGames": 2,
-          "form": null,
-          "won": 0,
-          "draw": 1,
-          "lost": 1,
-          "points": 1,
-          "goalsFor": 2,
-          "goalsAgainst": 3,
-          "goalDifference": -1
-        },
-        {
-          "position": 4,
           "team": {
             "id": 774,
             "name": "South Africa",
@@ -1637,15 +1607,53 @@
             "tla": "RSA",
             "crest": "https://crests.football-data.org/9396.svg"
           },
-          "playedGames": 2,
+          "playedGames": 3,
+          "form": null,
+          "won": 1,
+          "draw": 1,
+          "lost": 1,
+          "points": 4,
+          "goalsFor": 2,
+          "goalsAgainst": 3,
+          "goalDifference": -1
+        },
+        {
+          "position": 3,
+          "team": {
+            "id": 772,
+            "name": "South Korea",
+            "shortName": "Korea Republic",
+            "tla": "KOR",
+            "crest": "https://crests.football-data.org/772.png"
+          },
+          "playedGames": 3,
+          "form": null,
+          "won": 1,
+          "draw": 0,
+          "lost": 2,
+          "points": 3,
+          "goalsFor": 2,
+          "goalsAgainst": 3,
+          "goalDifference": -1
+        },
+        {
+          "position": 4,
+          "team": {
+            "id": 798,
+            "name": "Czechia",
+            "shortName": "Czechia",
+            "tla": "CZE",
+            "crest": "https://crests.football-data.org/798.svg"
+          },
+          "playedGames": 3,
           "form": null,
           "won": 0,
           "draw": 1,
-          "lost": 1,
+          "lost": 2,
           "points": 1,
-          "goalsFor": 1,
-          "goalsAgainst": 3,
-          "goalDifference": -2
+          "goalsFor": 2,
+          "goalsAgainst": 6,
+          "goalDifference": -4
         }
       ]
     },
@@ -1663,37 +1671,18 @@
             "tla": "SUI",
             "crest": "https://crests.football-data.org/788.svg"
           },
-          "playedGames": 2,
+          "playedGames": 3,
           "form": null,
-          "won": 0,
-          "draw": 2,
+          "won": 2,
+          "draw": 1,
           "lost": 0,
-          "points": 2,
-          "goalsFor": 1,
-          "goalsAgainst": 1,
-          "goalDifference": 0
+          "points": 7,
+          "goalsFor": 7,
+          "goalsAgainst": 3,
+          "goalDifference": 4
         },
         {
           "position": 2,
-          "team": {
-            "id": 1060,
-            "name": "Bosnia-Herzegovina",
-            "shortName": "Bosnia-H.",
-            "tla": "BIH",
-            "crest": "https://crests.football-data.org/bosnia.svg"
-          },
-          "playedGames": 2,
-          "form": null,
-          "won": 0,
-          "draw": 2,
-          "lost": 0,
-          "points": 2,
-          "goalsFor": 1,
-          "goalsAgainst": 1,
-          "goalDifference": 0
-        },
-        {
-          "position": 3,
           "team": {
             "id": 828,
             "name": "Canada",
@@ -1701,15 +1690,34 @@
             "tla": "CAN",
             "crest": "https://crests.football-data.org/canada.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 0,
+          "won": 1,
           "draw": 1,
-          "lost": 0,
-          "points": 1,
-          "goalsFor": 1,
-          "goalsAgainst": 1,
-          "goalDifference": 0
+          "lost": 1,
+          "points": 4,
+          "goalsFor": 8,
+          "goalsAgainst": 3,
+          "goalDifference": 5
+        },
+        {
+          "position": 3,
+          "team": {
+            "id": 1060,
+            "name": "Bosnia-Herzegovina",
+            "shortName": "Bosnia-H.",
+            "tla": "BIH",
+            "crest": "https://crests.football-data.org/bosnia.svg"
+          },
+          "playedGames": 3,
+          "form": null,
+          "won": 1,
+          "draw": 1,
+          "lost": 1,
+          "points": 4,
+          "goalsFor": 5,
+          "goalsAgainst": 6,
+          "goalDifference": -1
         },
         {
           "position": 4,
@@ -1720,15 +1728,15 @@
             "tla": "QAT",
             "crest": "https://crests.football-data.org/8030.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
           "won": 0,
           "draw": 1,
-          "lost": 0,
+          "lost": 2,
           "points": 1,
-          "goalsFor": 1,
-          "goalsAgainst": 1,
-          "goalDifference": 0
+          "goalsFor": 2,
+          "goalsAgainst": 10,
+          "goalDifference": -8
         }
       ]
     },
@@ -1740,21 +1748,21 @@
         {
           "position": 1,
           "team": {
-            "id": 8873,
-            "name": "Scotland",
-            "shortName": "Scotland",
-            "tla": "SCO",
-            "crest": "https://crests.football-data.org/814.svg"
+            "id": 764,
+            "name": "Brazil",
+            "shortName": "Brazil",
+            "tla": "BRA",
+            "crest": "https://crests.football-data.org/764.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 1,
-          "draw": 0,
+          "won": 2,
+          "draw": 1,
           "lost": 0,
-          "points": 3,
-          "goalsFor": 1,
-          "goalsAgainst": 0,
-          "goalDifference": 1
+          "points": 7,
+          "goalsFor": 7,
+          "goalsAgainst": 1,
+          "goalDifference": 6
         },
         {
           "position": 2,
@@ -1765,34 +1773,34 @@
             "tla": "MAR",
             "crest": "https://crests.football-data.org/morocco.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 0,
+          "won": 2,
           "draw": 1,
           "lost": 0,
-          "points": 1,
-          "goalsFor": 1,
-          "goalsAgainst": 1,
-          "goalDifference": 0
+          "points": 7,
+          "goalsFor": 6,
+          "goalsAgainst": 3,
+          "goalDifference": 3
         },
         {
           "position": 3,
           "team": {
-            "id": 764,
-            "name": "Brazil",
-            "shortName": "Brazil",
-            "tla": "BRA",
-            "crest": "https://crests.football-data.org/764.svg"
+            "id": 8873,
+            "name": "Scotland",
+            "shortName": "Scotland",
+            "tla": "SCO",
+            "crest": "https://crests.football-data.org/814.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 0,
-          "draw": 1,
-          "lost": 0,
-          "points": 1,
+          "won": 1,
+          "draw": 0,
+          "lost": 2,
+          "points": 3,
           "goalsFor": 1,
-          "goalsAgainst": 1,
-          "goalDifference": 0
+          "goalsAgainst": 4,
+          "goalDifference": -3
         },
         {
           "position": 4,
@@ -1803,15 +1811,15 @@
             "tla": "HAI",
             "crest": "https://crests.football-data.org/haiti.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
           "won": 0,
           "draw": 0,
-          "lost": 1,
+          "lost": 3,
           "points": 0,
-          "goalsFor": 0,
-          "goalsAgainst": 1,
-          "goalDifference": -1
+          "goalsFor": 2,
+          "goalsAgainst": 8,
+          "goalDifference": -6
         }
       ]
     },
@@ -1829,15 +1837,15 @@
             "tla": "USA",
             "crest": "https://crests.football-data.org/usa.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 1,
+          "won": 2,
           "draw": 0,
-          "lost": 0,
-          "points": 3,
-          "goalsFor": 4,
-          "goalsAgainst": 1,
-          "goalDifference": 3
+          "lost": 1,
+          "points": 6,
+          "goalsFor": 8,
+          "goalsAgainst": 4,
+          "goalDifference": 4
         },
         {
           "position": 2,
@@ -1848,37 +1856,18 @@
             "tla": "AUS",
             "crest": "https://crests.football-data.org/779.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
           "won": 1,
-          "draw": 0,
-          "lost": 0,
-          "points": 3,
+          "draw": 1,
+          "lost": 1,
+          "points": 4,
           "goalsFor": 2,
-          "goalsAgainst": 0,
-          "goalDifference": 2
+          "goalsAgainst": 2,
+          "goalDifference": 0
         },
         {
           "position": 3,
-          "team": {
-            "id": 803,
-            "name": "Turkey",
-            "shortName": "Turkey",
-            "tla": "TUR",
-            "crest": "https://crests.football-data.org/803.svg"
-          },
-          "playedGames": 1,
-          "form": null,
-          "won": 0,
-          "draw": 0,
-          "lost": 1,
-          "points": 0,
-          "goalsFor": 0,
-          "goalsAgainst": 2,
-          "goalDifference": -2
-        },
-        {
-          "position": 4,
           "team": {
             "id": 761,
             "name": "Paraguay",
@@ -1886,15 +1875,34 @@
             "tla": "PAR",
             "crest": "https://crests.football-data.org/761.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 0,
-          "draw": 0,
+          "won": 1,
+          "draw": 1,
           "lost": 1,
-          "points": 0,
-          "goalsFor": 1,
+          "points": 4,
+          "goalsFor": 2,
           "goalsAgainst": 4,
-          "goalDifference": -3
+          "goalDifference": -2
+        },
+        {
+          "position": 4,
+          "team": {
+            "id": 803,
+            "name": "Turkey",
+            "shortName": "Turkey",
+            "tla": "TUR",
+            "crest": "https://crests.football-data.org/803.svg"
+          },
+          "playedGames": 3,
+          "form": null,
+          "won": 1,
+          "draw": 0,
+          "lost": 2,
+          "points": 3,
+          "goalsFor": 3,
+          "goalsAgainst": 5,
+          "goalDifference": -2
         }
       ]
     },
@@ -1912,14 +1920,14 @@
             "tla": "GER",
             "crest": "https://crests.football-data.org/759.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 1,
+          "won": 2,
           "draw": 0,
-          "lost": 0,
-          "points": 3,
-          "goalsFor": 7,
-          "goalsAgainst": 1,
+          "lost": 1,
+          "points": 6,
+          "goalsFor": 10,
+          "goalsAgainst": 4,
           "goalDifference": 6
         },
         {
@@ -1931,15 +1939,15 @@
             "tla": "CIV",
             "crest": "https://crests.football-data.org/787.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 1,
+          "won": 2,
           "draw": 0,
-          "lost": 0,
-          "points": 3,
-          "goalsFor": 1,
-          "goalsAgainst": 0,
-          "goalDifference": 1
+          "lost": 1,
+          "points": 6,
+          "goalsFor": 4,
+          "goalsAgainst": 2,
+          "goalDifference": 2
         },
         {
           "position": 3,
@@ -1950,34 +1958,34 @@
             "tla": "ECU",
             "crest": "https://crests.football-data.org/791.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 0,
-          "draw": 0,
+          "won": 1,
+          "draw": 1,
           "lost": 1,
-          "points": 0,
-          "goalsFor": 0,
-          "goalsAgainst": 1,
-          "goalDifference": -1
+          "points": 4,
+          "goalsFor": 2,
+          "goalsAgainst": 2,
+          "goalDifference": 0
         },
         {
           "position": 4,
           "team": {
             "id": 9460,
-            "name": "Curaçao",
-            "shortName": "Curaçao",
+            "name": "Cura\u00e7ao",
+            "shortName": "Cura\u00e7ao",
             "tla": "CUW",
             "crest": "https://crests.football-data.org/curacao.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
           "won": 0,
-          "draw": 0,
-          "lost": 1,
-          "points": 0,
+          "draw": 1,
+          "lost": 2,
+          "points": 1,
           "goalsFor": 1,
-          "goalsAgainst": 7,
-          "goalDifference": -6
+          "goalsAgainst": 9,
+          "goalDifference": -8
         }
       ]
     },
@@ -1989,21 +1997,21 @@
         {
           "position": 1,
           "team": {
-            "id": 792,
-            "name": "Sweden",
-            "shortName": "Sweden",
-            "tla": "SWE",
-            "crest": "https://crests.football-data.org/792.svg"
+            "id": 8601,
+            "name": "Netherlands",
+            "shortName": "Netherlands",
+            "tla": "NED",
+            "crest": "https://crests.football-data.org/8601.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 1,
-          "draw": 0,
+          "won": 2,
+          "draw": 1,
           "lost": 0,
-          "points": 3,
-          "goalsFor": 5,
-          "goalsAgainst": 1,
-          "goalDifference": 4
+          "points": 7,
+          "goalsFor": 10,
+          "goalsAgainst": 4,
+          "goalDifference": 6
         },
         {
           "position": 2,
@@ -2014,33 +2022,33 @@
             "tla": "JPN",
             "crest": "https://crests.football-data.org/766.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 0,
-          "draw": 1,
+          "won": 1,
+          "draw": 2,
           "lost": 0,
-          "points": 1,
-          "goalsFor": 2,
-          "goalsAgainst": 2,
-          "goalDifference": 0
+          "points": 5,
+          "goalsFor": 7,
+          "goalsAgainst": 3,
+          "goalDifference": 4
         },
         {
-          "position": 2,
+          "position": 3,
           "team": {
-            "id": 8601,
-            "name": "Netherlands",
-            "shortName": "Netherlands",
-            "tla": "NED",
-            "crest": "https://crests.football-data.org/8601.svg"
+            "id": 792,
+            "name": "Sweden",
+            "shortName": "Sweden",
+            "tla": "SWE",
+            "crest": "https://crests.football-data.org/792.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 0,
+          "won": 1,
           "draw": 1,
-          "lost": 0,
-          "points": 1,
-          "goalsFor": 2,
-          "goalsAgainst": 2,
+          "lost": 1,
+          "points": 4,
+          "goalsFor": 7,
+          "goalsAgainst": 7,
           "goalDifference": 0
         },
         {
@@ -2052,15 +2060,15 @@
             "tla": "TUN",
             "crest": "https://crests.football-data.org/tunisia.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
           "won": 0,
           "draw": 0,
-          "lost": 1,
+          "lost": 3,
           "points": 0,
-          "goalsFor": 1,
-          "goalsAgainst": 5,
-          "goalDifference": -4
+          "goalsFor": 2,
+          "goalsAgainst": 12,
+          "goalDifference": -10
         }
       ]
     },
@@ -2072,62 +2080,24 @@
         {
           "position": 1,
           "team": {
-            "id": 783,
-            "name": "New Zealand",
-            "shortName": "New Zealand",
-            "tla": "NZL",
-            "crest": "https://crests.football-data.org/783.svg"
-          },
-          "playedGames": 1,
-          "form": null,
-          "won": 0,
-          "draw": 1,
-          "lost": 0,
-          "points": 1,
-          "goalsFor": 2,
-          "goalsAgainst": 2,
-          "goalDifference": 0
-        },
-        {
-          "position": 2,
-          "team": {
-            "id": 840,
-            "name": "Iran",
-            "shortName": "Iran",
-            "tla": "IRN",
-            "crest": "https://crests.football-data.org/iran.svg"
-          },
-          "playedGames": 1,
-          "form": null,
-          "won": 0,
-          "draw": 1,
-          "lost": 0,
-          "points": 1,
-          "goalsFor": 2,
-          "goalsAgainst": 2,
-          "goalDifference": 0
-        },
-        {
-          "position": 3,
-          "team": {
             "id": 805,
             "name": "Belgium",
             "shortName": "Belgium",
             "tla": "BEL",
             "crest": "https://crests.football-data.org/805.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 0,
-          "draw": 1,
+          "won": 1,
+          "draw": 2,
           "lost": 0,
-          "points": 1,
-          "goalsFor": 1,
-          "goalsAgainst": 1,
-          "goalDifference": 0
+          "points": 5,
+          "goalsFor": 6,
+          "goalsAgainst": 2,
+          "goalDifference": 4
         },
         {
-          "position": 4,
+          "position": 2,
           "team": {
             "id": 825,
             "name": "Egypt",
@@ -2135,15 +2105,53 @@
             "tla": "EGY",
             "crest": "https://crests.football-data.org/825.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
+          "form": null,
+          "won": 1,
+          "draw": 2,
+          "lost": 0,
+          "points": 5,
+          "goalsFor": 5,
+          "goalsAgainst": 3,
+          "goalDifference": 2
+        },
+        {
+          "position": 3,
+          "team": {
+            "id": 840,
+            "name": "Iran",
+            "shortName": "Iran",
+            "tla": "IRN",
+            "crest": "https://crests.football-data.org/iran.svg"
+          },
+          "playedGames": 3,
+          "form": null,
+          "won": 0,
+          "draw": 3,
+          "lost": 0,
+          "points": 3,
+          "goalsFor": 3,
+          "goalsAgainst": 3,
+          "goalDifference": 0
+        },
+        {
+          "position": 4,
+          "team": {
+            "id": 783,
+            "name": "New Zealand",
+            "shortName": "New Zealand",
+            "tla": "NZL",
+            "crest": "https://crests.football-data.org/783.svg"
+          },
+          "playedGames": 3,
           "form": null,
           "won": 0,
           "draw": 1,
-          "lost": 0,
+          "lost": 2,
           "points": 1,
-          "goalsFor": 1,
-          "goalsAgainst": 1,
-          "goalDifference": 0
+          "goalsFor": 4,
+          "goalsAgainst": 10,
+          "goalDifference": -6
         }
       ]
     },
@@ -2155,62 +2163,24 @@
         {
           "position": 1,
           "team": {
-            "id": 758,
-            "name": "Uruguay",
-            "shortName": "Uruguay",
-            "tla": "URU",
-            "crest": "https://crests.football-data.org/758.svg"
-          },
-          "playedGames": 1,
-          "form": null,
-          "won": 0,
-          "draw": 1,
-          "lost": 0,
-          "points": 1,
-          "goalsFor": 1,
-          "goalsAgainst": 1,
-          "goalDifference": 0
-        },
-        {
-          "position": 2,
-          "team": {
-            "id": 801,
-            "name": "Saudi Arabia",
-            "shortName": "Saudi Arabia",
-            "tla": "KSA",
-            "crest": "https://crests.football-data.org/saudi_arabia.svg"
-          },
-          "playedGames": 1,
-          "form": null,
-          "won": 0,
-          "draw": 1,
-          "lost": 0,
-          "points": 1,
-          "goalsFor": 1,
-          "goalsAgainst": 1,
-          "goalDifference": 0
-        },
-        {
-          "position": 3,
-          "team": {
             "id": 760,
             "name": "Spain",
             "shortName": "Spain",
             "tla": "ESP",
             "crest": "https://crests.football-data.org/760.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 0,
+          "won": 2,
           "draw": 1,
           "lost": 0,
-          "points": 1,
-          "goalsFor": 0,
+          "points": 7,
+          "goalsFor": 5,
           "goalsAgainst": 0,
-          "goalDifference": 0
+          "goalDifference": 5
         },
         {
-          "position": 4,
+          "position": 2,
           "team": {
             "id": 1930,
             "name": "Cape Verde Islands",
@@ -2218,15 +2188,53 @@
             "tla": "CPV",
             "crest": "https://crests.football-data.org/cape_verde.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
           "won": 0,
-          "draw": 1,
+          "draw": 3,
           "lost": 0,
-          "points": 1,
-          "goalsFor": 0,
-          "goalsAgainst": 0,
+          "points": 3,
+          "goalsFor": 2,
+          "goalsAgainst": 2,
           "goalDifference": 0
+        },
+        {
+          "position": 3,
+          "team": {
+            "id": 758,
+            "name": "Uruguay",
+            "shortName": "Uruguay",
+            "tla": "URU",
+            "crest": "https://crests.football-data.org/758.svg"
+          },
+          "playedGames": 3,
+          "form": null,
+          "won": 0,
+          "draw": 2,
+          "lost": 1,
+          "points": 2,
+          "goalsFor": 3,
+          "goalsAgainst": 4,
+          "goalDifference": -1
+        },
+        {
+          "position": 4,
+          "team": {
+            "id": 801,
+            "name": "Saudi Arabia",
+            "shortName": "Saudi Arabia",
+            "tla": "KSA",
+            "crest": "https://crests.football-data.org/saudi_arabia.svg"
+          },
+          "playedGames": 3,
+          "form": null,
+          "won": 0,
+          "draw": 2,
+          "lost": 1,
+          "points": 2,
+          "goalsFor": 1,
+          "goalsAgainst": 5,
+          "goalDifference": -4
         }
       ]
     },
@@ -2238,40 +2246,40 @@
         {
           "position": 1,
           "team": {
-            "id": 8872,
-            "name": "Norway",
-            "shortName": "Norway",
-            "tla": "NOR",
-            "crest": "https://crests.football-data.org/813.svg"
-          },
-          "playedGames": 1,
-          "form": null,
-          "won": 1,
-          "draw": 0,
-          "lost": 0,
-          "points": 3,
-          "goalsFor": 4,
-          "goalsAgainst": 1,
-          "goalDifference": 3
-        },
-        {
-          "position": 2,
-          "team": {
             "id": 773,
             "name": "France",
             "shortName": "France",
             "tla": "FRA",
             "crest": "https://crests.football-data.org/773.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 1,
+          "won": 3,
           "draw": 0,
           "lost": 0,
-          "points": 3,
-          "goalsFor": 3,
-          "goalsAgainst": 1,
-          "goalDifference": 2
+          "points": 9,
+          "goalsFor": 10,
+          "goalsAgainst": 2,
+          "goalDifference": 8
+        },
+        {
+          "position": 2,
+          "team": {
+            "id": 8872,
+            "name": "Norway",
+            "shortName": "Norway",
+            "tla": "NOR",
+            "crest": "https://crests.football-data.org/813.svg"
+          },
+          "playedGames": 3,
+          "form": null,
+          "won": 2,
+          "draw": 0,
+          "lost": 1,
+          "points": 6,
+          "goalsFor": 8,
+          "goalsAgainst": 7,
+          "goalDifference": 1
         },
         {
           "position": 3,
@@ -2282,15 +2290,15 @@
             "tla": "SEN",
             "crest": "https://crests.football-data.org/senegal.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 0,
+          "won": 1,
           "draw": 0,
-          "lost": 1,
-          "points": 0,
-          "goalsFor": 1,
-          "goalsAgainst": 3,
-          "goalDifference": -2
+          "lost": 2,
+          "points": 3,
+          "goalsFor": 8,
+          "goalsAgainst": 6,
+          "goalDifference": 2
         },
         {
           "position": 4,
@@ -2301,15 +2309,15 @@
             "tla": "IRQ",
             "crest": "https://crests.football-data.org/iraq.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
           "won": 0,
           "draw": 0,
-          "lost": 1,
+          "lost": 3,
           "points": 0,
           "goalsFor": 1,
-          "goalsAgainst": 4,
-          "goalDifference": -3
+          "goalsAgainst": 12,
+          "goalDifference": -11
         }
       ]
     },
@@ -2327,15 +2335,15 @@
             "tla": "ARG",
             "crest": "https://crests.football-data.org/762.png"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 1,
+          "won": 3,
           "draw": 0,
           "lost": 0,
-          "points": 3,
-          "goalsFor": 3,
-          "goalsAgainst": 0,
-          "goalDifference": 3
+          "points": 9,
+          "goalsFor": 8,
+          "goalsAgainst": 1,
+          "goalDifference": 7
         },
         {
           "position": 2,
@@ -2346,37 +2354,18 @@
             "tla": "AUT",
             "crest": "https://crests.football-data.org/816.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
           "won": 1,
-          "draw": 0,
-          "lost": 0,
-          "points": 3,
-          "goalsFor": 3,
-          "goalsAgainst": 1,
-          "goalDifference": 2
+          "draw": 1,
+          "lost": 1,
+          "points": 4,
+          "goalsFor": 6,
+          "goalsAgainst": 6,
+          "goalDifference": 0
         },
         {
           "position": 3,
-          "team": {
-            "id": 8049,
-            "name": "Jordan",
-            "shortName": "Jordan",
-            "tla": "JOR",
-            "crest": "https://crests.football-data.org/8049.png"
-          },
-          "playedGames": 1,
-          "form": null,
-          "won": 0,
-          "draw": 0,
-          "lost": 1,
-          "points": 0,
-          "goalsFor": 1,
-          "goalsAgainst": 3,
-          "goalDifference": -2
-        },
-        {
-          "position": 4,
           "team": {
             "id": 778,
             "name": "Algeria",
@@ -2384,15 +2373,34 @@
             "tla": "ALG",
             "crest": "https://crests.football-data.org/algeria.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
+          "form": null,
+          "won": 1,
+          "draw": 1,
+          "lost": 1,
+          "points": 4,
+          "goalsFor": 5,
+          "goalsAgainst": 7,
+          "goalDifference": -2
+        },
+        {
+          "position": 4,
+          "team": {
+            "id": 8049,
+            "name": "Jordan",
+            "shortName": "Jordan",
+            "tla": "JOR",
+            "crest": "https://crests.football-data.org/8049.png"
+          },
+          "playedGames": 3,
           "form": null,
           "won": 0,
           "draw": 0,
-          "lost": 1,
+          "lost": 3,
           "points": 0,
-          "goalsFor": 0,
-          "goalsAgainst": 3,
-          "goalDifference": -3
+          "goalsFor": 3,
+          "goalsAgainst": 8,
+          "goalDifference": -5
         }
       ]
     },
@@ -2410,34 +2418,15 @@
             "tla": "COL",
             "crest": "https://crests.football-data.org/818.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 1,
-          "draw": 0,
-          "lost": 0,
-          "points": 3,
-          "goalsFor": 3,
-          "goalsAgainst": 1,
-          "goalDifference": 2
-        },
-        {
-          "position": 2,
-          "team": {
-            "id": 1934,
-            "name": "Congo DR",
-            "shortName": "Congo DR",
-            "tla": "COD",
-            "crest": "https://crests.football-data.org/congo_dr.svg"
-          },
-          "playedGames": 1,
-          "form": null,
-          "won": 0,
+          "won": 2,
           "draw": 1,
           "lost": 0,
-          "points": 1,
-          "goalsFor": 1,
+          "points": 7,
+          "goalsFor": 4,
           "goalsAgainst": 1,
-          "goalDifference": 0
+          "goalDifference": 3
         },
         {
           "position": 2,
@@ -2448,15 +2437,34 @@
             "tla": "POR",
             "crest": "https://crests.football-data.org/765.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 0,
-          "draw": 1,
+          "won": 1,
+          "draw": 2,
           "lost": 0,
-          "points": 1,
-          "goalsFor": 1,
+          "points": 5,
+          "goalsFor": 6,
           "goalsAgainst": 1,
-          "goalDifference": 0
+          "goalDifference": 5
+        },
+        {
+          "position": 3,
+          "team": {
+            "id": 1934,
+            "name": "Congo DR",
+            "shortName": "Congo DR",
+            "tla": "COD",
+            "crest": "https://crests.football-data.org/congo_dr.svg"
+          },
+          "playedGames": 3,
+          "form": null,
+          "won": 1,
+          "draw": 1,
+          "lost": 1,
+          "points": 4,
+          "goalsFor": 4,
+          "goalsAgainst": 3,
+          "goalDifference": 1
         },
         {
           "position": 4,
@@ -2467,15 +2475,15 @@
             "tla": "UZB",
             "crest": "https://crests.football-data.org/8070.png"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
           "won": 0,
           "draw": 0,
-          "lost": 1,
+          "lost": 3,
           "points": 0,
-          "goalsFor": 1,
-          "goalsAgainst": 3,
-          "goalDifference": -2
+          "goalsFor": 2,
+          "goalsAgainst": 11,
+          "goalDifference": -9
         }
       ]
     },
@@ -2493,56 +2501,18 @@
             "tla": "ENG",
             "crest": "https://crests.football-data.org/770.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
           "form": null,
-          "won": 1,
-          "draw": 0,
+          "won": 2,
+          "draw": 1,
           "lost": 0,
-          "points": 3,
-          "goalsFor": 4,
+          "points": 7,
+          "goalsFor": 6,
           "goalsAgainst": 2,
-          "goalDifference": 2
+          "goalDifference": 4
         },
         {
           "position": 2,
-          "team": {
-            "id": 763,
-            "name": "Ghana",
-            "shortName": "Ghana",
-            "tla": "GHA",
-            "crest": "https://crests.football-data.org/ghana.svg"
-          },
-          "playedGames": 1,
-          "form": null,
-          "won": 1,
-          "draw": 0,
-          "lost": 0,
-          "points": 3,
-          "goalsFor": 1,
-          "goalsAgainst": 0,
-          "goalDifference": 1
-        },
-        {
-          "position": 3,
-          "team": {
-            "id": 1836,
-            "name": "Panama",
-            "shortName": "Panama",
-            "tla": "PAN",
-            "crest": "https://crests.football-data.org/panama.svg"
-          },
-          "playedGames": 1,
-          "form": null,
-          "won": 0,
-          "draw": 0,
-          "lost": 1,
-          "points": 0,
-          "goalsFor": 0,
-          "goalsAgainst": 1,
-          "goalDifference": -1
-        },
-        {
-          "position": 4,
           "team": {
             "id": 799,
             "name": "Croatia",
@@ -2550,15 +2520,53 @@
             "tla": "CRO",
             "crest": "https://crests.football-data.org/799.svg"
           },
-          "playedGames": 1,
+          "playedGames": 3,
+          "form": null,
+          "won": 2,
+          "draw": 0,
+          "lost": 1,
+          "points": 6,
+          "goalsFor": 5,
+          "goalsAgainst": 5,
+          "goalDifference": 0
+        },
+        {
+          "position": 3,
+          "team": {
+            "id": 763,
+            "name": "Ghana",
+            "shortName": "Ghana",
+            "tla": "GHA",
+            "crest": "https://crests.football-data.org/ghana.svg"
+          },
+          "playedGames": 3,
+          "form": null,
+          "won": 1,
+          "draw": 1,
+          "lost": 1,
+          "points": 4,
+          "goalsFor": 2,
+          "goalsAgainst": 2,
+          "goalDifference": 0
+        },
+        {
+          "position": 4,
+          "team": {
+            "id": 1836,
+            "name": "Panama",
+            "shortName": "Panama",
+            "tla": "PAN",
+            "crest": "https://crests.football-data.org/panama.svg"
+          },
+          "playedGames": 3,
           "form": null,
           "won": 0,
           "draw": 0,
-          "lost": 1,
+          "lost": 3,
           "points": 0,
-          "goalsFor": 2,
+          "goalsFor": 0,
           "goalsAgainst": 4,
-          "goalDifference": -2
+          "goalDifference": -4
         }
       ]
     }

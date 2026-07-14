@@ -15,10 +15,18 @@
 //   - CORS is restricted to the site origin so other sites cannot freeload the quota.
 //   - Errors are generic; no token or upstream detail is leaked.
 //
-// Endpoints: GET /live, GET /match/:id, GET /health.
+// Endpoints: GET /live, GET /match/:id, GET /analysis/:id, GET /health.
 
+import Anthropic from "@anthropic-ai/sdk";
 import { mapFootballDataMatches } from "../src/domain.js";
 import { mapMatchDetail } from "../src/mapDetail.js";
+import {
+  ANALYSIS_SCHEMA,
+  ANALYSIS_SYSTEM_PROMPT,
+  analysisCacheSignature,
+  analysisEligible,
+  buildAnalysisPrompt,
+} from "../src/analysisPrompt.js";
 import {
   cleanName as cleanPaperRunName,
   createPaperRunChallenge,
@@ -112,6 +120,11 @@ export default {
         return json(mapMatchDetail(detail), 200, { ...cors, "Cache-Control": "public, max-age=25" });
       }
 
+      const analysisRoute = url.pathname.match(/^\/analysis\/(\d{1,12})$/);
+      if (analysisRoute) {
+        return handleAnalysis(env, Number(analysisRoute[1]), cors);
+      }
+
       if (url.pathname === "/" || url.pathname === "/health") {
         return json({ ok: true, service: "goon-squad-data" }, 200, cors);
       }
@@ -119,6 +132,13 @@ export default {
     } catch {
       return json({ error: "upstream unavailable" }, 502, cors);
     }
+  },
+
+  // Cron (see [triggers] in wrangler.toml): pre-generates AI analyses during live
+  // play, so a user visit only ever reads a stored copy and never triggers an
+  // Anthropic call itself.
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(runScheduledAnalysis(env));
   },
 };
 
@@ -142,6 +162,127 @@ async function getLive(competition, season, token) {
     if (lastLive) return lastLive; // serve stale rather than fail when upstream blips
     throw error;
   }
+}
+
+// -- AI match analysis (Claude) -----------------------------------------------
+// Generation is cron-driven, never visit-driven: every 10 minutes the scheduled
+// handler checks the feed and writes one analysis per live match (plus a single
+// full-time read once a match finishes) into ANALYSIS_CACHE KV under a stable
+// per-match key. The prompt is assembled server-side from feed data only, and the
+// GET route is a pure KV read, so browsers can never trigger an Anthropic call and
+// cost is fixed per match regardless of visitors. analysisCacheSignature (score,
+// status, pens, 10-minute clock bucket) decides whether a cron tick regenerates.
+
+const ANALYSIS_KV_TTL = 60 * 24 * 60 * 60; // stored analyses self-clean after the tournament
+const ANALYSIS_FINAL_WINDOW_MS = 48 * 60 * 60 * 1000; // full-time reads only for fresh finishes
+const ANALYSIS_MEMORY_MS = 60 * 1000; // per-isolate read cache; cron rewrites land within a tick
+const analysisMemory = new Map(); // key -> { entry, expires }
+
+async function handleAnalysis(env, id, cors) {
+  if (!env.ANALYSIS_CACHE) return json({ error: "analysis not configured" }, 503, cors);
+  const stored = await readLatestAnalysis(env, id);
+  if (!stored?.body) return json({ error: "no analysis yet" }, 404, cors);
+  return json(stored.body, 200, { ...cors, "Cache-Control": "public, max-age=60" });
+}
+
+async function runScheduledAnalysis(env) {
+  if (!env.ANTHROPIC_API_KEY || !env.ANALYSIS_CACHE || !env.FOOTBALL_DATA_TOKEN) return;
+  const competition = env.FOOTBALL_DATA_COMPETITION || "WC";
+  const season = env.FOOTBALL_DATA_SEASON || "2026";
+
+  let live;
+  try {
+    live = await getLive(competition, season, env.FOOTBALL_DATA_TOKEN);
+  } catch {
+    return; // feed down; the next tick retries
+  }
+
+  for (const match of live.matches.filter(analysisWorthGenerating)) {
+    try {
+      const signature = analysisCacheSignature(match);
+      const current = await readLatestAnalysis(env, match.id);
+      if (current?.signature === signature) continue; // game state unchanged since last tick
+      const body = await generateAnalysis(env, match, live, env.FOOTBALL_DATA_TOKEN);
+      await writeLatestAnalysis(env, match.id, { signature, body });
+    } catch {
+      // one broken match must not block the others; the next tick retries
+    }
+  }
+}
+
+// Live matches always qualify; finished ones only within a window so the cron gives
+// each match its full-time read shortly after the whistle without ever backfilling
+// the whole tournament in one expensive burst.
+function analysisWorthGenerating(match) {
+  if (!analysisEligible(match)) return false;
+  if (!isMatchFinished(match)) return true;
+  const kickoff = new Date(match.utcDate).getTime();
+  return Number.isFinite(kickoff) && Date.now() - kickoff < ANALYSIS_FINAL_WINDOW_MS;
+}
+
+async function generateAnalysis(env, match, live, token) {
+  const detail = mapMatchDetail(await fetchJson(`/v4/matches/${match.id}`, token, 25));
+
+  // Model override must support adaptive thinking + structured outputs.
+  const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 60_000 });
+  const response = await anthropic.messages.create({
+    model: env.ANTHROPIC_MODEL || "claude-sonnet-5",
+    max_tokens: 4000,
+    thinking: { type: "adaptive" },
+    output_config: {
+      effort: "low",
+      format: { type: "json_schema", schema: ANALYSIS_SCHEMA },
+    },
+    system: ANALYSIS_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: buildAnalysisPrompt(detail, live) }],
+  });
+
+  if (response.stop_reason === "refusal") throw new Error("analysis refused");
+  const text = response.content.find((block) => block.type === "text")?.text ?? "";
+  const analysis = JSON.parse(text); // schema-constrained: {headline, match, sweepstake}
+
+  return {
+    matchId: match.id,
+    status: match.status,
+    minute: match.minute ?? null,
+    score: match.score,
+    generatedAt: new Date().toISOString(),
+    ...analysis,
+  };
+}
+
+async function readLatestAnalysis(env, id) {
+  const key = `analysis:latest:${id}`;
+  const local = analysisMemory.get(key);
+  if (local && local.expires > Date.now()) return local.entry;
+  analysisMemory.delete(key);
+  try {
+    const entry = await env.ANALYSIS_CACHE.get(key, "json");
+    if (entry) {
+      analysisMemory.set(key, { entry, expires: Date.now() + ANALYSIS_MEMORY_MS });
+      trimAnalysisMemory();
+    }
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+async function writeLatestAnalysis(env, id, entry) {
+  const key = `analysis:latest:${id}`;
+  analysisMemory.set(key, { entry, expires: Date.now() + ANALYSIS_MEMORY_MS });
+  trimAnalysisMemory();
+  await env.ANALYSIS_CACHE.put(key, JSON.stringify(entry), { expirationTtl: ANALYSIS_KV_TTL });
+}
+
+function trimAnalysisMemory() {
+  if (analysisMemory.size <= 64) return;
+  const oldest = analysisMemory.keys().next().value;
+  analysisMemory.delete(oldest);
+}
+
+function isMatchFinished(match) {
+  return match.status === "FINISHED" || match.status === "AWARDED";
 }
 
 async function tunnelToSentry(request, cors) {

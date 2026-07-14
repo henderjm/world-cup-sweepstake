@@ -225,7 +225,8 @@ function bump(momentum, team, delta) {
 }
 
 // Current confirmed prizes, driven by the final result (not the points table).
-function currentPrizes(matches) {
+// Exported for the Worker's AI analysis prompt as well as buildModel.
+export function currentPrizes(matches) {
   const final = matches.find((match) => match.stage === "FINAL" && isDecided(match));
   if (!final) {
     return { champion: recipient(), runnerUp: recipient() };
@@ -241,7 +242,7 @@ function recipient(team = "") {
   return { team: normalized, owner: normalized ? ownerOf(normalized) ?? "Unowned" : "TBC" };
 }
 
-function woodenSpoon(matches) {
+export function woodenSpoon(matches) {
   const performance = buildTeamPerformance(matches);
 
   const confirmed = ENTRANTS.flatMap((entrant) =>

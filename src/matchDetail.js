@@ -58,6 +58,7 @@ export function openMatch(match) {
   panel.scrollTop = 0;
   panel.innerHTML = renderShell(match);
   loadDetail(match);
+  loadAnalysis(match);
 }
 
 function close() {
@@ -99,6 +100,41 @@ async function loadDetail(match) {
   if (openId === match.id && panel.querySelector("#mdEvents")) {
     panel.querySelector("#mdEvents").innerHTML = scheduledNote(match);
   }
+}
+
+// AI analysis card (Worker /analysis/:id). Purely additive: any failure, missing
+// config, or a match the Worker cron has not analysed yet just leaves the section
+// hidden. The Worker pre-generates on a 10-minute cron during live play; this fetch
+// only ever reads the stored copy, never triggers a generation.
+async function loadAnalysis(match) {
+  if (!DATA_API || match.id == null) return;
+  if (!isLive(match.status) && !isFinished(match.status)) return;
+  try {
+    const response = await fetch(`${DATA_API}/analysis/${match.id}`, { cache: "no-store" });
+    if (!response.ok) return;
+    const analysis = await response.json();
+    if (openId !== match.id) return; // a different match was opened meanwhile
+    const slot = panel.querySelector("#mdAnalysis");
+    if (!slot || !analysis?.match || !analysis?.sweepstake) return;
+    slot.innerHTML = renderAnalysis(analysis);
+    slot.hidden = false;
+  } catch {
+    // analysis is a bonus; the drawer works without it
+  }
+}
+
+function renderAnalysis(analysis) {
+  const live = isLive(analysis.status);
+  const stamp = live
+    ? `as of ${analysis.minute ? `${analysis.minute}'` : "now"}`
+    : "full-time read";
+  return `
+    <span class="md-ai__kicker">✦ AI analysis</span>
+    ${analysis.headline ? `<strong class="md-ai__headline">${esc(analysis.headline)}</strong>` : ""}
+    <p>${esc(analysis.match)}</p>
+    <p class="md-ai__stakes">${esc(analysis.sweepstake)}</p>
+    <span class="md-ai__meta">${esc(stamp)} · AI-generated, it can slip up</span>
+  `;
 }
 
 // -- sweepstake context ------------------------------------------------------
@@ -206,6 +242,7 @@ function renderShell(match) {
     </div>
 
     <div class="md-pane" data-pane="match">
+      <section class="md-ai" id="mdAnalysis" hidden></section>
       <section class="md-events" id="mdEvents">
         <div class="md-loading">Loading match detail…</div>
       </section>

@@ -1899,6 +1899,43 @@ select {
 
 .md-events { padding: 8px 18px 18px; }
 
+.md-ai {
+  display: block;
+  margin: 8px 18px 4px;
+  padding: 13px 15px;
+  border: 1px solid rgb(45 212 167 / 0.28);
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgb(45 212 167 / 0.08), rgb(122 162 255 / 0.05));
+}
+
+.md-ai__kicker {
+  display: block;
+  color: var(--accent);
+  font-size: 0.66rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.md-ai__headline {
+  display: block;
+  margin-top: 6px;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.md-ai p { margin: 8px 0 0; font-size: 0.86rem; line-height: 1.55; }
+.md-ai p.md-ai__stakes { color: var(--muted); }
+
+.md-ai__meta {
+  display: block;
+  margin-top: 9px;
+  color: var(--faint);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
 .md-venue {
   display: flex;
   flex-wrap: wrap;
