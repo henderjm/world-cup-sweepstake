@@ -134,7 +134,7 @@ function renderAnalysis(analysis) {
     <summary class="md-ai__head">
       <span class="md-ai__spark" aria-hidden="true">✦</span>
       <span class="md-ai__titles">
-        <span class="md-ai__kicker">AI analysis${live ? `<i class="md-ai__livedot"></i>` : ""}</span>
+        <span class="md-ai__kicker">AI analysis${live ? `<i class="md-ai__livedot"></i>${analysis.minute ? `${analysis.minute}'` : "live"}` : " · full-time"}</span>
         <strong class="md-ai__headline">${esc(analysis.headline || "Match read")}</strong>
       </span>
       <span class="md-ai__chev" aria-hidden="true">▾</span>

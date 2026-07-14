@@ -12,6 +12,11 @@ export function analysisEligible(match) {
   return isLive(match?.status) || isFinished(match?.status);
 }
 
+// Bump when the system prompt or payload shape changes meaningfully: the version is
+// part of the cache signature, so a deploy regenerates live and fresh matches with
+// the new prompt instead of serving reads written by the old one.
+export const ANALYSIS_PROMPT_VERSION = 2;
+
 // Cache signature: a new analysis is worth generating whenever the signature changes.
 // Score, status and penalties are always part of it (a goal, half-time, full-time or
 // a fresh penalty kick regenerates on the next cron tick), and the clock component
@@ -22,7 +27,7 @@ export function analysisEligible(match) {
 export function analysisCacheSignature(match) {
   const score = `${match.score?.home ?? "x"}-${match.score?.away ?? "x"}`;
   const pens = match.penalties ? `${match.penalties.home}-${match.penalties.away}` : "np";
-  return `${match.status}:${score}:${pens}:${clockBucket(match)}`;
+  return `v${ANALYSIS_PROMPT_VERSION}:${match.status}:${score}:${pens}:${clockBucket(match)}`;
 }
 
 function clockBucket(match) {
@@ -73,7 +78,9 @@ You get one JSON payload describing a single match plus the sweepstake context a
 - "sweepstake": two to four sentences on what the result means for the money and the leaderboard. Name the owners.
 
 Rules:
-- Live match: present tense. Finished match: past tense.
+- Finished match: past tense, and a verdict is allowed.
+- Live match: present tense, and the outcome is NOT settled. Never declare a result that has not happened: while the ball is rolling nobody has won, reached the next round, been eliminated, or banked a stage bonus. A lead is a lead, not a result ("Spain two up and in control", never "Spain cruise into the final"), and every consequence for the pot is a conditional ("if it stays like this..."). Football punishes certainty.
+- The headline must be honest about the state of play: a live headline describes a game in progress, only a finished headline declares an outcome.
 - Extra time or a penalty shootout in progress is the story: lead with that drama and the current shootout score if there is one.
 - Use only facts present in the payload. The feed has no xG or possession stats, so never invent numbers. Do not diagnose injuries beyond a substitution you can see.
 - Tone: sharp, warm, light banter between friends. Plain sentences, no bullet points, no markdown.
