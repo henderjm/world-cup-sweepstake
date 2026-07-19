@@ -45,11 +45,32 @@ console.log("Wrote live.json");
 // about an hour before). The client fetches one of these files only when a match is
 // opened, so the main payload stays small.
 const LIVE = new Set(["IN_PLAY", "PAUSED", "LIVE", "EXTRA_TIME", "PENALTY_SHOOTOUT", "BREAK"]);
+const FINAL = new Set(["FINISHED", "AWARDED"]);
 const AROUND_KICKOFF_MS = 90 * 60 * 1000;
 const now = Date.now();
 
+await mkdir(matchesDir, { recursive: true });
+
+// Which matches do we already hold *final* detail for? A finished match's detail never
+// changes, so once we have it we never re-fetch. This matters at tournament scale: with
+// 80+ finished matches, re-fetching every one each run burns the whole 30/min budget and
+// the newest matches (queued last) get starved by the rate limit, so their goals never
+// reach data/scorers.json and the Golden Boot silently undercounts. Fetch each match once
+// (retrying only until its detail is final) and the budget goes to the matches that still
+// need it. A stored mid-match snapshot (status still live) is re-fetched until it's final.
+const finalOnDisk = new Set();
+for (const file of await readdir(matchesDir).catch(() => [])) {
+  if (!file.endsWith(".json")) continue;
+  try {
+    const stored = JSON.parse(await readFile(new URL(file, matchesDir), "utf8"));
+    if (FINAL.has(stored.status)) finalOnDisk.add(String(stored.id));
+  } catch {
+    // Unreadable/partial file: leave it out so it gets re-fetched.
+  }
+}
+
 const relevant = (matchesPayload.matches ?? []).filter((match) => {
-  if (match.status === "FINISHED" || match.status === "AWARDED") return true;
+  if (FINAL.has(match.status)) return !finalOnDisk.has(String(match.id));
   if (LIVE.has(match.status)) return true;
   if (match.status === "TIMED" || match.status === "SCHEDULED") {
     const delta = new Date(match.utcDate).getTime() - now;
@@ -57,8 +78,6 @@ const relevant = (matchesPayload.matches ?? []).filter((match) => {
   }
   return false;
 });
-
-await mkdir(matchesDir, { recursive: true });
 console.log(`Fetching detail for ${relevant.length} matches (throttled under 30/min)...`);
 let written = 0;
 for (const match of relevant) {

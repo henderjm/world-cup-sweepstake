@@ -56,7 +56,7 @@ const state = {
   leaderboardSort: "now",
   fixtureOwner: "all",
   fixtureView: "results",
-  goldenBootSort: "ga",
+  goldenBootSort: "goals",
   whatif: {
     pins: new Map(),
     baseline: null,
