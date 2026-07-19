@@ -29,6 +29,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      # Persist fetched match detail across runs. Each deploy checks out main fresh, so
+      # without this the Golden Boot tally only ever sees the committed seed files plus
+      # whatever one run can re-fetch under the 30/min API cap - matches that fail or get
+      # starved that run vanish from the board, so scorer totals chronically undercount.
+      # An accumulating cache (unique key + prefix restore-keys) restores the latest set,
+      # the fetch script fetches only matches it does not already hold final detail for,
+      # and the post-job save writes the grown set back. Coverage converges to complete.
+      - name: Restore accumulated match detail
+        uses: actions/cache@v4
+        with:
+          path: data/matches
+          key: wc-match-detail-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            wc-match-detail-
       - name: Fetch live World Cup data
         run: npm run fetch:live
         env:
