@@ -811,21 +811,29 @@ export function renderFixtures(model, ownerFilter = "all", view = "results") {
 
 // -- Golden Boot -------------------------------------------------------------
 
+// Goals first: the Golden Boot is a goals award, so it is the primary metric and
+// the default sort. Goals + assists is offered as the secondary view.
 const GOLDEN_BOOT_SORTS = {
-  ga: { label: "Goals + assists", compare: compareByInvolvements },
   goals: { label: "Goals", compare: compareByGoals },
+  ga: { label: "Goals + assists", compare: compareByInvolvements },
 };
 
-export function renderGoldenBoot(model, sortKey = "ga") {
-  const sort = GOLDEN_BOOT_SORTS[sortKey] ?? GOLDEN_BOOT_SORTS.ga;
+export function renderGoldenBoot(model, sortKey = "goals") {
+  const activeKey = GOLDEN_BOOT_SORTS[sortKey] ? sortKey : "goals";
+  const sort = GOLDEN_BOOT_SORTS[activeKey];
   const scorers = [...(model.scorers ?? [])].sort(sort.compare);
 
   const controls = Object.entries(GOLDEN_BOOT_SORTS)
     .map(
       ([key, def]) =>
-        `<button class="seg ${key === sortKey ? "is-active" : ""}" data-gb-sort="${key}">${def.label}</button>`,
+        `<button class="seg ${key === activeKey ? "is-active" : ""}" data-gb-sort="${key}">${def.label}</button>`,
     )
     .join("");
+
+  // Accent the column that is actually being ranked, so the toggle visibly changes
+  // the emphasis instead of always highlighting G+A.
+  const goalsClass = activeKey === "goals" ? "lb__num gb__pts" : "lb__num";
+  const gaClass = activeKey === "ga" ? "lb__num gb__pts" : "lb__num lb__num--muted";
 
   const head = `
     <div class="panel__head">
@@ -850,9 +858,9 @@ export function renderGoldenBoot(model, sortKey = "ga") {
               <span class="gb__team">${esc(row.team)}${owner ? ` · ${esc(owner)}` : ""}</span>
             </span>
           </td>
-          <td class="lb__num">${row.goals}</td>
+          <td class="${goalsClass}">${row.goals}</td>
           <td class="lb__num lb__num--muted">${row.assists}</td>
-          <td class="lb__num gb__pts">${row.points}</td>
+          <td class="${gaClass}">${row.points}</td>
         </tr>`;
     })
     .join("");
