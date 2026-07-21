@@ -14,10 +14,10 @@ workers_dev = true
 # up-to-date checkout.
 [vars]
 FOOTBALL_DATA_COMPETITIONS = "PL:2026,CL:2026"
-# Google OAuth web client id (public, not a secret). Sign-in returns 501 until this
-# is set to a real client id whose authorized JavaScript origins include the site
-# origin and http://localhost:8731.
-GOOGLE_CLIENT_ID = ""
+# Google OAuth web client id (public, not a secret; the client secret is never
+# used — the GIS ID-token flow doesn't need it). Authorized JavaScript origins
+# must include the site origin and http://localhost:8731.
+GOOGLE_CLIENT_ID = "68606512741-6un71mt70pt688bkpcd7r86pjqjmt07l.apps.googleusercontent.com"
 # AI analysis model. Any override must support adaptive thinking + structured outputs.
 ANTHROPIC_MODEL = "claude-sonnet-5"
 

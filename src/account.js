@@ -11,7 +11,7 @@ const GIS_SRC = "https://accounts.google.com/gsi/client";
 // The Google OAuth *web client id* (public by design, not a secret). Must list the
 // site origin and http://localhost:8731 as authorized JavaScript origins. Empty
 // means sign-in shows a "not configured" note.
-export const GOOGLE_CLIENT_ID = "";
+export const GOOGLE_CLIENT_ID = "68606512741-6un71mt70pt688bkpcd7r86pjqjmt07l.apps.googleusercontent.com";
 
 let session = readSession();
 let account = null; // { user, follows } after /me or sign-in
