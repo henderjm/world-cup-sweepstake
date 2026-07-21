@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet">
+  <style>
+    html, body { margin: 0; padding: 0; background: #0A0E14; color: #EDF2EE; font-family: "Archivo", -apple-system, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    a { color: #C8F542; text-decoration: none; }
+    a:hover { color: #DDFF7A; }
+    button { font-family: inherit; }
+    @keyframes zgMarquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+    @keyframes zgPulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+    @keyframes zgDrawer { from { transform: translateX(48px); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes zgFade { from { opacity: 0; } to { opacity: 1; } }
+  </style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column;">
+  <header style="position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;padding:10px clamp(14px,3vw,24px);background:rgba(10,14,20,.9);backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.07);">
+    <button onClick="{{ nav.scores }}" style="display:flex;align-items:center;gap:10px;background:none;border:none;padding:0;cursor:pointer;color:#EDF2EE;">
+      <span style="width:28px;height:28px;border-radius:8px;background:#C8F542;color:#0A0E14;display:inline-flex;align-items:center;justify-content:center;font-weight:900;font-size:12px;font-style:italic;">SG</span>
+      <span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1;">
+        <strong style="font-size:15px;font-weight:900;letter-spacing:.03em;text-transform:uppercase;font-style:italic;">{{ brand }}</strong>
+        <sc-if value="{{ desktop }}" hint-placeholder-val="{{ true }}">
+          <span style="font-size:9px;color:#8B95A0;letter-spacing:.12em;text-transform:uppercase;margin-top:3px;">Scores · Tables · Fantasy</span>
+        </sc-if>
+      </span>
+    </button>
+    <sc-if value="{{ desktop }}" hint-placeholder-val="{{ true }}">
+      <nav style="display:flex;gap:4px;margin-left:12px;">
+        <sc-for list="{{ navBtns }}" as="b" hint-placeholder-count="3">
+          <button onClick="{{ b.on }}" style="padding:7px 14px;border-radius:999px;border:none;background:{{ b.bg }};color:{{ b.color }};font-size:13px;font-weight:700;cursor:pointer;">{{ b.label }}</button>
+        </sc-for>
+      </nav>
+    </sc-if>
+    <span style="flex:1;"></span>
+    <sc-if value="{{ signedOut }}" hint-placeholder-val="{{ true }}">
+      <button onClick="{{ goProfile }}" style="padding:8px 16px;border-radius:999px;border:1px solid rgba(200,245,66,.5);background:none;color:#C8F542;font-size:13px;font-weight:700;cursor:pointer;">Sign in</button>
+    </sc-if>
+    <sc-if value="{{ signedIn }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ goProfile }}" style="width:32px;height:32px;border-radius:50%;border:1px solid rgba(200,245,66,.5);background:rgba(200,245,66,.12);color:#C8F542;font-weight:800;font-size:13px;cursor:pointer;">M</button>
+    </sc-if>
+  </header>
+
+  <sc-if value="{{ showTicker }}" hint-placeholder-val="{{ true }}">
+    <div style="overflow:hidden;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.02);">
+      <div style="display:flex;width:max-content;animation:zgMarquee 40s linear infinite;">
+        <sc-for list="{{ tickerItems }}" as="t" hint-placeholder-count="6">
+          <span style="flex:none;display:inline-flex;align-items:center;gap:8px;padding:7px 16px;border-right:1px solid rgba(255,255,255,.06);">
+            <b style="font-size:10px;font-weight:800;color:{{ t.c }};font-variant-numeric:tabular-nums;">{{ t.st }}</b>
+            <span style="font-size:12px;font-weight:700;color:#C6CDD4;font-variant-numeric:tabular-nums;">{{ t.txt }}</span>
+          </span>
+        </sc-for>
+        <sc-for list="{{ tickerItems }}" as="t2" hint-placeholder-count="0">
+          <span style="flex:none;display:inline-flex;align-items:center;gap:8px;padding:7px 16px;border-right:1px solid rgba(255,255,255,.06);">
+            <b style="font-size:10px;font-weight:800;color:{{ t2.c }};font-variant-numeric:tabular-nums;">{{ t2.st }}</b>
+            <span style="font-size:12px;font-weight:700;color:#C6CDD4;font-variant-numeric:tabular-nums;">{{ t2.txt }}</span>
+          </span>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <main style="flex:1;width:100%;max-width:1180px;margin:0 auto;padding:clamp(16px,3vw,26px) clamp(14px,3vw,24px) 40px;">
+
+    <sc-if value="{{ isScores }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="Scores" style="display:grid;grid-template-columns:{{ scoresCols }};gap:18px;align-items:start;">
+        <sc-if value="{{ desktop }}" hint-placeholder-val="{{ true }}">
+          <aside style="position:sticky;top:64px;background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:10px;">
+            <h3 style="margin:4px 6px 10px;font-size:10px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">Competitions</h3>
+            <sc-for list="{{ compList }}" as="c" hint-placeholder-count="4">
+              <button onClick="{{ c.on }}" style="display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:9px 10px;border-radius:10px;border:none;background:{{ c.bg }};color:{{ c.color }};font-size:13px;font-weight:700;cursor:{{ c.cur }};margin-bottom:2px;">
+                <span style="flex:none;width:22px;height:22px;border-radius:6px;background:{{ c.mBg }};color:{{ c.mFg }};display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:900;">{{ c.abbr }}</span>
+                <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ c.label }}</span>
+                <sc-if value="{{ c.locked }}" hint-placeholder-val="{{ false }}"><span style="font-size:9px;font-weight:800;color:#5A646E;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:2px 7px;">SOON</span></sc-if>
+              </button>
+            </sc-for>
+          </aside>
+        </sc-if>
+        <div style="min-width:0;">
+        <sc-if value="{{ mobile }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:8px;overflow-x:auto;margin-bottom:14px;padding-bottom:2px;">
+            <sc-for list="{{ compList }}" as="c" hint-placeholder-count="4">
+              <button onClick="{{ c.on }}" style="flex:none;display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:999px;border:1px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.color }};font-size:12px;font-weight:700;cursor:{{ c.cur }};">{{ c.label }}
+                <sc-if value="{{ c.locked }}" hint-placeholder-val="{{ false }}"><span style="font-size:9px;font-weight:800;color:#5A646E;">SOON</span></sc-if>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+        <div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px;">
+          <div style="flex:1;min-width:220px;">
+            <p style="margin:0 0 6px;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#C8F542;">{{ compName }}</p>
+            <h1 style="margin:0;font-size:clamp(26px,4vw,38px);font-weight:900;font-style:italic;text-transform:uppercase;letter-spacing:.01em;line-height:1;">{{ heroTitle }}</h1>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+            <sc-for list="{{ chips }}" as="c" hint-placeholder-count="2">
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);font-size:12px;font-weight:600;color:#C6CDD4;">
+                <sc-if value="{{ c.live }}" hint-placeholder-val="{{ false }}">
+                  <span style="width:7px;height:7px;border-radius:50%;background:#C8F542;animation:zgPulse 1.5s infinite;"></span>
+                </sc-if>
+                {{ c.txt }}
+              </span>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:flex;gap:18px;border-bottom:1px solid rgba(255,255,255,.08);margin:14px 0 20px;overflow-x:auto;">
+          <sc-for list="{{ sTabs }}" as="t" hint-placeholder-count="5">
+            <button onClick="{{ t.on }}" style="flex:none;background:none;border:none;border-bottom:2px solid {{ t.line }};padding:8px 2px 10px;font-size:13px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;color:{{ t.color }};cursor:pointer;">{{ t.label }}</button>
+          </sc-for>
+        </div>
+
+        <sc-if value="{{ showLive }}" hint-placeholder-val="{{ true }}">
+          <div data-screen-label="Live and today">
+            <sc-if value="{{ hasLive }}" hint-placeholder-val="{{ true }}">
+              <div style="margin-bottom:22px;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                  <span style="width:8px;height:8px;border-radius:50%;background:#C8F542;animation:zgPulse 1.4s infinite;"></span>
+                  <h3 style="margin:0;font-size:12px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;">Live now</h3>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">
+                  <sc-for list="{{ liveMatches }}" as="m" hint-placeholder-count="3">
+                    <div onClick="{{ m.open }}" role="button" tabindex="0" style="background:#12181F;border:1px solid rgba(200,245,66,.22);border-radius:14px;padding:14px 16px;cursor:pointer;" style-hover="border-color:rgba(200,245,66,.55);">
+                      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                        <span style="font-size:11px;font-weight:900;color:#0A0E14;background:#C8F542;border-radius:999px;padding:2px 9px;font-variant-numeric:tabular-nums;">{{ m.st }}</span>
+                        <span style="font-size:11px;color:#8B95A0;font-weight:600;">{{ m.tag }}</span>
+                      </div>
+                      <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 10px;align-items:center;">
+                        <span style="display:flex;align-items:center;gap:9px;min-width:0;">
+                          <span style="flex:none;width:24px;height:24px;border-radius:50%;border:2px solid {{ m.hc }};background:#0A0E14;display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;">{{ m.ha }}</span>
+                          <span style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ m.h }}</span>
+                        </span>
+                        <span style="font-size:18px;font-weight:900;font-variant-numeric:tabular-nums;">{{ m.hs }}</span>
+                        <span style="display:flex;align-items:center;gap:9px;min-width:0;">
+                          <span style="flex:none;width:24px;height:24px;border-radius:50%;border:2px solid {{ m.ac }};background:#0A0E14;display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;">{{ m.aa }}</span>
+                          <span style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ m.a }}</span>
+                        </span>
+                        <span style="font-size:18px;font-weight:900;font-variant-numeric:tabular-nums;">{{ m.as }}</span>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;">
+              <div style="display:flex;flex-direction:column;gap:14px;">
+                <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:12px 16px 8px;">
+                  <h3 style="margin:2px 0 6px;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">Today</h3>
+                  <sc-for list="{{ todayMatches }}" as="m" hint-placeholder-count="1">
+                    <div onClick="{{ m.open }}" role="button" tabindex="0" style="display:grid;grid-template-columns:46px minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center;padding:10px 2px;cursor:pointer;border-radius:8px;" style-hover="background:rgba(200,245,66,.05);">
+                      <span style="font-size:10.5px;font-weight:800;color:{{ m.stColor }};font-variant-numeric:tabular-nums;">{{ m.st }}</span>
+                      <span style="display:flex;align-items:center;gap:7px;justify-content:flex-end;min-width:0;"><span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ m.h }}</span><span style="flex:none;width:22px;height:22px;border-radius:50%;border:2px solid {{ m.hc }};background:#0A0E14;display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;">{{ m.ha }}</span></span>
+                      <span style="font-size:13px;font-weight:900;min-width:40px;text-align:center;font-variant-numeric:tabular-nums;">{{ m.score }}</span>
+                      <span style="display:flex;align-items:center;gap:7px;min-width:0;"><span style="flex:none;width:22px;height:22px;border-radius:50%;border:2px solid {{ m.ac }};background:#0A0E14;display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;">{{ m.aa }}</span><span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ m.a }}</span><span style="display:{{ m.frDisp }};flex:none;align-items:center;font-size:8.5px;font-weight:900;letter-spacing:.06em;color:#F5C542;border:1px solid rgba(245,197,66,.45);border-radius:999px;padding:2px 7px;">FRIENDLY</span></span>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ noToday }}" hint-placeholder-val="{{ false }}">
+                    <p style="margin:6px 0 10px;font-size:12px;color:#8B95A0;">No more kick-offs today.</p>
+                  </sc-if>
+                </section>
+                <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:12px 16px 8px;">
+                  <h3 style="margin:2px 0 6px;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">Next up</h3>
+                  <sc-for list="{{ upcomingMatches }}" as="m" hint-placeholder-count="3">
+                    <div onClick="{{ m.open }}" role="button" tabindex="0" style="display:grid;grid-template-columns:46px minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center;padding:10px 2px;cursor:pointer;border-radius:8px;" style-hover="background:rgba(200,245,66,.05);">
+                      <span style="font-size:10.5px;font-weight:800;color:{{ m.stColor }};font-variant-numeric:tabular-nums;">{{ m.st }}</span>
+                      <span style="display:flex;align-items:center;gap:7px;justify-content:flex-end;min-width:0;"><span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ m.h }}</span><span style="flex:none;width:22px;height:22px;border-radius:50%;border:2px solid {{ m.hc }};background:#0A0E14;display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;">{{ m.ha }}</span></span>
+                      <span style="font-size:13px;font-weight:900;min-width:40px;text-align:center;font-variant-numeric:tabular-nums;">{{ m.score }}</span>
+                      <span style="display:flex;align-items:center;gap:7px;min-width:0;"><span style="flex:none;width:22px;height:22px;border-radius:50%;border:2px solid {{ m.ac }};background:#0A0E14;display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;">{{ m.aa }}</span><span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ m.a }}</span><span style="display:{{ m.frDisp }};flex:none;align-items:center;font-size:8.5px;font-weight:900;letter-spacing:.06em;color:#F5C542;border:1px solid rgba(245,197,66,.45);border-radius:999px;padding:2px 7px;">FRIENDLY</span></span>
+                    </div>
+                  </sc-for>
+                </section>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:14px;">
+                <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:12px 16px 8px;">
+                  <h3 style="margin:2px 0 6px;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">Recent results</h3>
+                  <sc-for list="{{ recentMatches }}" as="m" hint-placeholder-count="4">
+                    <div onClick="{{ m.open }}" role="button" tabindex="0" style="display:grid;grid-template-columns:46px minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center;padding:10px 2px;cursor:pointer;border-radius:8px;" style-hover="background:rgba(200,245,66,.05);">
+                      <span style="font-size:10.5px;font-weight:800;color:{{ m.stColor }};font-variant-numeric:tabular-nums;">{{ m.st }}</span>
+                      <span style="display:flex;align-items:center;gap:7px;justify-content:flex-end;min-width:0;"><span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ m.h }}</span><span style="flex:none;width:22px;height:22px;border-radius:50%;border:2px solid {{ m.hc }};background:#0A0E14;display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;">{{ m.ha }}</span></span>
+                      <span style="font-size:13px;font-weight:900;min-width:40px;text-align:center;font-variant-numeric:tabular-nums;">{{ m.score }}</span>
+                      <span style="display:flex;align-items:center;gap:7px;min-width:0;"><span style="flex:none;width:22px;height:22px;border-radius:50%;border:2px solid {{ m.ac }};background:#0A0E14;display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;">{{ m.aa }}</span><span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ m.a }}</span><span style="display:{{ m.frDisp }};flex:none;align-items:center;font-size:8.5px;font-weight:900;letter-spacing:.06em;color:#F5C542;border:1px solid rgba(245,197,66,.45);border-radius:999px;padding:2px 7px;">FRIENDLY</span></span>
+                    </div>
+                  </sc-for>
+                </section>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showTable }}" hint-placeholder-val="{{ false }}">
+          <div data-screen-label="League table">
+            <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:6px 16px 10px;">
+              <div style="display:grid;grid-template-columns:{{ tableCols }};gap:6px;padding:12px 2px 8px;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#8B95A0;">
+                <span>#</span><span>Club</span><span style="text-align:right;">P</span>
+                <span style="display:{{ wdlDisp }};text-align:right;">W</span><span style="display:{{ wdlDisp }};text-align:right;">D</span><span style="display:{{ wdlDisp }};text-align:right;">L</span>
+                <span style="text-align:right;">GD</span><span style="text-align:right;">Pts</span>
+                <span style="display:{{ formHeadDisp }};text-align:right;">Form</span>
+              </div>
+              <sc-for list="{{ tableRows }}" as="r" hint-placeholder-count="10">
+                <div style="display:grid;grid-template-columns:{{ tableCols }};gap:6px;align-items:center;padding:8px 2px;border-top:1px solid rgba(255,255,255,.05);">
+                  <span style="display:flex;align-items:center;gap:6px;"><span style="width:3px;height:15px;border-radius:2px;background:{{ r.zc }};"></span><span style="font-size:12px;color:#8B95A0;font-variant-numeric:tabular-nums;">{{ r.pos }}</span></span>
+                  <span style="display:flex;align-items:center;gap:8px;min-width:0;"><span style="flex:none;width:22px;height:22px;border-radius:50%;border:2px solid {{ r.color }};background:#0A0E14;display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;">{{ r.abbr }}</span><span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.team }}</span></span>
+                  <span style="text-align:right;font-size:13px;color:#C6CDD4;font-variant-numeric:tabular-nums;">{{ r.p }}</span>
+                  <span style="display:{{ wdlDisp }};text-align:right;font-size:13px;color:#C6CDD4;font-variant-numeric:tabular-nums;">{{ r.w }}</span>
+                  <span style="display:{{ wdlDisp }};text-align:right;font-size:13px;color:#C6CDD4;font-variant-numeric:tabular-nums;">{{ r.d }}</span>
+                  <span style="display:{{ wdlDisp }};text-align:right;font-size:13px;color:#C6CDD4;font-variant-numeric:tabular-nums;">{{ r.l }}</span>
+                  <span style="text-align:right;font-size:13px;color:#C6CDD4;font-variant-numeric:tabular-nums;">{{ r.gd }}</span>
+                  <span style="text-align:right;font-size:13px;font-weight:900;font-variant-numeric:tabular-nums;">{{ r.pts }}</span>
+                  <span style="display:{{ formDisp }};gap:3px;justify-content:flex-end;align-items:center;">
+                    <sc-for list="{{ r.form }}" as="f" hint-placeholder-count="0"><span style="width:7px;height:7px;border-radius:50%;background:{{ f.c }};"></span></sc-for>
+                  </span>
+                </div>
+              </sc-for>
+            </section>
+            <p style="display:flex;flex-wrap:wrap;gap:14px;margin:12px 2px 0;font-size:12px;color:#8B95A0;">
+              <sc-for list="{{ legend }}" as="z" hint-placeholder-count="2">
+                <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:3px;background:{{ z.color }};"></span>{{ z.label }} ({{ z.range }})</span>
+              </sc-for>
+            </p>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showKnockout }}" hint-placeholder-val="{{ false }}">
+          <div data-screen-label="Knockout bracket" style="display:flex;gap:16px;overflow-x:auto;padding:4px 2px 10px;">
+            <sc-for list="{{ koRounds }}" as="rd" hint-placeholder-count="4">
+              <div style="flex:none;width:250px;display:flex;flex-direction:column;gap:10px;">
+                <h3 style="margin:0;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">{{ rd.name }}</h3>
+                <sc-for list="{{ rd.ties }}" as="t" hint-placeholder-count="2">
+                  <div style="background:{{ t.bg }};border:1px {{ t.bs }} rgba(255,255,255,.12);border-radius:12px;padding:10px 12px;">
+                    <sc-if value="{{ t.real }}" hint-placeholder-val="{{ true }}">
+                      <div style="display:grid;grid-template-columns:minmax(0,1fr) 26px;gap:5px;align-items:center;">
+                        <span style="display:flex;align-items:center;gap:8px;min-width:0;"><span style="flex:none;width:20px;height:20px;border-radius:50%;border:2px solid {{ t.hc }};background:#0A0E14;display:inline-flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:800;">{{ t.ha }}</span><span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ t.h }}</span></span>
+                        <span style="text-align:center;font-size:13px;font-weight:900;font-variant-numeric:tabular-nums;">{{ t.s1 }}</span>
+                        <span style="display:flex;align-items:center;gap:8px;min-width:0;"><span style="flex:none;width:20px;height:20px;border-radius:50%;border:2px solid {{ t.ac }};background:#0A0E14;display:inline-flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:800;">{{ t.aa }}</span><span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ t.a }}</span></span>
+                        <span style="text-align:center;font-size:13px;font-weight:900;font-variant-numeric:tabular-nums;">{{ t.s2 }}</span>
+                      </div>
+                      <p style="margin:8px 0 0;font-size:11px;color:#8B95A0;">{{ t.note }}</p>
+                    </sc-if>
+                    <sc-if value="{{ t.tbd }}" hint-placeholder-val="{{ false }}">
+                      <p style="margin:0;font-size:12px;color:#8B95A0;text-align:center;padding:8px 0;">{{ t.label }}</p>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showFixtures }}" hint-placeholder-val="{{ false }}">
+          <div data-screen-label="Fixtures">
+            <div style="display:flex;gap:6px;margin-bottom:16px;">
+              <sc-for list="{{ fxSegs }}" as="s" hint-placeholder-count="2">
+                <button onClick="{{ s.on }}" style="padding:7px 14px;border-radius:999px;border:1px solid {{ s.bd }};background:{{ s.bg }};color:{{ s.color }};font-size:12px;font-weight:800;cursor:pointer;">{{ s.label }}</button>
+              </sc-for>
+            </div>
+            <sc-for list="{{ fxDays }}" as="d" hint-placeholder-count="3">
+              <section style="margin-bottom:18px;">
+                <h3 style="margin:0 0 6px;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">{{ d.day }}</h3>
+                <div style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:4px 14px;">
+                  <sc-for list="{{ d.matches }}" as="m" hint-placeholder-count="2">
+                    <div onClick="{{ m.open }}" role="button" tabindex="0" style="display:grid;grid-template-columns:46px minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center;padding:10px 2px;cursor:pointer;border-radius:8px;" style-hover="background:rgba(200,245,66,.05);">
+                      <span style="font-size:10.5px;font-weight:800;color:{{ m.stColor }};font-variant-numeric:tabular-nums;">{{ m.st }}</span>
+                      <span style="display:flex;align-items:center;gap:7px;justify-content:flex-end;min-width:0;"><span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ m.h }}</span><span style="flex:none;width:22px;height:22px;border-radius:50%;border:2px solid {{ m.hc }};background:#0A0E14;display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;">{{ m.ha }}</span></span>
+                      <span style="font-size:13px;font-weight:900;min-width:40px;text-align:center;font-variant-numeric:tabular-nums;">{{ m.score }}</span>
+                      <span style="display:flex;align-items:center;gap:7px;min-width:0;"><span style="flex:none;width:22px;height:22px;border-radius:50%;border:2px solid {{ m.ac }};background:#0A0E14;display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;">{{ m.aa }}</span><span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ m.a }}</span><span style="display:{{ m.frDisp }};flex:none;align-items:center;font-size:8.5px;font-weight:900;letter-spacing:.06em;color:#F5C542;border:1px solid rgba(245,197,66,.45);border-radius:999px;padding:2px 7px;">FRIENDLY</span></span>
+                    </div>
+                  </sc-for>
+                </div>
+              </section>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showStats }}" hint-placeholder-val="{{ false }}">
+          <div data-screen-label="Player stats">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+              <div style="display:flex;gap:6px;">
+                <sc-for list="{{ statSegs }}" as="s" hint-placeholder-count="3">
+                  <button onClick="{{ s.on }}" style="padding:7px 14px;border-radius:999px;border:1px solid {{ s.bd }};background:{{ s.bg }};color:{{ s.color }};font-size:12px;font-weight:800;cursor:pointer;">{{ s.label }}</button>
+                </sc-for>
+              </div>
+              <span style="font-size:12px;color:#8B95A0;">2025/26 season</span>
+            </div>
+            <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:6px 16px 10px;">
+              <div style="display:grid;grid-template-columns:{{ statCols }};gap:8px;padding:12px 2px 8px;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#8B95A0;">
+                <span>#</span><span>Player</span><span style="text-align:right;">G</span><span style="text-align:right;">A</span><span style="text-align:right;">xG</span>
+                <span style="display:{{ extraDisp }};text-align:right;">Shots</span><span style="display:{{ extraDisp }};text-align:right;">Mins</span>
+              </div>
+              <sc-for list="{{ statRows }}" as="r" hint-placeholder-count="8">
+                <div style="display:grid;grid-template-columns:{{ statCols }};gap:8px;align-items:center;padding:9px 2px;border-top:1px solid rgba(255,255,255,.05);">
+                  <span style="font-size:12px;color:#8B95A0;font-variant-numeric:tabular-nums;">{{ r.rk }}</span>
+                  <span style="display:flex;align-items:center;gap:9px;min-width:0;">
+                    <span style="flex:none;width:24px;height:24px;border-radius:50%;border:2px solid {{ r.bc }};background:#0A0E14;display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;">{{ r.ba }}</span>
+                    <span style="display:flex;flex-direction:column;min-width:0;"><strong style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.player }}</strong><span style="font-size:11px;color:#8B95A0;">{{ r.team }}</span></span>
+                  </span>
+                  <span style="text-align:right;font-size:13px;font-weight:{{ r.gW }};color:{{ r.gC }};font-variant-numeric:tabular-nums;">{{ r.g }}</span>
+                  <span style="text-align:right;font-size:13px;font-weight:{{ r.aW }};color:{{ r.aC }};font-variant-numeric:tabular-nums;">{{ r.a }}</span>
+                  <span style="text-align:right;font-size:13px;font-weight:{{ r.xW }};color:{{ r.xC }};font-variant-numeric:tabular-nums;">{{ r.xg }}</span>
+                  <span style="display:{{ extraDisp }};text-align:right;font-size:13px;color:#8B95A0;font-variant-numeric:tabular-nums;">{{ r.sh }}</span>
+                  <span style="display:{{ extraDisp }};text-align:right;font-size:13px;color:#8B95A0;font-variant-numeric:tabular-nums;">{{ r.min }}</span>
+                </div>
+              </sc-for>
+            </section>
+            <p style="margin:12px 2px 0;font-size:12px;color:#8B95A0;">Goal involvements across the season. Penalties count; own goals do not.</p>
+          </div>
+        </sc-if>
+        </div>
+        <sc-if value="{{ desktop }}" hint-placeholder-val="{{ true }}">
+          <aside style="align-self:start;background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:12px 14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin:2px 0 6px;">
+              <h3 style="margin:0;font-size:10px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">{{ sideTableTitle }}</h3>
+              <button onClick="{{ goTable }}" style="background:none;border:none;color:#C8F542;font-size:11px;font-weight:700;cursor:pointer;padding:0;">Full →</button>
+            </div>
+            <sc-for list="{{ miniRows }}" as="r" hint-placeholder-count="8">
+              <div style="display:grid;grid-template-columns:3px 20px minmax(0,1fr) 36px;gap:7px;align-items:center;padding:6px 0;">
+                <span style="width:3px;height:14px;border-radius:2px;background:{{ r.zc }};"></span>
+                <span style="font-size:11px;color:#8B95A0;font-variant-numeric:tabular-nums;">{{ r.pos }}</span>
+                <span style="display:flex;align-items:center;gap:7px;min-width:0;"><span style="flex:none;width:19px;height:19px;border-radius:50%;border:2px solid {{ r.color }};background:#0A0E14;display:inline-flex;align-items:center;justify-content:center;font-size:7px;font-weight:800;">{{ r.abbr }}</span><span style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.team }}</span></span>
+                <span style="text-align:right;font-size:12px;font-weight:900;font-variant-numeric:tabular-nums;">{{ r.pts }}</span>
+              </div>
+            </sc-for>
+            <div style="display:flex;flex-direction:column;gap:5px;margin-top:8px;border-top:1px solid rgba(255,255,255,.06);padding-top:9px;">
+              <sc-for list="{{ legend }}" as="z" hint-placeholder-count="2">
+                <span style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:#8B95A0;"><span style="width:8px;height:8px;border-radius:2px;background:{{ z.color }};"></span>{{ z.label }}</span>
+              </sc-for>
+            </div>
+          </aside>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isFantasy }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Fantasy">
+        <div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px;">
+          <div style="flex:1;min-width:220px;">
+            <p style="margin:0 0 6px;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#A78BFA;">{{ leagueName }} · H2H</p>
+            <h1 style="margin:0;font-size:clamp(26px,4vw,38px);font-weight:900;font-style:italic;text-transform:uppercase;letter-spacing:.01em;line-height:1;">{{ fHeroTitle }}</h1>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <span style="padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);font-size:12px;font-weight:600;color:#C6CDD4;">8 managers</span>
+            <span style="padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);font-size:12px;font-weight:600;color:#C6CDD4;">Snake draft</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:18px;border-bottom:1px solid rgba(255,255,255,.08);margin:14px 0 20px;overflow-x:auto;">
+          <sc-for list="{{ fTabs }}" as="t" hint-placeholder-count="4">
+            <button onClick="{{ t.on }}" style="flex:none;background:none;border:none;border-bottom:2px solid {{ t.line }};padding:8px 2px 10px;font-size:13px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;color:{{ t.color }};cursor:pointer;">{{ t.label }}</button>
+          </sc-for>
+        </div>
+
+        <sc-if value="{{ showMatchup }}" hint-placeholder-val="{{ true }}">
+          <div data-screen-label="Fantasy matchup">
+            <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:18px;">
+              <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;">
+                <div style="text-align:right;">
+                  <p style="margin:0;font-size:13px;font-weight:800;">{{ mu.youName }} <span style="font-size:9px;font-weight:900;color:#0A0E14;background:#A78BFA;border-radius:999px;padding:2px 7px;vertical-align:2px;">YOU</span></p>
+                  <p style="margin:2px 0;font-size:34px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1;">{{ mu.youScore }}</p>
+                  <p style="margin:0;font-size:11px;color:#8B95A0;">Proj {{ mu.youProj }} · {{ mu.youRec }}</p>
+                </div>
+                <div style="text-align:center;">
+                  <span style="display:inline-block;padding:4px 12px;border-radius:999px;background:rgba(167,139,250,.14);color:#A78BFA;font-size:11px;font-weight:800;">{{ mu.week }}</span>
+                  <p style="margin:7px 0 0;font-size:10px;color:#A78BFA;font-weight:800;letter-spacing:.1em;">● LIVE</p>
+                </div>
+                <div>
+                  <p style="margin:0;font-size:13px;font-weight:800;">{{ mu.oppName }}</p>
+                  <p style="margin:2px 0;font-size:34px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1;color:#C6CDD4;">{{ mu.oppScore }}</p>
+                  <p style="margin:0;font-size:11px;color:#8B95A0;">Proj {{ mu.oppProj }} · {{ mu.oppRec }}</p>
+                </div>
+              </div>
+              <div style="margin-top:16px;">
+                <div style="display:flex;justify-content:space-between;font-size:11px;color:#8B95A0;margin-bottom:5px;">
+                  <span>Win probability {{ mu.probTxt }}</span><span>{{ mu.oppName }} {{ mu.oppProbTxt }}</span>
+                </div>
+                <div style="display:flex;gap:3px;height:7px;">
+                  <div style="width:{{ mu.youW }};background:#A78BFA;border-radius:4px;"></div>
+                  <div style="width:{{ mu.oppW }};background:rgba(255,255,255,.14);border-radius:4px;"></div>
+                </div>
+              </div>
+            </section>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:14px;">
+              <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:12px 16px;">
+                <h3 style="margin:2px 0 4px;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">{{ mu.youName }} — starting XI</h3>
+                <sc-for list="{{ youRows }}" as="p" hint-placeholder-count="6">
+                  <div style="display:grid;grid-template-columns:36px minmax(0,1fr) auto 46px;gap:8px;align-items:center;padding:7px 2px;border-top:1px solid rgba(255,255,255,.05);">
+                    <span style="font-size:10px;font-weight:800;color:#A78BFA;background:rgba(167,139,250,.12);border-radius:6px;text-align:center;padding:3px 0;">{{ p.pos }}</span>
+                    <span style="display:flex;flex-direction:column;min-width:0;"><strong style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ p.name }}</strong><span style="font-size:11px;color:#8B95A0;">{{ p.club }}</span></span>
+                    <span style="font-size:11px;font-weight:700;color:{{ p.stC }};font-variant-numeric:tabular-nums;">{{ p.st }}</span>
+                    <span style="text-align:right;font-size:13px;font-weight:900;font-variant-numeric:tabular-nums;">{{ p.pts }}</span>
+                  </div>
+                </sc-for>
+              </section>
+              <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:12px 16px;">
+                <h3 style="margin:2px 0 4px;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">{{ mu.oppName }} — starting XI</h3>
+                <sc-for list="{{ oppRows }}" as="p" hint-placeholder-count="6">
+                  <div style="display:grid;grid-template-columns:36px minmax(0,1fr) auto 46px;gap:8px;align-items:center;padding:7px 2px;border-top:1px solid rgba(255,255,255,.05);">
+                    <span style="font-size:10px;font-weight:800;color:#A78BFA;background:rgba(167,139,250,.12);border-radius:6px;text-align:center;padding:3px 0;">{{ p.pos }}</span>
+                    <span style="display:flex;flex-direction:column;min-width:0;"><strong style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ p.name }}</strong><span style="font-size:11px;color:#8B95A0;">{{ p.club }}</span></span>
+                    <span style="font-size:11px;font-weight:700;color:{{ p.stC }};font-variant-numeric:tabular-nums;">{{ p.st }}</span>
+                    <span style="text-align:right;font-size:13px;font-weight:900;font-variant-numeric:tabular-nums;">{{ p.pts }}</span>
+                  </div>
+                </sc-for>
+              </section>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showTeam }}" hint-placeholder-val="{{ false }}">
+          <div data-screen-label="Fantasy roster" style="display:grid;grid-template-columns:{{ teamCols }};gap:14px;">
+            <section style="background:#0D1A12;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:16px 10px;background-image:radial-gradient(circle at 50% 50%, transparent 55px, rgba(255,255,255,.06) 56px, transparent 57px),linear-gradient(rgba(255,255,255,.06),rgba(255,255,255,.06));background-size:100% 100%,100% 1px;background-position:0 0,0 50%;background-repeat:no-repeat;">
+              <sc-for list="{{ pitchRows }}" as="row" hint-placeholder-count="4">
+                <div style="display:flex;justify-content:space-evenly;gap:6px;margin:12px 0;">
+                  <sc-for list="{{ row.players }}" as="p" hint-placeholder-count="3">
+                    <div style="width:90px;text-align:center;position:relative;">
+                      <sc-if value="{{ p.cap }}" hint-placeholder-val="{{ false }}">
+                        <span style="position:absolute;top:-4px;right:10px;width:16px;height:16px;border-radius:50%;background:#C8F542;color:#0A0E14;font-size:9px;font-weight:900;display:flex;align-items:center;justify-content:center;">C</span>
+                      </sc-if>
+                      <span style="display:inline-flex;width:32px;height:32px;border-radius:50%;border:2px solid {{ p.color }};background:#0A0E14;align-items:center;justify-content:center;font-size:9px;font-weight:800;">{{ p.abbr }}</span>
+                      <p style="margin:6px 0 2px;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ p.name }}</p>
+                      <p style="margin:0;font-size:10px;color:#8B95A0;">{{ p.club }} · <b style="color:#EDF2EE;">{{ p.pts }}</b></p>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-for>
+            </section>
+            <div style="display:flex;flex-direction:column;gap:14px;">
+              <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:12px 16px;">
+                <h3 style="margin:2px 0 6px;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">{{ rosterName }}</h3>
+                <sc-for list="{{ summaryRows }}" as="s" hint-placeholder-count="4">
+                  <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid rgba(255,255,255,.05);">
+                    <span style="font-size:12px;color:#8B95A0;">{{ s.label }}</span>
+                    <span style="font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;">{{ s.value }}</span>
+                  </div>
+                </sc-for>
+              </section>
+              <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:12px 16px;">
+                <h3 style="margin:2px 0 6px;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">Bench</h3>
+                <sc-for list="{{ benchRows }}" as="p" hint-placeholder-count="4">
+                  <div style="display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px 2px;border-top:1px solid rgba(255,255,255,.05);">
+                    <span style="font-size:10px;font-weight:800;color:#8B95A0;background:rgba(255,255,255,.06);border-radius:6px;text-align:center;padding:3px 0;">{{ p.pos }}</span>
+                    <span style="display:flex;flex-direction:column;min-width:0;"><strong style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ p.name }}</strong><span style="font-size:11px;color:#8B95A0;">{{ p.club }}</span></span>
+                    <span style="font-size:12px;color:#8B95A0;font-variant-numeric:tabular-nums;">{{ p.season }} pts</span>
+                  </div>
+                </sc-for>
+              </section>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showDraft }}" hint-placeholder-val="{{ false }}">
+          <div data-screen-label="Draft room">
+            <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:14px 18px;display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-bottom:14px;">
+              <div style="min-width:170px;">
+                <p style="margin:0 0 3px;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#A78BFA;">Snake draft · {{ dr.season }}</p>
+                <h3 style="margin:0;font-size:16px;font-weight:900;">Round {{ dr.round }} · Pick {{ dr.overall }}</h3>
+              </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <sc-for list="{{ orderChips }}" as="o" hint-placeholder-count="8">
+                  <span style="display:inline-flex;align-items:center;padding:5px 11px;border-radius:999px;font-size:11px;font-weight:700;background:{{ o.bg }};color:{{ o.color }};border:1px solid {{ o.bd }};">{{ o.name }}</span>
+                </sc-for>
+              </div>
+            </section>
+            <div style="display:grid;grid-template-columns:{{ draftCols }};gap:14px;">
+              <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:12px 16px;align-self:start;">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 8px;">
+                  <h3 style="margin:0;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">Player pool</h3>
+                  <div style="display:flex;gap:4px;">
+                    <sc-for list="{{ dfSegs }}" as="s" hint-placeholder-count="5">
+                      <button onClick="{{ s.on }}" style="padding:5px 10px;border-radius:999px;border:1px solid {{ s.bd }};background:{{ s.bg }};color:{{ s.color }};font-size:11px;font-weight:800;cursor:pointer;">{{ s.label }}</button>
+                    </sc-for>
+                  </div>
+                </div>
+                <div style="display:grid;grid-template-columns:minmax(0,1fr) 44px 44px 76px;gap:8px;padding:4px 2px 6px;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#8B95A0;">
+                  <span>Player</span><span style="text-align:center;">Pos</span><span style="text-align:right;">ADP</span><span></span>
+                </div>
+                <sc-for list="{{ poolRows }}" as="p" hint-placeholder-count="8">
+                  <div style="display:grid;grid-template-columns:minmax(0,1fr) 44px 44px 76px;gap:8px;align-items:center;padding:8px 2px;border-top:1px solid rgba(255,255,255,.05);">
+                    <span style="display:flex;flex-direction:column;min-width:0;"><strong style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ p.name }}</strong><span style="font-size:11px;color:#8B95A0;">{{ p.club }}</span></span>
+                    <span style="font-size:10px;font-weight:800;color:#A78BFA;background:rgba(167,139,250,.12);border-radius:6px;text-align:center;padding:3px 0;">{{ p.pos }}</span>
+                    <span style="text-align:right;font-size:12px;color:#8B95A0;font-variant-numeric:tabular-nums;">{{ p.adp }}</span>
+                    <button onClick="{{ p.pick }}" style="padding:6px 0;border-radius:8px;border:none;background:{{ p.bg }};color:{{ p.fg }};font-size:12px;font-weight:800;cursor:{{ p.cur }};">Draft</button>
+                  </div>
+                </sc-for>
+              </section>
+              <div style="display:flex;flex-direction:column;gap:14px;">
+                <section style="background:#12181F;border:1px solid rgba(167,139,250,.4);border-radius:14px;padding:14px 16px;">
+                  <p style="margin:0 0 6px;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#A78BFA;">On the clock</p>
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <h3 style="margin:0;font-size:18px;font-weight:900;">{{ dr.onClock }}</h3>
+                    <span style="font-size:26px;font-weight:900;color:#A78BFA;font-variant-numeric:tabular-nums;">{{ dr.clockText }}</span>
+                  </div>
+                  <sc-if value="{{ dr.hasBanner }}" hint-placeholder-val="{{ false }}">
+                    <p style="margin:8px 0 0;font-size:12px;color:#A78BFA;">{{ dr.banner }}</p>
+                  </sc-if>
+                </section>
+                <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:12px 16px;">
+                  <h3 style="margin:2px 0 4px;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">Recent picks</h3>
+                  <sc-for list="{{ recentRows }}" as="p" hint-placeholder-count="5">
+                    <div style="display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 2px;border-top:1px solid rgba(255,255,255,.05);">
+                      <span style="font-size:11px;color:#8B95A0;font-variant-numeric:tabular-nums;">{{ p.pk }}</span>
+                      <span style="display:flex;flex-direction:column;min-width:0;"><strong style="font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ p.name }}</strong><span style="font-size:11px;color:#8B95A0;">{{ p.meta }}</span></span>
+                      <span style="font-size:11px;font-weight:700;color:#C6CDD4;">{{ p.mgr }}</span>
+                    </div>
+                  </sc-for>
+                </section>
+                <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:12px 16px;">
+                  <h3 style="margin:2px 0 4px;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">Your squad</h3>
+                  <sc-for list="{{ yourRows }}" as="p" hint-placeholder-count="2">
+                    <div style="display:grid;grid-template-columns:38px minmax(0,1fr) 40px;gap:8px;align-items:center;padding:7px 2px;border-top:1px solid rgba(255,255,255,.05);">
+                      <span style="font-size:11px;color:#8B95A0;font-variant-numeric:tabular-nums;">{{ p.pk }}</span>
+                      <span style="display:flex;flex-direction:column;min-width:0;"><strong style="font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ p.name }}</strong><span style="font-size:11px;color:#8B95A0;">{{ p.club }}</span></span>
+                      <span style="font-size:10px;font-weight:800;color:#A78BFA;background:rgba(167,139,250,.12);border-radius:6px;text-align:center;padding:3px 0;">{{ p.pos }}</span>
+                    </div>
+                  </sc-for>
+                </section>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showStandings }}" hint-placeholder-val="{{ false }}">
+          <div data-screen-label="Fantasy standings">
+            <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:6px 16px 10px;">
+              <div style="display:grid;grid-template-columns:{{ standCols }};gap:8px;padding:12px 2px 8px;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#8B95A0;">
+                <span>#</span><span>Manager</span><span style="text-align:right;">W–L</span><span style="text-align:right;">PF</span><span style="display:{{ paDisp }};text-align:right;">PA</span><span style="text-align:right;">Strk</span>
+              </div>
+              <sc-for list="{{ standRows }}" as="r" hint-placeholder-count="8">
+                <div style="display:grid;grid-template-columns:{{ standCols }};gap:8px;align-items:center;padding:9px 2px;border-top:1px solid rgba(255,255,255,.05);">
+                  <span style="display:flex;align-items:center;gap:6px;"><span style="width:3px;height:15px;border-radius:2px;background:{{ r.zc }};"></span><span style="font-size:12px;color:#8B95A0;font-variant-numeric:tabular-nums;">{{ r.rk }}</span></span>
+                  <span style="display:flex;align-items:center;gap:9px;min-width:0;">
+                    <span style="flex:none;width:24px;height:24px;border-radius:50%;background:rgba(167,139,250,.15);color:#A78BFA;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">{{ r.init }}</span>
+                    <strong style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.name }}</strong>
+                    <sc-if value="{{ r.you }}" hint-placeholder-val="{{ false }}"><span style="font-size:9px;font-weight:900;color:#0A0E14;background:#A78BFA;border-radius:999px;padding:2px 7px;">YOU</span></sc-if>
+                  </span>
+                  <span style="text-align:right;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;">{{ r.wl }}</span>
+                  <span style="text-align:right;font-size:13px;color:#C6CDD4;font-variant-numeric:tabular-nums;">{{ r.pf }}</span>
+                  <span style="display:{{ paDisp }};text-align:right;font-size:13px;color:#8B95A0;font-variant-numeric:tabular-nums;">{{ r.pa }}</span>
+                  <span style="text-align:right;font-size:12px;font-weight:800;color:{{ r.stkC }};font-variant-numeric:tabular-nums;">{{ r.stk }}</span>
+                </div>
+              </sc-for>
+            </section>
+            <p style="display:flex;gap:14px;margin:12px 2px 0;font-size:12px;color:#8B95A0;">
+              <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:3px;background:#A78BFA;"></span>Play-off places (1–4)</span>
+            </p>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isPlay }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Paper Run">
+        <p style="margin:0 0 6px;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#C8F542;">Daily mini-game</p>
+        <h1 style="margin:0 0 20px;font-size:clamp(26px,4vw,38px);font-weight:900;font-style:italic;text-transform:uppercase;line-height:1;">Paper Run</h1>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;">
+          <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:20px;">
+            <p style="margin:0 0 14px;font-size:13px;color:#C6CDD4;line-height:1.55;">Pedal the route, hit every doorstep, beat the squad. One run a day — same street for everyone.</p>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;">
+              <span style="padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);font-size:12px;font-weight:600;color:#C6CDD4;">{{ pr.route }}</span>
+              <span style="padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);font-size:12px;font-weight:600;color:#C6CDD4;">Streak {{ pr.streak }} days</span>
+              <span style="padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);font-size:12px;font-weight:600;color:#C6CDD4;">Best {{ pr.best }}</span>
+            </div>
+            <button style="padding:11px 24px;border-radius:999px;border:none;background:#C8F542;color:#0A0E14;font-size:13px;font-weight:900;font-style:italic;text-transform:uppercase;letter-spacing:.03em;cursor:pointer;">Play today's route</button>
+            <p style="margin:12px 0 0;font-size:11px;color:#8B95A0;">Resets at midnight. Scores post to the squad board.</p>
+          </section>
+          <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:12px 16px;">
+            <h3 style="margin:2px 0 4px;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">Today's board</h3>
+            <sc-for list="{{ prRows }}" as="r" hint-placeholder-count="6">
+              <div style="display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:8px;align-items:center;padding:9px 2px;border-top:1px solid rgba(255,255,255,.05);">
+                <span style="font-size:12px;color:#8B95A0;font-variant-numeric:tabular-nums;">{{ r.rk }}</span>
+                <span style="display:flex;align-items:center;gap:8px;"><strong style="font-size:13px;font-weight:700;">{{ r.name }}</strong>
+                  <sc-if value="{{ r.you }}" hint-placeholder-val="{{ false }}"><span style="font-size:9px;font-weight:900;color:#0A0E14;background:#C8F542;border-radius:999px;padding:2px 7px;">YOU</span></sc-if>
+                </span>
+                <span style="font-size:13px;font-weight:900;font-variant-numeric:tabular-nums;">{{ r.score }}</span>
+              </div>
+            </sc-for>
+          </section>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isProfile }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Account">
+        <sc-if value="{{ signedOut }}" hint-placeholder-val="{{ true }}">
+          <div style="max-width:430px;margin:9vh auto 0;text-align:center;">
+            <span style="display:inline-flex;width:46px;height:46px;border-radius:12px;background:#C8F542;color:#0A0E14;align-items:center;justify-content:center;font-weight:900;font-size:18px;font-style:italic;">SG</span>
+            <h2 style="margin:16px 0 8px;font-size:22px;font-weight:900;font-style:italic;text-transform:uppercase;">Sign in to {{ brand }}</h2>
+            <p style="margin:0;font-size:13px;color:#8B95A0;line-height:1.55;">Follow your clubs, get goal alerts on this device, and run your fantasy squad. One tap with Google.</p>
+            <button onClick="{{ signIn }}" style="display:inline-flex;align-items:center;gap:10px;margin-top:20px;padding:11px 22px;border-radius:999px;border:none;background:#FFFFFF;color:#1A1A1A;font-size:14px;font-weight:700;cursor:pointer;">
+              <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.2 6.1 29.3 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.7-.4-3.9z"></path><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.2 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"></path><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.3 0-9.7-3.4-11.3-8.1l-6.5 5C9.5 39.6 16.2 44 24 44z"></path><path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C36.9 39.2 44 34 44 24c0-1.3-.1-2.7-.4-3.9z"></path></svg>
+              Continue with Google
+            </button>
+            <p style="margin:14px 0 0;font-size:11px;color:#5A646E;">We only use Google to sign you in. No posts, no contacts.</p>
+          </div>
+        </sc-if>
+        <sc-if value="{{ signedIn }}" hint-placeholder-val="{{ false }}">
+          <div style="max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:14px;">
+            <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;display:flex;align-items:center;gap:14px;">
+              <span style="flex:none;width:44px;height:44px;border-radius:50%;background:rgba(200,245,66,.14);border:1px solid rgba(200,245,66,.5);color:#C8F542;display:inline-flex;align-items:center;justify-content:center;font-weight:900;font-size:17px;">M</span>
+              <span style="display:flex;flex-direction:column;min-width:0;">
+                <strong style="font-size:15px;font-weight:800;">Mick</strong>
+                <span style="font-size:12px;color:#8B95A0;">mick@goonsquad.ie · Google</span>
+              </span>
+              <span style="flex:1;"></span>
+              <button onClick="{{ signOut }}" style="padding:8px 16px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:none;color:#8B95A0;font-size:12px;font-weight:700;cursor:pointer;">Sign out</button>
+            </section>
+            <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;">
+              <h3 style="margin:0 0 4px;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">Followed clubs</h3>
+              <p style="margin:0 0 12px;font-size:12px;color:#8B95A0;">Goal and result alerts for these clubs.</p>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                <sc-for list="{{ followChips }}" as="f" hint-placeholder-count="8">
+                  <button onClick="{{ f.on }}" style="display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:999px;border:1px solid {{ f.bd }};background:{{ f.bg }};color:{{ f.color }};font-size:12px;font-weight:700;cursor:pointer;">{{ f.team }}</button>
+                </sc-for>
+              </div>
+            </section>
+            <section style="background:#12181F;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;">
+              <h3 style="margin:0 0 4px;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">Notifications</h3>
+              <sc-for list="{{ prefRows }}" as="p" hint-placeholder-count="5">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-top:1px solid rgba(255,255,255,.05);">
+                  <span style="font-size:13px;font-weight:600;">{{ p.label }}</span>
+                  <button onClick="{{ p.on }}" style="width:40px;height:22px;border-radius:999px;border:none;background:{{ p.bg }};position:relative;cursor:pointer;">
+                    <span style="position:absolute;top:2px;left:{{ p.x }};width:18px;height:18px;border-radius:50%;background:#FFFFFF;transition:left .15s;"></span>
+                  </button>
+                </div>
+              </sc-for>
+              <p style="margin:10px 0 0;font-size:11px;color:#5A646E;">Alerts arrive as push notifications on this device.</p>
+            </section>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+  </main>
+
+  <footer style="width:100%;max-width:1180px;margin:0 auto;padding:0 clamp(14px,3vw,24px) 90px;">
+    <p style="font-size:11px;color:#5A646E;border-top:1px solid rgba(255,255,255,.06);padding-top:14px;margin:0;">Sample data for design review · {{ brand }} is a Goon Squad production · Not affiliated with the Premier League or UEFA.</p>
+  </footer>
+
+  <sc-if value="{{ mobile }}" hint-placeholder-val="{{ false }}">
+    <nav style="position:fixed;left:0;right:0;bottom:0;z-index:45;display:grid;grid-template-columns:repeat(4,1fr);background:rgba(10,14,20,.95);backdrop-filter:blur(12px);border-top:1px solid rgba(255,255,255,.08);padding:6px 0 10px;">
+      <button onClick="{{ nav.scores }}" style="display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;color:{{ navC.scores }};font-size:10px;font-weight:700;cursor:pointer;padding:4px 0;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+        Scores
+      </button>
+      <button onClick="{{ nav.fantasy }}" style="display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;color:{{ navC.fantasy }};font-size:10px;font-weight:700;cursor:pointer;padding:4px 0;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path></svg>
+        Fantasy
+      </button>
+      <button onClick="{{ nav.play }}" style="display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;color:{{ navC.play }};font-size:10px;font-weight:700;cursor:pointer;padding:4px 0;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"></path><path d="M18 14h-8"></path><path d="M15 18h-5"></path><path d="M10 6h8v4h-8V6Z"></path></svg>
+        Play
+      </button>
+      <button onClick="{{ nav.profile }}" style="display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;color:{{ navC.profile }};font-size:10px;font-weight:700;cursor:pointer;padding:4px 0;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+        You
+      </button>
+    </nav>
+  </sc-if>
+
+  <sc-if value="{{ drawerOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;z-index:60;">
+      <div onClick="{{ closeDrawer }}" style="position:absolute;inset:0;background:rgba(4,8,14,.66);animation:zgFade .2s ease;"></div>
+      <aside role="dialog" aria-modal="true" aria-label="Match detail" style="position:absolute;top:0;right:0;bottom:0;width:min(440px,100vw);background:#0F1520;border-left:1px solid rgba(255,255,255,.1);animation:zgDrawer .22s ease;overflow-y:auto;padding:18px 20px 30px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <span style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#8B95A0;">{{ dm.tag }}</span>
+          <button onClick="{{ closeDrawer }}" style="background:none;border:none;color:#8B95A0;cursor:pointer;padding:4px;" style-hover="color:#EDF2EE;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+          </button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;text-align:center;">
+          <div>
+            <span style="display:inline-flex;width:38px;height:38px;border-radius:50%;border:2.5px solid {{ dm.hc }};background:#0A0E14;align-items:center;justify-content:center;font-size:11px;font-weight:800;">{{ dm.ha }}</span>
+            <p style="margin:7px 0 0;font-size:12.5px;font-weight:700;">{{ dm.h }}</p>
+          </div>
+          <div>
+            <p style="margin:0;font-size:30px;font-weight:900;font-variant-numeric:tabular-nums;white-space:nowrap;">{{ dm.score }}</p>
+            <span style="display:inline-block;margin-top:5px;padding:2px 10px;border-radius:999px;background:{{ dm.stBg }};color:{{ dm.stC }};font-size:10.5px;font-weight:900;font-variant-numeric:tabular-nums;">{{ dm.st }}</span>
+          </div>
+          <div>
+            <span style="display:inline-flex;width:38px;height:38px;border-radius:50%;border:2.5px solid {{ dm.ac }};background:#0A0E14;align-items:center;justify-content:center;font-size:11px;font-weight:800;">{{ dm.aa }}</span>
+            <p style="margin:7px 0 0;font-size:12.5px;font-weight:700;">{{ dm.a }}</p>
+          </div>
+        </div>
+        <p style="margin:12px 0 0;text-align:center;font-size:11px;color:#5A646E;">{{ dm.venue }}</p>
+        <sc-if value="{{ dm.isUpcoming }}" hint-placeholder-val="{{ false }}">
+          <p style="margin:20px 0 0;font-size:12px;color:#8B95A0;text-align:center;">Line-ups appear closer to kick-off.</p>
+        </sc-if>
+        <sc-if value="{{ dm.hasEvents }}" hint-placeholder-val="{{ false }}">
+          <h4 style="margin:22px 0 6px;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">Timeline</h4>
+          <sc-for list="{{ dm.events }}" as="e" hint-placeholder-count="3">
+            <div style="display:grid;grid-template-columns:34px 16px minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 0;border-top:1px solid rgba(255,255,255,.05);">
+              <span style="font-size:11px;color:#8B95A0;font-variant-numeric:tabular-nums;">{{ e.mn }}</span>
+              <span style="display:inline-block;width:{{ e.w }};height:{{ e.hgt }};border-radius:{{ e.br }};background:{{ e.bg }};"></span>
+              <span style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ e.player }} <span style="font-weight:500;color:#8B95A0;font-size:11.5px;">{{ e.kind }}</span></span>
+              <span style="font-size:11px;color:#8B95A0;font-weight:700;">{{ e.side }}</span>
+            </div>
+          </sc-for>
+        </sc-if>
+        <sc-if value="{{ dm.hasStats }}" hint-placeholder-val="{{ false }}">
+          <h4 style="margin:22px 0 10px;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#8B95A0;">Match stats</h4>
+          <sc-for list="{{ dm.stats }}" as="s" hint-placeholder-count="4">
+            <div style="margin-bottom:12px;">
+              <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;">
+                <span>{{ s.hv }}</span><span style="color:#8B95A0;font-weight:600;">{{ s.label }}</span><span>{{ s.av }}</span>
+              </div>
+              <div style="display:flex;gap:3px;height:6px;margin-top:5px;">
+                <div style="width:{{ s.hw }};background:#C8F542;border-radius:3px;"></div>
+                <div style="width:{{ s.aw }};background:rgba(255,255,255,.16);border-radius:3px;"></div>
+              </div>
+            </div>
+          </sc-for>
+        </sc-if>
+        <sc-if value="{{ dm.hasAnalysis }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:20px;background:rgba(200,245,66,.06);border:1px solid rgba(200,245,66,.25);border-radius:12px;padding:14px 16px;">
+            <p style="margin:0 0 6px;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#C8F542;">Match analysis</p>
+            <p style="margin:0;font-size:12.5px;color:#C6CDD4;line-height:1.55;">{{ dm.analysis }}</p>
+          </div>
+        </sc-if>
+      </aside>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;brandName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Squad Goals&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;showTicker&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;defaultCompetition&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;PL&quot;,&quot;CL&quot;],&quot;default&quot;:&quot;PL&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = {
+    section: "scores", tab: "live", ftab: "matchup",
+    comp: (this.props && this.props.defaultCompetition) || "PL",
+    fxView: "results", statSort: "g", posFilter: "ALL",
+    drawerId: null, signedIn: false,
+    follows: { "Arsenal": true, "Real Madrid": true },
+    prefs: { goals: true, kickoff: true, fulltime: true, red: false, analysis: false },
+    clock: 42, data: null, draft: null,
+    isMobile: typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches
+  };
+
+  async componentDidMount() {
+    this.mq = window.matchMedia("(max-width: 760px)");
+    this.mqFn = () => this.setState({ isMobile: this.mq.matches });
+    this.mq.addEventListener("change", this.mqFn);
+    this.timer = window.setInterval(() => {
+      if (this.state.section === "fantasy" && this.state.ftab === "draft") {
+        this.setState((s) => ({ clock: s.clock > 0 ? s.clock - 1 : 45 }));
+      }
+    }, 1000);
+    const mod = await import("./sample-data.js");
+    this.setState({ data: mod.DATA, draft: JSON.parse(JSON.stringify(mod.DATA.fantasy.draft)) });
+  }
+
+  componentWillUnmount() {
+    window.clearInterval(this.timer);
+    if (this.mq) this.mq.removeEventListener("change", this.mqFn);
+  }
+
+  tc(name) {
+    const D = this.state.data;
+    const t = D && D.TEAMS[name];
+    return t || [(name || "?").slice(0, 3).toUpperCase(), "#5A646E"];
+  }
+
+  abbrColor(abbr) {
+    const D = this.state.data;
+    if (!D) return "#5A646E";
+    if (!this._ac) {
+      this._ac = {};
+      Object.values(D.TEAMS).forEach((t) => { this._ac[t[0]] = t[1]; });
+    }
+    return this._ac[abbr] || "#5A646E";
+  }
+
+  zc(c) { return ({ "#00A9E0": "#C8F542", "#FFC600": "#F5C542", "#CE0056": "#FF4D5E" })[c] || c; }
+
+  mapMatch(m) {
+    const [ha, hc] = this.tc(m.h), [aa, ac] = this.tc(m.a);
+    const live = m.st === "LIVE";
+    return {
+      key: m.id, h: m.h, a: m.a, ha, hc, aa, ac, hs: m.hs, as: m.as, tag: m.tag || "", live,
+      frDisp: m.friendly ? "inline-flex" : "none",
+      st: live ? m.min : (m.st === "FT" ? "FT" : m.time),
+      stColor: live ? "#C8F542" : "#7E8894",
+      score: m.st === "SCH" ? "v" : m.hs + " – " + m.as,
+      open: () => this.setState({ drawerId: m.id })
+    };
+  }
+
+  seg(label, active, on, tone) {
+    const c = tone === "v" ? "167,139,250" : "200,245,66";
+    const fg = tone === "v" ? "#A78BFA" : "#C8F542";
+    return {
+      label, on,
+      bg: active ? "rgba(" + c + ",.14)" : "transparent",
+      bd: active ? "rgba(" + c + ",.5)" : "rgba(255,255,255,.12)",
+      color: active ? fg : "#8B95A0"
+    };
+  }
+
+  pick(p) {
+    this.setState((s) => {
+      if (!s.draft || s.draft.onClock !== "Mick") return {};
+      const dr = { ...s.draft };
+      const pk = dr.round + "." + String(dr.pickNo).padStart(2, "0");
+      dr.pool = dr.pool.filter((x) => x[0] !== p[0]);
+      dr.recent = [[pk, "Mick", p[0], p[1], p[2]], ...dr.recent].slice(0, 6);
+      dr.yours = [...dr.yours, [pk, p[0], p[1], p[2]]];
+      dr.pickNo += 1; dr.overall += 1; dr.onClock = "Robbo";
+      dr.banner = p[0] + " is on your squad. Robbo is on the clock.";
+      return { draft: dr, clock: 45 };
+    });
+  }
+
+  renderVals() {
+    const S = this.state, D = S.data, P = this.props || {};
+    const brand = P.brandName ?? "Squad Goals";
+    const nav = {
+      scores: () => this.setState({ section: "scores" }),
+      fantasy: () => this.setState({ section: "fantasy" }),
+      play: () => this.setState({ section: "play" }),
+      profile: () => this.setState({ section: "profile" })
+    };
+    const secC = (k) => (S.section === k ? "#C8F542" : "#8B95A0");
+    const base = {
+      brand, nav,
+      mobile: S.isMobile, desktop: !S.isMobile,
+      navBtns: [["Scores", "scores"], ["Fantasy", "fantasy"], ["Paper Run", "play"]].map(([label, k]) => ({
+        label, on: nav[k],
+        bg: S.section === k ? "rgba(200,245,66,.12)" : "transparent",
+        color: secC(k)
+      })),
+      navC: { scores: secC("scores"), fantasy: secC("fantasy"), play: secC("play"), profile: secC("profile") },
+      isScores: S.section === "scores", isFantasy: S.section === "fantasy",
+      isPlay: S.section === "play", isProfile: S.section === "profile",
+      signedIn: S.signedIn, signedOut: !S.signedIn,
+      signIn: () => this.setState({ signedIn: true }),
+      signOut: () => this.setState({ signedIn: false }),
+      goProfile: nav.profile,
+      closeDrawer: () => this.setState({ drawerId: null }),
+      drawerOpen: false, dm: {}, showTicker: false,
+      tickerItems: [], chips: [], compList: [], legend: [], scoresCols: "1fr", sTabs: [], fTabs: [],
+      showLive: false, showTable: false, showKnockout: false, showFixtures: false, showStats: false,
+      showMatchup: false, showTeam: false, showDraft: false, showStandings: false
+    };
+    if (!D) return base;
+
+    const C = D[S.comp];
+    const setComp = (code) => () => this.setState({
+      comp: code,
+      tab: code === "PL" && S.tab === "knockout" ? "live" : S.tab
+    });
+    const ms = C.matches.map((m) => this.mapMatch(m));
+    const live = ms.filter((x) => x.live);
+    const today = C.matches.filter((m) => m.day === "Today" && m.st === "SCH").map((m) => this.mapMatch(m));
+    const upcoming = C.matches.filter((m) => m.st === "SCH" && m.day !== "Today").slice(0, 5).map((m) => this.mapMatch(m));
+    const recent = C.matches.filter((m) => m.st === "FT").reverse().slice(0, 5).map((m) => this.mapMatch(m));
+
+    const tabDefs = [["live", "Live & today"], ["table", "Table"]];
+    if (S.comp === "CL") tabDefs.push(["knockout", "Knockout"]);
+    tabDefs.push(["fixtures", "Fixtures"], ["stats", "Player stats"]);
+
+    const zones = C.zones.map((z) => ({ ...z, color: this.zc(z.color) }));
+    const zoneFor = (pos) => zones.find((z) => pos >= z.from && pos <= z.to);
+    const tableRows = C.table.map((r, i) => {
+      const [abbr, color] = this.tc(r[0]);
+      const z = zoneFor(i + 1);
+      return {
+        pos: i + 1, team: r[0], abbr, color, p: r[1], w: r[2], d: r[3], l: r[4],
+        gd: (r[5] > 0 ? "+" : "") + r[5], pts: r[6], zc: z ? z.color : "transparent",
+        form: r[7].split("").map((ch) => ({ c: ch === "W" ? "#C8F542" : ch === "D" ? "#5A646E" : "#FF4D5E" }))
+      };
+    });
+
+    const fxUpcoming = S.fxView === "upcoming";
+    const fxList = C.matches.filter((m) => (fxUpcoming ? m.st === "SCH" : m.st !== "SCH"));
+    if (!fxUpcoming) fxList.reverse();
+    const fxDays = [];
+    fxList.forEach((m) => {
+      let g = fxDays.find((d) => d.day === m.day);
+      if (!g) { g = { day: m.day, matches: [] }; fxDays.push(g); }
+      g.matches.push(this.mapMatch(m));
+    });
+    const nRes = C.matches.filter((m) => m.st !== "SCH").length;
+    const nUp = C.matches.length - nRes;
+
+    const sortIdx = { g: 2, a: 3, xg: 4 }[S.statSort];
+    const statRows = [...C.scorers].sort((x, y) => y[sortIdx] - x[sortIdx]).map((r, i) => {
+      const [ba, bc] = this.tc(r[1]);
+      const em = (k) => (S.statSort === k ? "#C8F542" : "#C6CDD4");
+      const wt = (k) => (S.statSort === k ? "900" : "600");
+      return {
+        rk: i + 1, player: r[0], team: r[1], ba, bc,
+        g: r[2], a: r[3], xg: r[4].toFixed(1), sh: r[5], min: r[6].toLocaleString("en-IE"),
+        gC: em("g"), gW: wt("g"), aC: em("a"), aW: wt("a"), xC: em("xg"), xW: wt("xg")
+      };
+    });
+
+    const koRounds = (D.CL.bracket || []).map((rd) => ({
+      name: rd.name,
+      ties: rd.ties.map((t) => {
+        if (!t.real) return { tbd: true, real: false, label: t.label, bg: "transparent", bs: "dashed" };
+        const [ha, hc] = this.tc(t.h), [aa, ac] = this.tc(t.a);
+        return { real: true, tbd: false, h: t.h, a: t.a, ha, hc, aa, ac, s1: t.s1, s2: t.s2, note: t.note, bg: "#12181F", bs: "solid" };
+      })
+    }));
+
+    const nextSched = C.matches.find((m) => m.st === "SCH");
+    const chips = [];
+    if (live.length) chips.push({ txt: live.length + " live now", live: true });
+    else if (nextSched) chips.push({ txt: "Next: " + nextSched.h + " v " + nextSched.a + " · " + nextSched.day, live: false });
+    if (S.comp === "PL") chips.push({ txt: "Top: " + C.table[0][0] + " · " + C.table[0][6] + " pts", live: false });
+    else chips.push({ txt: "First legs in progress", live: false });
+
+    const tickerItems = ms.filter((x) => x.live || x.st === "FT").slice(0, 12).map((x) => ({
+      st: x.st, c: x.live ? "#C8F542" : "#8B95A0",
+      txt: x.ha + " " + x.hs + "–" + x.as + " " + x.aa
+    }));
+
+    // Fantasy
+    const F = D.fantasy, MU = F.matchup;
+    const lineupRow = (p) => ({
+      pos: p[0], name: p[1], club: p[2],
+      pts: p[3] ? p[3].toFixed(1) : "–",
+      st: p[4],
+      stC: p[4].includes("'") ? "#A78BFA" : p[4] === "FT" ? "#8B95A0" : "#5A646E"
+    });
+    const dr = S.draft || F.draft;
+    const posMatch = (p) => S.posFilter === "ALL" || p[1] === S.posFilter;
+    const yourTurn = dr.onClock === "Mick";
+    const pitchGroup = (arr) => ({
+      players: arr.map((p) => {
+        const abbr = p[1];
+        return { name: p[0], club: abbr, abbr, color: this.abbrColor(abbr), pts: p[2], cap: !!p[4] };
+      })
+    });
+
+    // Drawer
+    let dm = {}, drawerOpen = false;
+    if (S.drawerId) {
+      const raw = [...D.PL.matches, ...D.CL.matches].find((m) => m.id === S.drawerId);
+      if (raw) {
+        drawerOpen = true;
+        const [ha, hc] = this.tc(raw.h), [aa, ac] = this.tc(raw.a);
+        const isLive = raw.st === "LIVE", isUp = raw.st === "SCH";
+        dm = {
+          tag: (raw.tag || "") + (raw.day ? " · " + raw.day : ""), venue: raw.venue || "",
+          h: raw.h, a: raw.a, ha, hc, aa, ac,
+          score: isUp ? "v" : raw.hs + " – " + raw.as,
+          st: isLive ? raw.min : raw.st === "FT" ? "Full time" : raw.day + " " + raw.time,
+          stBg: isLive ? "#C8F542" : "rgba(255,255,255,.08)",
+          stC: isLive ? "#0A0E14" : "#C6CDD4",
+          isUpcoming: isUp,
+          hasEvents: !!(raw.events && raw.events.length),
+          events: (raw.events || []).map((e) => ({
+            mn: e[0] + "'", player: e[3],
+            kind: e[1] === "goal" ? "Goal" : e[1] === "yellow" ? "Yellow card" : "Red card",
+            side: e[2] === "H" ? ha : aa,
+            w: e[1] === "goal" ? "10px" : "8px", hgt: e[1] === "goal" ? "10px" : "12px",
+            br: e[1] === "goal" ? "50%" : "2px",
+            bg: e[1] === "goal" ? "#C8F542" : e[1] === "yellow" ? "#F5C542" : "#FF4D5E"
+          })),
+          hasStats: !!(raw.stats && raw.stats.length),
+          stats: (raw.stats || []).map((s) => {
+            const tot = s[1] + s[2] || 1;
+            return { label: s[0], hv: s[1], av: s[2], hw: Math.round((s[1] / tot) * 100) + "%", aw: Math.round((s[2] / tot) * 100) + "%" };
+          }),
+          hasAnalysis: !!raw.analysis, analysis: raw.analysis || ""
+        };
+      }
+    }
+
+    return {
+      ...base,
+      drawerOpen, dm,
+      showTicker: (P.showTicker ?? true) && S.section === "scores",
+      tickerItems, chips,
+      compName: C.name, heroTitle: C.title,
+      scoresCols: S.isMobile ? "1fr" : "200px minmax(0,1fr) 250px",
+      sideTableTitle: S.comp === "PL" ? "League table" : "League phase",
+      compList: [["PL", "Premier League", "PL"], ["CL", "Champions League", "UCL"], [null, "Europa League", "UEL"], [null, "Conference League", "UECL"]].map(([code, label, abbr]) => {
+        const active = code === S.comp, locked = !code;
+        return {
+          label, abbr, locked,
+          on: code ? setComp(code) : undefined,
+          cur: locked ? "default" : "pointer",
+          bg: active ? "rgba(200,245,66,.12)" : "transparent",
+          bd: active ? "rgba(200,245,66,.55)" : "rgba(255,255,255,.12)",
+          color: active ? "#C8F542" : locked ? "#5A646E" : "#C6CDD4",
+          mBg: active ? "#C8F542" : "rgba(255,255,255,.08)",
+          mFg: active ? "#0A0E14" : "#8B95A0"
+        };
+      }),
+      sTabs: tabDefs.map(([k, label]) => ({
+        label, on: () => this.setState({ tab: k }),
+        color: S.tab === k ? "#EDF2EE" : "#8B95A0",
+        line: S.tab === k ? "#C8F542" : "transparent"
+      })),
+      showLive: S.tab === "live", showTable: S.tab === "table",
+      showKnockout: S.tab === "knockout" && S.comp === "CL",
+      showFixtures: S.tab === "fixtures", showStats: S.tab === "stats",
+      hasLive: live.length > 0, liveMatches: live,
+      todayMatches: today, noToday: today.length === 0,
+      upcomingMatches: upcoming, recentMatches: recent,
+      miniRows: tableRows.map((r) => ({ pos: r.pos, team: r.team, abbr: r.abbr, color: r.color, pts: r.pts, zc: r.zc })),
+      goTable: () => this.setState({ tab: "table" }),
+      tableRows,
+      tableCols: S.isMobile ? "30px minmax(0,1fr) 34px 42px 42px" : "36px minmax(140px,1fr) 36px 30px 30px 30px 44px 44px 92px",
+      wdlDisp: S.isMobile ? "none" : "block",
+      formDisp: S.isMobile ? "none" : "flex",
+      formHeadDisp: S.isMobile ? "none" : "block",
+      legend: zones.map((z) => ({ color: z.color, label: z.label, range: z.from + "–" + z.to })),
+      fxSegs: [
+        this.seg("Results (" + nRes + ")", !fxUpcoming, () => this.setState({ fxView: "results" })),
+        this.seg("Upcoming (" + nUp + ")", fxUpcoming, () => this.setState({ fxView: "upcoming" }))
+      ],
+      fxDays, koRounds,
+      statSegs: [["g", "Goals"], ["a", "Assists"], ["xg", "xG"]].map(([k, label]) =>
+        this.seg(label, S.statSort === k, () => this.setState({ statSort: k }))),
+      statRows,
+      statCols: S.isMobile ? "26px minmax(0,1fr) 40px 40px 48px" : "30px minmax(150px,1fr) 44px 44px 52px 52px 60px",
+      extraDisp: S.isMobile ? "none" : "block",
+      // Fantasy
+      leagueName: F.league,
+      fHeroTitle: { matchup: "Gameweek " + F.gw, team: F.roster.teamName, draft: "Draft room", standings: "Standings" }[S.ftab],
+      fTabs: [["matchup", "Matchup"], ["team", "My team"], ["draft", "Draft room"], ["standings", "Standings"]].map(([k, label]) => ({
+        label, on: () => this.setState({ ftab: k }),
+        color: S.ftab === k ? "#EDF2EE" : "#8B95A0",
+        line: S.ftab === k ? "#A78BFA" : "transparent"
+      })),
+      showMatchup: S.ftab === "matchup", showTeam: S.ftab === "team",
+      showDraft: S.ftab === "draft", showStandings: S.ftab === "standings",
+      mu: {
+        week: MU.week,
+        youName: MU.you.name, youScore: MU.you.score.toFixed(1), youProj: MU.you.proj.toFixed(1), youRec: MU.you.record,
+        oppName: MU.opp.name, oppScore: MU.opp.score.toFixed(1), oppProj: MU.opp.proj.toFixed(1), oppRec: MU.opp.record,
+        probTxt: MU.winProb + "%", oppProbTxt: (100 - MU.winProb) + "%",
+        youW: MU.winProb + "%", oppW: (100 - MU.winProb) + "%"
+      },
+      youRows: MU.you.lineup.map(lineupRow), oppRows: MU.opp.lineup.map(lineupRow),
+      teamCols: S.isMobile ? "1fr" : "1.55fr 1fr",
+      rosterName: F.roster.teamName,
+      pitchRows: [pitchGroup(F.roster.fwd), pitchGroup(F.roster.mid), pitchGroup(F.roster.def), pitchGroup(F.roster.gk)],
+      summaryRows: F.roster.summary.map((s) => ({ label: s[0], value: s[1] })),
+      benchRows: F.roster.bench.map((p) => ({ name: p[0], club: p[1], pos: p[2], season: p[3] })),
+      draftCols: S.isMobile ? "1fr" : "1.5fr 1fr",
+      dr: {
+        season: dr.season, round: dr.round, overall: dr.overall, onClock: dr.onClock,
+        clockText: "0:" + String(S.clock).padStart(2, "0"),
+        hasBanner: !!dr.banner, banner: dr.banner || ""
+      },
+      orderChips: dr.order.map((n) => ({
+        name: n === "Mick" ? "Mick (you)" : n,
+        bg: n === dr.onClock ? "rgba(167,139,250,.16)" : "transparent",
+        bd: n === dr.onClock ? "rgba(167,139,250,.6)" : "rgba(255,255,255,.1)",
+        color: n === dr.onClock ? "#A78BFA" : "#8B95A0"
+      })),
+      dfSegs: ["ALL", "GK", "DEF", "MID", "FWD"].map((k) =>
+        this.seg(k, S.posFilter === k, () => this.setState({ posFilter: k }), "v")),
+      poolRows: dr.pool.filter(posMatch).map((p) => ({
+        name: p[0], pos: p[1], club: p[2], adp: p[3],
+        pick: yourTurn ? () => this.pick(p) : undefined,
+        bg: yourTurn ? "#A78BFA" : "rgba(255,255,255,.06)",
+        fg: yourTurn ? "#0A0E14" : "#5A646E",
+        cur: yourTurn ? "pointer" : "default"
+      })),
+      recentRows: dr.recent.map((p) => ({ pk: p[0], name: p[2], meta: p[3] + " · " + p[4], mgr: p[1] })),
+      yourRows: dr.yours.map((p) => ({ pk: p[0], name: p[1], pos: p[2], club: p[3] })),
+      standCols: S.isMobile ? "30px minmax(0,1fr) 52px 62px 46px" : "34px minmax(0,1fr) 56px 72px 72px 52px",
+      paDisp: S.isMobile ? "none" : "block",
+      standRows: F.standings.map((r, i) => ({
+        rk: i + 1, zc: i < 4 ? "#A78BFA" : "transparent",
+        init: r[0][0], name: r[0], you: r[0] === "Mick",
+        wl: r[1] + "–" + r[2],
+        pf: r[3].toLocaleString("en-IE", { minimumFractionDigits: 1 }),
+        pa: r[4].toLocaleString("en-IE", { minimumFractionDigits: 1 }),
+        stk: r[5], stkC: r[5].startsWith("W") ? "#C8F542" : "#FF4D5E"
+      })),
+      pr: { route: D.paperrun.route, streak: D.paperrun.streak, best: D.paperrun.best.toLocaleString("en-IE") },
+      prRows: D.paperrun.leaderboard.map((r, i) => ({ rk: i + 1, name: r[0], you: r[0] === "Mick", score: r[1].toLocaleString("en-IE") })),
+      followChips: D.followList.map((t) => {
+        const on = !!S.follows[t];
+        return {
+          team: t,
+          on: () => this.setState((s) => ({ follows: { ...s.follows, [t]: !s.follows[t] } })),
+          bg: on ? "rgba(200,245,66,.14)" : "transparent",
+          bd: on ? "rgba(200,245,66,.55)" : "rgba(255,255,255,.14)",
+          color: on ? "#C8F542" : "#8B95A0"
+        };
+      }),
+      prefRows: [["goals", "Goals"], ["kickoff", "Kick-off"], ["fulltime", "Full-time"], ["red", "Red cards"], ["analysis", "Match analysis ready"]].map(([k, label]) => {
+        const on = !!S.prefs[k];
+        return {
+          label,
+          on: () => this.setState((s) => ({ prefs: { ...s.prefs, [k]: !s.prefs[k] } })),
+          bg: on ? "#C8F542" : "rgba(255,255,255,.18)",
+          x: on ? "20px" : "2px"
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

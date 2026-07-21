@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A static, no-build football tracker (FotMob-style live scores, league table, fixtures, Golden Boot) covering the Premier League and the Champions League with a competition switcher, with the other European cups on the roadmap, followed by user sign-up, push notifications and a fantasy draft. Hosted on GitHub Pages. `index.html` is the entry point and the app also runs from any static host or by opening the file directly. Plain ES modules and vanilla DOM, no framework, no bundler, no TypeScript.
+**Squad Goals**: a static, no-build football tracker (FotMob-style live scores, league table, fixtures, player stats) covering the Premier League and the Champions League with a competition switcher, with the other European cups on the roadmap, followed by user sign-up, push notifications and a fantasy draft. Hosted on GitHub Pages. `index.html` is the entry point and the app also runs from any static host or by opening the file directly. Plain ES modules and vanilla DOM, no framework, no bundler, no TypeScript.
+
+The UI implements the "Squad Goals" design (source of record: `docs/design/squad-goals.dc.html`, exported from the Claude Design project): navy `#0A0E14` background, lime `#C8F542` accent, Archivo with italic-uppercase display type, card surfaces `#12181F`. Sections are Scores and Paper Run (Play), with Fantasy and Profile present in the nav as inert "Soon" entries until their phases ship. Design tokens live at the top of `src/styles.css` and keep the pre-reskin custom-property names so carried-over components restyle automatically.
 
 The app began as a World Cup 2026 sweepstake hub; the sweepstake (entrants, pot, prizes, Monte Carlo projection) was removed after the tournament. See `README.md` for hosting/deploy steps.
 
@@ -31,7 +33,7 @@ Live updates without a deploy: `app.js` re-runs `loadModel()` on a timer (20s wh
 
 - **The canonical team name is the feed's `shortName`, via `normalizeTeamName` (`src/domain.js`).** Both match mappers prefer `shortName` over `name`, and `mapMatchDetail` resolves event team names (goals/cards/subs carry only the legal name) through the two sides so every event matches the join key. The canonical name is the join key across standings, the crest registry (`src/badges.js`), and the Golden Boot. `TEAM_ALIASES` in `domain.js` exists for sources that spell a club differently.
 
-- **Team badges are feed-served crest images, not emoji.** `mapFootballDataMatches` and `mapFootballDataStandings` carry `crest` URLs; `buildModel` registers them in `src/badges.js` (`registerCrests`), and `badgeFor(team)` returns an `<img class="crest">` or a neutral-ball fallback. Never hardcode team images.
+- **Team badges are feed-served crest images in the design's circular frame.** Both mappers carry `crest` and `tla`; `buildModel` registers them in `src/badges.js` (`registerTeams`), and `badgeFor(team, size)` returns a `.tb` circle containing the crest image, falling back to the club's TLA on a name-hashed colour ring. `abbrFor(team)` is the text form (ticker, drawer timeline sides). Never hardcode team images or abbreviations.
 
 - **Table zones are per-competition config, not hardcoded positions.** `src/competitions.js` maps competition code → `{ name, shortName, zones: [{ from, to, tone, label }] }` (PL: 1–5 European places, 18–20 relegation; CL league phase: 1–8 direct, 9–24 play-offs, 25–36 out). `zoneFor(position, zones)` stamps standings rows and table rows; renderers colour by `zone.tone` (`safe`/`edge`/`out`). Adding a competition means adding its config entry here (plus the Worker/Action `FOOTBALL_DATA_COMPETITIONS` lists), not touching renderers. The feed's `competition` field (baked into `live.json` by both delivery paths) selects the config in `buildModel`. The Knockout tab exists only when a competition has non-league-stage matches (`knockoutMatches` in `views.js`); it is a display-only, stage-grouped list of real fixtures, no seeding.
 
@@ -43,26 +45,25 @@ Live updates without a deploy: `app.js` re-runs `loadModel()` on a timer (20s wh
 
 ## Module map (`src/`)
 
-- `app.js` orchestration: boot, tab routing via hash, polling, event delegation, Sentry telemetry helpers.
-- `data.js` data loading (`loadModel` fetches the live feed and `data/scorers.json` in parallel), `buildModel(raw, scorerData)` (league tables, standings, crest registration).
+- `app.js` orchestration: sections (Scores/Play) + scores tabs, hash routing (`#live/#tables/#knockout/#fixtures/#stats/#play`, legacy aliases kept), polling, desktop/mobile re-render on the 760px matchMedia crossing, event delegation on `#layout`, Sentry telemetry helpers.
+- `data.js` data loading (`loadModel(comp)` fetches the live feed and scorers in parallel), `buildModel(raw, scorerData)` (league tables with form, standings, team registration).
 - `domain.js` pure mapping/standings logic, team-name normalization, per-team performance/form.
 - `competitions.js` per-competition config (name, table zone bands) and `zoneFor`.
-- `badges.js` club crest registry (`registerCrests`, `badgeFor`); crest URLs come from the feed.
-- `scorers.js` pure Golden Boot aggregation (`aggregateScorers`, `compareByInvolvements`, `compareByGoals`); shared by the fetch script and the browser.
+- `badges.js` team badge registry (`registerTeams`, `badgeFor`, `abbrFor`); crest/TLA come from the feed.
+- `scorers.js` pure scorer aggregation (`aggregateScorers`, `compareByInvolvements`, `compareByGoals`); shared by the fetch script and the browser.
 - `analysisPrompt.js` pure AI-analysis prompt builder (system prompt, JSON schema, per-match payload with league context); imported by the Worker only, same cross-environment contract as `mapFootballDataMatches`.
-- `views.js` HTML-string renderers (ticker, hero header, league table, fixtures, Golden Boot, footer).
+- `views.js` HTML-string renderers (ticker marquee, competitions sidebar/chips, hero, scores tab bar, live cards, match lines, league table, mini-table aside, knockout board, fixtures, player stats, footer).
 - `format.js` pure formatters and live/finished status helpers (no DOM).
 - `interactions.js` `confettiBurst` (currently unwired; kept for celebration moments).
-- `matchDetail.js` match drawer; fetches per-match detail on open (Worker `/match/:id` or static `data/matches/<id>.json`); Table tab shows both sides' position, form, and the league table.
+- `matchDetail.js` match drawer: right slide-in with score header, then AI analysis, timeline (goals/cards/subs merged in match order), line-ups and banter in one scroll; fetches per-match detail on open (Worker `/match/:id` or static `data/<comp>/matches/<id>.json`).
 - `banter.js` shared per-match reactions and messages (Worker KV backed).
-- `paperRun*.js` the Paper Run daily mini-game (model, API, view, game loop).
-- `background.js` ambient bunting/embers layer (DOM + CSS only).
+- `paperRun*.js` the Paper Run daily mini-game (model, API, view, game loop); rendered as the Play section.
 - `locations.js` venue → city/map-link lookup; `mapDetail.js` match-detail mapping.
 
 ## Adding a tab or panel control
 
-- **New tab:** add a `<button data-tab="x">` to the nav in `index.html`, add `"x"` to `TABS` in `src/app.js`, add a `case "x"` to `renderPanel`, and write `renderX` in `src/views.js`. Tabs route via the URL hash.
-- **New in-panel control** (sort toggle, filter): give it a unique `data-*` attribute (not a shared one), keep its state in the `state` object in `app.js`, read it in the renderer, and handle it in `wirePanelControls` (click delegation with an early `return` per handler; `change` for a `<select>`). Reuse the `.seg-group` / `.seg` segmented-toggle markup; see `data-fixture-view` (fixtures), `data-gb-sort` (Golden Boot).
+- **New scores tab:** add it to `SCORES_TABS` in `src/views.js` (label + key) and to `SCORES_TABS` in `src/app.js`, add a `case` to `renderPanel` in `app.js`, and write the renderer in `views.js`. Tabs route via the URL hash; the Knockout tab demonstrates conditional presence (cups only).
+- **New in-panel control** (sort toggle, filter): give it a unique `data-*` attribute (not a shared one), keep its state in the `state` object in `app.js`, read it in the renderer, and handle it in `wireLayoutControls` (click delegation with an early `return` per handler). Reuse the `.segrow`/`.seg` pill markup; see `data-fixture-view` (fixtures), `data-gb-sort` (player stats).
 
 ## Telemetry and the Sentry tunnel
 

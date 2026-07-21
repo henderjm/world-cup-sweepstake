@@ -3,61 +3,67 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>GS Score</title>
+    <title>Squad Goals</title>
     <meta
       name="description"
-      content="Premier League live scores, league table, fixtures and top scorers, updated match by match."
+      content="Squad Goals: Premier League and Champions League live scores, tables, fixtures and top scorers, updated match by match."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400..900;1,400..900&display=swap"
+      rel="stylesheet"
     />
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
-    <div class="bg" aria-hidden="true">
-      <div class="bg__glow"></div>
-      <div class="bg__pitch"></div>
-      <div class="bg__embers" id="bgEmbers"></div>
-      <div class="bg__vignette"></div>
-    </div>
-    <div class="bunting" id="bunting" aria-hidden="true"></div>
     <canvas id="confetti" aria-hidden="true"></canvas>
 
-    <div class="app">
-      <header class="topbar">
-        <div class="brand">
-          <span class="brand__mark">⚽</span>
-          <div>
-            <strong>GS Score</strong>
-            <span class="brand__sub">live scores &amp; tables</span>
-          </div>
-        </div>
-        <div class="topbar__right">
-          <span class="updated">Updated <time id="updated">…</time></span>
-        </div>
+    <div class="shell">
+      <header class="topnav">
+        <button class="brand" type="button" data-section-nav="scores">
+          <span class="brand__mark">SG</span>
+          <span class="brand__stack">
+            <strong class="brand__name">Squad Goals</strong>
+            <span class="brand__sub">Scores · Tables · Fantasy</span>
+          </span>
+        </button>
+        <nav class="topnav__sections" id="sectionNav" aria-label="Sections">
+          <button class="navbtn is-active" type="button" data-section-nav="scores">Scores</button>
+          <button class="navbtn" type="button" disabled title="Fantasy draft league is coming soon">Fantasy <span class="soon">Soon</span></button>
+          <button class="navbtn" type="button" data-section-nav="play">Paper Run</button>
+        </nav>
+        <span class="topnav__spacer"></span>
+        <span class="updated">Updated <time id="updated">…</time></span>
       </header>
 
       <div class="ticker" id="ticker" aria-label="Live and recent scores"></div>
 
-      <p class="banner" id="banner" role="status" hidden></p>
-
-      <main>
-        <section class="hero" id="hero" aria-label="Competition overview"></section>
-
-        <nav class="tabs" id="tabs" aria-label="Sections">
-          <button class="tab is-active" data-tab="live" aria-selected="true" type="button">Live &amp; today</button>
-          <button class="tab" data-tab="tables" aria-selected="false" type="button">Table</button>
-          <button class="tab" data-tab="knockout" aria-selected="false" type="button" hidden>Knockout</button>
-          <button class="tab" data-tab="fixtures" aria-selected="false" type="button">Fixtures</button>
-          <button class="tab" data-tab="goldenboot" aria-selected="false" type="button">Golden Boot</button>
-          <button class="tab" data-tab="paperrun" aria-selected="false" type="button">Paper Run</button>
-        </nav>
-
-        <section class="panel" id="panel" aria-live="polite"></section>
+      <main class="main">
+        <div id="layout" class="layout" aria-live="polite"></div>
       </main>
 
       <footer class="footer" id="footer"></footer>
+
+      <nav class="bnav" id="bottomNav" aria-label="Sections">
+        <button class="bnav__btn is-active" type="button" data-section-nav="scores">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+          Scores
+        </button>
+        <button class="bnav__btn" type="button" disabled title="Fantasy draft league is coming soon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path></svg>
+          Fantasy
+        </button>
+        <button class="bnav__btn" type="button" data-section-nav="play">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"></path><path d="M18 14h-8"></path><path d="M15 18h-5"></path><path d="M10 6h8v4h-8V6Z"></path></svg>
+          Play
+        </button>
+      </nav>
     </div>
 
-    <div class="mdrawer" id="matchDrawer" hidden>
-      <aside class="mdrawer__panel" role="dialog" aria-modal="true" aria-label="Match detail"></aside>
+    <div class="dz" id="matchDrawer" hidden>
+      <div class="dz__scrim" data-md-close></div>
+      <aside class="dz__panel" role="dialog" aria-modal="true" aria-label="Match detail"></aside>
     </div>
 
     <!-- Sentry served first-party (vendored) so tracker blockers cannot block the

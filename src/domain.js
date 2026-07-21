@@ -96,6 +96,8 @@ export function mapFootballDataMatches(payload) {
       awayTeam: teamName(match.awayTeam),
       homeCrest: match.homeTeam?.crest ?? null,
       awayCrest: match.awayTeam?.crest ?? null,
+      homeTla: match.homeTeam?.tla ?? null,
+      awayTla: match.awayTeam?.tla ?? null,
       score: { home: reg.home, away: reg.away },
       penalties: reg.penalties,
       winner: raw.winner ?? null,
@@ -144,6 +146,7 @@ export function mapFootballDataStandings(payload, zones = []) {
           goalsAgainst: row.goalsAgainst ?? 0,
           goalDifference: row.goalDifference ?? 0,
           crest: row.team?.crest ?? null,
+          tla: row.team?.tla ?? null,
           zone: zoneFor(row.position, zones),
         });
       });
