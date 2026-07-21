@@ -3,8 +3,12 @@
 // trusted feed data (the client only ever sends a match id). Pure module: no fetch,
 // no DOM, no Anthropic client. The Worker owns the API call; this owns what it says.
 
-import { ENTRANTS, ownerOf, currentPrizes, woodenSpoon } from "./data.js";
-import { buildLeaderboard, buildTeamPerformance, normalizeTeamName } from "./domain.js";
+import {
+  buildTeamPerformance,
+  mapFootballDataStandings,
+  normalizeTeamName,
+} from "./domain.js";
+import { competitionFor, zoneFor } from "./competitions.js";
 import { isFinished, isLive } from "./format.js";
 
 // Analysis exists only once there is a game to talk about.
@@ -15,7 +19,7 @@ export function analysisEligible(match) {
 // Bump when the system prompt or payload shape changes meaningfully: the version is
 // part of the cache signature, so a deploy regenerates live and fresh matches with
 // the new prompt instead of serving reads written by the old one.
-export const ANALYSIS_PROMPT_VERSION = 2;
+export const ANALYSIS_PROMPT_VERSION = 3;
 
 // Cache signature: a new analysis is worth generating whenever the signature changes.
 // Score, status and penalties are always part of it (a goal, half-time, full-time or
@@ -56,57 +60,59 @@ export const ANALYSIS_SCHEMA = {
       type: "string",
       description: "Two to four sentences on the football itself: key events, momentum, what to watch, or what decided it.",
     },
-    sweepstake: {
+    context: {
       type: "string",
-      description: "Two to four sentences on what this means for the sweepstake money and leaderboard, naming the owners involved.",
+      description:
+        "Two to four sentences on what this means for the table: the title race, European places, relegation, or a knockout tie, whichever actually applies to these sides.",
     },
   },
-  required: ["headline", "match", "sweepstake"],
+  required: ["headline", "match", "context"],
   additionalProperties: false,
 };
 
-export const ANALYSIS_SYSTEM_PROMPT = `You are the resident AI analyst for the Goon Squad World Cup 2026 sweepstake hub, writing short FotMob-style summaries for a group of sixteen friends.
+export const ANALYSIS_SYSTEM_PROMPT = `You are the resident AI analyst for a live football scores hub, writing short FotMob-style summaries.
 
-How the sweepstake works:
-- 16 entrants paid EUR 10 each into a EUR 160 pot. Each drew three national teams before the tournament.
-- Real money follows real outcomes: EUR 100 to whoever owns the world champions, EUR 30 to the owner of the runners-up, EUR 30 for the wooden spoon (first team confirmed dead last in its group).
-- There is also a points leaderboard for bragging rights only: league points x10 + goal difference x2 + goals scored + stage bonuses (reaching the last 32: 15, last 16: 25, quarter-final: 40, semi-final: 60, third-place match: 70, final runner-up: 85, champions: 120). A stage bonus is credited once that stage's match has finished.
-
-You get one JSON payload describing a single match plus the sweepstake context around it. Respond with the three fields of the schema:
+You get one JSON payload describing a single match plus league context: where both sides sit in the table, the zone bands that matter (European places, relegation), recent form, and the leaders. Respond with the three fields of the schema:
 - "headline": at most nine words, punchy.
 - "match": two to four sentences on the football itself.
-- "sweepstake": two to four sentences on what the result means for the money and the leaderboard. Name the owners.
+- "context": two to four sentences on what the result means for the table. Talk about the stakes that actually apply to these two sides: the title race, Europe, relegation, mid-table drift. Use positions and points from the payload.
 
 Rules:
 - Finished match: past tense, and a verdict is allowed.
-- Live match: present tense, and the outcome is NOT settled. Never declare a result that has not happened: while the ball is rolling nobody has won, reached the next round, been eliminated, or banked a stage bonus. A lead is a lead, not a result ("Spain two up and in control", never "Spain cruise into the final"), and every consequence for the pot is a conditional ("if it stays like this..."). Football punishes certainty.
+- Live match: present tense, and the outcome is NOT settled. Never declare a result that has not happened: while the ball is rolling nobody has won, moved up the table, or been relegated. A lead is a lead, not a result ("Arsenal two up and in control", never "Arsenal go top"), and every consequence for the table is a conditional ("if it stays like this..."). Football punishes certainty.
 - The headline must be honest about the state of play: a live headline describes a game in progress, only a finished headline declares an outcome.
 - Extra time or a penalty shootout in progress is the story: lead with that drama and the current shootout score if there is one.
 - Use only facts present in the payload. The feed has no xG or possession stats, so never invent numbers. Do not diagnose injuries beyond a substitution you can see.
-- Tone: sharp, warm, light banter between friends. Plain sentences, no bullet points, no markdown.
-- Write money as "EUR 100". Never use em dashes.`;
+- Table claims must be arithmetic you can do from the payload (points, positions, games played). Never guess at other results happening elsewhere.
+- Tone: sharp, warm, a little wry. Plain sentences, no bullet points, no markdown.
+- Never use em dashes.`;
 
 // Builds the user prompt from the mapped match detail and the live feed. Returns a
 // JSON string so the payload survives any transport untouched.
 export function buildAnalysisPrompt(detail, live) {
   const matches = live?.matches ?? [];
-  const leaderboard = buildLeaderboard(ENTRANTS, buildTeamPerformance(matches));
+  const competition = competitionFor(live?.competition);
+  const standings = mapFootballDataStandings(
+    { standings: live?.standings ?? [] },
+    competition.zones,
+  );
+  const performance = buildTeamPerformance(matches);
   const homeTeam = normalizeTeamName(detail.home?.name);
   const awayTeam = normalizeTeamName(detail.away?.name);
-  const prizes = currentPrizes(matches);
-  const spoon = woodenSpoon(matches);
 
   const payload = {
+    competition: competition.name,
     match: {
       stage: detail.stage,
       group: detail.group,
+      matchday: detail.matchday ?? null,
       venue: detail.venue,
       city: detail.city,
       kickoffUtc: detail.utcDate,
       status: detail.status,
       minute: detail.minute,
-      home: sideContext(homeTeam, detail.home),
-      away: sideContext(awayTeam, detail.away),
+      home: sideContext(homeTeam, detail.home, standings, performance),
+      away: sideContext(awayTeam, detail.away, standings, performance),
       score: {
         home: detail.score?.home ?? null,
         away: detail.score?.away ?? null,
@@ -121,76 +127,60 @@ export function buildAnalysisPrompt(detail, live) {
         substitutions: detail.subs ?? [],
       },
     },
-    sweepstake: {
-      potEur: 160,
-      prizesEur: { champion: 100, runnerUp: 30, woodenSpoon: 30 },
-      champion: prizes.champion,
-      runnerUp: prizes.runnerUp,
-      woodenSpoon: spoon,
-      homeOwner: ownerContext(homeTeam, leaderboard),
-      awayOwner: ownerContext(awayTeam, leaderboard),
-      leaderboard: leaderboard.map((row) => ({ rank: row.rank, name: row.name, score: row.score })),
-    },
-    tournament: {
-      recentKnockoutResults: knockoutResults(matches),
-      upcomingKnockout: upcomingKnockout(matches),
-    },
+    table: tableContext(standings, competition, homeTeam, awayTeam),
   };
 
   return JSON.stringify(payload);
 }
 
-function sideContext(team, side) {
+function sideContext(team, side, standings, performance) {
+  const standing = standings.get(team);
+  const stats = performance.get(team);
   return {
     team,
-    owner: ownerOf(team),
     formation: side?.formation ?? null,
     coach: side?.coach ?? null,
+    position: standing?.position ?? null,
+    points: standing?.points ?? null,
+    played: standing?.played ?? null,
+    goalDifference: standing?.goalDifference ?? null,
+    zone: standing?.zone?.label ?? null,
+    recentForm: stats?.form?.join("") || null,
   };
 }
 
-function ownerContext(team, leaderboard) {
-  const owner = ownerOf(team);
-  const row = owner ? leaderboard.find((entry) => entry.name === owner) : null;
-  if (!owner || !row) return { name: owner ?? null };
+// A compact table picture: the zone bands, the top of the table, the bottom, and the
+// neighbourhood around each side, deduplicated. Enough for honest arithmetic about
+// the title race, Europe and relegation without shipping all twenty rows.
+function tableContext(standings, competition, homeTeam, awayTeam) {
+  const rows = [...standings.values()].sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
+  if (!rows.length) return null;
+
+  const interesting = new Set();
+  rows.slice(0, 4).forEach((row) => interesting.add(row.position));
+  rows.slice(-3).forEach((row) => interesting.add(row.position));
+  [homeTeam, awayTeam].forEach((team) => {
+    const standing = standings.get(team);
+    if (!standing?.position) return;
+    [standing.position - 1, standing.position, standing.position + 1].forEach((position) =>
+      interesting.add(position),
+    );
+  });
+
   return {
-    name: owner,
-    leaderboardRank: row.rank,
-    leaderboardScore: row.score,
-    teams: row.teams.map((teamRow) => ({
-      team: teamRow.name,
-      score: teamRow.score,
-      stageBonus: teamRow.stageBonus,
-      inThisMatch: teamRow.name === team,
+    zones: (competition.zones ?? []).map((zone) => ({
+      label: zone.label,
+      positions: `${zone.from}-${zone.to}`,
     })),
+    rows: rows
+      .filter((row) => interesting.has(row.position))
+      .map((row) => ({
+        position: row.position,
+        team: row.team,
+        played: row.played,
+        points: row.points,
+        goalDifference: row.goalDifference,
+        zone: zoneFor(row.position, competition.zones)?.label ?? null,
+      })),
   };
-}
-
-// Knockout results from the last 16 onward keep the payload small while still giving
-// the model the road each side has travelled and who is left in the way.
-const NARRATED_STAGES = new Set(["LAST_16", "QUARTER_FINALS", "SEMI_FINALS", "THIRD_PLACE", "FINAL"]);
-
-function knockoutResults(matches) {
-  return matches
-    .filter((match) => NARRATED_STAGES.has(match.stage) && isFinished(match.status))
-    .map((match) => {
-      const pens = match.penalties ? ` (${match.penalties.home}-${match.penalties.away} pens)` : "";
-      return `${match.stage}: ${match.homeTeam} ${match.score.home}-${match.score.away} ${match.awayTeam}${pens}`;
-    });
-}
-
-function upcomingKnockout(matches) {
-  return matches
-    .filter(
-      (match) =>
-        match.stage !== "GROUP_STAGE" && !isFinished(match.status) && !isLive(match.status),
-    )
-    .map((match) => ({
-      stage: match.stage,
-      date: match.utcDate,
-      home: match.homeTeam,
-      away: match.awayTeam,
-      homeOwner: ownerOf(match.homeTeam),
-      awayOwner: ownerOf(match.awayTeam),
-    }));
 }

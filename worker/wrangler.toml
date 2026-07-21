@@ -8,8 +8,9 @@ workers_dev = true
 # Non-secret config. Secrets are set with:
 #   npx wrangler secret put FOOTBALL_DATA_TOKEN
 #   npx wrangler secret put ANTHROPIC_API_KEY    (powers the AI-analysis cron; nothing generates without it)
+# Season is football-data's starting year: 2026 = the 2026-27 season.
 [vars]
-FOOTBALL_DATA_COMPETITION = "WC"
+FOOTBALL_DATA_COMPETITION = "PL"
 FOOTBALL_DATA_SEASON = "2026"
 # AI analysis model. Any override must support adaptive thinking + structured outputs.
 ANTHROPIC_MODEL = "claude-sonnet-5"

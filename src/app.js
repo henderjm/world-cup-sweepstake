@@ -1,25 +1,13 @@
-import { ENTRANTS, OWNER_BY_TEAM, loadModel } from "./data.js";
-import { runForecast } from "./forecast.js";
+import { loadModel } from "./data.js";
 import {
-  drawBracketConnectors,
-  renderBracket,
   renderFixtures,
   renderFooter,
   renderGoldenBoot,
-  renderGroupTables,
   renderHero,
-  renderLeaderboard,
   renderLive,
+  renderTable,
   renderTicker,
-  renderWhatIf,
 } from "./views.js";
-import {
-  celebrationBanner,
-  confettiBurst,
-  setH2hModel,
-  setupHeadToHead,
-  shouldCelebrate,
-} from "./interactions.js";
 import { setMatchModel, setupMatchDetail, openMatch } from "./matchDetail.js";
 import { isLive } from "./format.js";
 import { todayPaperRunDate } from "./paperRunModel.js";
@@ -30,7 +18,6 @@ import {
   sharePaperRun,
   submitPaperRunResult,
 } from "./paperRunApi.js";
-import { cosmeticTeamForName } from "./paperRunContext.js";
 import { renderPaperRunPanel, updatePaperRunHud } from "./paperRunView.js";
 import { mountPaperRunGame } from "./paperRunGame.js";
 import "./background.js";
@@ -43,28 +30,16 @@ const elements = {
   footer: document.querySelector("#footer"),
   banner: document.querySelector("#banner"),
   confetti: document.querySelector("#confetti"),
-  h2hOpen: document.querySelector("#h2hOpen"),
-  h2hModal: document.querySelector("#h2hModal"),
   matchDrawer: document.querySelector("#matchDrawer"),
   updated: document.querySelector("#updated"),
 };
 
-const TABS = ["live", "leaderboard", "tables", "bracket", "whatif", "fixtures", "goldenboot", "paperrun"];
+const TABS = ["live", "tables", "fixtures", "goldenboot", "paperrun"];
 const initialTab = window.location.hash.replace("#", "");
 const state = {
   tab: TABS.includes(initialTab) ? initialTab : "live",
-  leaderboardSort: "now",
-  fixtureOwner: "all",
   fixtureView: "results",
   goldenBootSort: "goals",
-  whatif: {
-    pins: new Map(),
-    baseline: null,
-    baselinePending: false,
-    result: null,
-    computing: false,
-    scenarioReq: 0,
-  },
   paperrun: {
     date: todayPaperRunDate(),
     day: null,
@@ -73,18 +48,14 @@ const state = {
   },
 };
 
-// What-if recompute reuses the hero forecast's exact seed and iteration count (see
-// scenarioParams). That makes the no-pin baseline reproduce the headline odds instead
-// of contradicting them, while a scenario and its baseline still share the same RNG, so
-// the deltas reflect the pins, not noise.
 let model = null;
 let appLoadMetricSent = false;
 let pollTimer = null;
 let lastSignature = "";
 let lastFetchAt = 0;
 
-const SHELL_IDS = ["ticker", "hero", "tabs", "panel", "footer", "banner", "updated", "h2hOpen", "h2hModal"];
-const RELOAD_FLAG = "wc-shell-reloaded";
+const SHELL_IDS = ["ticker", "hero", "tabs", "panel", "footer", "banner", "updated"];
+const RELOAD_FLAG = "gs-shell-reloaded";
 
 start();
 
@@ -130,10 +101,7 @@ async function start() {
   wireTabs();
   wirePanelControls();
   wireMatchClicks();
-  wireBracketResize();
-  setupHeadToHead(model, { trigger: elements.h2hOpen, modal: elements.h2hModal });
   setupMatchDetail(model, { drawer: elements.matchDrawer });
-  runCelebration();
 
   const matchParam = new URLSearchParams(window.location.search).get("match");
   if (matchParam) {
@@ -199,13 +167,6 @@ async function poll() {
         lastSignature = signature;
         model = fresh;
         setMatchModel(model);
-        setH2hModel(model);
-        // Fresh results change the odds, so the cached what-if baseline and scenario
-        // are stale; drop them and let the what-if tab recompute against new data.
-        state.whatif.baseline = null;
-        state.whatif.baselinePending = false;
-        state.whatif.result = null;
-        state.whatif.computing = false;
         elements.ticker.innerHTML = renderTicker(model);
         elements.hero.innerHTML = renderHero(model);
         elements.footer.innerHTML = renderFooter(model);
@@ -223,22 +184,11 @@ function renderPanel() {
   if (state.tab !== "paperrun") destroyPaperRunMount();
   const panel = elements.panel;
   switch (state.tab) {
-    case "leaderboard":
-      panel.innerHTML = renderLeaderboard(model, state.leaderboardSort);
-      break;
     case "tables":
-      panel.innerHTML = renderGroupTables(model);
-      break;
-    case "bracket":
-      panel.innerHTML = renderBracket(model);
-      requestAnimationFrame(drawBracketConnectors);
-      break;
-    case "whatif":
-      ensureWhatIf();
-      panel.innerHTML = renderWhatIf(model, state.whatif);
+      panel.innerHTML = renderTable(model);
       break;
     case "fixtures":
-      panel.innerHTML = renderFixtures(model, state.fixtureOwner, state.fixtureView);
+      panel.innerHTML = renderFixtures(model, state.fixtureView);
       break;
     case "goldenboot":
       panel.innerHTML = renderGoldenBoot(model, state.goldenBootSort);
@@ -297,7 +247,7 @@ function mountPaperRun() {
     },
     onComplete: async (result) => {
       const name = displayName();
-      const full = { ...result, name, team: cosmeticTeamForName(name) ?? undefined };
+      const full = { ...result, name };
       metric("count", "paperrun_completed", 1, {
         tags: { score: String(result.score), deliveries: String(result.deliveries), finished: String(result.finished) },
       });
@@ -348,24 +298,8 @@ function wireTabs() {
   });
 }
 
-// Connectors are measured from the DOM, so redraw on reflow.
-function wireBracketResize() {
-  let frame = null;
-  window.addEventListener("resize", () => {
-    if (state.tab !== "bracket") return;
-    if (frame) cancelAnimationFrame(frame);
-    frame = requestAnimationFrame(drawBracketConnectors);
-  });
-}
-
 function wirePanelControls() {
   elements.panel.addEventListener("click", (event) => {
-    const sortButton = event.target.closest("[data-sort]");
-    if (sortButton) {
-      state.leaderboardSort = sortButton.dataset.sort;
-      renderPanel();
-      return;
-    }
     const fixtureViewButton = event.target.closest("[data-fixture-view]");
     if (fixtureViewButton) {
       state.fixtureView = fixtureViewButton.dataset.fixtureView;
@@ -393,36 +327,8 @@ function wirePanelControls() {
       if (!day?.result) return;
       const input = elements.panel.querySelector("[data-run-name]");
       const name = rememberName(input?.value || "") || day.result.name;
-      const team = cosmeticTeamForName(name) ?? undefined;
       saveButton.disabled = true;
-      savePaperRun(day, { ...day.result, name, team });
-      return;
-    }
-    // What-if: pin or unpin a remaining group game.
-    const pinButton = event.target.closest("[data-pin-match]");
-    if (pinButton) {
-      const id = pinButton.dataset.pinMatch;
-      const outcome = pinButton.dataset.pinOutcome;
-      const pins = state.whatif.pins;
-      if (pins.get(id) === outcome) pins.delete(id);
-      else pins.set(id, outcome);
-      metric("count", "whatif_pin", 1, { tags: { outcome } });
-      renderPanel();
-      scheduleScenario();
-      return;
-    }
-    const clearButton = event.target.closest("[data-action='clear-whatif']");
-    if (clearButton) {
-      state.whatif.pins.clear();
-      state.whatif.result = null;
-      state.whatif.computing = false;
-      renderPanel();
-    }
-  });
-  elements.panel.addEventListener("change", (event) => {
-    if (event.target.matches("[data-control='fixture-owner']")) {
-      state.fixtureOwner = event.target.value;
-      renderPanel();
+      savePaperRun(day, { ...day.result, name });
     }
   });
 }
@@ -449,136 +355,13 @@ function wireMatchClicks() {
   });
 }
 
-// -- What-if explorer compute -------------------------------------------------
-// The forecast is re-run off the main thread in a module Web Worker so pinning stays
-// smooth. If workers are unavailable (or fail to load), we fall back to running it
-// inline. A scenario and its baseline share the hero's seed so deltas are pin-driven.
-
-let whatifWorker; // undefined: not tried, null: unavailable, else a Worker
-let scenarioTimer = null;
-const inflight = new Map();
-
-function getWorker() {
-  if (whatifWorker !== undefined) return whatifWorker;
-  try {
-    whatifWorker = new Worker(new URL("./forecast.worker.js", import.meta.url), { type: "module" });
-    whatifWorker.onmessage = (event) => {
-      inflight.delete(event.data?.id);
-      onForecast(event.data);
-    };
-    whatifWorker.onerror = () => {
-      const pending = [...inflight.entries()];
-      whatifWorker = null;
-      inflight.clear();
-      pending.forEach(([id, params]) => computeOnMain(id, params));
-    };
-  } catch {
-    whatifWorker = null;
-  }
-  return whatifWorker;
-}
-
-function scenarioParams(pins) {
-  return {
-    groups: model.groups,
-    groupMatches: model.matches.filter((item) => item.stage === "GROUP_STAGE"),
-    knockoutMatches: model.matches.filter((item) => item.stage !== "GROUP_STAGE"),
-    ownerByTeam: OWNER_BY_TEAM,
-    entrants: ENTRANTS,
-    seed: model.forecast.seed,
-    iterations: model.forecast.iterations,
-    pins,
-  };
-}
-
-function dispatch(id, params) {
-  const worker = getWorker();
-  if (worker) {
-    inflight.set(id, params);
-    worker.postMessage({ id, params });
-  } else {
-    computeOnMain(id, params);
-  }
-}
-
-function computeOnMain(id, params) {
-  try {
-    onForecast({ id, forecast: runForecast(params) });
-  } catch (error) {
-    onForecast({ id, error: String(error?.message ?? error) });
-  }
-}
-
-function onForecast(data) {
-  if (!data) return;
-  const [kind, n] = String(data.id).split(":");
-  if (kind === "baseline") {
-    state.whatif.baselinePending = false;
-    if (!data.error) state.whatif.baseline = data.forecast;
-    renderIfWhatIf();
-    return;
-  }
-  if (Number(n) !== state.whatif.scenarioReq) return; // a newer scenario superseded this
-  state.whatif.computing = false;
-  if (!data.error) state.whatif.result = data.forecast;
-  renderIfWhatIf();
-}
-
-// Kick off the baseline on first view, and a scenario if games are already pinned.
-function ensureWhatIf() {
-  if (!state.whatif.baseline && !state.whatif.baselinePending) {
-    state.whatif.baselinePending = true;
-    dispatch("baseline:0", scenarioParams(new Map()));
-  }
-  if (state.whatif.pins.size > 0 && !state.whatif.result && !state.whatif.computing) {
-    computeScenario();
-  }
-}
-
-function computeScenario() {
-  const pins = state.whatif.pins;
-  if (pins.size === 0) {
-    state.whatif.result = null;
-    state.whatif.computing = false;
-    renderIfWhatIf();
-    return;
-  }
-  state.whatif.computing = true;
-  state.whatif.scenarioReq += 1;
-  renderIfWhatIf();
-  dispatch(`scenario:${state.whatif.scenarioReq}`, scenarioParams(new Map(pins)));
-}
-
-function scheduleScenario() {
-  if (scenarioTimer) clearTimeout(scenarioTimer);
-  scenarioTimer = setTimeout(() => {
-    scenarioTimer = null;
-    computeScenario();
-  }, 150);
-}
-
-function renderIfWhatIf() {
-  if (state.tab === "whatif") renderPanel();
-}
-
-function runCelebration() {
-  const banner = celebrationBanner(model);
-  if (banner) {
-    elements.banner.textContent = banner;
-    elements.banner.hidden = false;
-  }
-  if (shouldCelebrate(model)) {
-    confettiBurst(elements.confetti);
-  }
-}
-
 function renderPending(data) {
   elements.updated.textContent = "waiting for data";
   elements.ticker.innerHTML = `<div class="ticker__track"><span class="ticker__item ticker__item--idle">Live feed not available yet.</span></div>`;
   elements.hero.innerHTML = `
-    <div class="hero__head"><div><p class="hero__eyebrow">The race for the pot</p><h1 class="hero__title">Waiting for the first results</h1></div></div>
+    <div class="hero__head"><div><p class="hero__eyebrow">${data.competition?.name ?? "Football"}</p><h1 class="hero__title">Waiting for the first results</h1></div></div>
     <p class="panel__note">${data.error ?? "No live data has been published yet."}</p>`;
-  elements.panel.innerHTML = `<p class="panel__note">Group tables, the leaderboard and the projection appear once the feed publishes results.</p>`;
+  elements.panel.innerHTML = `<p class="panel__note">The table, fixtures and scorer board appear once the feed publishes results.</p>`;
   elements.footer.innerHTML = `<p class="footer__src">Data source: ${data.source ?? "pending"}.</p>`;
 }
 

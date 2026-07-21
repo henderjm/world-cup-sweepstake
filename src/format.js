@@ -55,12 +55,16 @@ export function timeLabel(value) {
 }
 
 export function formatStage(stage) {
+  if (!stage) return "";
   const map = {
+    REGULAR_SEASON: "League",
     GROUP_STAGE: "Group stage",
+    LEAGUE_STAGE: "League phase",
     LAST_32: "Round of 32",
     ROUND_OF_32: "Round of 32",
     LAST_16: "Round of 16",
     ROUND_OF_16: "Round of 16",
+    PLAYOFFS: "Knockout play-off",
     QUARTER_FINALS: "Quarter-final",
     SEMI_FINALS: "Semi-final",
     THIRD_PLACE: "Third place",
@@ -68,7 +72,7 @@ export function formatStage(stage) {
   };
   return (
     map[stage] ??
-    String(stage ?? "GROUP_STAGE")
+    String(stage)
       .replace(/_/g, " ")
       .toLowerCase()
       .replace(/\b\w/g, (letter) => letter.toUpperCase())

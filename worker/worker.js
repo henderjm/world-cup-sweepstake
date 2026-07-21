@@ -91,7 +91,7 @@ export default {
 
     const token = env.FOOTBALL_DATA_TOKEN;
     if (!token) return json({ error: "service not configured" }, 500, cors);
-    const competition = env.FOOTBALL_DATA_COMPETITION || "WC";
+    const competition = env.FOOTBALL_DATA_COMPETITION || "PL";
     const season = env.FOOTBALL_DATA_SEASON || "2026";
 
     // Banter: shared per-match reactions and one-line messages in KV. GET reads the
@@ -145,9 +145,12 @@ export default {
 
 async function getLive(competition, season, token) {
   try {
+    // Both calls pin the season: an unpinned /standings returns football-data's
+    // "current season", which between seasons is still last year's final table and
+    // silently disagrees with the season-pinned fixtures.
     const [matches, standings] = await Promise.all([
       fetchJson(`/v4/competitions/${competition}/matches?season=${season}`, token, 15),
-      fetchJson(`/v4/competitions/${competition}/standings`, token, 30),
+      fetchJson(`/v4/competitions/${competition}/standings?season=${season}`, token, 30),
     ]);
     const body = {
       source: "football-data.org",
@@ -190,7 +193,7 @@ async function handleAnalysis(env, id, cors) {
 
 async function runScheduledAnalysis(env) {
   if (!env.ANTHROPIC_API_KEY || !env.ANALYSIS_CACHE || !env.FOOTBALL_DATA_TOKEN) return;
-  const competition = env.FOOTBALL_DATA_COMPETITION || "WC";
+  const competition = env.FOOTBALL_DATA_COMPETITION || "PL";
   const season = env.FOOTBALL_DATA_SEASON || "2026";
 
   let live;
@@ -250,7 +253,7 @@ async function generateAnalysis(env, match, live, token, detail = null) {
 
   if (response.stop_reason === "refusal") throw new Error("analysis refused");
   const text = response.content.find((block) => block.type === "text")?.text ?? "";
-  const analysis = JSON.parse(text); // schema-constrained: {headline, match, sweepstake}
+  const analysis = JSON.parse(text); // schema-constrained: {headline, match, context}
 
   return {
     matchId: match.id,

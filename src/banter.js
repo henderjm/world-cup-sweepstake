@@ -1,4 +1,4 @@
-import { DATA_API, ENTRANTS } from "./data.js";
+import { DATA_API } from "./data.js";
 
 // Per-match banter: shared emoji reactions and one-line messages, stored server-side in
 // the Worker's KV (see worker/worker.js). Needs the Worker, so it is only available when
@@ -176,10 +176,9 @@ function renderSkeleton() {
       <div class="bn__react" data-bn-react></div>
       <div class="bn__feed" data-bn-feed><p class="md-note">Loading banter…</p></div>
       <form class="bn__compose" data-banter-form>
-        <input class="bn__name" data-banter-name list="bn-names" maxlength="24" placeholder="your name" value="${esc(displayName())}" aria-label="Your name" />
+        <input class="bn__name" data-banter-name maxlength="24" placeholder="your name" value="${esc(displayName())}" aria-label="Your name" />
         <input class="bn__text" data-banter-text maxlength="140" placeholder="say something…" autocomplete="off" aria-label="Your banter" />
         <button class="btn bn__send" type="submit">Send</button>
-        <datalist id="bn-names">${ENTRANTS.map((entrant) => `<option value="${esc(entrant.name)}"></option>`).join("")}</datalist>
       </form>
       <p class="bn__note">Reactions and banter are shared with the whole group.</p>
     </div>`;

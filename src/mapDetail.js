@@ -8,12 +8,17 @@ import { locationForVenue } from "./locations.js";
 export function mapMatchDetail(match) {
   const reg = regulationScore(match.score);
   const location = locationForVenue(match.venue);
+  // Event entries (goals, bookings, subs) carry only the full legal name; the app's
+  // canonical name is the shortName. Resolve through the two sides so every event
+  // team matches the join key used everywhere else.
+  const shortName = resolveShortName(match.homeTeam, match.awayTeam);
   return {
     id: match.id,
     status: match.status,
     utcDate: match.utcDate,
     stage: match.stage ?? null,
     group: match.group ?? null,
+    matchday: match.matchday ?? null,
     venue: match.venue ?? null,
     city: location?.city || null,
     mapUrl: location?.mapUrl ?? null,
@@ -33,7 +38,7 @@ export function mapMatchDetail(match) {
       minute: goal.minute,
       injuryTime: goal.injuryTime ?? null,
       type: goal.type ?? "REGULAR",
-      team: goal.team?.name ?? "",
+      team: shortName(goal.team?.name),
       scorer: goal.scorer?.name ?? "",
       assist: goal.assist?.name ?? null,
       home: goal.score?.home ?? null,
@@ -41,13 +46,13 @@ export function mapMatchDetail(match) {
     })),
     cards: (match.bookings ?? []).map((booking) => ({
       minute: booking.minute,
-      team: booking.team?.name ?? "",
+      team: shortName(booking.team?.name),
       player: booking.player?.name ?? "",
       card: booking.card ?? "",
     })),
     subs: (match.substitutions ?? []).map((sub) => ({
       minute: sub.minute,
-      team: sub.team?.name ?? "",
+      team: shortName(sub.team?.name),
       in: sub.playerIn?.name ?? "",
       out: sub.playerOut?.name ?? "",
     })),
@@ -58,9 +63,19 @@ export function mapMatchDetail(match) {
   };
 }
 
+function resolveShortName(home, away) {
+  const index = new Map();
+  [home, away].forEach((team) => {
+    if (team?.name) index.set(team.name, team.shortName ?? team.name);
+  });
+  return (name) => index.get(name) ?? name ?? "";
+}
+
 function mapTeam(team) {
   return {
-    name: team?.name ?? "",
+    // shortName first: it is the canonical join key across the app (see domain.js).
+    name: team?.shortName ?? team?.name ?? "",
+    crest: team?.crest ?? null,
     formation: team?.formation ?? null,
     coach: team?.coach?.name ?? null,
     lineup: (team?.lineup ?? []).map(mapPlayer),

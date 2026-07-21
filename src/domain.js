@@ -1,4 +1,5 @@
 import { locationForVenue } from "./locations.js";
+import { zoneFor } from "./competitions.js";
 
 const LIVE_STATUSES = new Set([
   "IN_PLAY",
@@ -11,45 +12,14 @@ const LIVE_STATUSES = new Set([
 
 const FINISHED_STATUSES = new Set(["FINISHED", "AWARDED"]);
 
-export const STAGE_BONUSES = {
-  GROUP_STAGE: 0,
-  LAST_32: 15,
-  ROUND_OF_32: 15,
-  LAST_16: 25,
-  ROUND_OF_16: 25,
-  QUARTER_FINALS: 40,
-  SEMI_FINALS: 60,
-  THIRD_PLACE: 70,
-  FINAL_RUNNER_UP: 85,
-  FINAL_WINNER: 120,
-};
-
+// Club-name aliases, applied after diacritics are stripped and case is folded.
+// The feed's shortName is already the join key, so this map only needs entries
+// when a source spells a club differently from the canonical short name.
 const TEAM_ALIASES = new Map(
   Object.entries({
-    "bosnia and herzegovina": "Bosnia",
-    "bosnia-herzegovina": "Bosnia",
-    "cote d'ivoire": "Ivory Coast",
-    "cote divoire": "Ivory Coast",
-    "cote d’ivoire": "Ivory Coast",
-    "côte d’ivoire": "Ivory Coast",
-    "côte d'ivoire": "Ivory Coast",
-    "cabo verde": "Cape Verde",
-    "cape verde islands": "Cape Verde",
-    "czech republic": "Czech",
-    czechia: "Czech",
-    "democratic republic of the congo": "DRC",
-    "dr congo": "DRC",
-    "congo dr": "DRC",
-    "korea republic": "South Korea",
-    saudi: "Saudi Arabia",
-    "saudi arabia": "Saudi Arabia",
-    turkiye: "Turkey",
-    "türkiye": "Turkey",
-    "united states": "USA",
-    "united states of america": "USA",
-    "u.s.a.": "USA",
-    curacao: "Curacao",
-    "curaçao": "Curacao",
+    "wolverhampton wanderers": "Wolves",
+    "brighton and hove albion": "Brighton",
+    "brighton & hove albion": "Brighton",
   }),
 );
 
@@ -64,56 +34,11 @@ export function normalizeTeamName(name) {
   return TEAM_ALIASES.get(key) ?? value;
 }
 
-export function calculatePayouts({ entrantCount, stake, splits }) {
-  const pot = roundMoney(Number(entrantCount) * Number(stake));
-  const second = roundMoney(Number(splits.second));
-  const woodenSpoon = roundMoney(Number(splits.woodenSpoon));
-  const first = roundMoney(pot - second - woodenSpoon);
-
-  return {
-    pot,
-    first,
-    second,
-    woodenSpoon,
-  };
-}
-
-export function buildLeaderboard(entrants, performance) {
-  const performanceIndex = indexPerformance(performance);
-  const ranked = entrants
-    .map((entrant) => {
-      const teams = entrant.teams.map((team) => {
-        const teamPerformance = performanceIndex.get(normalizeTeamName(team)) ?? blankPerformance(team);
-        return {
-          name: normalizeTeamName(team),
-          ...teamPerformance,
-        };
-      });
-      const totals = teams.reduce(
-        (acc, team) => ({
-          score: acc.score + team.score,
-          points: acc.points + team.points,
-          goalDifference: acc.goalDifference + team.goalDifference,
-          goalsFor: acc.goalsFor + team.goalsFor,
-          played: acc.played + team.played,
-          dangerCount: acc.dangerCount + (team.dangerLevel === "out" || team.dangerLevel === "danger" ? 1 : 0),
-        }),
-        { score: 0, points: 0, goalDifference: 0, goalsFor: 0, played: 0, dangerCount: 0 },
-      );
-
-      return {
-        ...entrant,
-        teams,
-        ...totals,
-      };
-    })
-    .sort(compareEntrants);
-
-  return ranked.map((entrant, index) => ({
-    ...entrant,
-    rank: index + 1,
-    isCurrentBottom: index === ranked.length - 1,
-  }));
+// Prefer the feed's shortName ("Arsenal") over the legal name ("Arsenal FC") so the
+// canonical name reads naturally everywhere. Both mappers and the standings share
+// this so the join key is identical across the app.
+function teamName(team) {
+  return normalizeTeamName(team?.shortName ?? team?.name);
 }
 
 export function buildTeamPerformance(matches) {
@@ -141,12 +66,10 @@ export function buildTeamPerformance(matches) {
     }
 
     applyFinishedMatch(homeStats, awayStats, match.score.home, match.score.away);
-    applyStageBonus(homeStats, awayStats, match);
   });
 
   performance.forEach((stats) => {
     stats.goalDifference = stats.goalsFor - stats.goalsAgainst;
-    stats.score = calculateTeamScore(stats);
     stats.form = stats.form.slice(-5);
   });
 
@@ -163,13 +86,16 @@ export function mapFootballDataMatches(payload) {
       utcDate: match.utcDate,
       status: match.status,
       minute: match.minute ?? null,
-      stage: match.stage ?? "GROUP_STAGE",
+      stage: match.stage ?? null,
       group: match.group ?? null,
+      matchday: match.matchday ?? null,
       venue: match.venue ?? null,
       city: location?.city || null,
       mapUrl: location?.mapUrl ?? null,
-      homeTeam: normalizeTeamName(match.homeTeam?.name ?? match.homeTeam?.shortName),
-      awayTeam: normalizeTeamName(match.awayTeam?.name ?? match.awayTeam?.shortName),
+      homeTeam: teamName(match.homeTeam),
+      awayTeam: teamName(match.awayTeam),
+      homeCrest: match.homeTeam?.crest ?? null,
+      awayCrest: match.awayTeam?.crest ?? null,
       score: { home: reg.home, away: reg.away },
       penalties: reg.penalties,
       winner: raw.winner ?? null,
@@ -194,29 +120,36 @@ export function regulationScore(raw) {
   };
 }
 
-export function mapFootballDataStandings(payload) {
-  const danger = new Map();
+// Standings keyed by team. `zones` comes from the competition config and stamps each
+// row with the coloured band it sits in (European places, relegation, ...), or null
+// for the neutral middle of the table.
+export function mapFootballDataStandings(payload, zones = []) {
+  const rows = new Map();
 
   (payload.standings ?? [])
     .filter((standing) => standing.type === "TOTAL")
     .forEach((standing) => {
-      const groupName = standing.group ?? "Group";
       (standing.table ?? []).forEach((row) => {
-        const team = normalizeTeamName(row.team?.name ?? row.team?.shortName);
-        danger.set(team, {
+        const team = teamName(row.team);
+        rows.set(team, {
           team,
-          group: groupName,
+          group: standing.group ?? null,
           position: row.position,
           points: row.points ?? 0,
-          goalDifference: row.goalDifference ?? 0,
           played: row.playedGames ?? 0,
-          dangerLevel: dangerLevel(row.position),
-          dangerLabel: dangerLabel(row.position),
+          won: row.won ?? 0,
+          drawn: row.draw ?? 0,
+          lost: row.lost ?? 0,
+          goalsFor: row.goalsFor ?? 0,
+          goalsAgainst: row.goalsAgainst ?? 0,
+          goalDifference: row.goalDifference ?? 0,
+          crest: row.team?.crest ?? null,
+          zone: zoneFor(row.position, zones),
         });
       });
     });
 
-  return danger;
+  return rows;
 }
 
 export function mergeStandingsIntoPerformance(performance, standings) {
@@ -231,19 +164,9 @@ export function mergeStandingsIntoPerformance(performance, standings) {
   return merged;
 }
 
-export function compareEntrants(a, b) {
-  return (
-    b.score - a.score ||
-    a.dangerCount - b.dangerCount ||
-    b.points - a.points ||
-    b.goalDifference - a.goalDifference ||
-    b.goalsFor - a.goalsFor ||
-    a.name.localeCompare(b.name)
-  );
-}
-
 export function formatStage(stage) {
-  return String(stage ?? "GROUP_STAGE")
+  if (!stage) return "";
+  return String(stage)
     .replace(/_/g, " ")
     .toLowerCase()
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -267,29 +190,13 @@ function blankPerformance(team) {
     goalsFor: 0,
     goalsAgainst: 0,
     goalDifference: 0,
-    stageBonus: 0,
-    score: 0,
     form: [],
     liveSummary: "",
     liveScore: "",
     nextMatch: null,
-    group: "",
     position: null,
-    dangerLevel: "unknown",
-    dangerLabel: "",
+    zone: null,
   };
-}
-
-function indexPerformance(performance) {
-  const index = new Map();
-  performance.forEach((stats, team) => {
-    index.set(normalizeTeamName(team), {
-      ...blankPerformance(team),
-      ...stats,
-      team: normalizeTeamName(team),
-    });
-  });
-  return index;
 }
 
 function applyFinishedMatch(homeStats, awayStats, homeGoals, awayGoals) {
@@ -326,30 +233,6 @@ function applyFinishedMatch(homeStats, awayStats, homeGoals, awayGoals) {
   awayStats.form.push("D");
 }
 
-function applyStageBonus(homeStats, awayStats, match) {
-  const stage = match.stage ?? "GROUP_STAGE";
-  if (stage === "FINAL" && hasScore(match.score)) {
-    const homeWon = match.score.home > match.score.away;
-    homeStats.stageBonus = Math.max(
-      homeStats.stageBonus,
-      STAGE_BONUSES[homeWon ? "FINAL_WINNER" : "FINAL_RUNNER_UP"],
-    );
-    awayStats.stageBonus = Math.max(
-      awayStats.stageBonus,
-      STAGE_BONUSES[homeWon ? "FINAL_RUNNER_UP" : "FINAL_WINNER"],
-    );
-    return;
-  }
-
-  const bonus = STAGE_BONUSES[stage] ?? 0;
-  homeStats.stageBonus = Math.max(homeStats.stageBonus, bonus);
-  awayStats.stageBonus = Math.max(awayStats.stageBonus, bonus);
-}
-
-function calculateTeamScore(stats) {
-  return stats.points * 10 + stats.goalDifference * 2 + stats.goalsFor + stats.stageBonus;
-}
-
 function compareMatchDate(a, b) {
   return new Date(a.utcDate).getTime() - new Date(b.utcDate).getTime();
 }
@@ -379,22 +262,4 @@ function scoreLabel(score) {
 
 function reverseScore(score) {
   return hasScore(score) ? { home: score.away, away: score.home } : score;
-}
-
-function dangerLevel(position) {
-  if (!Number.isFinite(position)) return "unknown";
-  if (position <= 2) return "safe";
-  if (position === 3) return "danger";
-  return "out";
-}
-
-function dangerLabel(position) {
-  if (!Number.isFinite(position)) return "No group table yet";
-  if (position <= 2) return `Group position ${position}`;
-  if (position === 3) return "On the edge";
-  return "Going out";
-}
-
-function roundMoney(value) {
-  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 }

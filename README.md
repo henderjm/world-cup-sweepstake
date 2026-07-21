@@ -1,24 +1,14 @@
-# World Cup Sweepstake HQ
+# GS Score
 
-A static GitHub Pages app that is the group's hub for everything World Cup, with the
-sweepstake money race as the centerpiece. FotMob-style live scores, group tables, a
-knockout bracket and full fixtures, every team tagged with its owner.
+A static GitHub Pages app for following the Premier League: FotMob-style live
+scores, the league table with European and relegation zones, full fixtures and
+results, and a Golden Boot scorer board. Champions League and the other European
+cups are on the roadmap, along with sign-up, push notifications and a fantasy draft.
 
-The hero answers one question: who is on for winning. The payouts are tied to
-tournament outcomes, not the points table, so the app runs a Monte Carlo projection
-(5,000 simulations on load, seeded from the data timestamp so the odds are stable) to
-estimate each entrant's chance at the winner, runner-up and wooden-spoon prizes. See
-`docs/superpowers/specs/` for the full design and the projection methodology.
-
-Sections (single page, tabbed): Live & today, Leaderboard (current points plus
-projected odds), Group tables, Knockout bracket, Fixtures. Extras: a live score
-ticker, owner head-to-head compare, and confetti when a final is decided.
-
-The pot is fixed at 16 entries x €10 = €160:
-
-- World Cup winner owner: €100
-- World Cup runner-up owner: €30
-- Wooden spoon: €30, only after an owned team is confirmed last in its group with all three group matches finished
+Sections (single page, tabbed): Live & today, Table, Fixtures, Golden Boot, and the
+Paper Run daily mini-game. Extras: a live score ticker, a match drawer with lineups,
+goals, cards and substitutions, shared match banter, and an optional AI-written
+match read.
 
 ## Host On GitHub Pages
 
@@ -32,7 +22,7 @@ The app has no build step. `index.html` is the entry point, so it also works fro
 
 ## Live Data
 
-This uses football-data.org because its API supports the World Cup code `WC`, the competition matches endpoint, and the current competition standings endpoint.
+Data comes from football-data.org (the Premier League is on their free tier).
 
 To enable it:
 
@@ -41,12 +31,12 @@ To enable it:
 3. Add a repository secret named `FOOTBALL_DATA_TOKEN`.
 4. Run the Pages workflow, or wait for the schedule.
 
-The workflow fetches live data every 30 minutes and publishes `data/live.json` with the site. The API token never appears in the browser.
+The workflow fetches live data every few minutes and publishes `data/live.json` with the site. The API token never appears in the browser.
 
-Optional workflow variables:
+Workflow environment variables (set in the workflow file):
 
-- `FOOTBALL_DATA_COMPETITION`, default `WC`
-- `FOOTBALL_DATA_SEASON`, default `2026`
+- `FOOTBALL_DATA_COMPETITION`, default `PL`
+- `FOOTBALL_DATA_SEASON`, default `2026` (football-data's starting year, so 2026 = the 2026-27 season)
 
 ## Live Data Without Deploys (Cloudflare Worker)
 
@@ -54,9 +44,9 @@ The GitHub Action bakes data into each deploy, so the static `data/live.json` on
 refreshes as often as the site redeploys. For minute-by-minute live scores, deploy the
 Worker in `worker/`: it proxies football-data with the token kept server-side, edge-
 caches each upstream call briefly (so many pollers collapse into roughly one upstream
-call per cache window, staying under the 30/min plan limit), and serves `/live` and
-`/match/:id` with CORS. The site then polls it (about every 30 seconds while a game is
-live) and updates in place, no deploy involved.
+call per cache window, staying under the plan's per-minute limit), and serves `/live`
+and `/match/:id` with CORS. The site then polls it (about every 20 seconds while a
+game is live) and updates in place, no deploy involved.
 
 1. `cd worker`
 2. `npx wrangler login`
@@ -69,12 +59,14 @@ The site falls back to the static `data/live.json` whenever the Worker is unset 
 unreachable, so it keeps working either way. The token never reaches the browser.
 
 Note: football-data.org does not provide expected goals (xG) on any tier, so the match
-detail shows lineups, scorers, subs and cards, but not xG.
+detail shows lineups, scorers, subs and cards, but not xG. Player-level match detail
+may require football-data's deep data pack depending on your plan; without it the
+Golden Boot and the events pane degrade gracefully to empty states.
 
 ### AI match analysis (optional)
 
 The Worker can also serve a Claude-written summary of any live or finished match,
-including what the result means for the pot: the match drawer shows it as an
+including what the result means for the table: the match drawer shows it as an
 "AI analysis" card. Generation is cron-driven, not visit-driven: the Worker checks
 the feed every minute and pre-generates into KV on an adaptive cadence, every 10
 minutes of normal play, every 5 in extra time, kick by kick during a penalty
@@ -95,3 +87,9 @@ Without the secret or the KV namespace nothing is generated and the site simply
 hides the card. The prompt is built server-side from feed data only, so the endpoint
 cannot be used as a general LLM proxy. The model defaults to `claude-sonnet-5`
 (`ANTHROPIC_MODEL` in `wrangler.toml`).
+
+## History
+
+This app started life as a World Cup 2026 sweepstake hub (entrants, a prize pot and
+a Monte Carlo projection of who wins the money). The sweepstake concept was removed
+after the tournament; see the git history if you are curious.

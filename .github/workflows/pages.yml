@@ -40,13 +40,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/matches
-          key: wc-match-detail-${{ github.run_id }}-${{ github.run_attempt }}
+          key: pl-2026-match-detail-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            wc-match-detail-
-      - name: Fetch live World Cup data
+            pl-2026-match-detail-
+      - name: Fetch live Premier League data
         run: npm run fetch:live
         env:
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+          FOOTBALL_DATA_COMPETITION: PL
+          FOOTBALL_DATA_SEASON: "2026"
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site
