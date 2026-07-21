@@ -1,6 +1,6 @@
-import { mapFootballDataStandings, normalizeTeamName } from "./domain.js";
+import { buildTeamPerformance, mapFootballDataStandings, normalizeTeamName } from "./domain.js";
 import { DEFAULT_COMPETITION_CODE, competitionFor, zoneFor } from "./competitions.js";
-import { registerCrests } from "./badges.js";
+import { registerTeams } from "./badges.js";
 import { locationForMatch } from "./locations.js";
 
 // Set this to your deployed Cloudflare Worker origin to serve live data without a
@@ -37,7 +37,7 @@ export function buildModel(raw, scorerData = {}) {
     };
   }
 
-  registerCrests(collectCrests(matches, standings));
+  registerTeams(collectTeams(matches, standings));
 
   return {
     source: raw.source,
@@ -45,7 +45,7 @@ export function buildModel(raw, scorerData = {}) {
     hasData: true,
     competition,
     matches,
-    tables: buildLeagueTables(raw.standings ?? [], competition),
+    tables: buildLeagueTables(raw.standings ?? [], competition, buildTeamPerformance(matches)),
     standings,
     scorers: scorerData.scorers ?? [],
   };
@@ -111,6 +111,8 @@ function normalizeMatch(match) {
     awayTeam: normalizeTeamName(match.awayTeam),
     homeCrest: match.homeCrest ?? null,
     awayCrest: match.awayCrest ?? null,
+    homeTla: match.homeTla ?? null,
+    awayTla: match.awayTla ?? null,
     score: {
       home: Number.isFinite(match.score?.home) ? match.score.home : null,
       away: Number.isFinite(match.score?.away) ? match.score.away : null,
@@ -125,16 +127,18 @@ function normalizeMatch(match) {
 
 // One renderable table per standings block. A flat league (PL) yields exactly one;
 // a competition with grouped tables (cups later) yields one per group. Zone bands
-// come from the competition config, never from hardcoded positions.
-function buildLeagueTables(standings, competition) {
+// come from the competition config, never from hardcoded positions. Recent form is
+// computed from the matches, since the standings feed carries no form.
+function buildLeagueTables(standings, competition, performance = new Map()) {
   return standings
     .filter((standing) => standing.type === "TOTAL")
     .map((standing) => ({
       name: standing.group ?? competition.name,
       rows: (standing.table ?? []).map((row, index) => {
         const position = row.position ?? index + 1;
+        const team = normalizeTeamName(row.team?.shortName ?? row.team?.name);
         return {
-          team: normalizeTeamName(row.team?.shortName ?? row.team?.name),
+          team,
           position,
           played: row.playedGames ?? 0,
           won: row.won ?? 0,
@@ -142,20 +146,24 @@ function buildLeagueTables(standings, competition) {
           lost: row.lost ?? 0,
           points: row.points ?? 0,
           goalDifference: row.goalDifference ?? 0,
+          form: performance.get(team)?.form ?? [],
           zone: zoneFor(position, competition.zones),
         };
       }),
     }));
 }
 
-function collectCrests(matches, standings) {
-  const crests = new Map();
-  standings.forEach((row, team) => {
-    if (row.crest) crests.set(team, row.crest);
-  });
+function collectTeams(matches, standings) {
+  const teams = new Map();
+  const add = (team, crest, tla) => {
+    if (!team) return;
+    const current = teams.get(team) ?? {};
+    teams.set(team, { crest: current.crest ?? crest ?? null, tla: current.tla ?? tla ?? null });
+  };
+  standings.forEach((row, team) => add(team, row.crest, row.tla));
   matches.forEach((match) => {
-    if (match.homeCrest && !crests.has(match.homeTeam)) crests.set(match.homeTeam, match.homeCrest);
-    if (match.awayCrest && !crests.has(match.awayTeam)) crests.set(match.awayTeam, match.awayCrest);
+    add(match.homeTeam, match.homeCrest, match.homeTla);
+    add(match.awayTeam, match.awayCrest, match.awayTla);
   });
-  return crests;
+  return teams;
 }

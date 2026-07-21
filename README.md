@@ -1,6 +1,6 @@
-# GS Score
+# Squad Goals
 
-A static GitHub Pages app for following the Premier League and the Champions League:
+Squad Goals: a static GitHub Pages app for following the Premier League and the Champions League:
 FotMob-style live scores, tables with qualification and relegation zones, full
 fixtures and results, and a Golden Boot scorer board, with a competition switcher.
 The other European cups are on the roadmap, along with sign-up, push notifications

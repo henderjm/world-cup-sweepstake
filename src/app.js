@@ -2,13 +2,16 @@ import { loadModel } from "./data.js";
 import { COMPETITIONS, DEFAULT_COMPETITION_CODE } from "./competitions.js";
 import {
   knockoutMatches,
-  renderCompetitionSwitcher,
+  renderCompetitionChips,
+  renderCompetitionSidebar,
   renderFixtures,
   renderFooter,
-  renderGoldenBoot,
   renderHero,
   renderKnockout,
   renderLive,
+  renderMiniTable,
+  renderScoresTabs,
+  renderStats,
   renderTable,
   renderTicker,
 } from "./views.js";
@@ -24,28 +27,29 @@ import {
 } from "./paperRunApi.js";
 import { renderPaperRunPanel, updatePaperRunHud } from "./paperRunView.js";
 import { mountPaperRunGame } from "./paperRunGame.js";
-import "./background.js";
 
 const elements = {
   ticker: document.querySelector("#ticker"),
-  hero: document.querySelector("#hero"),
-  tabs: document.querySelector("#tabs"),
-  panel: document.querySelector("#panel"),
+  layout: document.querySelector("#layout"),
   footer: document.querySelector("#footer"),
-  banner: document.querySelector("#banner"),
-  confetti: document.querySelector("#confetti"),
+  sectionNav: document.querySelector("#sectionNav"),
+  bottomNav: document.querySelector("#bottomNav"),
   matchDrawer: document.querySelector("#matchDrawer"),
   updated: document.querySelector("#updated"),
 };
 
-const TABS = ["live", "tables", "knockout", "fixtures", "goldenboot", "paperrun"];
+const SCORES_TABS = ["live", "tables", "knockout", "fixtures", "stats"];
+const HASH_ALIASES = { goldenboot: "stats", paperrun: "play" };
 const COMPETITION_STORAGE_KEY = "gs-competition";
-const initialTab = window.location.hash.replace("#", "");
+
+const initialHash = HASH_ALIASES[window.location.hash.replace("#", "")] ?? window.location.hash.replace("#", "");
 const state = {
-  tab: TABS.includes(initialTab) ? initialTab : "live",
+  section: initialHash === "play" ? "play" : "scores",
+  tab: SCORES_TABS.includes(initialHash) ? initialHash : "live",
   competition: storedCompetition(),
   fixtureView: "results",
-  goldenBootSort: "goals",
+  statsSort: "goals",
+  isMobile: window.matchMedia("(max-width: 760px)").matches,
   paperrun: {
     date: todayPaperRunDate(),
     day: null,
@@ -70,7 +74,7 @@ let pollTimer = null;
 let lastSignature = "";
 let lastFetchAt = 0;
 
-const SHELL_IDS = ["ticker", "hero", "tabs", "panel", "footer", "banner", "updated"];
+const SHELL_IDS = ["ticker", "layout", "footer", "updated", "sectionNav", "bottomNav"];
 const RELOAD_FLAG = "gs-shell-reloaded";
 
 start();
@@ -105,24 +109,21 @@ async function start() {
   // away, and polling lets it self-heal the moment the feed opens.
   setUpdatedLabel();
   window.setInterval(setUpdatedLabel, 1000);
-  wireTabs();
-  wireCompetitionSwitcher();
-  wirePanelControls();
-  wireMatchClicks();
+  wireNav();
+  wireLayoutControls();
+  wireViewportChange();
   setupMatchDetail(model, { drawer: elements.matchDrawer });
 
   if (model.hasData) {
     lastFetchAt = Date.now();
-    renderShell();
-    syncActiveTab();
-    renderPanel();
+    renderAll();
     const matchParam = new URLSearchParams(window.location.search).get("match");
     if (matchParam) {
       const match = model.matches.find((item) => String(item.id) === matchParam);
       if (match) openMatch(match);
     }
   } else {
-    renderPending(model);
+    renderAll();
   }
 
   startPolling();
@@ -143,9 +144,9 @@ function setUpdatedLabel() {
   elements.updated.textContent = label;
 }
 
-// Live refresh without a deploy: re-pull the model on an interval and update the
-// always-visible parts (plus the live tab) only when a score or status actually
-// changed. Polls faster while a game is live, slower when nothing is on.
+// Live refresh without a deploy: re-pull the model on an interval and re-render only
+// when a match signature (id/status/score/minute) actually changed. Polls faster
+// while a game is live, slower when nothing is on.
 function matchSignature(data) {
   return (data.matches ?? [])
     .map((item) =>
@@ -186,8 +187,8 @@ async function poll() {
         lastSignature = signature;
         model = fresh;
         setMatchModel(model);
-        renderShell();
-        if (state.tab !== "paperrun") renderPanel();
+        if (state.section !== "play") renderAll();
+        else elements.ticker.innerHTML = renderTicker(model);
       }
       setUpdatedLabel();
     }
@@ -197,78 +198,75 @@ async function poll() {
   scheduleNextPoll();
 }
 
-// The always-visible chrome: ticker, hero (with the competition switcher), footer,
-// and the knockout tab, which only exists for competitions that have knockout ties.
-function renderShell() {
-  elements.ticker.innerHTML = renderTicker(model);
-  elements.hero.innerHTML = renderHero(model);
-  elements.footer.innerHTML = renderFooter(model);
-  const knockoutTab = elements.tabs.querySelector('[data-tab="knockout"]');
-  if (knockoutTab) knockoutTab.hidden = knockoutMatches(model).length === 0;
+// -- Rendering -----------------------------------------------------------------
+
+function renderAll() {
+  syncNav();
+  elements.ticker.innerHTML = model.hasData
+    ? renderTicker(model)
+    : `<div class="ticker__track" style="animation:none;"><span class="ticker__item ticker__item--idle">Live feed not available yet.</span></div>`;
+  elements.footer.innerHTML = model.hasData
+    ? renderFooter(model)
+    : `<p>Data source: ${model.source ?? "pending"} · Squad Goals is a Goon Squad production.</p>`;
+  renderLayout();
 }
 
-async function switchCompetition(code) {
-  if (!COMPETITIONS[code] || code === state.competition) return;
-  state.competition = code;
-  try {
-    window.localStorage.setItem(COMPETITION_STORAGE_KEY, code);
-  } catch {
-    // storage may be blocked; the switch still applies for this visit
-  }
-  metric("count", "competition_switch", 1, { tags: { competition: code } });
-  elements.panel.innerHTML = `<p class="panel__note">Loading ${COMPETITIONS[code].name}…</p>`;
-
-  const fresh = await loadModel(code);
-  if (state.competition !== code) return; // switched again while loading
-  model = fresh;
-  setMatchModel(model);
-  lastFetchAt = Date.now();
-  lastSignature = matchSignature(model);
-  renderShell();
-  if (!model.hasData) {
-    renderPending(model);
+function renderLayout() {
+  if (state.section === "play") {
+    elements.layout.className = "layout";
+    renderPaperRun();
     return;
   }
-  // A tab that makes no sense in the new competition falls back to the live view.
-  if (state.tab === "knockout" && knockoutMatches(model).length === 0) {
-    state.tab = "live";
-    window.history.replaceState(null, "", "#live");
-  }
-  syncActiveTab();
-  renderPanel();
-  setUpdatedLabel();
-}
+  destroyPaperRunMount();
 
-function wireCompetitionSwitcher() {
-  elements.hero.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-competition]");
-    if (button) switchCompetition(button.dataset.competition);
-  });
+  if (!model.hasData) {
+    elements.layout.className = "layout";
+    elements.layout.innerHTML = `
+      <div class="pending">
+        <p class="hero__eyebrow">${model.competition?.name ?? "Football"}</p>
+        <h1 class="hero__title">Waiting for the season</h1>
+        <p class="note">${model.error ?? "This competition has no published fixtures yet. It appears here as soon as the feed opens the season."}</p>
+        <div class="hero__meta">${renderCompetitionChips(state.competition)}</div>
+      </div>`;
+    return;
+  }
+
+  // A tab that makes no sense in this competition falls back to the live view.
+  if (state.tab === "knockout" && knockoutMatches(model).length === 0) state.tab = "live";
+
+  const panel = `
+    <div class="panelcol">
+      ${state.isMobile ? renderCompetitionChips(state.competition) : ""}
+      ${renderHero(model)}
+      ${renderScoresTabs(model, state.tab)}
+      ${renderPanel()}
+    </div>`;
+
+  if (state.isMobile) {
+    elements.layout.className = "layout";
+    elements.layout.innerHTML = panel;
+  } else {
+    elements.layout.className = "layout layout--scores";
+    elements.layout.innerHTML = `${renderCompetitionSidebar(state.competition)}${panel}${renderMiniTable(model)}`;
+  }
 }
 
 function renderPanel() {
-  if (state.tab !== "paperrun") destroyPaperRunMount();
-  const panel = elements.panel;
   switch (state.tab) {
     case "tables":
-      panel.innerHTML = renderTable(model);
-      break;
+      return renderTable(model);
     case "knockout":
-      panel.innerHTML = renderKnockout(model);
-      break;
+      return renderKnockout(model);
     case "fixtures":
-      panel.innerHTML = renderFixtures(model, state.fixtureView);
-      break;
-    case "goldenboot":
-      panel.innerHTML = renderGoldenBoot(model, state.goldenBootSort);
-      break;
-    case "paperrun":
-      renderPaperRun();
-      break;
+      return renderFixtures(model, state.fixtureView);
+    case "stats":
+      return renderStats(model, state.statsSort);
     default:
-      panel.innerHTML = renderLive(model);
+      return renderLive(model);
   }
 }
+
+// -- Paper Run section -----------------------------------------------------------
 
 function renderPaperRun() {
   const today = todayPaperRunDate();
@@ -278,11 +276,11 @@ function renderPaperRun() {
   }
   if (!state.paperrun.day && !state.paperrun.loading) loadPaperRun();
   if (!state.paperrun.day) {
-    elements.panel.innerHTML = `<p class="panel__note">Loading today's paper run...</p>`;
+    elements.layout.innerHTML = `<div class="panelcol"><p class="note">Loading today's paper run...</p></div>`;
     return;
   }
   destroyPaperRunMount();
-  elements.panel.innerHTML = renderPaperRunPanel(state.paperrun.day);
+  elements.layout.innerHTML = `<div class="panelcol" id="playPanel">${renderPaperRunPanel(state.paperrun.day)}</div>`;
   mountPaperRun();
 }
 
@@ -298,29 +296,29 @@ async function loadPaperRun() {
   } finally {
     state.paperrun.loading = false;
   }
-  if (state.tab === "paperrun") renderPanel();
+  if (state.section === "play") renderLayout();
 }
 
 function mountPaperRun() {
   const day = state.paperrun.day;
-  if (!day) return;
+  const host = document.getElementById("playPanel");
+  if (!day || !host) return;
   // Mount even when locked so the canvas draws the static done-state street
   // instead of an undrawn black void.
   if (!day.result) metric("count", "paperrun_shown", 1);
-  state.paperrun.mount = mountPaperRunGame(elements.panel, day, {
-    onTick: (snap) => updatePaperRunHud(elements.panel, snap),
+  state.paperrun.mount = mountPaperRunGame(host, day, {
+    onTick: (snap) => updatePaperRunHud(host, snap),
     onStart: () => metric("count", "paperrun_started", 1),
     onUnavailable: () => {
-      const status = elements.panel.querySelector("[data-run-status]");
+      const status = host.querySelector("[data-run-status]");
       if (status) status.innerHTML = `<strong>Game unavailable</strong><span>This browser cannot start the canvas game.</span>`;
     },
     onComplete: async (result) => {
       const name = displayName();
-      const full = { ...result, name };
       metric("count", "paperrun_completed", 1, {
         tags: { score: String(result.score), deliveries: String(result.deliveries), finished: String(result.finished) },
       });
-      await savePaperRun(day, full);
+      await savePaperRun(day, { ...result, name });
     },
   });
 }
@@ -337,7 +335,7 @@ async function savePaperRun(day, result) {
     localOnly: submitted.localOnly,
     serverAvailable: submitted.localOnly ? day.serverAvailable : true,
   };
-  renderPanel();
+  if (state.section === "play") renderLayout();
 }
 
 function destroyPaperRunMount() {
@@ -346,44 +344,88 @@ function destroyPaperRunMount() {
   state.paperrun.mount = null;
 }
 
-function syncActiveTab() {
-  elements.tabs.querySelectorAll("[data-tab]").forEach((tab) => {
-    const active = tab.dataset.tab === state.tab;
-    tab.classList.toggle("is-active", active);
-    tab.setAttribute("aria-selected", active ? "true" : "false");
+// -- Navigation & controls -----------------------------------------------------------
+
+function syncNav() {
+  [elements.sectionNav, elements.bottomNav].forEach((nav) => {
+    nav.querySelectorAll("[data-section-nav]").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.sectionNav === state.section);
+    });
   });
 }
 
-function wireTabs() {
-  elements.tabs.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-tab]");
-    if (!button) return;
-    if (state.tab === "paperrun" && button.dataset.tab !== "paperrun") destroyPaperRunMount();
-    state.tab = button.dataset.tab;
-    window.history.replaceState(null, "", `#${state.tab}`);
-    metric("count", "tab_view", 1, { tags: { tab: state.tab } });
-    syncActiveTab();
-    renderPanel();
+function setSection(section) {
+  if (state.section === section) return;
+  state.section = section;
+  window.history.replaceState(null, "", `#${section === "play" ? "play" : state.tab}`);
+  metric("count", "section_view", 1, { tags: { section } });
+  renderAll();
+}
+
+function setTab(tab) {
+  state.section = "scores";
+  state.tab = tab;
+  window.history.replaceState(null, "", `#${tab}`);
+  metric("count", "tab_view", 1, { tags: { tab } });
+  renderAll();
+}
+
+function wireNav() {
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-section-nav]");
+    if (button && !button.disabled) setSection(button.dataset.sectionNav);
   });
 }
 
-function wirePanelControls() {
-  elements.panel.addEventListener("click", (event) => {
+async function switchCompetition(code) {
+  if (!COMPETITIONS[code] || code === state.competition) return;
+  state.competition = code;
+  try {
+    window.localStorage.setItem(COMPETITION_STORAGE_KEY, code);
+  } catch {
+    // storage may be blocked; the switch still applies for this visit
+  }
+  metric("count", "competition_switch", 1, { tags: { competition: code } });
+
+  const fresh = await loadModel(code);
+  if (state.competition !== code) return; // switched again while loading
+  model = fresh;
+  setMatchModel(model);
+  if (model.hasData) {
+    lastFetchAt = Date.now();
+    lastSignature = matchSignature(model);
+  }
+  renderAll();
+  setUpdatedLabel();
+}
+
+function wireLayoutControls() {
+  elements.layout.addEventListener("click", (event) => {
+    const comp = event.target.closest("[data-competition]");
+    if (comp && !comp.disabled) {
+      switchCompetition(comp.dataset.competition);
+      return;
+    }
+    const tab = event.target.closest("[data-tab]");
+    if (tab) {
+      setTab(tab.dataset.tab);
+      return;
+    }
     const fixtureViewButton = event.target.closest("[data-fixture-view]");
     if (fixtureViewButton) {
       state.fixtureView = fixtureViewButton.dataset.fixtureView;
-      renderPanel();
+      renderLayout();
       return;
     }
     const gbSortButton = event.target.closest("[data-gb-sort]");
     if (gbSortButton) {
-      state.goldenBootSort = gbSortButton.dataset.gbSort;
-      renderPanel();
+      state.statsSort = gbSortButton.dataset.gbSort;
+      renderLayout();
       return;
     }
     const shareButton = event.target.closest("[data-run-share-button]");
     if (shareButton) {
-      const text = elements.panel.querySelector("[data-run-share]")?.value ?? "";
+      const text = elements.layout.querySelector("[data-run-share]")?.value ?? "";
       metric("count", "paperrun_share_clicked", 1);
       sharePaperRun(text).then((status) => {
         shareButton.textContent = status === "shared" ? "Shared" : status === "copied" ? "Copied" : "Copy unavailable";
@@ -394,47 +436,41 @@ function wirePanelControls() {
     if (saveButton) {
       const day = state.paperrun.day;
       if (!day?.result) return;
-      const input = elements.panel.querySelector("[data-run-name]");
+      const input = elements.layout.querySelector("[data-run-name]");
       const name = rememberName(input?.value || "") || day.result.name;
       saveButton.disabled = true;
       savePaperRun(day, { ...day.result, name });
+      return;
     }
-  });
-}
-
-function wireMatchClicks() {
-  const open = (row) => {
-    const id = row.getAttribute("data-match-id");
-    if (!id) return;
-    const match = model.matches.find((item) => String(item.id) === id);
-    if (match) openMatch(match);
-  };
-  elements.panel.addEventListener("click", (event) => {
     if (event.target.closest("[data-map-link]")) return;
     const row = event.target.closest("[data-match-id]");
-    if (row) open(row);
+    if (row) openMatchRow(row);
   });
-  elements.panel.addEventListener("keydown", (event) => {
+  elements.layout.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     const row = event.target.closest("[data-match-id]");
     if (row) {
       event.preventDefault();
-      open(row);
+      openMatchRow(row);
     }
   });
 }
 
-function renderPending(data) {
-  elements.updated.textContent = "waiting for data";
-  elements.ticker.innerHTML = `<div class="ticker__track"><span class="ticker__item ticker__item--idle">Live feed not available yet.</span></div>`;
-  elements.hero.innerHTML = `
-    <div class="hero__head">
-      <div><p class="hero__eyebrow">${data.competition?.name ?? "Football"}</p><h1 class="hero__title">Waiting for the season</h1></div>
-      <div class="hero__meta">${renderCompetitionSwitcher(data.competition?.code)}</div>
-    </div>
-    <p class="panel__note">${data.error ?? "This competition has no published fixtures yet. It appears here as soon as the feed opens the season."}</p>`;
-  elements.panel.innerHTML = `<p class="panel__note">The table, fixtures and scorer board appear once the feed publishes results.</p>`;
-  elements.footer.innerHTML = `<p class="footer__src">Data source: ${data.source ?? "pending"}.</p>`;
+function openMatchRow(row) {
+  const id = row.getAttribute("data-match-id");
+  if (!id) return;
+  const match = model.matches.find((item) => String(item.id) === id);
+  if (match) openMatch(match);
+}
+
+// Desktop and mobile render different layouts (sidebar + aside vs chip row +
+// bottom nav), so a viewport crossing re-renders rather than just reflowing.
+function wireViewportChange() {
+  const mq = window.matchMedia("(max-width: 760px)");
+  mq.addEventListener("change", () => {
+    state.isMobile = mq.matches;
+    renderAll();
+  });
 }
 
 // Telemetry helpers. Guarded so instrumentation never throws and a blocked Sentry

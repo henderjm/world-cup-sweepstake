@@ -3,25 +3,25 @@ import test from "node:test";
 
 import { renderFixtures } from "../src/views.js";
 
-test("fixtures render the match city as a Google Maps link", () => {
+test("fixtures render day sections with both teams and kickoff time", () => {
   const html = renderFixtures({
     matches: [
       {
         id: 99,
-        utcDate: "2026-06-11T19:00:00Z",
+        utcDate: "2026-08-22T14:00:00Z",
         status: "TIMED",
-        stage: "GROUP_STAGE",
-        group: "GROUP_A",
-        homeTeam: "Mexico",
-        awayTeam: "South Africa",
+        stage: "REGULAR_SEASON",
+        group: null,
+        matchday: 1,
+        homeTeam: "Arsenal",
+        awayTeam: "Coventry City",
         score: { home: null, away: null },
-        city: "Mexico City",
-        mapUrl: "https://www.google.com/maps/search/?api=1&query=Estadio%20Azteca%20Mexico%20City",
       },
     ],
   }, "upcoming");
 
-  assert.match(html, /data-map-link/);
-  assert.match(html, /Mexico City/);
-  assert.match(html, /https:\/\/www\.google\.com\/maps\/search\/\?api=1&amp;query=Estadio%20Azteca%20Mexico%20City/);
+  assert.match(html, /fxday/);
+  assert.match(html, /Arsenal/);
+  assert.match(html, /Coventry City/);
+  assert.match(html, /data-match-id="99"/);
 });
