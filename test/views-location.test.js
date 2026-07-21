@@ -19,7 +19,7 @@ test("fixtures render the match city as a Google Maps link", () => {
         mapUrl: "https://www.google.com/maps/search/?api=1&query=Estadio%20Azteca%20Mexico%20City",
       },
     ],
-  }, "all", "upcoming");
+  }, "upcoming");
 
   assert.match(html, /data-map-link/);
   assert.match(html, /Mexico City/);

@@ -6,7 +6,7 @@
     <title>GS Score</title>
     <meta
       name="description"
-      content="The group's World Cup hub: live scores, group tables, knockout bracket and a Monte Carlo projection of who is on for the sweepstake prize money."
+      content="Premier League live scores, league table, fixtures and top scorers, updated match by match."
     />
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
@@ -26,12 +26,11 @@
           <span class="brand__mark">⚽</span>
           <div>
             <strong>GS Score</strong>
-            <span class="brand__sub">16 entrants · €160 pot · live</span>
+            <span class="brand__sub">Premier League · live</span>
           </div>
         </div>
         <div class="topbar__right">
           <span class="updated">Updated <time id="updated">…</time></span>
-          <button class="btn" id="h2hOpen" type="button">Head to head</button>
         </div>
       </header>
 
@@ -40,14 +39,11 @@
       <p class="banner" id="banner" role="status" hidden></p>
 
       <main>
-        <section class="hero" id="hero" aria-label="Sweepstake race"></section>
+        <section class="hero" id="hero" aria-label="Competition overview"></section>
 
         <nav class="tabs" id="tabs" aria-label="Sections">
           <button class="tab is-active" data-tab="live" aria-selected="true" type="button">Live &amp; today</button>
-          <button class="tab" data-tab="leaderboard" aria-selected="false" type="button">Leaderboard</button>
-          <button class="tab" data-tab="tables" aria-selected="false" type="button">Group tables</button>
-          <button class="tab" data-tab="bracket" aria-selected="false" type="button">Knockout</button>
-          <button class="tab" data-tab="whatif" aria-selected="false" type="button">What-if</button>
+          <button class="tab" data-tab="tables" aria-selected="false" type="button">Table</button>
           <button class="tab" data-tab="fixtures" aria-selected="false" type="button">Fixtures</button>
           <button class="tab" data-tab="goldenboot" aria-selected="false" type="button">Golden Boot</button>
           <button class="tab" data-tab="paperrun" aria-selected="false" type="button">Paper Run</button>
@@ -58,8 +54,6 @@
 
       <footer class="footer" id="footer"></footer>
     </div>
-
-    <div class="modal" id="h2hModal" hidden></div>
 
     <div class="mdrawer" id="matchDrawer" hidden>
       <aside class="mdrawer__panel" role="dialog" aria-modal="true" aria-label="Match detail"></aside>

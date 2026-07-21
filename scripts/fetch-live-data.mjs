@@ -5,7 +5,8 @@ import { mapMatchDetail } from "../src/mapDetail.js";
 import { aggregateScorers } from "../src/scorers.js";
 
 const token = process.env.FOOTBALL_DATA_TOKEN;
-const competition = process.env.FOOTBALL_DATA_COMPETITION ?? "WC";
+// Season is football-data's starting year: 2026 = the 2026-27 season.
+const competition = process.env.FOOTBALL_DATA_COMPETITION ?? "PL";
 const season = process.env.FOOTBALL_DATA_SEASON ?? "2026";
 const dataDir = new URL("../data/", import.meta.url);
 const matchesDir = new URL("../data/matches/", import.meta.url);
@@ -23,9 +24,12 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const DETAIL_THROTTLE_MS = 6500;
 const MAX_RATELIMIT_RETRIES = 4;
 
+// Both calls pin the season: an unpinned /standings returns football-data's "current
+// season", which between seasons is still last year's final table and silently
+// disagrees with the season-pinned fixtures.
 const [matchesPayload, standingsPayload] = await Promise.all([
   fetchFootballData(`/v4/competitions/${competition}/matches?season=${season}`),
-  fetchFootballData(`/v4/competitions/${competition}/standings`),
+  fetchFootballData(`/v4/competitions/${competition}/standings?season=${season}`),
 ]);
 
 await mkdir(dataDir, { recursive: true });

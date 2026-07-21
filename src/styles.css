@@ -1083,9 +1083,47 @@ button {
 }
 
 .grp--safe .grp__pos { color: var(--up); }
+.grp--safe { box-shadow: inset 3px 0 0 var(--up); }
 .grp--edge .grp__pos { color: var(--gold); }
-.grp--out { background: rgb(255 107 107 / 0.08); }
+.grp--edge { box-shadow: inset 3px 0 0 var(--gold); }
+.grp--out { background: rgb(255 107 107 / 0.08); box-shadow: inset 3px 0 0 var(--clay); }
 .grp--out .grp__pos { color: var(--clay); }
+
+/* A flat league table wants one wide card, not the group-card grid. */
+.grp-grid--league {
+  grid-template-columns: minmax(0, 720px);
+  justify-content: center;
+}
+
+.grp__num--wide {
+  color: var(--faint);
+}
+
+@media (max-width: 560px) {
+  .grp--league .grp__num--wide {
+    display: none;
+  }
+}
+
+/* Zone legend swatches under the table. */
+.legend {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  vertical-align: baseline;
+}
+.legend--safe { background: var(--up); }
+.legend--edge { background: var(--gold); }
+.legend--out { background: var(--clay); }
+
+/* Club crests (feed-served images) sized to sit where the flag emoji used to. */
+img.crest {
+  width: 1.15em;
+  height: 1.15em;
+  object-fit: contain;
+  vertical-align: -0.18em;
+}
 
 /* Knockout bracket: two halves of the draw feeding a centre final, with an SVG overlay for
    the connector lines. Each column distributes its cards with space-around so every match
