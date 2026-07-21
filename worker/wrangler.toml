@@ -47,14 +47,8 @@ binding = "DB"
 database_name = "squad-goals"
 database_id = "69070b1b-d4f5-4c2d-9e0d-cf64dd44ab39"
 
-# Banter storage (shared per-match reactions + one-line messages). To switch it on:
-#   1. npx wrangler kv namespace create BANTER
-#   2. paste the printed id below and uncomment this block
-#   3. npx wrangler deploy
-# Until then the Worker returns 503 for /banter and the site hides the Banter tab.
-[[kv_namespaces]]
-binding = "BANTER"
-id = "b615f8b1d77c47b9a01219387908d0c6"
+# Banter lives in D1 (banter_messages, banter_reactions in schema.sql); its old KV
+# namespace (b615f8b1d77c47b9a01219387908d0c6) is unused and can be deleted.
 
 # AI analysis storage (required for the feature): the cron writes generated analyses
 # here and GET /analysis/:id is a pure read of it. Created with:

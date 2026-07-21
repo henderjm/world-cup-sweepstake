@@ -59,7 +59,7 @@ Live updates without a deploy: `app.js` re-runs `loadModel()` on a timer (20s wh
 - `format.js` pure formatters and live/finished status helpers (no DOM).
 - `interactions.js` `confettiBurst` (currently unwired; kept for celebration moments).
 - `matchDetail.js` match drawer: right slide-in with score header, then AI analysis, timeline (goals/cards/subs merged in match order), line-ups and banter in one scroll; fetches per-match detail on open (Worker `/match/:id` or static `data/<comp>/matches/<id>.json`).
-- `banter.js` shared per-match reactions and messages (Worker KV backed).
+- `banter.js` shared per-match reactions and messages, D1-backed. Reading is public; posting requires a signed-in session (names come from the account, no client-supplied identity). POST responses are strongly consistent, so the optimistic UI reconciles against them without flicker; an `inflight` counter drops poll responses that would race a pending post.
 - `paperRun*.js` the Paper Run daily mini-game (model, API, view, game loop); rendered as the Play section.
 - `locations.js` venue → city/map-link lookup; `mapDetail.js` match-detail mapping.
 

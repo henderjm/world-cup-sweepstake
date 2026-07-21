@@ -112,6 +112,9 @@ Until step 4 the You section shows sign-in as not configured and everything else
 works. Sessions are opaque bearer tokens (only their hash is stored); Google is
 used solely to verify identity at sign-in.
 
+Match banter (reactions and messages in the match drawer) also lives in D1:
+anyone can read, posting requires signing in, and names come from the account.
+
 ## History
 
 This app started life as a World Cup 2026 sweepstake hub (entrants, a prize pot and

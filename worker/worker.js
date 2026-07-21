@@ -52,11 +52,9 @@ const ALLOWED_ORIGINS = new Set([
   "http://127.0.0.1:8731",
 ]);
 
-// Banter: the allowed reaction set and how long reactions/messages live in KV. A fixed
-// allowlist stops the store being used to stash arbitrary strings, and the TTL means
-// banter self-cleans after the tournament with no maintenance.
+// Banter: the allowed reaction set. A fixed allowlist stops the store being used
+// to stash arbitrary strings.
 const REACTIONS = ["🔥", "😂", "😱", "🧂", "🐐", "💀"];
-const BANTER_TTL = 60 * 24 * 60 * 60; // 60 days
 const PAPER_RUN_TTL = 90 * 24 * 60 * 60; // 90 days
 
 // Best-effort stale fallback held in the isolate's memory, one entry per competition.
@@ -148,9 +146,10 @@ export default {
     const competitions = parseCompetitions(env);
     if (!competitions.length) return json({ error: "service not configured" }, 500, cors);
 
-    // Banter: shared per-match reactions and one-line messages in KV. GET reads the
-    // current state, POST toggles a reaction or appends a message. The match id is
-    // validated against the real fixtures so junk ids cannot fill storage.
+    // Banter: shared per-match reactions and one-line messages in D1. GET reads the
+    // current state (public); POST toggles a reaction or appends a message and
+    // requires a signed-in session. The match id is validated against the real
+    // fixtures so junk ids cannot fill storage.
     const banterRoute = url.pathname.match(/^\/banter\/(\d{1,12})$/);
     if (banterRoute) {
       return handleBanter(request, env, Number(banterRoute[1]), competitions, token, cors);
@@ -602,83 +601,109 @@ async function sha256Hex(value) {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// -- Banter (KV-backed) ------------------------------------------------------
-// Reactions are stored one key per user per match (react:<id>:<uid>, the emoji set in
-// the key's metadata), so each person only ever writes their own key and there is no
-// read-modify-write race. Messages are append-only keys (msg:<id>:<ts>-<rand>).
+// -- Banter (D1-backed) ------------------------------------------------------
+// Comments are an append-only log per match (banter_messages); reactions are one
+// row per user x match x emoji (banter_reactions), rolled up to counts on read.
+// D1 is strongly consistent, so the state a POST returns always includes the
+// caller's own write — the old KV version's flickering reactions and vanishing
+// messages came from list() lagging behind puts. Reads are public; posting
+// requires a signed-in account, which also makes names unspoofable.
+
+const MAX_BANTER_MESSAGES_PER_MATCH = 500;
 
 async function handleBanter(request, env, id, competitions, token, cors) {
-  if (!env.BANTER) return json({ error: "banter not configured" }, 503, cors);
+  if (!env.DB) return json({ error: "banter not configured" }, 503, cors);
   if (!(await matchKnown(competitions, id, token))) {
     return json({ error: "unknown match" }, 404, cors);
   }
 
   if (request.method === "GET") {
-    const uid = cleanUid(new URL(request.url).searchParams.get("uid"));
-    return json(await readBanter(env, id, uid), 200, cors);
+    const user = await sessionUser(request, env);
+    return json(await readBanter(env, id, user?.id ?? null), 200, cors);
   }
   if (request.method === "POST") {
+    const user = await sessionUser(request, env);
+    if (!user) return json({ error: "sign in to join the banter" }, 401, cors);
     let body;
     try {
       body = await request.json();
     } catch {
       return json({ error: "bad body" }, 400, cors);
     }
-    const uid = cleanUid(body.uid);
-    if (!uid) return json({ error: "missing uid" }, 400, cors);
     if (body.action === "react") {
       if (!REACTIONS.includes(body.emoji)) return json({ error: "bad emoji" }, 400, cors);
-      await toggleReaction(env, id, uid, body.emoji);
+      // Toggle: delete wins if the row exists, otherwise insert. Two statements,
+      // but the primary key makes a lost race harmless (idempotent either way).
+      const deleted = await env.DB.prepare(
+        "DELETE FROM banter_reactions WHERE match_id = ?1 AND user_id = ?2 AND emoji = ?3",
+      )
+        .bind(id, user.id, body.emoji)
+        .run();
+      if ((deleted.meta?.changes ?? 0) === 0) {
+        await env.DB.prepare(
+          "INSERT OR IGNORE INTO banter_reactions (match_id, user_id, emoji) VALUES (?1, ?2, ?3)",
+        )
+          .bind(id, user.id, body.emoji)
+          .run();
+      }
     } else if (body.action === "message") {
       const text = cleanText(body.text);
       if (!text) return json({ error: "empty message" }, 400, cors);
-      await addMessage(env, id, uid, cleanName(body.name), text);
+      const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM banter_messages WHERE match_id = ?1")
+        .bind(id)
+        .first();
+      if ((count?.n ?? 0) >= MAX_BANTER_MESSAGES_PER_MATCH) {
+        return json({ error: "banter is full for this match" }, 400, cors);
+      }
+      await env.DB.prepare("INSERT INTO banter_messages (match_id, user_id, text) VALUES (?1, ?2, ?3)")
+        .bind(id, user.id, text)
+        .run();
     } else {
       return json({ error: "bad action" }, 400, cors);
     }
-    return json(await readBanter(env, id, uid), 200, cors);
+    return json(await readBanter(env, id, user.id), 200, cors);
   }
   return json({ error: "method not allowed" }, 405, cors);
 }
 
-async function readBanter(env, id, uid) {
-  const [reacts, msgs] = await Promise.all([
-    env.BANTER.list({ prefix: `react:${id}:` }),
-    env.BANTER.list({ prefix: `msg:${id}:` }),
+async function readBanter(env, id, userId) {
+  const [counts, mine, msgs] = await Promise.all([
+    env.DB.prepare("SELECT emoji, COUNT(*) AS n FROM banter_reactions WHERE match_id = ?1 GROUP BY emoji")
+      .bind(id)
+      .all(),
+    userId
+      ? env.DB.prepare("SELECT emoji FROM banter_reactions WHERE match_id = ?1 AND user_id = ?2")
+          .bind(id, userId)
+          .all()
+      : Promise.resolve({ results: [] }),
+    env.DB.prepare(
+      `SELECT m.id, m.text, m.created_at, u.name, u.email FROM banter_messages m
+       JOIN users u ON u.id = m.user_id
+       WHERE m.match_id = ?1 ORDER BY m.id DESC LIMIT 50`,
+    )
+      .bind(id)
+      .all(),
   ]);
-  const counts = {};
-  let mine = [];
-  for (const key of reacts.keys) {
-    const emojis = key.metadata?.e ?? [];
-    for (const emoji of emojis) counts[emoji] = (counts[emoji] ?? 0) + 1;
-    if (key.name === `react:${id}:${uid}`) mine = emojis;
-  }
-  const messages = msgs.keys
-    .map((key) => key.metadata)
-    .filter((meta) => meta && meta.text)
-    .sort((a, b) => a.ts - b.ts)
-    .slice(-50)
-    .map((meta) => ({ name: meta.name, text: meta.text, ts: meta.ts }));
-  return { reactions: { counts, mine }, messages };
-}
 
-async function toggleReaction(env, id, uid, emoji) {
-  const key = `react:${id}:${uid}`;
-  const current = await env.BANTER.getWithMetadata(key);
-  const set = new Set(current.metadata?.e ?? []);
-  if (set.has(emoji)) set.delete(emoji);
-  else set.add(emoji);
-  if (set.size === 0) {
-    await env.BANTER.delete(key);
-  } else {
-    await env.BANTER.put(key, "", { metadata: { e: [...set] }, expirationTtl: BANTER_TTL });
-  }
-}
-
-async function addMessage(env, id, uid, name, text) {
-  const ts = Date.now();
-  const key = `msg:${id}:${ts}-${Math.random().toString(36).slice(2, 8)}`;
-  await env.BANTER.put(key, "", { metadata: { name, text, ts, uid }, expirationTtl: BANTER_TTL });
+  const countMap = {};
+  (counts.results ?? []).forEach((row) => {
+    countMap[row.emoji] = row.n;
+  });
+  return {
+    reactions: {
+      counts: countMap,
+      mine: (mine.results ?? []).map((row) => row.emoji),
+    },
+    messages: (msgs.results ?? [])
+      .reverse()
+      .map((row) => ({
+        id: row.id,
+        name: row.name || String(row.email ?? "").split("@")[0] || "Someone",
+        text: row.text,
+        ts: row.created_at,
+      })),
+    signedIn: Boolean(userId),
+  };
 }
 
 // -- Daily Paper Run (KV-backed) --------------------------------------------
@@ -802,11 +827,6 @@ function paperRunBoardKey(date) {
 
 function cleanUid(value) {
   return String(value ?? "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
-}
-
-function cleanName(value) {
-  const name = String(value ?? "").replace(/[<>]/g, "").trim().slice(0, 24);
-  return name || "Someone";
 }
 
 function cleanLabel(value, maxLength) {

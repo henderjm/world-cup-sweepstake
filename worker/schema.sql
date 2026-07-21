@@ -32,3 +32,22 @@ CREATE TABLE IF NOT EXISTS follows (
   PRIMARY KEY (user_id, competition, team)
 );
 CREATE INDEX IF NOT EXISTS follows_team ON follows(competition, team);
+
+-- Banter: an append-only comment log per match, and one row per user x match x
+-- emoji rolled up to counts on read. Signed-in users only; names come from users.
+CREATE TABLE IF NOT EXISTS banter_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  match_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS banter_messages_match ON banter_messages(match_id, id);
+
+CREATE TABLE IF NOT EXISTS banter_reactions (
+  match_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  emoji TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (match_id, user_id, emoji)
+);

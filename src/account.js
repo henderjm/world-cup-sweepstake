@@ -29,6 +29,11 @@ export function isSignedIn() {
   return Boolean(session && account);
 }
 
+// Authorization header for other modules (banter) calling session-aware routes.
+export function authHeaders() {
+  return session ? { Authorization: `Bearer ${session}` } : {};
+}
+
 export function onAccountChange(fn) {
   listeners.add(fn);
   return () => listeners.delete(fn);
