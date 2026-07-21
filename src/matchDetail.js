@@ -79,7 +79,9 @@ async function loadDetail(match) {
   }
   const sources = [];
   if (DATA_API) sources.push(`${DATA_API}/match/${match.id}`);
-  sources.push(`./data/matches/${match.id}.json?cache=${Date.now()}`);
+  sources.push(
+    `./data/${encodeURIComponent(model.competition.code)}/matches/${match.id}.json?cache=${Date.now()}`,
+  );
 
   for (const src of sources) {
     try {

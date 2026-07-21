@@ -39,16 +39,15 @@ jobs:
       - name: Restore accumulated match detail
         uses: actions/cache@v4
         with:
-          path: data/matches
-          key: pl-2026-match-detail-${{ github.run_id }}-${{ github.run_attempt }}
+          path: data/*/matches
+          key: match-detail-2026-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            pl-2026-match-detail-
-      - name: Fetch live Premier League data
+            match-detail-2026-
+      - name: Fetch live competition data
         run: npm run fetch:live
         env:
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
-          FOOTBALL_DATA_COMPETITION: PL
-          FOOTBALL_DATA_SEASON: "2026"
+          FOOTBALL_DATA_COMPETITIONS: "PL:2026,CL:2026"
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site
