@@ -89,6 +89,32 @@ hides the card. The prompt is built server-side from feed data only, so the endp
 cannot be used as a general LLM proxy. The model defaults to `claude-sonnet-5`
 (`ANTHROPIC_MODEL` in `wrangler.toml`).
 
+## Accounts (Google sign-in, optional)
+
+The You section lets visitors sign in with Google, follow clubs, and set
+notification preferences (delivered by push in a later phase). Users, sessions and
+follows live in Cloudflare D1 next to the Worker. To enable it:
+
+1. `cd worker`
+2. `npx wrangler d1 create squad-goals`, paste the printed id into the
+   `[[d1_databases]]` block in `wrangler.toml`, then
+   `npx wrangler d1 execute squad-goals --remote --file=schema.sql`
+3. In Google Cloud Console → APIs & Services → Credentials, create an
+   **OAuth client ID** of type Web application. Add your site origin
+   (e.g. `https://<user>.github.io`) and `http://localhost:8731` as
+   **Authorized JavaScript origins** (no redirect URIs needed).
+4. Put the client id in **both** places: `GOOGLE_CLIENT_ID` in
+   `worker/wrangler.toml` and the `GOOGLE_CLIENT_ID` constant in
+   `src/account.js`.
+5. `npx wrangler deploy` and push the site.
+
+Until step 4 the You section shows sign-in as not configured and everything else
+works. Sessions are opaque bearer tokens (only their hash is stored); Google is
+used solely to verify identity at sign-in.
+
+Match banter (reactions and messages in the match drawer) also lives in D1:
+anyone can read, posting requires signing in, and names come from the account.
+
 ## History
 
 This app started life as a World Cup 2026 sweepstake hub (entrants, a prize pot and

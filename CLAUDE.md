@@ -41,6 +41,8 @@ Live updates without a deploy: `app.js` re-runs `loadModel()` on a timer (20s wh
 
 - **AI match analysis is cron-generated in the Worker, never on user visits.** A one-minute cron trigger (`[triggers]` in wrangler.toml, `scheduled` handler in worker/worker.js) checks the feed and writes one Claude analysis per live match, plus a full-time read within 48 hours of the whistle, into the `ANALYSIS_CACHE` KV under `analysis:latest:<id>`. `analysisCacheSignature` plus `analysisEventSignature` (red cards, from match detail) decide which ticks regenerate: goal, red card, penalty and status changes immediately, otherwise 10-minute clock buckets in normal play, 5-minute buckets in extra time, and penalty-score changes during a shootout. `GET /analysis/:id` is a pure KV read; the prompt is built server-side via the pure shared module `src/analysisPrompt.js` (league table context, zones, form), so browsers can never trigger an Anthropic call. The schema fields are `{ headline, match, context }`; bump `ANALYSIS_PROMPT_VERSION` when the prompt or shape changes meaningfully. Requires the `ANTHROPIC_API_KEY` secret and the `ANALYSIS_CACHE` KV binding; missing either means no analyses and `matchDetail.js` hides the card. Model comes from the `ANTHROPIC_MODEL` var (default `claude-sonnet-5`; overrides must support adaptive thinking and structured outputs). The Worker depends on `@anthropic-ai/sdk` (the repo's only npm dependency) and `wrangler.toml` needs `compatibility_flags = ["nodejs_compat"]` for it.
 
+- **Accounts are D1-backed opaque bearer sessions; Google is only the identity check.** `POST /auth/google` verifies a Google Identity Services ID token via Google's tokeninfo endpoint, then checks `aud`/`iss`/`email_verified` itself, upserts `users`, and returns a random session token whose SHA-256 (never the token) is stored in `sessions` (30-day TTL). The client keeps the token in localStorage (`gs-session`) and sends `Authorization: Bearer`; there are no cookies, so the cross-origin Pages↔Worker split just works. `GET /me`, `POST /follows/toggle` (competition+team, capped), `POST /prefs` (notification prefs stored now, delivered in Phase 3), `POST /auth/logout`. Missing `DB` binding or `GOOGLE_CLIENT_ID` → 501 and the You section explains itself instead of erroring. The Google client id is public config, set in TWO places: `GOOGLE_CLIENT_ID` in `wrangler.toml` and the constant in `src/account.js`; both empty ships the UI with sign-in dormant. Schema lives in `worker/schema.sql` (idempotent; applied with `wrangler d1 execute`).
+
 - **Scorer data is not in the live feed; the Golden Boot is aggregated at build time.** Goals and assists exist only in per-match detail (`data/<comp>/matches/<id>.json`). `scripts/fetch-live-data.mjs` tallies each competition's detail directory through the shared pure `aggregateScorers` (`src/scorers.js`) into `data/<comp>/scorers.json`, which the client loads separately from the live feed (`loadModel` fetches both in parallel; the Worker has no scorers endpoint). It refreshes on the 5-min Action cadence, not live. Each competition's tally scans only its own `data/<comp>/matches/` directory; changing a season means clearing that directory (and the Action's cache key, `match-detail-2026-`). General pattern: when the live feed lacks a datum that match detail carries, aggregate it at build time into its own static JSON and load it client-side in parallel.
 
 ## Module map (`src/`)
@@ -50,13 +52,14 @@ Live updates without a deploy: `app.js` re-runs `loadModel()` on a timer (20s wh
 - `domain.js` pure mapping/standings logic, team-name normalization, per-team performance/form.
 - `competitions.js` per-competition config (name, table zone bands) and `zoneFor`.
 - `badges.js` team badge registry (`registerTeams`, `badgeFor`, `abbrFor`); crest/TLA come from the feed.
+- `account.js` accounts client: GIS lazy-load, bearer session in localStorage, `/me` restore, follows + prefs API, account-change listeners. The `GOOGLE_CLIENT_ID` constant lives at its top.
 - `scorers.js` pure scorer aggregation (`aggregateScorers`, `compareByInvolvements`, `compareByGoals`); shared by the fetch script and the browser.
 - `analysisPrompt.js` pure AI-analysis prompt builder (system prompt, JSON schema, per-match payload with league context); imported by the Worker only, same cross-environment contract as `mapFootballDataMatches`.
 - `views.js` HTML-string renderers (ticker marquee, competitions sidebar/chips, hero, scores tab bar, live cards, match lines, league table, mini-table aside, knockout board, fixtures, player stats, footer).
 - `format.js` pure formatters and live/finished status helpers (no DOM).
 - `interactions.js` `confettiBurst` (currently unwired; kept for celebration moments).
 - `matchDetail.js` match drawer: right slide-in with score header, then AI analysis, timeline (goals/cards/subs merged in match order), line-ups and banter in one scroll; fetches per-match detail on open (Worker `/match/:id` or static `data/<comp>/matches/<id>.json`).
-- `banter.js` shared per-match reactions and messages (Worker KV backed).
+- `banter.js` shared per-match reactions and messages, D1-backed. Reading is public; posting requires a signed-in session (names come from the account, no client-supplied identity). POST responses are strongly consistent, so the optimistic UI reconciles against them without flicker; an `inflight` counter drops poll responses that would race a pending post.
 - `paperRun*.js` the Paper Run daily mini-game (model, API, view, game loop); rendered as the Play section.
 - `locations.js` venue → city/map-link lookup; `mapDetail.js` match-detail mapping.
 
@@ -75,6 +78,8 @@ When changing the deployed origins, keep `ALLOWED_ORIGINS` (worker CORS) and the
 
 1. ~~Phase 0: strip the sweepstake, single-competition PL tracker~~ (done)
 2. ~~Phase 1: multi-competition (namespaced data/routes, competition switcher, Champions League config + display-only knockout view)~~ (done)
-3. Phase 2: Google OAuth accounts on Cloudflare D1 (users, follows)
-4. Phase 3: Web Push notifications (service worker + VAPID from the Worker cron)
+3. ~~Phase 2: Google sign-in + follows + notification prefs on Cloudflare D1~~ (done; sign-in activates once `GOOGLE_CLIENT_ID` is set in wrangler.toml and src/account.js)
+4. Phase 3: Web Push notifications (service worker + VAPID from the Worker cron; targeting = `follows`, preferences = `users.prefs`)
 5. Phase 4: fantasy H2H draft league; Europa/Conference (needs football-data €49 tier)
+
+Considered and skipped: pre-season friendlies (football-data.org has no club friendlies on any tier; would need a second data source such as API-Football).

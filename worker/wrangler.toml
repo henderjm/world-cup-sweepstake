@@ -14,6 +14,10 @@ workers_dev = true
 # up-to-date checkout.
 [vars]
 FOOTBALL_DATA_COMPETITIONS = "PL:2026,CL:2026"
+# Google OAuth web client id (public, not a secret; the client secret is never
+# used — the GIS ID-token flow doesn't need it). Authorized JavaScript origins
+# must include the site origin and http://localhost:8731.
+GOOGLE_CLIENT_ID = "68606512741-6un71mt70pt688bkpcd7r86pjqjmt07l.apps.googleusercontent.com"
 # AI analysis model. Any override must support adaptive thinking + structured outputs.
 ANTHROPIC_MODEL = "claude-sonnet-5"
 
@@ -35,14 +39,16 @@ type = "ratelimit"
 namespace_id = "1001"
 simple = { limit = 200, period = 60 }
 
-# Banter storage (shared per-match reactions + one-line messages). To switch it on:
-#   1. npx wrangler kv namespace create BANTER
-#   2. paste the printed id below and uncomment this block
-#   3. npx wrangler deploy
-# Until then the Worker returns 503 for /banter and the site hides the Banter tab.
-[[kv_namespaces]]
-binding = "BANTER"
-id = "b615f8b1d77c47b9a01219387908d0c6"
+# Accounts (users, sessions, follows). Created with:
+#   npx wrangler d1 create squad-goals
+#   npx wrangler d1 execute squad-goals --remote --file=schema.sql
+[[d1_databases]]
+binding = "DB"
+database_name = "squad-goals"
+database_id = "69070b1b-d4f5-4c2d-9e0d-cf64dd44ab39"
+
+# Banter lives in D1 (banter_messages, banter_reactions in schema.sql); its old KV
+# namespace (b615f8b1d77c47b9a01219387908d0c6) is unused and can be deleted.
 
 # AI analysis storage (required for the feature): the cron writes generated analyses
 # here and GET /analysis/:id is a pure read of it. Created with:

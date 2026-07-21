@@ -672,7 +672,7 @@ button { font-family: inherit; cursor: pointer; }
   bottom: 0;
   z-index: 45;
   display: none;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   background: rgb(10 14 20 / 0.95);
   backdrop-filter: blur(12px);
   border-top: 1px solid rgb(255 255 255 / 0.08);
@@ -806,6 +806,87 @@ button { font-family: inherit; cursor: pointer; }
 .dz__meta b { color: var(--faint); font-weight: 700; text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.08em; margin-right: 5px; }
 
 .dz__loading { padding: 18px 0; font-size: 12px; color: var(--muted); }
+
+/* You (account) ----------------------------------------------------------------------------------------- */
+
+.you { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+.you--signin { max-width: 430px; margin: 9vh auto 0; text-align: center; align-items: center; gap: 0; }
+.you__mark { width: 46px; height: 46px; border-radius: 12px; font-size: 18px; }
+.you__title {
+  margin: 16px 0 8px;
+  font-size: 22px;
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
+}
+.you--signin .note { line-height: 1.55; }
+.you__gis { margin-top: 20px; display: flex; justify-content: center; min-height: 44px; }
+.you--signin .note--dim { margin-top: 14px; }
+
+.you__profile { display: flex; align-items: center; gap: 14px; padding: 16px; }
+.you__avatar { flex: none; width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }
+.you__avatar--initial {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 17px;
+}
+.you__id { display: flex; flex-direction: column; min-width: 0; }
+.you__id strong { font-size: 15px; font-weight: 800; }
+.you__id span { font-size: 12px; color: var(--muted); }
+
+.you__chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.you__chips .compchip { cursor: pointer; }
+
+.you__prefrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid rgb(255 255 255 / 0.05);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tgl {
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  border: none;
+  background: rgb(255 255 255 / 0.18);
+  position: relative;
+}
+.tgl.is-on { background: var(--accent); }
+.tgl__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: left 0.15s;
+}
+.tgl.is-on .tgl__knob { left: 20px; }
+
+.navbtn--auth {
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  padding: 7px 16px;
+}
+.navbtn--auth.is-avatar { width: 32px; height: 32px; padding: 0; justify-content: center; border-radius: 50%; background: var(--accent-soft); font-weight: 800; }
+.navbtn--auth img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+
+/* Banter additions (D1-era) ------------------------------------------------------------------------------ */
+
+.bn__note--signin { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bn-msg.is-pending { opacity: 0.55; }
+.bn-react[disabled] { opacity: 0.55; cursor: default; }
 
 /* Pending (no data yet) ------------------------------------------------------------------------------- */
 
