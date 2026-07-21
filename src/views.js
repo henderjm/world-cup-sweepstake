@@ -144,13 +144,6 @@ export function renderHero(model) {
     .filter(Boolean)
     .join("");
 
-  const switcher = Object.values(COMPETITIONS)
-    .map(
-      (comp) =>
-        `<button class="seg ${comp.code === model.competition.code ? "is-active" : ""}" data-competition="${comp.code}" type="button">${esc(comp.shortName)}</button>`,
-    )
-    .join("");
-
   return `
     <div class="hero__head">
       <div>
@@ -158,10 +151,22 @@ export function renderHero(model) {
         <h1 class="hero__title">${title}</h1>
       </div>
       <div class="hero__meta">
-        <div class="seg-group" data-control="competition">${switcher}</div>
+        ${renderCompetitionSwitcher(model.competition.code)}
         ${chips}
       </div>
     </div>`;
+}
+
+// Rendered inside the hero, and also on the pending screen so a competition whose
+// feed has nothing yet (a cup before its season opens) never traps the visitor.
+export function renderCompetitionSwitcher(activeCode) {
+  const buttons = Object.values(COMPETITIONS)
+    .map(
+      (comp) =>
+        `<button class="seg ${comp.code === activeCode ? "is-active" : ""}" data-competition="${comp.code}" type="button">${esc(comp.shortName)}</button>`,
+    )
+    .join("");
+  return `<div class="seg-group" data-control="competition">${buttons}</div>`;
 }
 
 function latestMatchday(matches) {

@@ -45,8 +45,15 @@ const LIVE = new Set(["IN_PLAY", "PAUSED", "LIVE", "EXTRA_TIME", "PENALTY_SHOOTO
 const FINAL = new Set(["FINISHED", "AWARDED"]);
 const AROUND_KICKOFF_MS = 90 * 60 * 1000;
 
+// One competition failing (e.g. a cup whose new season football-data has not opened
+// yet: every call 4xxs) must not kill the bake for the others. Its previously baked
+// files simply stay as they are.
 for (const comp of competitions) {
-  await bakeCompetition(comp, comp === competitions[0]);
+  try {
+    await bakeCompetition(comp, comp === competitions[0]);
+  } catch (error) {
+    console.warn(`${comp.code}: bake failed, keeping previous data (${error.message.slice(0, 120)})`);
+  }
 }
 
 async function bakeCompetition({ code, season }, isDefault) {
@@ -56,10 +63,15 @@ async function bakeCompetition({ code, season }, isDefault) {
 
   // Both calls pin the season: an unpinned /standings returns football-data's "current
   // season", which between seasons is still last year's final table and silently
-  // disagrees with the season-pinned fixtures.
+  // disagrees with the season-pinned fixtures. Standings are optional: a cup before
+  // its league phase has fixtures but no table yet (upstream 404s), and that must not
+  // fail the bake for every competition.
   const [matchesPayload, standingsPayload] = await Promise.all([
     fetchFootballData(`/v4/competitions/${code}/matches?season=${season}`),
-    fetchFootballData(`/v4/competitions/${code}/standings?season=${season}`),
+    fetchFootballData(`/v4/competitions/${code}/standings?season=${season}`).catch((error) => {
+      console.warn(`${code} standings unavailable (${error.message.split(":")[0]}); baking without a table`);
+      return { standings: [] };
+    }),
   ]);
 
   await mkdir(dataDir, { recursive: true });
