@@ -123,6 +123,26 @@ export default {
       return handlePaperRun(request, env, paperRunRoute[1], cors);
     }
 
+    // Accounts: Google sign-in, bearer sessions in D1, followed clubs and
+    // notification preferences. Everything degrades to a clear status code when
+    // the D1 binding or the Google client id is missing, so the site can ship
+    // the UI before the OAuth client exists.
+    if (url.pathname === "/auth/google" && request.method === "POST") {
+      return handleGoogleAuth(request, env, cors);
+    }
+    if (url.pathname === "/auth/logout" && request.method === "POST") {
+      return handleLogout(request, env, cors);
+    }
+    if (url.pathname === "/me" && request.method === "GET") {
+      return handleMe(request, env, cors);
+    }
+    if (url.pathname === "/follows/toggle" && request.method === "POST") {
+      return handleFollowToggle(request, env, cors);
+    }
+    if (url.pathname === "/prefs" && request.method === "POST") {
+      return handlePrefs(request, env, cors);
+    }
+
     const token = env.FOOTBALL_DATA_TOKEN;
     if (!token) return json({ error: "service not configured" }, 500, cors);
     const competitions = parseCompetitions(env);
@@ -366,6 +386,222 @@ async function tunnelToSentry(request, cors) {
   }
 }
 
+// -- Accounts (D1-backed) ------------------------------------------------------
+// Google Identity Services hands the browser an ID token (JWT). The Worker
+// verifies it against Google's tokeninfo endpoint (signature, expiry) and then
+// checks the audience and issuer itself, upserts the user, and issues an opaque
+// bearer session token. Only the token's SHA-256 is stored, so a database read
+// can never leak a usable credential. The client keeps the token in localStorage
+// and sends it as Authorization: Bearer.
+
+const SESSION_TTL_DAYS = 30;
+const MAX_FOLLOWS = 50;
+const GOOGLE_ISSUERS = new Set(["accounts.google.com", "https://accounts.google.com"]);
+
+async function handleGoogleAuth(request, env, cors) {
+  if (!env.DB) return json({ error: "accounts not configured" }, 501, cors);
+  if (!env.GOOGLE_CLIENT_ID) return json({ error: "sign-in not configured" }, 501, cors);
+
+  let credential;
+  try {
+    credential = String((await request.json())?.credential ?? "");
+  } catch {
+    return json({ error: "bad body" }, 400, cors);
+  }
+  if (!credential || credential.length > 4096) return json({ error: "bad credential" }, 400, cors);
+
+  // tokeninfo validates the JWT signature and expiry server-side at Google;
+  // audience and issuer are ours to check.
+  let info;
+  try {
+    const response = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`,
+    );
+    if (!response.ok) return json({ error: "invalid credential" }, 401, cors);
+    info = await response.json();
+  } catch {
+    return json({ error: "verifier unavailable" }, 502, cors);
+  }
+  if (
+    info.aud !== env.GOOGLE_CLIENT_ID ||
+    !GOOGLE_ISSUERS.has(info.iss) ||
+    !info.sub ||
+    info.email_verified !== "true"
+  ) {
+    return json({ error: "invalid credential" }, 401, cors);
+  }
+
+  try {
+    await env.DB.prepare(
+      `INSERT INTO users (google_sub, email, name, avatar) VALUES (?1, ?2, ?3, ?4)
+       ON CONFLICT(google_sub) DO UPDATE SET email = ?2, name = ?3, avatar = ?4`,
+    )
+      .bind(info.sub, info.email ?? "", info.name ?? null, info.picture ?? null)
+      .run();
+    const user = await env.DB.prepare("SELECT id, email, name, avatar, prefs FROM users WHERE google_sub = ?1")
+      .bind(info.sub)
+      .first();
+
+    const token = sessionToken();
+    const expires = new Date(Date.now() + SESSION_TTL_DAYS * 864e5).toISOString();
+    await env.DB.prepare("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?1, ?2, ?3)")
+      .bind(await sha256Hex(token), user.id, expires)
+      .run();
+    // Opportunistic cleanup keeps the sessions table from accumulating forever.
+    await env.DB.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
+
+    return json({ token, user: publicUser(user), follows: await userFollows(env, user.id) }, 200, cors);
+  } catch {
+    return json({ error: "accounts unavailable" }, 502, cors);
+  }
+}
+
+async function handleLogout(request, env, cors) {
+  if (!env.DB) return json({ error: "accounts not configured" }, 501, cors);
+  const token = bearerToken(request);
+  if (token) {
+    try {
+      await env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?1")
+        .bind(await sha256Hex(token))
+        .run();
+    } catch {
+      // logout is best-effort; the client drops its token regardless
+    }
+  }
+  return json({ ok: true }, 200, cors);
+}
+
+async function handleMe(request, env, cors) {
+  if (!env.DB) return json({ error: "accounts not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+  return json({ user: publicUser(user), follows: await userFollows(env, user.id) }, 200, cors);
+}
+
+async function handleFollowToggle(request, env, cors) {
+  if (!env.DB) return json({ error: "accounts not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "bad body" }, 400, cors);
+  }
+  const competition = String(body?.competition ?? "").toUpperCase();
+  const team = String(body?.team ?? "").trim();
+  if (!/^[A-Z0-9]{2,6}$/.test(competition) || !team || team.length > 60) {
+    return json({ error: "bad follow" }, 400, cors);
+  }
+
+  try {
+    const existing = await env.DB.prepare(
+      "SELECT 1 AS x FROM follows WHERE user_id = ?1 AND competition = ?2 AND team = ?3",
+    )
+      .bind(user.id, competition, team)
+      .first();
+    if (existing) {
+      await env.DB.prepare("DELETE FROM follows WHERE user_id = ?1 AND competition = ?2 AND team = ?3")
+        .bind(user.id, competition, team)
+        .run();
+    } else {
+      const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM follows WHERE user_id = ?1")
+        .bind(user.id)
+        .first();
+      if ((count?.n ?? 0) >= MAX_FOLLOWS) return json({ error: "too many follows" }, 400, cors);
+      await env.DB.prepare("INSERT INTO follows (user_id, competition, team) VALUES (?1, ?2, ?3)")
+        .bind(user.id, competition, team)
+        .run();
+    }
+    return json({ follows: await userFollows(env, user.id) }, 200, cors);
+  } catch {
+    return json({ error: "accounts unavailable" }, 502, cors);
+  }
+}
+
+// Notification preferences, stored now so Phase 3 (push) is pure delivery.
+const PREF_KEYS = new Set(["goals", "kickoff", "fulltime", "red", "analysis"]);
+
+async function handlePrefs(request, env, cors) {
+  if (!env.DB) return json({ error: "accounts not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "bad body" }, 400, cors);
+  }
+  const current = safePrefs(user.prefs);
+  Object.entries(body?.prefs ?? {}).forEach(([key, value]) => {
+    if (PREF_KEYS.has(key)) current[key] = Boolean(value);
+  });
+
+  try {
+    await env.DB.prepare("UPDATE users SET prefs = ?1 WHERE id = ?2")
+      .bind(JSON.stringify(current), user.id)
+      .run();
+    return json({ prefs: current }, 200, cors);
+  } catch {
+    return json({ error: "accounts unavailable" }, 502, cors);
+  }
+}
+
+function bearerToken(request) {
+  const header = request.headers.get("Authorization") ?? "";
+  const match = header.match(/^Bearer\s+([A-Za-z0-9_-]{20,128})$/);
+  return match ? match[1] : null;
+}
+
+async function sessionUser(request, env) {
+  const token = bearerToken(request);
+  if (!token) return null;
+  try {
+    return await env.DB.prepare(
+      `SELECT u.id, u.email, u.name, u.avatar, u.prefs FROM sessions s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.token_hash = ?1 AND s.expires_at > datetime('now')`,
+    )
+      .bind(await sha256Hex(token))
+      .first();
+  } catch {
+    return null;
+  }
+}
+
+async function userFollows(env, userId) {
+  const rows = await env.DB.prepare("SELECT competition, team FROM follows WHERE user_id = ?1 ORDER BY team")
+    .bind(userId)
+    .all();
+  return rows.results ?? [];
+}
+
+function publicUser(user) {
+  return { email: user.email, name: user.name, avatar: user.avatar, prefs: safePrefs(user.prefs) };
+}
+
+function safePrefs(raw) {
+  try {
+    const parsed = JSON.parse(raw ?? "{}");
+    return typeof parsed === "object" && parsed ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function sessionToken() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 // -- Banter (KV-backed) ------------------------------------------------------
 // Reactions are stored one key per user per match (react:<id>:<uid>, the emoji set in
 // the key's metadata), so each person only ever writes their own key and there is no
@@ -596,7 +832,7 @@ function corsHeaders(request) {
     "Access-Control-Allow-Origin": allow,
     Vary: "Origin",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
   };
 }
 

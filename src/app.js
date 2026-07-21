@@ -15,6 +15,20 @@ import {
   renderTable,
   renderTicker,
 } from "./views.js";
+import { renderSignedIn, renderSignedOut } from "./views.js";
+import {
+  GOOGLE_CLIENT_ID,
+  accountAvailable,
+  currentAccount,
+  isFollowed,
+  isSignedIn,
+  mountSignIn,
+  onAccountChange,
+  restoreAccount,
+  savePrefs,
+  signOut,
+  toggleFollow,
+} from "./account.js";
 import { setMatchModel, setupMatchDetail, openMatch } from "./matchDetail.js";
 import { isLive } from "./format.js";
 import { todayPaperRunDate } from "./paperRunModel.js";
@@ -44,7 +58,7 @@ const COMPETITION_STORAGE_KEY = "gs-competition";
 
 const initialHash = HASH_ALIASES[window.location.hash.replace("#", "")] ?? window.location.hash.replace("#", "");
 const state = {
-  section: initialHash === "play" ? "play" : "scores",
+  section: initialHash === "play" ? "play" : initialHash === "you" ? "you" : "scores",
   tab: SCORES_TABS.includes(initialHash) ? initialHash : "live",
   competition: storedCompetition(),
   fixtureView: "results",
@@ -74,7 +88,7 @@ let pollTimer = null;
 let lastSignature = "";
 let lastFetchAt = 0;
 
-const SHELL_IDS = ["ticker", "layout", "footer", "updated", "sectionNav", "bottomNav"];
+const SHELL_IDS = ["ticker", "layout", "footer", "updated", "sectionNav", "bottomNav", "accountBtn"];
 const RELOAD_FLAG = "gs-shell-reloaded";
 
 start();
@@ -113,6 +127,11 @@ async function start() {
   wireLayoutControls();
   wireViewportChange();
   setupMatchDetail(model, { drawer: elements.matchDrawer });
+  onAccountChange(() => {
+    syncAccountButton();
+    if (state.section === "you") renderLayout();
+  });
+  restoreAccount().then(syncAccountButton);
 
   if (model.hasData) {
     lastFetchAt = Date.now();
@@ -218,6 +237,23 @@ function renderLayout() {
     return;
   }
   destroyPaperRunMount();
+
+  if (state.section === "you") {
+    elements.layout.className = "layout";
+    const account = currentAccount();
+    elements.layout.innerHTML = account
+      ? renderSignedIn(model, account, isFollowed)
+      : renderSignedOut({ available: accountAvailable(), configured: Boolean(GOOGLE_CLIENT_ID) });
+    if (!account && accountAvailable() && GOOGLE_CLIENT_ID) {
+      mountSignIn(document.getElementById("gisButton"), {
+        onError: () => {
+          const slot = document.getElementById("gisButton");
+          if (slot) slot.innerHTML = `<p class="note">Sign-in is unavailable right now. Try again shortly.</p>`;
+        },
+      });
+    }
+    return;
+  }
 
   if (!model.hasData) {
     elements.layout.className = "layout";
@@ -357,9 +393,28 @@ function syncNav() {
 function setSection(section) {
   if (state.section === section) return;
   state.section = section;
-  window.history.replaceState(null, "", `#${section === "play" ? "play" : state.tab}`);
+  window.history.replaceState(null, "", `#${section === "scores" ? state.tab : section}`);
   metric("count", "section_view", 1, { tags: { section } });
   renderAll();
+}
+
+// Header auth control: "Sign in" pill signed out, avatar chip signed in.
+function syncAccountButton() {
+  const button = document.getElementById("accountBtn");
+  if (!button) return;
+  const account = currentAccount();
+  if (account) {
+    const initial = (account.user.name ?? account.user.email ?? "?").trim()[0]?.toUpperCase() ?? "?";
+    button.classList.add("is-avatar");
+    button.innerHTML = account.user.avatar
+      ? `<img src="${account.user.avatar.replace(/"/g, "&quot;")}" alt="Your account" referrerpolicy="no-referrer" />`
+      : initial;
+    button.title = account.user.email;
+  } else {
+    button.classList.remove("is-avatar");
+    button.textContent = "Sign in";
+    button.title = "";
+  }
 }
 
 function setTab(tab) {
@@ -421,6 +476,29 @@ function wireLayoutControls() {
     if (gbSortButton) {
       state.statsSort = gbSortButton.dataset.gbSort;
       renderLayout();
+      return;
+    }
+    const followButton = event.target.closest("[data-follow-team]");
+    if (followButton) {
+      followButton.disabled = true;
+      toggleFollow(model.competition.code, followButton.dataset.followTeam).catch(() => {
+        followButton.disabled = false;
+      });
+      return;
+    }
+    const prefButton = event.target.closest("[data-pref-key]");
+    if (prefButton) {
+      const key = prefButton.dataset.prefKey;
+      const account = currentAccount();
+      if (!account) return;
+      prefButton.disabled = true;
+      savePrefs({ [key]: !account.user.prefs?.[key] }).catch(() => {
+        prefButton.disabled = false;
+      });
+      return;
+    }
+    if (event.target.closest("[data-sign-out]")) {
+      signOut();
       return;
     }
     const shareButton = event.target.closest("[data-run-share-button]");

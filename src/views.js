@@ -529,6 +529,84 @@ function seasonLabel(model) {
   return `${start}/${String((start + 1) % 100).padStart(2, "0")}`;
 }
 
+// -- You (account) -------------------------------------------------------------------------------------------
+
+const PREF_LABELS = [
+  ["goals", "Goals"],
+  ["kickoff", "Kick-off"],
+  ["fulltime", "Full-time"],
+  ["red", "Red cards"],
+  ["analysis", "Match analysis ready"],
+];
+
+// Signed-out: the design's sign-in card. GIS renders the real Google button into
+// #gisButton; `configured` false swaps it for an honest note.
+export function renderSignedOut({ available, configured }) {
+  const cta = !available
+    ? `<p class="note">Sign-in needs the live data Worker, which this deployment does not have.</p>`
+    : !configured
+      ? `<p class="note">Sign-in is nearly ready. It switches on once the Google client is configured.</p>`
+      : `<div class="you__gis" id="gisButton"></div>`;
+  return `
+    <div class="you you--signin">
+      <span class="brand__mark you__mark">SG</span>
+      <h2 class="you__title">Sign in to Squad Goals</h2>
+      <p class="note">Follow your clubs, get goal alerts on this device, and run your fantasy squad. One tap with Google.</p>
+      ${cta}
+      <p class="note--dim">We only use Google to sign you in. No posts, no contacts.</p>
+    </div>`;
+}
+
+// Signed-in: profile, followed clubs (the active competition's teams as toggle
+// chips), and notification preferences (stored now, delivered by push in Phase 3).
+export function renderSignedIn(model, account, isFollowed) {
+  const user = account.user;
+  const initial = (user.name ?? user.email ?? "?").trim()[0]?.toUpperCase() ?? "?";
+  const teams = (model.tables?.[0]?.rows ?? []).map((row) => row.team);
+  const comp = model.competition.code;
+
+  const chips = teams
+    .map((team) => {
+      const on = isFollowed(comp, team);
+      return `<button class="compchip ${on ? "is-active" : ""}" type="button" data-follow-team="${esc(team)}">${badgeFor(team)} ${esc(team)}</button>`;
+    })
+    .join("");
+
+  const otherFollows = (account.follows ?? []).filter((f) => f.competition !== comp);
+
+  const prefs = PREF_LABELS.map(([key, label]) => {
+    const on = Boolean(user.prefs?.[key]);
+    return `<div class="you__prefrow">
+        <span>${label}</span>
+        <button class="tgl ${on ? "is-on" : ""}" type="button" role="switch" aria-checked="${on}" data-pref-key="${key}"><span class="tgl__knob"></span></button>
+      </div>`;
+  }).join("");
+
+  return `
+    <div class="you">
+      <section class="card you__profile">
+        ${user.avatar ? `<img class="you__avatar" src="${esc(user.avatar)}" alt="" referrerpolicy="no-referrer" />` : `<span class="you__avatar you__avatar--initial">${esc(initial)}</span>`}
+        <span class="you__id">
+          <strong>${esc(user.name ?? "Signed in")}</strong>
+          <span>${esc(user.email)} · Google</span>
+        </span>
+        <span class="topnav__spacer"></span>
+        <button class="seg" type="button" data-sign-out>Sign out</button>
+      </section>
+      <section class="card">
+        <h3 class="card__title">Followed clubs · ${esc(model.competition.shortName)}</h3>
+        <p class="note" style="margin:0 0 12px;">Goal and result alerts for these clubs once push notifications ship.</p>
+        <div class="you__chips">${chips || `<p class="note">No clubs to follow until the feed opens the season.</p>`}</div>
+        ${otherFollows.length ? `<p class="note--dim" style="margin-top:10px;">Also following: ${otherFollows.map((f) => esc(f.team)).join(", ")}</p>` : ""}
+      </section>
+      <section class="card">
+        <h3 class="card__title">Notifications</h3>
+        ${prefs}
+        <p class="note--dim" style="margin-top:10px;">Choices are saved to your account; delivery arrives with push notifications in the next phase.</p>
+      </section>
+    </div>`;
+}
+
 // -- Footer ------------------------------------------------------------------------------------------------
 
 export function renderFooter(model) {
