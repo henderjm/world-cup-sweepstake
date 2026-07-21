@@ -1,9 +1,12 @@
 import { loadModel } from "./data.js";
+import { COMPETITIONS, DEFAULT_COMPETITION_CODE } from "./competitions.js";
 import {
+  knockoutMatches,
   renderFixtures,
   renderFooter,
   renderGoldenBoot,
   renderHero,
+  renderKnockout,
   renderLive,
   renderTable,
   renderTicker,
@@ -34,10 +37,12 @@ const elements = {
   updated: document.querySelector("#updated"),
 };
 
-const TABS = ["live", "tables", "fixtures", "goldenboot", "paperrun"];
+const TABS = ["live", "tables", "knockout", "fixtures", "goldenboot", "paperrun"];
+const COMPETITION_STORAGE_KEY = "gs-competition";
 const initialTab = window.location.hash.replace("#", "");
 const state = {
   tab: TABS.includes(initialTab) ? initialTab : "live",
+  competition: storedCompetition(),
   fixtureView: "results",
   goldenBootSort: "goals",
   paperrun: {
@@ -47,6 +52,16 @@ const state = {
     mount: null,
   },
 };
+
+function storedCompetition() {
+  try {
+    const stored = window.localStorage.getItem(COMPETITION_STORAGE_KEY);
+    if (stored && COMPETITIONS[stored]) return stored;
+  } catch {
+    // storage may be blocked; the default competition still works
+  }
+  return DEFAULT_COMPETITION_CODE;
+}
 
 let model = null;
 let appLoadMetricSent = false;
@@ -81,7 +96,7 @@ async function start() {
   }
 
   const buildStart = performance.now();
-  model = await loadModel();
+  model = await loadModel(state.competition);
   trackAppLoad(model, Math.round(performance.now() - buildStart));
 
   if (!model.hasData) {
@@ -92,13 +107,12 @@ async function start() {
   lastFetchAt = Date.now();
   setUpdatedLabel();
   window.setInterval(setUpdatedLabel, 1000);
-  elements.ticker.innerHTML = renderTicker(model);
-  elements.hero.innerHTML = renderHero(model);
-  elements.footer.innerHTML = renderFooter(model);
+  renderShell();
 
   syncActiveTab();
   renderPanel();
   wireTabs();
+  wireCompetitionSwitcher();
   wirePanelControls();
   wireMatchClicks();
   setupMatchDetail(model, { drawer: elements.matchDrawer });
@@ -158,8 +172,11 @@ function scheduleNextPoll() {
 }
 
 async function poll() {
+  const polledCompetition = state.competition;
   try {
-    const fresh = await loadModel();
+    const fresh = await loadModel(polledCompetition);
+    // A switch mid-flight makes this response stale; the switch already re-rendered.
+    if (polledCompetition !== state.competition) return scheduleNextPoll();
     if (fresh.hasData) {
       lastFetchAt = Date.now();
       const signature = matchSignature(fresh);
@@ -167,9 +184,7 @@ async function poll() {
         lastSignature = signature;
         model = fresh;
         setMatchModel(model);
-        elements.ticker.innerHTML = renderTicker(model);
-        elements.hero.innerHTML = renderHero(model);
-        elements.footer.innerHTML = renderFooter(model);
+        renderShell();
         if (state.tab !== "paperrun") renderPanel();
       }
       setUpdatedLabel();
@@ -180,12 +195,64 @@ async function poll() {
   scheduleNextPoll();
 }
 
+// The always-visible chrome: ticker, hero (with the competition switcher), footer,
+// and the knockout tab, which only exists for competitions that have knockout ties.
+function renderShell() {
+  elements.ticker.innerHTML = renderTicker(model);
+  elements.hero.innerHTML = renderHero(model);
+  elements.footer.innerHTML = renderFooter(model);
+  const knockoutTab = elements.tabs.querySelector('[data-tab="knockout"]');
+  if (knockoutTab) knockoutTab.hidden = knockoutMatches(model).length === 0;
+}
+
+async function switchCompetition(code) {
+  if (!COMPETITIONS[code] || code === state.competition) return;
+  state.competition = code;
+  try {
+    window.localStorage.setItem(COMPETITION_STORAGE_KEY, code);
+  } catch {
+    // storage may be blocked; the switch still applies for this visit
+  }
+  metric("count", "competition_switch", 1, { tags: { competition: code } });
+  elements.panel.innerHTML = `<p class="panel__note">Loading ${COMPETITIONS[code].name}…</p>`;
+
+  const fresh = await loadModel(code);
+  if (state.competition !== code) return; // switched again while loading
+  model = fresh;
+  setMatchModel(model);
+  lastFetchAt = Date.now();
+  lastSignature = matchSignature(model);
+  renderShell();
+  if (!model.hasData) {
+    renderPending(model);
+    return;
+  }
+  // A tab that makes no sense in the new competition falls back to the live view.
+  if (state.tab === "knockout" && knockoutMatches(model).length === 0) {
+    state.tab = "live";
+    window.history.replaceState(null, "", "#live");
+  }
+  syncActiveTab();
+  renderPanel();
+  setUpdatedLabel();
+}
+
+function wireCompetitionSwitcher() {
+  elements.hero.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-competition]");
+    if (button) switchCompetition(button.dataset.competition);
+  });
+}
+
 function renderPanel() {
   if (state.tab !== "paperrun") destroyPaperRunMount();
   const panel = elements.panel;
   switch (state.tab) {
     case "tables":
       panel.innerHTML = renderTable(model);
+      break;
+    case "knockout":
+      panel.innerHTML = renderKnockout(model);
       break;
     case "fixtures":
       panel.innerHTML = renderFixtures(model, state.fixtureView);

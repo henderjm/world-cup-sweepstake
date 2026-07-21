@@ -1,4 +1,5 @@
 import { badgeFor } from "./badges.js";
+import { COMPETITIONS } from "./competitions.js";
 import { compareByGoals, compareByInvolvements } from "./scorers.js";
 import {
   dateLabel,
@@ -143,13 +144,23 @@ export function renderHero(model) {
     .filter(Boolean)
     .join("");
 
+  const switcher = Object.values(COMPETITIONS)
+    .map(
+      (comp) =>
+        `<button class="seg ${comp.code === model.competition.code ? "is-active" : ""}" data-competition="${comp.code}" type="button">${esc(comp.shortName)}</button>`,
+    )
+    .join("");
+
   return `
     <div class="hero__head">
       <div>
         <p class="hero__eyebrow">${esc(model.competition.name)}</p>
         <h1 class="hero__title">${title}</h1>
       </div>
-      <div class="hero__meta">${chips}</div>
+      <div class="hero__meta">
+        <div class="seg-group" data-control="competition">${switcher}</div>
+        ${chips}
+      </div>
     </div>`;
 }
 
@@ -251,6 +262,72 @@ function legendFor(competition) {
   return (competition.zones ?? [])
     .map((zone) => `<span class="legend legend--${zone.tone}"></span> ${esc(zone.label)} (${zone.from}–${zone.to})`)
     .join(" · ");
+}
+
+// -- Knockout (cups) -----------------------------------------------------------
+
+// Stage display order for the knockout view, qualifying first, final last. Any stage
+// the feed sends that is not listed lands between qualifiers and the play-offs.
+const KNOCKOUT_STAGE_ORDER = [
+  "FIRST_QUALIFYING_ROUND",
+  "SECOND_QUALIFYING_ROUND",
+  "THIRD_QUALIFYING_ROUND",
+  "QUALIFYING",
+  "PLAYOFF_ROUND",
+  "PLAYOFFS",
+  "LAST_32",
+  "ROUND_OF_32",
+  "LAST_16",
+  "ROUND_OF_16",
+  "QUARTER_FINALS",
+  "SEMI_FINALS",
+  "THIRD_PLACE",
+  "FINAL",
+];
+
+// Stages that are the league/group part of a competition, not knockout football.
+const LEAGUE_STAGES = new Set(["REGULAR_SEASON", "LEAGUE_STAGE", "GROUP_STAGE"]);
+
+export function knockoutMatches(model) {
+  return model.matches.filter((match) => match.stage && !LEAGUE_STAGES.has(match.stage));
+}
+
+// Display-only knockout view: the real fixtures grouped by stage in bracket order,
+// each stage's ties in kickoff order. Two-legged rounds simply list both legs; no
+// seeding or projection, the feed is the single source of truth.
+export function renderKnockout(model) {
+  const byStage = new Map();
+  knockoutMatches(model).forEach((match) => {
+    if (!byStage.has(match.stage)) byStage.set(match.stage, []);
+    byStage.get(match.stage).push(match);
+  });
+
+  if (!byStage.size) {
+    return `<div class="panel__head"><h2>Knockout</h2></div><p class="panel__note">No knockout ties yet. They appear once the draw is made.</p>`;
+  }
+
+  const stageRank = (stage) => {
+    const index = KNOCKOUT_STAGE_ORDER.indexOf(stage);
+    return index === -1 ? KNOCKOUT_STAGE_ORDER.indexOf("PLAYOFFS") - 0.5 : index;
+  };
+
+  const sections = [...byStage.entries()]
+    .sort((a, b) => stageRank(a[0]) - stageRank(b[0]))
+    .map(
+      ([stage, matches]) => `<section class="fx-day">
+        <h3>${esc(formatStage(stage))}</h3>
+        ${matches
+          .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))
+          .map(matchRow)
+          .join("")}
+      </section>`,
+    )
+    .join("");
+
+  return `
+    <div class="panel__head"><h2>Knockout</h2></div>
+    ${sections}
+    <p class="panel__note">Ties straight from the feed; two-legged rounds show both legs.</p>`;
 }
 
 // -- Fixtures ----------------------------------------------------------------

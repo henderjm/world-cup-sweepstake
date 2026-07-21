@@ -15,7 +15,10 @@
 //   - CORS is restricted to the site origin so other sites cannot freeload the quota.
 //   - Errors are generic; no token or upstream detail is leaked.
 //
-// Endpoints: GET /live, GET /match/:id, GET /analysis/:id, GET /health.
+// Endpoints: GET /:comp/live (and legacy /live for the default competition),
+// GET /match/:id, GET /analysis/:id, GET /health. Match-scoped routes take no
+// competition segment: football-data match ids are globally unique, so ids are
+// validated against the union of all configured competitions' fixtures.
 
 import Anthropic from "@anthropic-ai/sdk";
 import { mapFootballDataMatches } from "../src/domain.js";
@@ -56,8 +59,39 @@ const REACTIONS = ["🔥", "😂", "😱", "🧂", "🐐", "💀"];
 const BANTER_TTL = 60 * 24 * 60 * 60; // 60 days
 const PAPER_RUN_TTL = 90 * 24 * 60 * 60; // 90 days
 
-// Best-effort stale fallback held in the isolate's memory.
-let lastLive = null;
+// Best-effort stale fallback held in the isolate's memory, one entry per competition.
+const lastLive = new Map();
+
+// The configured competitions, as "CODE:season" pairs: "PL:2026,CL:2026". The first
+// entry is the default for legacy unprefixed routes. Falls back to the old singular
+// vars so an un-migrated deploy keeps working.
+function parseCompetitions(env) {
+  const raw =
+    env.FOOTBALL_DATA_COMPETITIONS ||
+    `${env.FOOTBALL_DATA_COMPETITION || "PL"}:${env.FOOTBALL_DATA_SEASON || "2026"}`;
+  return raw
+    .split(",")
+    .map((pair) => {
+      const [code, season] = pair.split(":").map((part) => part?.trim());
+      return { code: (code ?? "").toUpperCase(), season: season || "2026" };
+    })
+    .filter((comp) => /^[A-Z0-9]{2,6}$/.test(comp.code));
+}
+
+// Is this match id in any configured competition's fixture list? Each getLive is
+// edge-cached, so checking the union costs at most one upstream call per competition
+// per cache window.
+async function matchKnown(competitions, id, token) {
+  for (const comp of competitions) {
+    try {
+      const live = await getLive(comp.code, comp.season, token);
+      if (live.matches.some((match) => match.id === id)) return true;
+    } catch {
+      // one competition's feed being down must not 404 the others
+    }
+  }
+  return false;
+}
 
 export default {
   async fetch(request, env) {
@@ -91,30 +125,35 @@ export default {
 
     const token = env.FOOTBALL_DATA_TOKEN;
     if (!token) return json({ error: "service not configured" }, 500, cors);
-    const competition = env.FOOTBALL_DATA_COMPETITION || "PL";
-    const season = env.FOOTBALL_DATA_SEASON || "2026";
+    const competitions = parseCompetitions(env);
+    if (!competitions.length) return json({ error: "service not configured" }, 500, cors);
 
     // Banter: shared per-match reactions and one-line messages in KV. GET reads the
     // current state, POST toggles a reaction or appends a message. The match id is
     // validated against the real fixtures so junk ids cannot fill storage.
     const banterRoute = url.pathname.match(/^\/banter\/(\d{1,12})$/);
     if (banterRoute) {
-      return handleBanter(request, env, Number(banterRoute[1]), competition, season, token, cors);
+      return handleBanter(request, env, Number(banterRoute[1]), competitions, token, cors);
     }
 
     if (request.method !== "GET") return json({ error: "method not allowed" }, 405, cors);
 
     try {
-      if (url.pathname === "/live") {
-        const data = await getLive(competition, season, token);
+      // /:comp/live, plus legacy /live serving the default (first) competition.
+      const liveRoute = url.pathname.match(/^\/(?:([A-Za-z0-9]{2,6})\/)?live$/);
+      if (liveRoute) {
+        const comp = liveRoute[1]
+          ? competitions.find((entry) => entry.code === liveRoute[1].toUpperCase())
+          : competitions[0];
+        if (!comp) return json({ error: "unknown competition" }, 404, cors);
+        const data = await getLive(comp.code, comp.season, token);
         return json(data, 200, { ...cors, "Cache-Control": "public, max-age=15" });
       }
 
       const detailRoute = url.pathname.match(/^\/match\/(\d{1,12})$/);
       if (detailRoute) {
         const id = Number(detailRoute[1]);
-        const live = await getLive(competition, season, token);
-        if (!live.matches.some((match) => match.id === id)) {
+        if (!(await matchKnown(competitions, id, token))) {
           return json({ error: "unknown match" }, 404, cors);
         }
         const detail = await fetchJson(`/v4/matches/${id}`, token, 25);
@@ -160,10 +199,11 @@ async function getLive(competition, season, token) {
       matches: mapFootballDataMatches(matches),
       standings: standings.standings ?? [],
     };
-    lastLive = body;
+    lastLive.set(competition, body);
     return body;
   } catch (error) {
-    if (lastLive) return lastLive; // serve stale rather than fail when upstream blips
+    const stale = lastLive.get(competition);
+    if (stale) return stale; // serve stale rather than fail when upstream blips
     throw error;
   }
 }
@@ -193,12 +233,15 @@ async function handleAnalysis(env, id, cors) {
 
 async function runScheduledAnalysis(env) {
   if (!env.ANTHROPIC_API_KEY || !env.ANALYSIS_CACHE || !env.FOOTBALL_DATA_TOKEN) return;
-  const competition = env.FOOTBALL_DATA_COMPETITION || "PL";
-  const season = env.FOOTBALL_DATA_SEASON || "2026";
+  for (const comp of parseCompetitions(env)) {
+    await analyseCompetition(env, comp);
+  }
+}
 
+async function analyseCompetition(env, comp) {
   let live;
   try {
-    live = await getLive(competition, season, env.FOOTBALL_DATA_TOKEN);
+    live = await getLive(comp.code, comp.season, env.FOOTBALL_DATA_TOKEN);
   } catch {
     return; // feed down; the next tick retries
   }
@@ -323,15 +366,10 @@ async function tunnelToSentry(request, cors) {
 // the key's metadata), so each person only ever writes their own key and there is no
 // read-modify-write race. Messages are append-only keys (msg:<id>:<ts>-<rand>).
 
-async function handleBanter(request, env, id, competition, season, token, cors) {
+async function handleBanter(request, env, id, competitions, token, cors) {
   if (!env.BANTER) return json({ error: "banter not configured" }, 503, cors);
-  try {
-    const live = await getLive(competition, season, token);
-    if (!live.matches.some((match) => match.id === id)) {
-      return json({ error: "unknown match" }, 404, cors);
-    }
-  } catch {
-    return json({ error: "upstream unavailable" }, 502, cors);
+  if (!(await matchKnown(competitions, id, token))) {
+    return json({ error: "unknown match" }, 404, cors);
   }
 
   if (request.method === "GET") {

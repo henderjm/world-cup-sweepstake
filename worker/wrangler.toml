@@ -8,18 +8,21 @@ workers_dev = true
 # Non-secret config. Secrets are set with:
 #   npx wrangler secret put FOOTBALL_DATA_TOKEN
 #   npx wrangler secret put ANTHROPIC_API_KEY    (powers the AI-analysis cron; nothing generates without it)
-# Season is football-data's starting year: 2026 = the 2026-27 season.
+# Competitions served, as CODE:season pairs; the first is the default for legacy
+# unprefixed routes. Season is football-data's starting year: 2026 = the 2026-27
+# season. NOTE: these vars are applied on every deploy, so always deploy from an
+# up-to-date checkout.
 [vars]
-FOOTBALL_DATA_COMPETITION = "PL"
-FOOTBALL_DATA_SEASON = "2026"
+FOOTBALL_DATA_COMPETITIONS = "PL:2026,CL:2026"
 # AI analysis model. Any override must support adaptive thinking + structured outputs.
 ANTHROPIC_MODEL = "claude-sonnet-5"
 
-# AI analysis cron. Ticks every minute, but the game-state signature decides which
-# ticks actually generate: every 10 minutes of normal play, every 5 in extra time,
-# per kick during a shootout, plus immediately on any goal, red card or status
-# change, and once after full time. User visits only ever read the stored copy, so
-# cost is fixed per match, not per visitor. Idle ticks call no one.
+# AI analysis cron, one pass per configured competition per tick. Ticks every
+# minute, but the game-state signature decides which ticks actually generate:
+# every 10 minutes of normal play, every 5 in extra time, per kick during a
+# shootout, plus immediately on any goal, red card or status change, and once
+# after full time. User visits only ever read the stored copy, so cost is fixed
+# per match, not per visitor. Idle ticks call no one.
 [triggers]
 crons = ["* * * * *"]
 

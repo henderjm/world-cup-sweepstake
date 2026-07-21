@@ -1,15 +1,15 @@
 import { mapFootballDataStandings, normalizeTeamName } from "./domain.js";
-import { competitionFor, zoneFor } from "./competitions.js";
+import { DEFAULT_COMPETITION_CODE, competitionFor, zoneFor } from "./competitions.js";
 import { registerCrests } from "./badges.js";
 import { locationForMatch } from "./locations.js";
 
 // Set this to your deployed Cloudflare Worker origin to serve live data without a
 // deploy, e.g. "https://goon-squad-data.<your-subdomain>.workers.dev". Leave empty to
-// use the static data/live.json baked by the GitHub Action (refreshed every 5 min).
+// use the static data/<comp>/live.json baked by the GitHub Action (refreshed every 5 min).
 export const DATA_API = "https://goon-squad-data.gs-wc.workers.dev";
 
-export async function loadModel() {
-  const [raw, scorerData] = await Promise.all([loadLiveData(), loadScorers()]);
+export async function loadModel(comp = DEFAULT_COMPETITION_CODE) {
+  const [raw, scorerData] = await Promise.all([loadLiveData(comp), loadScorers(comp)]);
   return buildModel(raw, scorerData);
 }
 
@@ -51,12 +51,14 @@ export function buildModel(raw, scorerData = {}) {
   };
 }
 
-// Goal involvements are baked into a separate static file (data/scorers.json) by the
-// fetch script. It always reads from static: the Worker live path has no scorers
-// endpoint. Missing or unreachable means an empty board, never a broken app.
-async function loadScorers() {
+// Goal involvements are baked into a separate static file (data/<comp>/scorers.json)
+// by the fetch script. It always reads from static: the Worker live path has no
+// scorers endpoint. Missing or unreachable means an empty board, never a broken app.
+async function loadScorers(comp) {
   try {
-    const response = await fetch(`./data/scorers.json?cache=${Date.now()}`, { cache: "no-store" });
+    const response = await fetch(`./data/${encodeURIComponent(comp)}/scorers.json?cache=${Date.now()}`, {
+      cache: "no-store",
+    });
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
     return await response.json();
   } catch {
@@ -64,17 +66,19 @@ async function loadScorers() {
   }
 }
 
-async function loadLiveData() {
+async function loadLiveData(comp) {
   if (DATA_API) {
     try {
-      const response = await fetch(`${DATA_API}/live`, { cache: "no-store" });
+      const response = await fetch(`${DATA_API}/${encodeURIComponent(comp)}/live`, { cache: "no-store" });
       if (response.ok) return await response.json();
     } catch {
       // Worker unreachable, fall through to the static baseline.
     }
   }
   try {
-    const response = await fetch(`./data/live.json?cache=${Date.now()}`, { cache: "no-store" });
+    const response = await fetch(`./data/${encodeURIComponent(comp)}/live.json?cache=${Date.now()}`, {
+      cache: "no-store",
+    });
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
     return await response.json();
   } catch (error) {
@@ -82,6 +86,7 @@ async function loadLiveData() {
     return {
       source: "Live data pending",
       lastUpdated: "",
+      competition: comp,
       matches: [],
       standings: [],
       error: `Live data is not available yet: ${error.message}`,

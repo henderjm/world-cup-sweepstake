@@ -1,14 +1,15 @@
 # GS Score
 
-A static GitHub Pages app for following the Premier League: FotMob-style live
-scores, the league table with European and relegation zones, full fixtures and
-results, and a Golden Boot scorer board. Champions League and the other European
-cups are on the roadmap, along with sign-up, push notifications and a fantasy draft.
+A static GitHub Pages app for following the Premier League and the Champions League:
+FotMob-style live scores, tables with qualification and relegation zones, full
+fixtures and results, and a Golden Boot scorer board, with a competition switcher.
+The other European cups are on the roadmap, along with sign-up, push notifications
+and a fantasy draft.
 
-Sections (single page, tabbed): Live & today, Table, Fixtures, Golden Boot, and the
-Paper Run daily mini-game. Extras: a live score ticker, a match drawer with lineups,
-goals, cards and substitutions, shared match banter, and an optional AI-written
-match read.
+Sections (single page, tabbed): Live & today, Table, Knockout (cups only), Fixtures,
+Golden Boot, and the Paper Run daily mini-game. Extras: a live score ticker, a match
+drawer with lineups, goals, cards and substitutions, shared match banter, and an
+optional AI-written match read.
 
 ## Host On GitHub Pages
 
@@ -22,7 +23,8 @@ The app has no build step. `index.html` is the entry point, so it also works fro
 
 ## Live Data
 
-Data comes from football-data.org (the Premier League is on their free tier).
+Data comes from football-data.org (the Premier League and Champions League are on
+their free tier).
 
 To enable it:
 
@@ -31,12 +33,11 @@ To enable it:
 3. Add a repository secret named `FOOTBALL_DATA_TOKEN`.
 4. Run the Pages workflow, or wait for the schedule.
 
-The workflow fetches live data every few minutes and publishes `data/live.json` with the site. The API token never appears in the browser.
+The workflow fetches live data every few minutes and publishes `data/<competition>/live.json` per competition with the site. The API token never appears in the browser.
 
 Workflow environment variables (set in the workflow file):
 
-- `FOOTBALL_DATA_COMPETITION`, default `PL`
-- `FOOTBALL_DATA_SEASON`, default `2026` (football-data's starting year, so 2026 = the 2026-27 season)
+- `FOOTBALL_DATA_COMPETITIONS`, a comma list of `CODE:season` pairs, default `PL:2026` (the season is football-data's starting year, so 2026 = the 2026-27 season). The first competition is the default one.
 
 ## Live Data Without Deploys (Cloudflare Worker)
 
