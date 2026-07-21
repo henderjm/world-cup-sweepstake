@@ -186,10 +186,15 @@ async function getLive(competition, season, token) {
   try {
     // Both calls pin the season: an unpinned /standings returns football-data's
     // "current season", which between seasons is still last year's final table and
-    // silently disagrees with the season-pinned fixtures.
+    // silently disagrees with the season-pinned fixtures. Standings are optional:
+    // a cup before its league phase has fixtures but no table yet (upstream 404s),
+    // and that must not take down the whole feed. A transient standings blip reuses
+    // the last good table rather than flashing an empty one.
     const [matches, standings] = await Promise.all([
       fetchJson(`/v4/competitions/${competition}/matches?season=${season}`, token, 15),
-      fetchJson(`/v4/competitions/${competition}/standings?season=${season}`, token, 30),
+      fetchJson(`/v4/competitions/${competition}/standings?season=${season}`, token, 30).catch(
+        () => null,
+      ),
     ]);
     const body = {
       source: "football-data.org",
@@ -197,7 +202,7 @@ async function getLive(competition, season, token) {
       competition,
       season,
       matches: mapFootballDataMatches(matches),
-      standings: standings.standings ?? [],
+      standings: standings?.standings ?? lastLive.get(competition)?.standings ?? [],
     };
     lastLive.set(competition, body);
     return body;

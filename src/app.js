@@ -2,6 +2,7 @@ import { loadModel } from "./data.js";
 import { COMPETITIONS, DEFAULT_COMPETITION_CODE } from "./competitions.js";
 import {
   knockoutMatches,
+  renderCompetitionSwitcher,
   renderFixtures,
   renderFooter,
   renderGoldenBoot,
@@ -99,28 +100,29 @@ async function start() {
   model = await loadModel(state.competition);
   trackAppLoad(model, Math.round(performance.now() - buildStart));
 
-  if (!model.hasData) {
-    renderPending(model);
-    return;
-  }
-
-  lastFetchAt = Date.now();
+  // Everything is wired regardless of whether the first load has data: a stored
+  // competition whose season has not opened yet must still let the visitor switch
+  // away, and polling lets it self-heal the moment the feed opens.
   setUpdatedLabel();
   window.setInterval(setUpdatedLabel, 1000);
-  renderShell();
-
-  syncActiveTab();
-  renderPanel();
   wireTabs();
   wireCompetitionSwitcher();
   wirePanelControls();
   wireMatchClicks();
   setupMatchDetail(model, { drawer: elements.matchDrawer });
 
-  const matchParam = new URLSearchParams(window.location.search).get("match");
-  if (matchParam) {
-    const match = model.matches.find((item) => String(item.id) === matchParam);
-    if (match) openMatch(match);
+  if (model.hasData) {
+    lastFetchAt = Date.now();
+    renderShell();
+    syncActiveTab();
+    renderPanel();
+    const matchParam = new URLSearchParams(window.location.search).get("match");
+    if (matchParam) {
+      const match = model.matches.find((item) => String(item.id) === matchParam);
+      if (match) openMatch(match);
+    }
+  } else {
+    renderPending(model);
   }
 
   startPolling();
@@ -426,8 +428,11 @@ function renderPending(data) {
   elements.updated.textContent = "waiting for data";
   elements.ticker.innerHTML = `<div class="ticker__track"><span class="ticker__item ticker__item--idle">Live feed not available yet.</span></div>`;
   elements.hero.innerHTML = `
-    <div class="hero__head"><div><p class="hero__eyebrow">${data.competition?.name ?? "Football"}</p><h1 class="hero__title">Waiting for the first results</h1></div></div>
-    <p class="panel__note">${data.error ?? "No live data has been published yet."}</p>`;
+    <div class="hero__head">
+      <div><p class="hero__eyebrow">${data.competition?.name ?? "Football"}</p><h1 class="hero__title">Waiting for the season</h1></div>
+      <div class="hero__meta">${renderCompetitionSwitcher(data.competition?.code)}</div>
+    </div>
+    <p class="panel__note">${data.error ?? "This competition has no published fixtures yet. It appears here as soon as the feed opens the season."}</p>`;
   elements.panel.innerHTML = `<p class="panel__note">The table, fixtures and scorer board appear once the feed publishes results.</p>`;
   elements.footer.innerHTML = `<p class="footer__src">Data source: ${data.source ?? "pending"}.</p>`;
 }
