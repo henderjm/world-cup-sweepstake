@@ -463,7 +463,7 @@ export function renderFixtures(model, view = "results") {
 // -- Player stats --------------------------------------------------------------------------------------
 
 // Goals / assists / involvements: everything the feed really has. The design's xG,
-// shots and minutes columns need a data tier football-data does not sell us yet.
+// Extra stat columns stay out until their scoring and display rules are agreed.
 const STAT_SORTS = {
   goals: { label: "Goals", compare: compareByGoals, key: "goals" },
   assists: {

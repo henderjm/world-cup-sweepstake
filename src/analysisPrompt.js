@@ -1,11 +1,11 @@
-// AI match analysis prompt. Cross-environment contract like mapFootballDataMatches:
+// AI match analysis prompt. Cross-environment contract like mapApiFootballMatches:
 // the Worker imports this from ../src/ so the prompt is assembled server-side from
 // trusted feed data (the client only ever sends a match id). Pure module: no fetch,
 // no DOM, no Anthropic client. The Worker owns the API call; this owns what it says.
 
 import {
   buildTeamPerformance,
-  mapFootballDataStandings,
+  mapStandings,
   normalizeTeamName,
 } from "./domain.js";
 import { competitionFor, zoneFor } from "./competitions.js";
@@ -92,7 +92,7 @@ Rules:
 export function buildAnalysisPrompt(detail, live) {
   const matches = live?.matches ?? [];
   const competition = competitionFor(live?.competition);
-  const standings = mapFootballDataStandings(
+  const standings = mapStandings(
     { standings: live?.standings ?? [] },
     competition.zones,
   );

@@ -74,10 +74,10 @@ CREATE TABLE IF NOT EXISTS notify_state (
 -- maps 1:1 onto weekly head-to-head gameweeks the way a knockout-plus-league-phase
 -- competition doesn't.
 
--- The draftable player pool. id is football-data's own player id (propagated
--- through mapPlayer in src/mapDetail.js), not a local autoincrement, so it lines
+-- The draftable player pool. id is API-Football's player id (propagated
+-- through mapApiFootballMatchDetail, not a local autoincrement, so it lines
 -- up with the ids already carried on goals/cards/subs. Populated by
--- scripts/fetch-fantasy-players.mjs, primarily from the /v4/teams/{id} squad
+-- scripts/fetch-fantasy-players.mjs, primarily from the /players/squads endpoint;
 -- endpoint; `active` lets a departed player be hidden from new drafts/waivers
 -- without losing their historical scores.
 CREATE TABLE IF NOT EXISTS fantasy_players (

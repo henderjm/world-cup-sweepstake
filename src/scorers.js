@@ -1,17 +1,15 @@
 import { normalizeTeamName } from "./domain.js";
 
 // Golden Boot aggregation. Pure, no DOM and no entrant/owner logic: the view layer adds
-// flags and owners. Shared between the Node fetch script (which bakes data/scorers.json)
-// and the browser, the way domain.js and mapDetail.js are shared.
+// flags and owners. Shared between the build-time fetch script and the browser.
 
 // Goal types that count toward a player's tally. In-play penalties count; own goals
-// credit nobody; penalty-shootout kicks do not count. football-data keeps shootouts out
-// of the goals[] array (it records them in score.penalties), so excluding by type also
-// guards against a future knockout payload that emits a shootout goal event.
+// credit nobody; penalty-shootout kicks do not count. Shootout scores are kept in
+// score.penalties, and the type guard prevents any future event-shape drift counting them.
 const COUNTING_GOAL_TYPES = new Set(["REGULAR", "PENALTY"]);
 
 // Aggregate goals and assists across mapped match-detail objects (the shape
-// mapMatchDetail produces). Returns scorers sorted by goal involvements (G+A).
+// mapApiFootballMatchDetail produces). Returns scorers sorted by goal involvements (G+A).
 export function aggregateScorers(matchDetails) {
   const players = new Map();
 

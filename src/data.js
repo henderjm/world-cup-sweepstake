@@ -1,4 +1,4 @@
-import { alphabetizeStandings, buildTeamPerformance, mapFootballDataStandings, normalizeTeamName } from "./domain.js";
+import { alphabetizeStandings, buildTeamPerformance, mapStandings, normalizeTeamName } from "./domain.js";
 import { DEFAULT_COMPETITION_CODE, competitionFor, zoneFor } from "./competitions.js";
 import { registerTeams } from "./badges.js";
 import { locationForMatch } from "./locations.js";
@@ -26,7 +26,7 @@ export function buildModel(raw, scorerData = {}) {
   const competition = { ...base, zones: seasonStarted ? base.zones : [] };
   const standingsPayload = seasonStarted ? raw.standings ?? [] : alphabetizeStandings(raw.standings);
   const matches = (raw.matches ?? []).map(normalizeMatch);
-  const standings = mapFootballDataStandings({ standings: standingsPayload }, competition.zones);
+  const standings = mapStandings({ standings: standingsPayload }, competition.zones);
   const hasData = matches.length > 0 || standings.size > 0;
 
   if (!hasData) {

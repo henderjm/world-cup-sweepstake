@@ -4,7 +4,7 @@ import test from "node:test";
 import { scoreMatchForPlayers } from "../src/fantasyScoring.js";
 import { SCORING } from "../src/fantasy.js";
 
-// A minimal mapMatchDetail-shaped fixture: home 2-0 away, one goal with an
+// A minimal mapped-detail fixture: home 2-0 away, one goal with an
 // assist, one own goal, one yellow, one second-yellow (YELLOW_RED), one
 // substitution. Home keeps a clean sheet (away scored 0); away does not.
 function fixture() {

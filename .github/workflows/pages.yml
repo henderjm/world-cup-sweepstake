@@ -5,10 +5,10 @@ on:
     branches:
       - main
   schedule:
-    # As frequent as GitHub Actions allows. The scheduler enforces a 5 minute
-    # minimum and runs are best effort, so true per-minute refresh is not possible
-    # here. Runs also fire on every push to main and via manual dispatch.
-    - cron: "*/5 * * * *"
+    # Static fallback refreshes for the 12-hour match window only. The Worker owns
+    # minute-live delivery; burning API requests on overnight Pages deploys adds no
+    # value. GitHub schedules are UTC and best effort.
+    - cron: "*/5 11-22 * * *"
   workflow_dispatch:
 
 permissions:
@@ -34,11 +34,17 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - name: Install dependencies
         run: npm ci
+      - name: Build API-Football client
+        run: go build -o /tmp/squad-goals-api ./cmd/api-football
       # Persist fetched match detail across runs. Each deploy checks out main fresh, so
       # without this the Golden Boot tally only ever sees the committed seed files plus
-      # whatever one run can re-fetch under the 30/min API cap - matches that fail or get
+      # whatever one run can re-fetch - matches that fail or get
       # starved that run vanish from the board, so scorer totals chronically undercount.
       # An accumulating cache (unique key + prefix restore-keys) restores the latest set,
       # the fetch script fetches only matches it does not already hold final detail for,
@@ -46,24 +52,25 @@ jobs:
       - name: Restore accumulated match detail
         uses: actions/cache@v4
         with:
-          path: data/*/matches
-          key: match-detail-2026-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            data/*/matches
+            data/PL/players.json
+          key: api-football-data-2026-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            match-detail-2026-
+            api-football-data-2026-
       - name: Fetch live competition data
         run: npm run fetch:live
         env:
-          FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
-          FOOTBALL_DATA_COMPETITIONS: "PL:2026,CL:2026"
-      # Fantasy draft pool (Phase 4). Squads barely change, so this doesn't need the
-      # 5-minute cadence the deploy runs on, but running it every time is harmless:
-      # it's sequenced after the live fetch so it doesn't compete for the same
-      # per-minute rate-limit budget, and its lineup-accumulation fallback reads the
-      # data/PL/matches cache the step above just restored/refreshed.
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          API_FOOTBALL_CLI: /tmp/squad-goals-api
+          API_FOOTBALL_COMPETITIONS: "PL:2026,CL:2026"
+      # Fantasy draft pool (Phase 4). The cached file and script freshness guard make
+      # this a daily upstream refresh even though the Pages job runs more frequently.
       - name: Fetch fantasy player pool
         run: npm run fetch:fantasy-players
         env:
-          FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          API_FOOTBALL_CLI: /tmp/squad-goals-api
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Build Svelte app

@@ -1,14 +1,14 @@
 // Goon Squad data API (Cloudflare Worker).
 //
-// Proxies football-data.org so the static site can poll for live data many times a
-// minute without a deploy. The API token lives here as a Worker secret and never
+// Proxies API-Football so the static site can poll for live data many times a
+// minute without a deploy. The API key lives here as a Worker secret and never
 // reaches the browser.
 //
 // Abuse hardening:
 //   - Per-IP rate limit (binding) blocks single-source floods. Cloudflare's network
 //     absorbs volumetric/distributed DDoS automatically on top of this.
 //   - /match/:id is validated against the real fixture list, so id enumeration cannot
-//     amplify into unbounded upstream calls and burn the 30/min token limit.
+//     amplify into unbounded upstream calls and burn the daily request budget.
 //   - Upstream calls are edge-cached, so a crowd of pollers collapses into roughly one
 //     upstream call per cache window. A per-isolate copy of the last good /live is
 //     served if upstream errors (stale-on-error).
@@ -17,12 +17,13 @@
 //
 // Endpoints: GET /:comp/live (and legacy /live for the default competition),
 // GET /match/:id, GET /analysis/:id, GET /health. Match-scoped routes take no
-// competition segment: football-data match ids are globally unique, so ids are
+// competition segment: API-Football fixture ids are globally unique, so ids are
 // validated against the union of all configured competitions' fixtures.
 
 import Anthropic from "@anthropic-ai/sdk";
 import { buildPushHTTPRequest } from "@pushforge/builder";
 import { COMPETITIONS } from "../src/competitions.js";
+import { assertApiFootballPayload } from "../src/apiFootballPayload.js";
 import {
   mapApiFootballMatchDetail,
   mapApiFootballMatchDetailFromSummary,
@@ -70,12 +71,9 @@ const PAPER_RUN_TTL = 90 * 24 * 60 * 60; // 90 days
 const lastLive = new Map();
 
 // The configured competitions, as "CODE:season" pairs: "PL:2026,CL:2026". The first
-// entry is the default for legacy unprefixed routes. Falls back to the old singular
-// vars so an un-migrated deploy keeps working.
+// entry is the default for legacy unprefixed routes.
 function parseCompetitions(env) {
-  const raw =
-    env.FOOTBALL_DATA_COMPETITIONS ||
-    `${env.FOOTBALL_DATA_COMPETITION || "PL"}:${env.FOOTBALL_DATA_SEASON || "2026"}`;
+  const raw = env.API_FOOTBALL_COMPETITIONS || "PL:2026";
   return raw
     .split(",")
     .map((pair) => {
@@ -221,8 +219,7 @@ export default {
   // concurrently: both passes fetch the same /live and per-match detail URLs, and
   // only a sequential order lets the second pass land on the edge cache the first
   // one just warmed. Running them in parallel would fire both fetches before either
-  // response is cached, roughly doubling upstream calls against football-data's
-  // ~10 req/min free-tier limit.
+  // response is cached, needlessly spending the daily API-Football allowance.
   async scheduled(controller, env, ctx) {
     ctx.waitUntil(
       (async () => {
@@ -1210,7 +1207,7 @@ async function fetchJson(path, token, cacheTtl) {
     cf: { cacheTtl, cacheEverything: true },
   });
   if (!response.ok) throw new Error(`upstream ${response.status}`);
-  return response.json();
+  return assertApiFootballPayload(await response.json());
 }
 
 function json(body, status = 200, extra = {}) {

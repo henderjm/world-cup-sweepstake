@@ -1,31 +1,39 @@
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 
-import { mapFootballDataMatches } from "../src/domain.js";
-import { mapMatchDetail } from "../src/mapDetail.js";
+import { COMPETITIONS } from "../src/competitions.js";
+import {
+  mapApiFootballMatchDetail,
+  mapApiFootballMatches,
+  mapApiFootballStandingsPayload,
+} from "../src/mapApiFootball.js";
 import { aggregateScorers } from "../src/scorers.js";
-import { fetchFootballData as fetchFromApi, sleep } from "./lib/footballData.mjs";
+import { fetchApiFootball } from "./lib/apiFootball.mjs";
 
-const token = process.env.FOOTBALL_DATA_TOKEN;
+const token = process.env.API_FOOTBALL_KEY;
 
 // Competitions to bake, as CODE:season pairs ("PL:2026,CL:2026"). The first is the
 // default competition and is also written to the legacy unnamespaced data/ paths so
-// cached clients keep working through a deploy. Season is football-data's starting
-// year: 2026 = the 2026-27 season. Falls back to the old singular vars.
+// cached clients keep working through a deploy.
 const competitions = (
-  process.env.FOOTBALL_DATA_COMPETITIONS ??
-  `${process.env.FOOTBALL_DATA_COMPETITION ?? "PL"}:${process.env.FOOTBALL_DATA_SEASON ?? "2026"}`
+  process.env.API_FOOTBALL_COMPETITIONS ??
+  `${process.env.API_FOOTBALL_COMPETITION ?? "PL"}:${process.env.API_FOOTBALL_SEASON ?? "2026"}`
 )
   .split(",")
   .map((pair) => {
     const [code, season] = pair.split(":").map((part) => part?.trim());
-    return { code: (code ?? "").toUpperCase(), season: season || "2026" };
+    const normalizedCode = (code ?? "").toUpperCase();
+    return {
+      code: normalizedCode,
+      season: season || "2026",
+      leagueId: COMPETITIONS[normalizedCode]?.apiFootballLeagueId,
+    };
   })
-  .filter((comp) => /^[A-Z0-9]{2,6}$/.test(comp.code));
+  .filter((comp) => /^[A-Z0-9]{2,6}$/.test(comp.code) && Number.isInteger(comp.leagueId));
 
 const rootDir = new URL("../data/", import.meta.url);
 
 if (!token) {
-  console.log("FOOTBALL_DATA_TOKEN is not set; no live data generated.");
+  console.log("API_FOOTBALL_KEY is not set; no live data generated.");
   process.exit(0);
 }
 if (!competitions.length) {
@@ -33,16 +41,11 @@ if (!competitions.length) {
   process.exit(1);
 }
 
-// Spacing between detail fetches. football-data's free tier allows ~10 requests/minute,
-// so ~6.5s keeps us just under it; fetchFootballData's own retry is the safety net for
-// the per-competition standings/matches calls or a busier window tipping us over.
-const DETAIL_THROTTLE_MS = 6500;
-
 const LIVE = new Set(["IN_PLAY", "PAUSED", "LIVE", "EXTRA_TIME", "PENALTY_SHOOTOUT", "BREAK"]);
 const FINAL = new Set(["FINISHED", "AWARDED"]);
 const AROUND_KICKOFF_MS = 90 * 60 * 1000;
 
-// One competition failing (e.g. a cup whose new season football-data has not opened
+// One competition failing (e.g. a cup whose new season API-Football has not opened
 // yet: every call 4xxs) must not kill the bake for the others. Its previously baked
 // files simply stay as they are.
 for (const comp of competitions) {
@@ -53,33 +56,29 @@ for (const comp of competitions) {
   }
 }
 
-async function bakeCompetition({ code, season }, isDefault) {
+async function bakeCompetition({ code, season, leagueId }, isDefault) {
   const dataDir = new URL(`${code}/`, rootDir);
   const matchesDir = new URL("matches/", dataDir);
   console.log(`== ${code} (season ${season}) ==`);
 
-  // Both calls pin the season: an unpinned /standings returns football-data's "current
-  // season", which between seasons is still last year's final table and silently
-  // disagrees with the season-pinned fixtures. Standings are optional: a cup before
-  // its league phase has fixtures but no table yet (upstream 404s), and that must not
-  // fail the bake for every competition.
-  const [matchesPayload, standingsPayload] = await Promise.all([
-    fetchFromApi(`/v4/competitions/${code}/matches?season=${season}`, token),
-    fetchFromApi(`/v4/competitions/${code}/standings?season=${season}`, token).catch((error) => {
-      console.warn(`${code} standings unavailable (${error.message.split(":")[0]}); baking without a table`);
-      return { standings: [] };
-    }),
-  ]);
+  const matchesPayload = await fetchApiFootball(`/fixtures?league=${leagueId}&season=${season}`);
+  const standingsPayload = await fetchApiFootball(`/standings?league=${leagueId}&season=${season}`).catch(
+    (error) => {
+      console.warn(`${code} standings unavailable (${error.message}); baking without a table`);
+      return { response: [] };
+    },
+  );
+  const matches = mapApiFootballMatches(matchesPayload);
 
   await mkdir(dataDir, { recursive: true });
   const liveBody = `${JSON.stringify(
     {
-      source: "football-data.org",
+      source: "API-Football",
       lastUpdated: new Date().toISOString(),
       competition: code,
       season,
-      matches: mapFootballDataMatches(matchesPayload),
-      standings: standingsPayload.standings ?? [],
+      matches,
+      standings: mapApiFootballStandingsPayload(standingsPayload),
     },
     null,
     2,
@@ -109,7 +108,7 @@ async function bakeCompetition({ code, season }, isDefault) {
     }
   }
 
-  const relevant = (matchesPayload.matches ?? []).filter((match) => {
+  const relevant = matches.filter((match) => {
     if (FINAL.has(match.status)) return !finalOnDisk.has(String(match.id));
     if (LIVE.has(match.status)) return true;
     if (match.status === "TIMED" || match.status === "SCHEDULED") {
@@ -118,17 +117,22 @@ async function bakeCompetition({ code, season }, isDefault) {
     }
     return false;
   });
-  console.log(`Fetching detail for ${relevant.length} ${code} matches (throttled under 10/min)...`);
+  console.log(`Fetching detail for ${relevant.length} ${code} matches...`);
   let written = 0;
   for (const match of relevant) {
     try {
-      const detail = await fetchFromApi(`/v4/matches/${match.id}`, token);
-      await writeFile(new URL(`${match.id}.json`, matchesDir), `${JSON.stringify(mapMatchDetail(detail))}\n`);
+      const [fixture, lineups, events, players] = await fetchApiFootball([
+        `/fixtures?id=${match.id}`,
+        `/fixtures/lineups?fixture=${match.id}`,
+        `/fixtures/events?fixture=${match.id}`,
+        `/fixtures/players?fixture=${match.id}`,
+      ]);
+      const detail = mapApiFootballMatchDetail(fixture, lineups, events, players);
+      await writeFile(new URL(`${match.id}.json`, matchesDir), `${JSON.stringify(detail)}\n`);
       written += 1;
     } catch (error) {
       console.warn(`detail ${match.id} failed: ${error.message}`);
     }
-    await sleep(DETAIL_THROTTLE_MS);
   }
   console.log(`Wrote ${written} match detail files.`);
 
@@ -146,7 +150,7 @@ async function bakeCompetition({ code, season }, isDefault) {
   }
   const scorers = aggregateScorers(details);
   const scorersBody = `${JSON.stringify(
-    { source: "football-data.org", lastUpdated: new Date().toISOString(), scorers },
+    { source: "API-Football", lastUpdated: new Date().toISOString(), scorers },
     null,
     2,
   )}\n`;

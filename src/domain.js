@@ -1,4 +1,3 @@
-import { locationForVenue } from "./locations.js";
 import { zoneFor } from "./competitions.js";
 
 const LIVE_STATUSES = new Set([
@@ -83,53 +82,7 @@ export function buildTeamPerformance(matches) {
   return performance;
 }
 
-export function mapFootballDataMatches(payload) {
-  return (payload.matches ?? []).map((match) => {
-    const raw = match.score ?? {};
-    const reg = regulationScore(raw);
-    const location = locationForVenue(match.venue);
-    return {
-      id: match.id ?? null,
-      utcDate: match.utcDate,
-      status: match.status,
-      minute: match.minute ?? null,
-      stage: match.stage ?? null,
-      group: match.group ?? null,
-      matchday: match.matchday ?? null,
-      venue: match.venue ?? null,
-      city: location?.city || null,
-      mapUrl: location?.mapUrl ?? null,
-      homeTeam: teamName(match.homeTeam),
-      awayTeam: teamName(match.awayTeam),
-      homeCrest: match.homeTeam?.crest ?? null,
-      awayCrest: match.awayTeam?.crest ?? null,
-      homeTla: match.homeTeam?.tla ?? null,
-      awayTla: match.awayTeam?.tla ?? null,
-      score: { home: reg.home, away: reg.away },
-      penalties: reg.penalties,
-      winner: raw.winner ?? null,
-    };
-  });
-}
-
-// football-data folds penalty-shootout kicks into score.fullTime, so a 1-1 game won 4-3
-// on penalties arrives as fullTime 5-4. Subtract the shootout back out so `score` is the
-// regulation/extra-time result (a draw) and goals aren't inflated, and expose the shootout
-// separately as `penalties`. Returns { home, away, penalties: { home, away } | null }.
-export function regulationScore(raw) {
-  const fullHome = scoreValue(raw?.fullTime?.home ?? raw?.fullTime?.homeTeam);
-  const fullAway = scoreValue(raw?.fullTime?.away ?? raw?.fullTime?.awayTeam);
-  const penHome = scoreValue(raw?.penalties?.home ?? raw?.penalties?.homeTeam);
-  const penAway = scoreValue(raw?.penalties?.away ?? raw?.penalties?.awayTeam);
-  const hasPens = penHome !== null && penAway !== null;
-  return {
-    home: hasPens && fullHome !== null ? fullHome - penHome : fullHome,
-    away: hasPens && fullAway !== null ? fullAway - penAway : fullAway,
-    penalties: hasPens ? { home: penHome, away: penAway } : null,
-  };
-}
-
-// Pre-season, football-data still serves a full table but in an arbitrary (not
+// Pre-season, providers can serve a full table but in an arbitrary (not
 // alphabetical) order with every row at 0 points, so `position` is meaningless. Sort
 // those blocks by team name and renumber, so the table reads sensibly until real
 // results give it a meaningful order.
@@ -145,7 +98,7 @@ export function alphabetizeStandings(standings) {
 // Standings keyed by team. `zones` comes from the competition config and stamps each
 // row with the coloured band it sits in (European places, relegation, ...), or null
 // for the neutral middle of the table.
-export function mapFootballDataStandings(payload, zones = []) {
+export function mapStandings(payload, zones = []) {
   const rows = new Map();
 
   (payload.standings ?? [])
@@ -272,10 +225,6 @@ function liveSummary(minute, opponent) {
 
 function hasScore(score) {
   return Number.isFinite(score?.home) && Number.isFinite(score?.away);
-}
-
-function scoreValue(value) {
-  return Number.isFinite(value) ? value : null;
 }
 
 function scoreLabel(score) {

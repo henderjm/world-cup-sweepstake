@@ -1,13 +1,10 @@
-// Pure fantasy scoring: given one match's mapped detail (the shape mapMatchDetail
-// produces, see src/mapDetail.js), compute each involved player's point delta for
-// that match. No DOM, no fetch, no D1 — the Worker's weekly scoring cron and the
+// Pure fantasy scoring: given one match's mapped API-Football detail, compute each
+// involved player's point delta for that match. No DOM, no fetch, no D1 — the Worker's weekly scoring cron and the
 // fetch script both call this the same way, feeding matches to whichever store
 // they own.
 //
-// Approximation, documented: football-data carries no per-player minutes-played
-// field, only lineup/bench membership and a flat subs[] list. Appearance and
-// clean-sheet credit therefore go to anyone who started or was subbed on, with no
-// minutes threshold — see SCORING in src/fantasy.js for the exact rule set.
+// API-Football supplies player minutes. The flat appearance and clean-sheet rule is
+// retained from Phase 4.1 until the scoring-engine phase adopts minute thresholds.
 
 import { SCORING, bucketPosition } from "./fantasy.js";
 

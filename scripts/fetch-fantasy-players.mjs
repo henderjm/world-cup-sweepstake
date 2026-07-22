@@ -1,7 +1,7 @@
 // Bakes data/PL/players.json: the fantasy draftable player pool. Runs on a slower
 // (daily) cadence than the live-data fetch, since squads barely change.
 //
-// Primary path: football-data's /v4/teams/{id} squad endpoint gives a complete
+// Primary path: API-Football's /players/squads endpoint gives a complete
 // pool for every club on day one, with a clean four-value position field
 // (Goalkeeper/Defence/Midfield/Offence) that maps directly to GK/DEF/MID/FWD. Its
 // tier isn't documented, so this is attempted first and verified by running it.
@@ -13,38 +13,50 @@
 // gameweek by gameweek. The output is stamped `complete: false` so the frontend can
 // say so, rather than accumulation and squads ever silently mixing mid-run.
 
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 
+import { COMPETITIONS } from "../src/competitions.js";
 import { bucketPosition } from "../src/fantasy.js";
-import { fetchFootballData, sleep } from "./lib/footballData.mjs";
+import { normalizeTeamName } from "../src/domain.js";
+import { fetchApiFootball } from "./lib/apiFootball.mjs";
 
-const token = process.env.FOOTBALL_DATA_TOKEN;
+const token = process.env.API_FOOTBALL_KEY;
 const competition = process.env.FANTASY_COMPETITION ?? "PL";
-const season = process.env.FOOTBALL_DATA_SEASON ?? "2026";
+const season = process.env.API_FOOTBALL_SEASON ?? "2026";
+const leagueId = COMPETITIONS[competition]?.apiFootballLeagueId;
 
 const dataDir = new URL(`../data/${competition}/`, import.meta.url);
 const matchesDir = new URL("matches/", dataDir);
-
-// Spacing between per-club squad calls, same reasoning as the live-data script's
-// per-match throttle: stay comfortably under football-data's ~10 req/min free tier.
-const TEAM_THROTTLE_MS = 6500;
+const playersFile = new URL("players.json", dataDir);
 
 if (!token) {
-  console.log("FOOTBALL_DATA_TOKEN is not set; no player pool generated.");
+  console.log("API_FOOTBALL_KEY is not set; no player pool generated.");
+  process.exit(0);
+}
+if (!Number.isInteger(leagueId)) throw new Error(`No API-Football league id configured for ${competition}`);
+
+const refreshHours = Number(process.env.FANTASY_REFRESH_HOURS ?? 24);
+const existing = await stat(playersFile).catch(() => null);
+if (existing && Date.now() - existing.mtimeMs < refreshHours * 60 * 60 * 1000) {
+  console.log(`${competition}/players.json is fresh; skipping squad refresh.`);
   process.exit(0);
 }
 
-const standings = await fetchFootballData(
-  `/v4/competitions/${competition}/standings?season=${season}`,
-  token,
-).catch((error) => {
+const standings = await fetchApiFootball(`/standings?league=${leagueId}&season=${season}`).catch((error) => {
   console.warn(`could not load ${competition} standings for club ids: ${error.message}`);
-  return { standings: [] };
+  return { response: [] };
 });
 
-const clubs = (standings.standings?.[0]?.table ?? [])
-  .map((row) => row.team)
-  .filter((team) => team?.id);
+const clubs = [
+  ...new Map(
+    (standings.response ?? [])
+      .flatMap((entry) => entry.league?.standings ?? [])
+      .flatMap((table) => table ?? [])
+      .map((row) => row.team)
+      .filter((team) => team?.id)
+      .map((team) => [team.id, team]),
+  ).values(),
+];
 
 if (!clubs.length) {
   console.warn(`no ${competition} clubs found (standings empty or unavailable); nothing to fetch.`);
@@ -55,38 +67,46 @@ const players = await fetchViaSquads(clubs);
 const { list, complete } = players ?? (await fetchViaLineups());
 
 const body = {
-  source: complete ? "football-data.org (squads)" : "football-data.org (accumulated from lineups)",
+  source: complete ? "API-Football (squads)" : "API-Football (accumulated from lineups)",
   lastUpdated: new Date().toISOString(),
   complete,
   players: list,
 };
-await writeFile(new URL("players.json", dataDir), `${JSON.stringify(body, null, 2)}\n`);
+await writeFile(playersFile, `${JSON.stringify(body, null, 2)}\n`);
 console.log(`Wrote ${competition}/players.json (${list.length} players, complete=${complete}).`);
 
-// Primary path: one call per club to /v4/teams/{id}. Any single club failing marks
+// Primary path: one call per club to /players/squads. Any single club failing marks
 // the whole run as unavailable (rather than a competition's pool being some clubs'
 // full squads and others' partial lineup-only players, which would be a confusing,
 // silently-inconsistent mix) and falls through to the lineup-accumulation path.
 async function fetchViaSquads(clubs) {
   const list = [];
-  for (const club of clubs) {
+  let payloads;
+  try {
+    payloads = await fetchApiFootball(clubs.map((club) => `/players/squads?team=${club.id}`));
+  } catch (error) {
+    console.warn(`squads endpoint unavailable (${error.message}); falling back to lineups`);
+    return null;
+  }
+  for (const [index, payload] of payloads.entries()) {
+    const club = clubs[index];
+    const squad = payload.response?.[0];
+    if (!squad?.team || !Array.isArray(squad.players)) return null;
     try {
-      const team = await fetchFootballData(`/v4/teams/${club.id}`, token);
-      for (const member of team.squad ?? []) {
+      for (const member of squad.players) {
         if (member?.id == null) continue;
         list.push({
           id: member.id,
           name: member.name ?? "",
-          team: team.shortName ?? team.name ?? club.shortName ?? club.name ?? "",
+          team: normalizeTeamName(squad.team.name ?? club.name),
           position: bucketPosition(member.position),
-          crest: team.crest ?? club.crest ?? null,
+          crest: squad.team.logo ?? club.logo ?? null,
         });
       }
     } catch (error) {
       console.warn(`squads endpoint unavailable (${club.name}: ${error.message}); falling back to lineups`);
       return null;
     }
-    await sleep(TEAM_THROTTLE_MS);
   }
   return { list, complete: true };
 }

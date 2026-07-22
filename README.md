@@ -19,31 +19,30 @@ optional AI-written match read.
 4. Set `Source` to `GitHub Actions`.
 5. Push to `main`; the included workflow publishes the app.
 
-The app has no build step. `index.html` is the entry point, so it also works from any static host.
+The app is built with Svelte and Vite. Run `npm run dev` locally or `npm run build` to produce the static `dist/` site.
 
 ## Live Data
 
-Data comes from football-data.org (the Premier League and Champions League are on
-their free tier).
+Data comes from API-Football. The paid Pro plan is required for the configured 2026 season.
 
 To enable it:
 
-1. Get a football-data.org API token.
+1. Get an API-Football key.
 2. In your GitHub repo, go to `Settings` -> `Secrets and variables` -> `Actions`.
-3. Add a repository secret named `FOOTBALL_DATA_TOKEN`.
+3. Add a repository secret named `API_FOOTBALL_KEY`.
 4. Run the Pages workflow, or wait for the schedule.
 
-The workflow fetches live data every few minutes and publishes `data/<competition>/live.json` per competition with the site. The API token never appears in the browser.
+The workflow refreshes the static fallback every five minutes during its 12-hour UTC match window and publishes `data/<competition>/live.json` per competition. The API key never appears in the browser.
 
 Workflow environment variables (set in the workflow file):
 
-- `FOOTBALL_DATA_COMPETITIONS`, a comma list of `CODE:season` pairs, default `PL:2026` (the season is football-data's starting year, so 2026 = the 2026-27 season). The first competition is the default one.
+- `API_FOOTBALL_COMPETITIONS`, a comma list of `CODE:season` pairs, default `PL:2026`. Competition codes resolve to API-Football league ids in `src/competitions.js`.
 
 ## Live Data Without Deploys (Cloudflare Worker)
 
 The GitHub Action bakes data into each deploy, so the static `data/live.json` only
 refreshes as often as the site redeploys. For minute-by-minute live scores, deploy the
-Worker in `worker/`: it proxies football-data with the token kept server-side, edge-
+Worker in `worker/`: it proxies API-Football with the key kept server-side, edge-
 caches each upstream call briefly (so many pollers collapse into roughly one upstream
 call per cache window, staying under the plan's per-minute limit), and serves `/live`
 and `/match/:id` with CORS. The site then polls it (about every 20 seconds while a
@@ -51,7 +50,7 @@ game is live) and updates in place, no deploy involved.
 
 1. `cd worker`
 2. `npx wrangler login`
-3. `npx wrangler secret put FOOTBALL_DATA_TOKEN` and paste your token.
+3. `npx wrangler secret put API_FOOTBALL_KEY` and paste your key.
 4. `npx wrangler deploy`. Note the URL it prints, e.g.
    `https://goon-squad-data.<your-subdomain>.workers.dev`.
 5. Set `DATA_API` in `src/data.js` to that URL and push.
@@ -59,10 +58,9 @@ game is live) and updates in place, no deploy involved.
 The site falls back to the static `data/live.json` whenever the Worker is unset or
 unreachable, so it keeps working either way. The token never reaches the browser.
 
-Note: football-data.org does not provide expected goals (xG) on any tier, so the match
-detail shows lineups, scorers, subs and cards, but not xG. Player-level match detail
-may require football-data's deep data pack depending on your plan; without it the
-Golden Boot and the events pane degrade gracefully to empty states.
+API-Football match detail supplies events, lineups, minutes and defensive player
+statistics. The app still degrades to empty states when a competition does not publish
+a particular coverage area.
 
 ### AI match analysis (optional)
 
