@@ -1,4 +1,3 @@
-import { zoneFor } from "./competitions.js";
 import { normalizeTeamName } from "./domain.js";
 
 const STATUS = {
@@ -72,34 +71,6 @@ export function mergeFixtureUpdates(schedule, updates) {
   return schedule.map((match) => byId.get(match.id) ?? match);
 }
 
-export function mapApiFootballStandings(payload, zones = []) {
-  const mapped = new Map();
-  for (const response of payload.response ?? []) {
-    for (const table of response.league?.standings ?? []) {
-      for (const row of table ?? []) {
-        const team = normalizeTeamName(row.team?.name);
-        mapped.set(team, {
-          team,
-          group: row.group ?? null,
-          position: row.rank,
-          points: row.points ?? 0,
-          played: row.all?.played ?? 0,
-          won: row.all?.win ?? 0,
-          drawn: row.all?.draw ?? 0,
-          lost: row.all?.lose ?? 0,
-          goalsFor: row.all?.goals?.for ?? 0,
-          goalsAgainst: row.all?.goals?.against ?? 0,
-          goalDifference: row.goalsDiff ?? 0,
-          crest: row.team?.logo ?? null,
-          tla: null,
-          zone: zoneFor(row.rank, zones),
-        });
-      }
-    }
-  }
-  return mapped;
-}
-
 export function mapApiFootballStandingsPayload(payload) {
   return (payload.response ?? []).flatMap((response) =>
     (response.league?.standings ?? []).map((table) => ({
@@ -162,6 +133,7 @@ function buildMatchDetail(summary, fixture, lineupsPayload, eventsPayload, playe
   );
   const events = eventsPayload.response ?? [];
   const yellowCounts = new Map();
+  const sentOff = new Set();
   let homeGoals = 0;
   let awayGoals = 0;
 
@@ -194,15 +166,11 @@ function buildMatchDetail(summary, fixture, lineupsPayload, eventsPayload, playe
         yellowCounts.set(playerId, count);
         if (count === 2) card = "YELLOW_RED";
       }
-      const previous = cards[cards.length - 1];
-      if (
-        card === "RED" &&
-        previous?.card === "YELLOW_RED" &&
-        previous.playerId === playerId &&
-        previous.minute === (event.time?.elapsed ?? null)
-      ) {
-        continue;
-      }
+      if (card === "YELLOW_RED" && playerId !== null) sentOff.add(playerId);
+      // A player already sent off via a synthesized YELLOW_RED cannot be carded
+      // again, so drop API-Football's own explicit "Red Card" event for them
+      // instead of double-counting the dismissal.
+      if (card === "RED" && playerId !== null && sentOff.has(playerId)) continue;
       cards.push({
         minute: event.time?.elapsed ?? null,
         team,

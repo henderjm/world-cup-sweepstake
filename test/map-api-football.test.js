@@ -6,7 +6,6 @@ import {
   mapApiFootballMatchDetail,
   mapApiFootballMatchDetailFromSummary,
   mapApiFootballMatches,
-  mapApiFootballStandings,
   matchesInTrackingWindow,
 } from "../src/mapApiFootball.js";
 
@@ -86,50 +85,6 @@ test("translates every documented API-Football status into the app vocabulary", 
     mapApiFootballMatches({ response }).map((match) => match.status),
     Object.values(expected),
   );
-});
-
-test("maps API-Football standings into the app standings contract", () => {
-  const zones = [{ from: 1, to: 1, tone: "safe", label: "Champions" }];
-  const rows = mapApiFootballStandings(
-    {
-      response: [
-        {
-          league: {
-            standings: [
-              [
-                {
-                  rank: 1,
-                  team: { name: "Arsenal", logo: "arsenal.png" },
-                  points: 9,
-                  goalsDiff: 6,
-                  group: "Premier League",
-                  all: { played: 3, win: 3, draw: 0, lose: 0, goals: { for: 8, against: 2 } },
-                },
-              ],
-            ],
-          },
-        },
-      ],
-    },
-    zones,
-  );
-
-  assert.deepEqual(rows.get("Arsenal"), {
-    team: "Arsenal",
-    group: "Premier League",
-    position: 1,
-    points: 9,
-    played: 3,
-    won: 3,
-    drawn: 0,
-    lost: 0,
-    goalsFor: 8,
-    goalsAgainst: 2,
-    goalDifference: 6,
-    crest: "arsenal.png",
-    tla: null,
-    zone: zones[0],
-  });
 });
 
 test("merges API-Football fixture, lineup, event and player-stat responses", () => {

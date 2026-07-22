@@ -22,3 +22,11 @@ export async function fetchApiFootball(paths, { interval = "250ms" } = {}) {
   payloads.forEach(assertApiFootballPayload);
   return Array.isArray(paths) ? payloads : payloads[0];
 }
+
+// The Go CLI (cmd/api-football) exits 1 for an expected upstream failure (a
+// season not yet open, a network blip) and otherwise exits with Go's own default
+// code for an unhandled panic. Only the former is safe for a caller to swallow as
+// "no data this run"; anything else is a real bug in the ingestion layer.
+export function isUnexpectedApiFootballFailure(error) {
+  return typeof error.code === "number" && error.code !== 1;
+}

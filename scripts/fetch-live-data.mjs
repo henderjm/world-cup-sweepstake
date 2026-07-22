@@ -7,7 +7,7 @@ import {
   mapApiFootballStandingsPayload,
 } from "../src/mapApiFootball.js";
 import { aggregateScorers } from "../src/scorers.js";
-import { fetchApiFootball } from "./lib/apiFootball.mjs";
+import { fetchApiFootball, isUnexpectedApiFootballFailure } from "./lib/apiFootball.mjs";
 
 const token = process.env.API_FOOTBALL_KEY;
 
@@ -52,6 +52,7 @@ for (const comp of competitions) {
   try {
     await bakeCompetition(comp, comp === competitions[0]);
   } catch (error) {
+    if (isUnexpectedApiFootballFailure(error)) throw error;
     console.warn(`${comp.code}: bake failed, keeping previous data (${error.message.slice(0, 120)})`);
   }
 }
@@ -64,6 +65,7 @@ async function bakeCompetition({ code, season, leagueId }, isDefault) {
   const matchesPayload = await fetchApiFootball(`/fixtures?league=${leagueId}&season=${season}`);
   const standingsPayload = await fetchApiFootball(`/standings?league=${leagueId}&season=${season}`).catch(
     (error) => {
+      if (isUnexpectedApiFootballFailure(error)) throw error;
       console.warn(`${code} standings unavailable (${error.message}); baking without a table`);
       return { response: [] };
     },

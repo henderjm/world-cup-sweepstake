@@ -26,6 +26,7 @@ const TEAM_ALIASES = new Map(
     "newcastle united": "Newcastle",
     "nottingham forest": "Nottingham",
     "tottenham hotspur": "Tottenham",
+    "west ham united": "West Ham",
   }),
 );
 

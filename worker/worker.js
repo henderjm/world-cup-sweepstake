@@ -70,6 +70,12 @@ const PAPER_RUN_TTL = 90 * 24 * 60 * 60; // 90 days
 // Best-effort stale fallback held in the isolate's memory, one entry per competition.
 const lastLive = new Map();
 
+// Per-match detail is 3 upstream requests; pacing between matches keeps a busy
+// multi-match minute-tick under the Ultra tier's ~7 req/sec ceiling instead of
+// firing every match's requests back-to-back.
+const MATCH_DETAIL_PACING_MS = 150;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // The configured competitions, as "CODE:season" pairs: "PL:2026,CL:2026". The first
 // entry is the default for legacy unprefixed routes.
 function parseCompetitions(env) {
@@ -314,7 +320,8 @@ async function analyseCompetition(env, comp) {
     return; // feed down; the next tick retries
   }
 
-  for (const match of live.matches.filter(analysisWorthGenerating)) {
+  const worthGenerating = live.matches.filter(analysisWorthGenerating);
+  for (const [index, match] of worthGenerating.entries()) {
     try {
       // Live matches also fetch detail so event changes the live feed cannot see
       // (red cards) regenerate on the next tick; the detail is reused for the
@@ -322,6 +329,7 @@ async function analyseCompetition(env, comp) {
       let detail = null;
       let signature = analysisCacheSignature(match);
       if (!isMatchFinished(match)) {
+        if (index > 0) await sleep(MATCH_DETAIL_PACING_MS);
         detail = await fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY);
         signature += `:${analysisEventSignature(detail)}`;
       }
@@ -785,6 +793,7 @@ async function notifyCompetition(env, comp) {
     return kickoff > now && kickoff - now < NOTIFY_WINDOW_MS;
   });
 
+  let liveDetailFetches = 0;
   for (const match of relevant) {
     const prevRow = await env.DB.prepare("SELECT signature FROM notify_state WHERE match_id = ?1")
       .bind(match.id)
@@ -809,6 +818,8 @@ async function notifyCompetition(env, comp) {
     let detailMinute = null;
     if (isLive(match.status)) {
       try {
+        if (liveDetailFetches > 0) await sleep(MATCH_DETAIL_PACING_MS);
+        liveDetailFetches += 1;
         const detail = await fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY);
         // YELLOW_RED is a second-yellow dismissal, not a separate RED booking.
         const redCards = (detail.cards ?? []).filter(
