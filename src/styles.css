@@ -874,6 +874,15 @@ button { font-family: inherit; cursor: pointer; }
   font-weight: 600;
 }
 
+.you__device { border-top: none; }
+.you__device [data-push-controls] {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .tgl {
   width: 40px;
   height: 22px;

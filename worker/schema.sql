@@ -51,3 +51,21 @@ CREATE TABLE IF NOT EXISTS banter_reactions (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (match_id, user_id, emoji)
 );
+
+-- Web Push subscriptions, one row per browser/device. The endpoint is the identity;
+-- a dead endpoint (404/410 from the push service) is pruned on send.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  endpoint TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS push_subs_user ON push_subscriptions(user_id);
+
+-- Last-notified state per match, so the notification cron only announces changes.
+CREATE TABLE IF NOT EXISTS notify_state (
+  match_id INTEGER PRIMARY KEY,
+  signature TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

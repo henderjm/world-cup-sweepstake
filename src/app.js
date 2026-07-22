@@ -29,6 +29,7 @@ import {
   signOut,
   toggleFollow,
 } from "./account.js";
+import { disablePush, enablePush, pushState, sendTestPush } from "./push.js";
 import { setMatchModel, setupMatchDetail, openMatch } from "./matchDetail.js";
 import { isLive } from "./format.js";
 import { todayPaperRunDate } from "./paperRunModel.js";
@@ -244,6 +245,7 @@ function renderLayout() {
     elements.layout.innerHTML = account
       ? renderSignedIn(model, account, isFollowed)
       : renderSignedOut({ available: accountAvailable(), configured: Boolean(GOOGLE_CLIENT_ID) });
+    if (account) updatePushControls();
     if (!account && accountAvailable() && GOOGLE_CLIENT_ID) {
       mountSignIn(document.getElementById("gisButton"), {
         onError: () => {
@@ -380,6 +382,26 @@ function destroyPaperRunMount() {
   state.paperrun.mount = null;
 }
 
+// -- Device push controls ---------------------------------------------------------
+
+// Fills the "This device" slot in the Notifications card based on real browser
+// state (permission + live subscription), never a stored flag.
+async function updatePushControls(note = "") {
+  const slot = elements.layout.querySelector("[data-push-controls]");
+  if (!slot) return;
+  const current = await pushState();
+  if (!elements.layout.querySelector("[data-push-controls]")) return; // re-rendered meanwhile
+  if (current === "unsupported") {
+    slot.innerHTML = `<span class="note">Not supported in this browser.</span>`;
+  } else if (current === "denied") {
+    slot.innerHTML = `<span class="note">Blocked in browser settings.</span>`;
+  } else if (current === "off") {
+    slot.innerHTML = `${note ? `<span class="note">${note}</span> ` : ""}<button class="seg" type="button" data-push-enable>Enable on this device</button>`;
+  } else {
+    slot.innerHTML = `${note ? `<span class="note">${note}</span> ` : ""}<button class="seg" type="button" data-push-test>Send test</button> <button class="seg" type="button" data-push-disable>Disable</button>`;
+  }
+}
+
 // -- Navigation & controls -----------------------------------------------------------
 
 function syncNav() {
@@ -499,6 +521,33 @@ function wireLayoutControls() {
     }
     if (event.target.closest("[data-sign-out]")) {
       signOut();
+      return;
+    }
+    if (event.target.closest("[data-push-enable]")) {
+      metric("count", "push_enable", 1);
+      enablePush()
+        .then(() => updatePushControls())
+        .catch((error) => updatePushControls(String(error.message).includes("permission") ? "Permission was not granted." : "Couldn't enable. Try again."));
+      return;
+    }
+    if (event.target.closest("[data-push-disable]")) {
+      disablePush().finally(() => updatePushControls());
+      return;
+    }
+    const testButton = event.target.closest("[data-push-test]");
+    if (testButton) {
+      testButton.disabled = true;
+      testButton.textContent = "Sending…";
+      sendTestPush()
+        .then((result) => {
+          testButton.textContent = result.sent ? "Sent ✓" : "No devices";
+        })
+        .catch(() => {
+          testButton.textContent = "Failed";
+        })
+        .finally(() => {
+          window.setTimeout(() => updatePushControls(), 2500);
+        });
       return;
     }
     const shareButton = event.target.closest("[data-run-share-button]");
