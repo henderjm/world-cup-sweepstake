@@ -4,6 +4,7 @@ import test from "node:test";
 import { COMPETITIONS } from "../src/competitions.js";
 import {
   mapApiFootballMatchDetail,
+  mapApiFootballMatchDetailFromSummary,
   mapApiFootballMatches,
   mapApiFootballStandings,
   matchesInTrackingWindow,
@@ -176,6 +177,68 @@ test("merges API-Football fixture, lineup, event and player-stat responses", () 
   assert.deepEqual(detail.goals[0], { minute: 20, injuryTime: null, type: "REGULAR", team: "Arsenal", scorerId: 10, scorer: "Player A", assistId: 11, assist: "Helper", home: 1, away: 0 });
   assert.deepEqual(detail.cards.map((card) => card.card), ["YELLOW", "YELLOW_RED"]);
   assert.deepEqual(detail.playerStats[0], { playerId: 10, player: "Player A", team: "Arsenal", minutes: 90, position: "F", tackles: 2, blocks: 0, interceptions: 1 });
+});
+
+test("merges live detail endpoints without refetching the fixture summary", () => {
+  const summary = {
+    id: 42,
+    status: "IN_PLAY",
+    utcDate: "2026-08-15T14:00:00+00:00",
+    stage: "REGULAR_SEASON",
+    group: null,
+    matchday: 1,
+    venue: "Emirates Stadium",
+    city: "London",
+    mapUrl: "https://example.test/map",
+    minute: 20,
+    score: { home: 1, away: 0 },
+    penalties: null,
+    homeTeam: "Arsenal",
+    awayTeam: "Chelsea",
+    homeCrest: "arsenal.png",
+    awayCrest: "chelsea.png",
+  };
+  const lineups = {
+    response: [
+      { team: { id: 1, name: "Arsenal", logo: "arsenal.png" }, formation: "4-3-3", startXI: [], substitutes: [] },
+      { team: { id: 2, name: "Chelsea", logo: "chelsea.png" }, formation: "4-2-3-1", startXI: [], substitutes: [] },
+    ],
+  };
+  const events = {
+    response: [
+      {
+        time: { elapsed: 20, extra: null },
+        team: { id: 1, name: "Arsenal" },
+        player: { id: 10, name: "Player A" },
+        assist: { id: 11, name: "Helper" },
+        type: "Goal",
+        detail: "Normal Goal",
+      },
+    ],
+  };
+  const players = {
+    response: [
+      { team: { id: 1, name: "Arsenal" }, players: [{ player: { id: 10, name: "Player A" }, statistics: [{ games: { minutes: 20, position: "F" }, tackles: {} }] }] },
+    ],
+  };
+
+  const detail = mapApiFootballMatchDetailFromSummary(summary, lineups, events, players);
+
+  assert.equal(detail.id, 42);
+  assert.equal(detail.home.name, "Arsenal");
+  assert.equal(detail.away.name, "Chelsea");
+  assert.equal(detail.home.formation, "4-3-3");
+  assert.deepEqual(detail.score, {
+    home: 1,
+    away: 0,
+    htHome: null,
+    htAway: null,
+    penHome: null,
+    penAway: null,
+  });
+  assert.equal(detail.goals[0].team, "Arsenal");
+  assert.equal(detail.goals[0].home, 1);
+  assert.equal(detail.playerStats[0].minutes, 20);
 });
 
 test("competition config resolves internal codes to API-Football league ids", () => {

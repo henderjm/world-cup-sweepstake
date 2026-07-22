@@ -130,6 +130,30 @@ export function mapApiFootballStandingsPayload(payload) {
 export function mapApiFootballMatchDetail(fixturePayload, lineupsPayload, eventsPayload, playersPayload) {
   const fixture = fixturePayload.response?.[0] ?? {};
   const summary = mapApiFootballMatches({ response: [fixture] })[0];
+  return buildMatchDetail(summary, fixture, lineupsPayload, eventsPayload, playersPayload);
+}
+
+export function mapApiFootballMatchDetailFromSummary(summary, lineupsPayload, eventsPayload, playersPayload) {
+  const lineupByName = new Map(
+    (lineupsPayload.response ?? []).map((lineup) => [normalizeTeamName(lineup.team?.name), lineup.team]),
+  );
+  const side = (name, logo) => ({
+    id: lineupByName.get(name)?.id ?? null,
+    name,
+    logo: lineupByName.get(name)?.logo ?? logo ?? null,
+  });
+  const fixture = {
+    fixture: { referee: null },
+    teams: {
+      home: side(summary.homeTeam, summary.homeCrest),
+      away: side(summary.awayTeam, summary.awayCrest),
+    },
+    score: { halftime: { home: null, away: null } },
+  };
+  return buildMatchDetail(summary, fixture, lineupsPayload, eventsPayload, playersPayload);
+}
+
+function buildMatchDetail(summary, fixture, lineupsPayload, eventsPayload, playersPayload) {
   const lineups = new Map((lineupsPayload.response ?? []).map((lineup) => [lineup.team?.id, lineup]));
   const teamNames = new Map(
     [fixture.teams?.home, fixture.teams?.away]

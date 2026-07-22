@@ -25,6 +25,7 @@ import { buildPushHTTPRequest } from "@pushforge/builder";
 import { COMPETITIONS } from "../src/competitions.js";
 import {
   mapApiFootballMatchDetail,
+  mapApiFootballMatchDetailFromSummary,
   mapApiFootballMatches,
   mapApiFootballStandingsPayload,
   matchesInTrackingWindow,
@@ -324,7 +325,7 @@ async function analyseCompetition(env, comp) {
       let detail = null;
       let signature = analysisCacheSignature(match);
       if (!isMatchFinished(match)) {
-        detail = await fetchMatchDetail(match.id, env.API_FOOTBALL_KEY);
+        detail = await fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY);
         signature += `:${analysisEventSignature(detail)}`;
       }
       const current = await readLatestAnalysis(env, match.id);
@@ -811,7 +812,7 @@ async function notifyCompetition(env, comp) {
     let detailMinute = null;
     if (isLive(match.status)) {
       try {
-        const detail = await fetchMatchDetail(match.id, env.API_FOOTBALL_KEY);
+        const detail = await fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY);
         // YELLOW_RED is a second-yellow dismissal, not a separate RED booking.
         const redCards = (detail.cards ?? []).filter(
           (card) => card.card === "RED" || card.card === "YELLOW_RED",
@@ -1181,13 +1182,26 @@ function corsHeaders(request) {
 }
 
 async function fetchMatchDetail(id, token) {
-  // Pro allows five requests/second. Keep this four-call aggregate sequential so
-  // concurrent cron/user work cannot turn one detail read into an avoidable burst.
+  // Interactive detail reads include the fixture endpoint for half-time scores and
+  // referee data. Slow-changing payloads keep longer cache windows so opening the
+  // drawer cannot multiply upstream usage.
   const fixture = await fetchJson(`/fixtures?id=${id}`, token, 60);
-  const lineups = await fetchJson(`/fixtures/lineups?fixture=${id}`, token, 60);
+  const lineups = await fetchJson(`/fixtures/lineups?fixture=${id}`, token, 15 * 60);
   const events = await fetchJson(`/fixtures/events?fixture=${id}`, token, 60);
-  const players = await fetchJson(`/fixtures/players?fixture=${id}`, token, 60);
+  const players = await fetchJson(`/fixtures/players?fixture=${id}`, token, 5 * 60);
   return mapApiFootballMatchDetail(fixture, lineups, events, players);
+}
+
+async function fetchLiveMatchDetail(summary, token) {
+  // The minute cron already has the fixture summary from the batched live request.
+  // Reuse it instead of spending another /fixtures call per match per minute. Events
+  // remain minute-fresh; lineups are effectively immutable after kick-off and player
+  // totals only need a five-minute scoring cadence. At ~105 live minutes this costs
+  // about 133 requests per match instead of 420.
+  const lineups = await fetchJson(`/fixtures/lineups?fixture=${summary.id}`, token, 15 * 60);
+  const events = await fetchJson(`/fixtures/events?fixture=${summary.id}`, token, 60);
+  const players = await fetchJson(`/fixtures/players?fixture=${summary.id}`, token, 5 * 60);
+  return mapApiFootballMatchDetailFromSummary(summary, lineups, events, players);
 }
 
 async function fetchJson(path, token, cacheTtl) {
