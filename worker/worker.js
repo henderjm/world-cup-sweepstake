@@ -24,6 +24,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { buildPushHTTPRequest } from "@pushforge/builder";
 import { mapFootballDataMatches } from "../src/domain.js";
 import { mapMatchDetail } from "../src/mapDetail.js";
+import { isLive } from "../src/format.js";
 import {
   ANALYSIS_SCHEMA,
   ANALYSIS_SYSTEM_PROMPT,
@@ -204,11 +205,19 @@ export default {
   },
 
   // Cron (see [triggers] in wrangler.toml): pre-generates AI analyses during live
-  // play and fans out push notifications for followed clubs. Both passes read the
-  // same edge-cached /live responses, so running them together costs no extra
-  // upstream calls.
+  // play and fans out push notifications for followed clubs. Run sequentially, not
+  // concurrently: both passes fetch the same /live and per-match detail URLs, and
+  // only a sequential order lets the second pass land on the edge cache the first
+  // one just warmed. Running them in parallel would fire both fetches before either
+  // response is cached, roughly doubling upstream calls against football-data's
+  // ~10 req/min free-tier limit.
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(Promise.all([runScheduledAnalysis(env), runScheduledNotifications(env)]));
+    ctx.waitUntil(
+      (async () => {
+        await runScheduledAnalysis(env);
+        await runScheduledNotifications(env);
+      })(),
+    );
   },
 };
 
@@ -296,14 +305,25 @@ async function analyseCompetition(env, comp) {
       if (current?.signature === signature) continue; // game state unchanged since last tick
       const body = await generateAnalysis(env, match, live, env.FOOTBALL_DATA_TOKEN, detail);
       await writeLatestAnalysis(env, match.id, { signature, body });
-      // "Analysis ready" pushes only for the full-time read: live analyses
-      // regenerate every few minutes and would spam followers.
+      // "Analysis ready" pushes only for the full-time read, and only once ever
+      // per match: gated on a dedicated KV marker rather than the analysis cache
+      // signature, so a later regeneration (e.g. an ANALYSIS_PROMPT_VERSION bump
+      // that changes the signature of every recently-finished match) can never
+      // re-send it. Live analyses regenerate every few minutes and would spam
+      // followers, so this only fires for the finished-match read.
       if (isMatchFinished(match) && pushConfigured(env)) {
-        await sendMatchEvent(env, comp, match, {
-          pref: "analysis",
-          title: `Analysis ready: ${match.homeTeam} v ${match.awayTeam}`,
-          body: body.headline ?? "The full-time read is in.",
-        });
+        const notifiedKey = `analysis:notified:${match.id}`;
+        const alreadyNotified = await env.ANALYSIS_CACHE.get(notifiedKey);
+        if (!alreadyNotified) {
+          await sendMatchEvents(env, comp, match, [
+            {
+              pref: "analysis",
+              title: `Analysis ready: ${match.homeTeam} v ${match.awayTeam}`,
+              body: body.headline ?? "The full-time read is in.",
+            },
+          ]);
+          await env.ANALYSIS_CACHE.put(notifiedKey, "1", { expirationTtl: ANALYSIS_KV_TTL });
+        }
       }
     } catch {
       // one broken match must not block the others; the next tick retries
@@ -628,8 +648,7 @@ async function sha256Hex(value) {
 // full-time, honouring each user's prefs. Targeting is the follows table; a dead
 // endpoint (404/410 from the push service) is pruned on send.
 
-const LIVE_SET = new Set(["IN_PLAY", "PAUSED", "LIVE", "EXTRA_TIME", "PENALTY_SHOOTOUT", "BREAK"]);
-const NOTIFY_WINDOW_MS = 3 * 60 * 60 * 1000; // only matches near their kickoff get diffed
+const NOTIFY_WINDOW_MS = 3 * 60 * 60 * 1000; // matches within this window of kickoff/full-time get diffed
 const DEFAULT_PREFS = { goals: true, kickoff: true, fulltime: true, red: false, analysis: false };
 
 function pushConfigured(env) {
@@ -700,17 +719,17 @@ async function handlePushTest(request, env, cors) {
     )
       .bind(user.id)
       .all();
-    let sent = 0;
-    for (const sub of subs.results ?? []) {
-      const ok = await sendPush(env, sub, {
-        title: "Squad Goals test",
-        body: "Push notifications are working on this device.",
-        url: env.SITE_ORIGIN ?? "",
-        tag: "sg-test",
-      });
-      if (ok) sent += 1;
-    }
-    return json({ sent, devices: subs.results?.length ?? 0 }, 200, cors);
+    const results = await Promise.all(
+      (subs.results ?? []).map((sub) =>
+        sendPush(env, sub, {
+          title: "Squad Goals test",
+          body: "Push notifications are working on this device.",
+          url: env.SITE_ORIGIN ?? "",
+          tag: "sg-test",
+        }),
+      ),
+    );
+    return json({ sent: results.filter(Boolean).length, devices: subs.results?.length ?? 0 }, 200, cors);
   } catch {
     return json({ error: "push unavailable" }, 502, cors);
   }
@@ -731,24 +750,51 @@ async function notifyCompetition(env, comp) {
   const live = await getLive(comp.code, comp.season, env.FOOTBALL_DATA_TOKEN);
   const now = Date.now();
   const relevant = live.matches.filter((match) => {
-    if (LIVE_SET.has(match.status)) return true;
+    if (isLive(match.status)) return true;
     const kickoff = new Date(match.utcDate).getTime();
-    return isMatchFinished(match) && Number.isFinite(kickoff) && now - kickoff < NOTIFY_WINDOW_MS;
+    if (!Number.isFinite(kickoff)) return false;
+    if (isMatchFinished(match)) return now - kickoff < NOTIFY_WINDOW_MS;
+    // Not kicked off yet: baseline it shortly before kickoff so the live
+    // transition below has a non-live prior state to diff against once it
+    // actually goes live, instead of the match's first sighting already being
+    // live (which the "first sighting is a baseline" rule then swallows).
+    return kickoff > now && kickoff - now < NOTIFY_WINDOW_MS;
   });
 
   for (const match of relevant) {
+    const prevRow = await env.DB.prepare("SELECT signature FROM notify_state WHERE match_id = ?1")
+      .bind(match.id)
+      .first();
+    let prev = null;
+    if (prevRow) {
+      try {
+        prev = JSON.parse(prevRow.signature);
+      } catch {
+        prev = null;
+      }
+    }
+
     // Red cards come from match detail; the analysis pass fetches the same URL on
     // the same tick, so this rides the edge cache rather than spending new calls.
-    let reds = 0;
+    // A transient fetch failure carries the previous tick's count forward instead
+    // of resetting it to zero: zeroing it would make the signature regress, and
+    // recovery on a later tick would then read as a fresh increase and fire a
+    // duplicate red-card push for the same dismissal.
+    let reds = prev?.reds ?? 0;
     let lastRed = null;
-    if (LIVE_SET.has(match.status)) {
+    let detailMinute = null;
+    if (isLive(match.status)) {
       try {
         const detail = mapMatchDetail(await fetchJson(`/v4/matches/${match.id}`, env.FOOTBALL_DATA_TOKEN, 25));
-        const redCards = (detail.cards ?? []).filter((card) => card.card === "RED");
+        // YELLOW_RED is a second-yellow dismissal, not a separate RED booking.
+        const redCards = (detail.cards ?? []).filter(
+          (card) => card.card === "RED" || card.card === "YELLOW_RED",
+        );
         reds = redCards.length;
         lastRed = redCards[redCards.length - 1] ?? null;
+        detailMinute = detail.minute ?? null;
       } catch {
-        // detail blip: reds stay 0 this tick; the guard below only fires on increases
+        // detail blip: reds/minute carry forward from the last good read above
       }
     }
 
@@ -759,9 +805,6 @@ async function notifyCompetition(env, comp) {
       reds,
     };
     const signature = JSON.stringify(state);
-    const prevRow = await env.DB.prepare("SELECT signature FROM notify_state WHERE match_id = ?1")
-      .bind(match.id)
-      .first();
     if (prevRow?.signature === signature) continue;
     await env.DB.prepare(
       `INSERT INTO notify_state (match_id, signature, updated_at) VALUES (?1, ?2, datetime('now'))
@@ -771,29 +814,23 @@ async function notifyCompetition(env, comp) {
       .run();
     if (!prevRow) continue; // first sighting is a baseline, never a burst of catch-up pushes
 
-    let prev;
-    try {
-      prev = JSON.parse(prevRow.signature);
-    } catch {
-      continue;
-    }
-    for (const event of diffMatchEvents(prev, state, match, lastRed)) {
-      await sendMatchEvent(env, comp, match, event);
-    }
+    const events = diffMatchEvents(prev, state, match, lastRed, detailMinute);
+    await sendMatchEvents(env, comp, match, events);
   }
 }
 
-function diffMatchEvents(prev, cur, match, lastRed) {
+function diffMatchEvents(prev, cur, match, lastRed, detailMinute) {
   const events = [];
-  const score = `${cur.home ?? 0}–${cur.away ?? 0}`;
+  const score = `${cur.home ?? 0}-${cur.away ?? 0}`;
   const fixture = `${match.homeTeam} v ${match.awayTeam}`;
   const scoreline = `${match.homeTeam} ${score} ${match.awayTeam}`;
+  const minute = detailMinute ?? match.minute;
 
-  if (!LIVE_SET.has(prev.status) && LIVE_SET.has(cur.status)) {
+  if (!isLive(prev.status) && isLive(cur.status)) {
     events.push({ pref: "kickoff", title: `Kick-off: ${fixture}`, body: "They're off." });
   }
   if ((cur.home ?? 0) > (prev.home ?? 0) || (cur.away ?? 0) > (prev.away ?? 0)) {
-    events.push({ pref: "goals", title: `⚽ ${scoreline}`, body: match.minute ? `${match.minute}'` : "Goal!" });
+    events.push({ pref: "goals", title: `⚽ ${scoreline}`, body: minute ? `${minute}'` : "Goal!" });
   }
   if ((cur.reds ?? 0) > (prev.reds ?? 0)) {
     events.push({
@@ -808,7 +845,12 @@ function diffMatchEvents(prev, cur, match, lastRed) {
   return events;
 }
 
-async function sendMatchEvent(env, comp, match, event) {
+// Sends every event for one match on one tick against a single subscriber lookup
+// (diffMatchEvents can emit up to four events for the same match/tick, and the
+// follows x users x push_subscriptions join is identical across all of them), and
+// fans each event's sends out concurrently rather than one device at a time.
+async function sendMatchEvents(env, comp, match, events) {
+  if (!events.length) return;
   const subs = await env.DB.prepare(
     `SELECT DISTINCT s.endpoint, s.p256dh, s.auth, u.prefs FROM follows f
      JOIN users u ON u.id = f.user_id
@@ -817,17 +859,21 @@ async function sendMatchEvent(env, comp, match, event) {
   )
     .bind(comp.code, match.homeTeam, match.awayTeam)
     .all();
+  const subscribers = subs.results ?? [];
+  if (!subscribers.length) return;
 
-  const payload = {
-    title: event.title,
-    body: event.body ?? "",
-    url: `${env.SITE_ORIGIN ?? ""}/?match=${match.id}`,
-    tag: `m${match.id}-${event.pref}`,
-  };
-  for (const sub of subs.results ?? []) {
-    const prefs = safePrefs(sub.prefs);
-    if (!(prefs[event.pref] ?? DEFAULT_PREFS[event.pref])) continue;
-    await sendPush(env, sub, payload);
+  for (const event of events) {
+    const payload = {
+      title: event.title,
+      body: event.body ?? "",
+      url: `${env.SITE_ORIGIN ?? ""}/?match=${match.id}`,
+      tag: `m${match.id}-${event.pref}`,
+    };
+    const recipients = subscribers.filter((sub) => {
+      const prefs = safePrefs(sub.prefs);
+      return prefs[event.pref] ?? DEFAULT_PREFS[event.pref];
+    });
+    await Promise.all(recipients.map((sub) => sendPush(env, sub, payload)));
   }
 }
 
