@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "fetch:live": "node scripts/fetch-live-data.mjs"
+    "fetch:live": "node scripts/fetch-live-data.mjs",
+    "fetch:fantasy-players": "node scripts/fetch-fantasy-players.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",

@@ -48,6 +48,15 @@ jobs:
         env:
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
           FOOTBALL_DATA_COMPETITIONS: "PL:2026,CL:2026"
+      # Fantasy draft pool (Phase 4). Squads barely change, so this doesn't need the
+      # 5-minute cadence the deploy runs on, but running it every time is harmless:
+      # it's sequenced after the live fetch so it doesn't compete for the same
+      # per-minute rate-limit budget, and its lineup-accumulation fallback reads the
+      # data/PL/matches cache the step above just restored/refreshed.
+      - name: Fetch fantasy player pool
+        run: npm run fetch:fantasy-players
+        env:
+          FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site

@@ -39,7 +39,9 @@ export function mapMatchDetail(match) {
       injuryTime: goal.injuryTime ?? null,
       type: goal.type ?? "REGULAR",
       team: shortName(goal.team?.name),
+      scorerId: goal.scorer?.id ?? null,
       scorer: goal.scorer?.name ?? "",
+      assistId: goal.assist?.id ?? null,
       assist: goal.assist?.name ?? null,
       home: goal.score?.home ?? null,
       away: goal.score?.away ?? null,
@@ -47,13 +49,16 @@ export function mapMatchDetail(match) {
     cards: (match.bookings ?? []).map((booking) => ({
       minute: booking.minute,
       team: shortName(booking.team?.name),
+      playerId: booking.player?.id ?? null,
       player: booking.player?.name ?? "",
       card: booking.card ?? "",
     })),
     subs: (match.substitutions ?? []).map((sub) => ({
       minute: sub.minute,
       team: shortName(sub.team?.name),
+      inId: sub.playerIn?.id ?? null,
       in: sub.playerIn?.name ?? "",
+      outId: sub.playerOut?.id ?? null,
       out: sub.playerOut?.name ?? "",
     })),
     referee:
@@ -84,5 +89,10 @@ function mapTeam(team) {
 }
 
 function mapPlayer(player) {
-  return { name: player?.name ?? "", pos: player?.position ?? null, num: player?.shirtNumber ?? null };
+  return {
+    id: player?.id ?? null,
+    name: player?.name ?? "",
+    pos: player?.position ?? null,
+    num: player?.shirtNumber ?? null,
+  };
 }

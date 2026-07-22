@@ -69,3 +69,137 @@ CREATE TABLE IF NOT EXISTS notify_state (
   signature TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Fantasy H2H draft league (Phase 4). Premier League only: its 38-matchday season
+-- maps 1:1 onto weekly head-to-head gameweeks the way a knockout-plus-league-phase
+-- competition doesn't.
+
+-- The draftable player pool. id is football-data's own player id (propagated
+-- through mapPlayer in src/mapDetail.js), not a local autoincrement, so it lines
+-- up with the ids already carried on goals/cards/subs. Populated by
+-- scripts/fetch-fantasy-players.mjs, primarily from the /v4/teams/{id} squad
+-- endpoint; `active` lets a departed player be hidden from new drafts/waivers
+-- without losing their historical scores.
+CREATE TABLE IF NOT EXISTS fantasy_players (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  team TEXT NOT NULL,
+  position TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS fantasy_leagues (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  commissioner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  invite_code TEXT NOT NULL UNIQUE,
+  draft_status TEXT NOT NULL DEFAULT 'pending', -- pending | drafting | complete
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS fantasy_league_members (
+  league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  draft_position INTEGER, -- this member's slot in the snake order, set when the draft starts
+  joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (league_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS fantasy_league_members_user ON fantasy_league_members(user_id);
+
+-- Append-only draft log, the durable source of truth the FantasyDraftRoom Durable
+-- Object writes to on every pick (so a DO eviction can rehydrate from here).
+CREATE TABLE IF NOT EXISTS fantasy_draft_picks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  round INTEGER NOT NULL,
+  pick_in_round INTEGER NOT NULL,
+  overall_pick INTEGER NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES fantasy_players(id),
+  picked_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS fantasy_draft_picks_league ON fantasy_draft_picks(league_id, overall_pick);
+
+-- Current squad ownership, one row per player a manager holds in a given league
+-- (a player can be on different managers' rosters across different leagues).
+CREATE TABLE IF NOT EXISTS fantasy_rosters (
+  league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES fantasy_players(id),
+  acquired_via TEXT NOT NULL DEFAULT 'draft', -- draft | waiver | free_agent
+  acquired_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (league_id, user_id, player_id)
+);
+CREATE INDEX IF NOT EXISTS fantasy_rosters_player ON fantasy_rosters(league_id, player_id);
+
+-- A manager's starting XI for one gameweek. Absence from this table for a given
+-- gameweek means "use the previous gameweek's lineup" (computed at scoring time,
+-- never copy-written), so inaction never zeroes a roster.
+CREATE TABLE IF NOT EXISTS fantasy_lineups (
+  league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  gameweek INTEGER NOT NULL,
+  player_id INTEGER NOT NULL REFERENCES fantasy_players(id),
+  is_captain INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (league_id, user_id, gameweek, player_id)
+);
+
+-- A player's raw fantasy points for a gameweek, computed once from match data and
+-- shared across every league/roster that has them (league-independent by design,
+-- since the same player can sit on many managers' squads).
+CREATE TABLE IF NOT EXISTS fantasy_player_scores (
+  gameweek INTEGER NOT NULL,
+  player_id INTEGER NOT NULL REFERENCES fantasy_players(id),
+  points REAL NOT NULL DEFAULT 0,
+  breakdown TEXT, -- JSON: {goals, assists, cleanSheet, appearance, cards, ownGoals}
+  computed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (gameweek, player_id)
+);
+
+-- Dedup ledger: a finished match's points are applied to fantasy_player_scores
+-- exactly once, the same "first sighting only" discipline as notify_state.
+CREATE TABLE IF NOT EXISTS fantasy_scored_matches (
+  match_id INTEGER PRIMARY KEY,
+  scored_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- A manager's rolled-up total for one gameweek in one league (starting lineup's
+-- player scores, captain doubled), recomputed as that gameweek's matches finish.
+CREATE TABLE IF NOT EXISTS fantasy_gameweek_scores (
+  league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  gameweek INTEGER NOT NULL,
+  points REAL NOT NULL DEFAULT 0,
+  computed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (league_id, user_id, gameweek)
+);
+
+-- Head-to-head schedule, generated by round-robin once a league's draft completes.
+CREATE TABLE IF NOT EXISTS fantasy_h2h_fixtures (
+  league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  gameweek INTEGER NOT NULL,
+  home_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  away_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  home_score REAL,
+  away_score REAL,
+  PRIMARY KEY (league_id, gameweek, home_user_id)
+);
+CREATE INDEX IF NOT EXISTS fantasy_h2h_fixtures_away ON fantasy_h2h_fixtures(league_id, gameweek, away_user_id);
+
+-- Free-agency waiver claims. Processed in worst-record-first priority order as
+-- part of the weekly scoring pass; a successful claimant moves to the back of
+-- priority for next time (standard fantasy-league waiver convention).
+CREATE TABLE IF NOT EXISTS fantasy_waivers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  add_player_id INTEGER NOT NULL REFERENCES fantasy_players(id),
+  drop_player_id INTEGER REFERENCES fantasy_players(id),
+  priority INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending', -- pending | processed | rejected
+  gameweek INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  processed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS fantasy_waivers_pending ON fantasy_waivers(league_id, status);
