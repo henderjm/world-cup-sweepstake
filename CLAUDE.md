@@ -24,11 +24,13 @@ The app began as a World Cup 2026 sweepstake hub; the sweepstake (entrants, pot,
 Two delivery paths for the same raw shape (`{ source, lastUpdated, competition, season, matches, standings }`):
 
 1. Cloudflare Worker (`worker/worker.js`) proxies API-Football with the key kept server-side and edge-caches each upstream call, so many pollers collapse into roughly one upstream call per window. The site polls it live.
-2. GitHub Action (`.github/workflows/pages.yml`, every five minutes from 11:00–22:55 UTC) bakes `data/live.json` into each deploy as the static fallback.
+2. GitHub Action (`.github/workflows/pages.yml`, hourly from 11:00–22:00 UTC) bakes `data/live.json` into each deploy as the static fallback.
 
 `src/data.js` picks the source: `loadModel(comp)` tries the `DATA_API` Worker origin first (`/:comp/live`) and falls back to static `data/<comp>/live.json` if the Worker is unreachable. Match-scoped routes carry no competition segment because API-Football fixture ids are globally unique; the Worker validates ids against configured competitions.
 
 Live updates without a deploy: `app.js` re-runs `loadModel()` on a timer (20s while a match is live, 60s otherwise) and only re-renders when a match signature (id/status/score/minute) actually changes.
+
+Upstream polling is a state machine, not the browser cadence. The season schedule is cached for six hours. Fixtures more than two hours away make no status call; upcoming fixtures are batched on a 15-minute cache clipped to expire at kickoff; kickoff-wait and live fixtures are batched separately on a one-minute cache; a known final state is removed from polling. Staggered pre-match fixtures must never inherit a live match's one-minute cadence. The Pages fallback runs hourly during its 12-hour UTC window.
 
 ## Architecture invariants (read before editing mapping, standings, or teams)
 

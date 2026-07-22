@@ -5,7 +5,7 @@ import { locationForMatch } from "./locations.js";
 
 // Set this to your deployed Cloudflare Worker origin to serve live data without a
 // deploy, e.g. "https://goon-squad-data.<your-subdomain>.workers.dev". Leave empty to
-// use the static data/<comp>/live.json baked by the GitHub Action (refreshed every 5 min).
+// use the static data/<comp>/live.json baked by the hourly GitHub Action fallback.
 export const DATA_API = "https://goon-squad-data.gs-wc.workers.dev";
 
 export async function loadModel(comp = DEFAULT_COMPETITION_CODE) {

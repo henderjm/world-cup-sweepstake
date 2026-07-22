@@ -32,7 +32,7 @@ To enable it:
 3. Add a repository secret named `API_FOOTBALL_KEY`.
 4. Run the Pages workflow, or wait for the schedule.
 
-The workflow refreshes the static fallback every five minutes during its 12-hour UTC match window and publishes `data/<competition>/live.json` per competition. The API key never appears in the browser.
+The workflow refreshes the static fallback hourly during its 12-hour UTC match window and publishes `data/<competition>/live.json` per competition. The API key never appears in the browser.
 
 Workflow environment variables (set in the workflow file):
 

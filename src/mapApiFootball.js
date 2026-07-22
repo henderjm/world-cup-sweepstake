@@ -23,6 +23,20 @@ const STATUS = {
   WO: "AWARDED",
 };
 
+const LIVE_MATCH_STATUSES = new Set([
+  "IN_PLAY",
+  "PAUSED",
+  "EXTRA_TIME",
+  "PENALTY_SHOOTOUT",
+  "BREAK",
+]);
+const TERMINAL_MATCH_STATUSES = new Set([
+  "FINISHED",
+  "AWARDED",
+  "CANCELLED",
+  "POSTPONED",
+]);
+
 export function mapApiFootballMatches(payload) {
   return (payload.response ?? []).map((entry) => {
     const { stage, matchday, group } = mapRound(entry.league?.round);
@@ -58,13 +72,48 @@ export function mapApiFootballMatches(payload) {
   });
 }
 
-export function matchesInTrackingWindow(matches, now) {
-  const beforeKickoff = 2 * 60 * 60 * 1000;
-  const afterKickoff = 5 * 60 * 60 * 1000;
-  return matches.filter((match) => {
+export function fixturePollingPlan(matches, now = Date.now()) {
+  const twoHours = 2 * 60 * 60 * 1000;
+  const fiveHours = 5 * 60 * 60 * 1000;
+  const candidates = (matches ?? []).filter((match) => {
+    if (TERMINAL_MATCH_STATUSES.has(match.status)) return false;
+    if (LIVE_MATCH_STATUSES.has(match.status)) return true;
     const kickoff = new Date(match.utcDate).getTime();
-    return Number.isFinite(kickoff) && now >= kickoff - beforeKickoff && now <= kickoff + afterKickoff;
+    return Number.isFinite(kickoff) && now >= kickoff - twoHours && now <= kickoff + fiveHours;
   });
+
+  const active = candidates.filter(
+    (match) => LIVE_MATCH_STATUSES.has(match.status) || new Date(match.utcDate).getTime() <= now,
+  );
+  const upcoming = candidates.filter((match) => new Date(match.utcDate).getTime() > now);
+  const requests = [];
+
+  if (active.length) {
+    requests.push({
+      mode: active.some((match) => LIVE_MATCH_STATUSES.has(match.status)) ? "live" : "kickoff_wait",
+      fixtures: active,
+      ttl: 60,
+    });
+  }
+  if (upcoming.length) {
+    const secondsUntilKickoff = Math.min(
+      ...upcoming.map((match) => (new Date(match.utcDate).getTime() - now) / 1000),
+    );
+    requests.push({
+      mode: "pre_match",
+      fixtures: upcoming,
+      ttl: Math.max(5, Math.min(15 * 60, Math.ceil(secondsUntilKickoff) + 5)),
+    });
+  }
+
+  const mode = requests.some((request) => request.mode === "live")
+    ? "live"
+    : requests.some((request) => request.mode === "kickoff_wait")
+      ? "kickoff_wait"
+      : requests.length
+        ? "pre_match"
+        : "idle";
+  return { mode, requests };
 }
 
 export function mergeFixtureUpdates(schedule, updates) {

@@ -25,11 +25,11 @@ import { buildPushHTTPRequest } from "@pushforge/builder";
 import { COMPETITIONS } from "../src/competitions.js";
 import { assertApiFootballPayload } from "../src/apiFootballPayload.js";
 import {
+  fixturePollingPlan,
   mapApiFootballMatchDetail,
   mapApiFootballMatchDetailFromSummary,
   mapApiFootballMatches,
   mapApiFootballStandingsPayload,
-  matchesInTrackingWindow,
   mergeFixtureUpdates,
 } from "../src/mapApiFootball.js";
 import { isLive } from "../src/format.js";
@@ -232,30 +232,31 @@ export default {
 
 async function getLive(comp, token) {
   try {
-    // The Pro plan is ample if traffic follows tracked fixtures rather than the wall
-    // clock. Cache the season schedule for six hours, then request the small `ids`
-    // live payload only from two hours before kickoff until five hours after it.
-    // Outside that window user polling never reaches a live upstream endpoint.
+    // The cron can tick every minute without calling upstream every minute. The
+    // season schedule is the clock: idle fixtures make no status request, upcoming
+    // fixtures refresh every 15 minutes (with the final cache clipped to kickoff),
+    // and kickoff-wait/live fixtures refresh every minute until a final state lands.
     const schedulePayload = await fetchJson(
       `/fixtures?league=${comp.leagueId}&season=${comp.season}`,
       token,
       6 * 60 * 60,
     );
     const schedule = mapApiFootballMatches(schedulePayload);
-    const tracked = matchesInTrackingWindow(schedule, Date.now());
-    let matches = schedule;
-    if (tracked.length) {
+    const pollingMatches = carryForwardFixtureStates(schedule, lastLive.get(comp.code)?.matches);
+    const polling = fixturePollingPlan(pollingMatches, Date.now());
+    let matches = pollingMatches;
+    for (const request of polling.requests) {
       const livePayload = await fetchJson(
-        `/fixtures?ids=${tracked.map((match) => match.id).join("-")}`,
+        `/fixtures?ids=${request.fixtures.map((match) => match.id).join("-")}`,
         token,
-        60,
+        request.ttl,
       );
-      matches = mergeFixtureUpdates(schedule, mapApiFootballMatches(livePayload));
+      matches = mergeFixtureUpdates(matches, mapApiFootballMatches(livePayload));
     }
     const standings = await fetchJson(
       `/standings?league=${comp.leagueId}&season=${comp.season}`,
       token,
-      tracked.length ? 5 * 60 : 6 * 60 * 60,
+      polling.mode === "live" || polling.mode === "kickoff_wait" ? 5 * 60 : 6 * 60 * 60,
     ).catch(() => null);
     const body = {
       source: "API-Football",
@@ -274,6 +275,16 @@ async function getLive(comp, token) {
     if (stale) return stale; // serve stale rather than fail when upstream blips
     throw error;
   }
+}
+
+function carryForwardFixtureStates(schedule, previous) {
+  if (!previous?.length) return schedule;
+  const previousById = new Map(previous.map((match) => [match.id, match]));
+  return schedule.map((current) => {
+    const prior = previousById.get(current.id);
+    if (!prior || prior.utcDate !== current.utcDate || current.status !== "TIMED") return current;
+    return prior;
+  });
 }
 
 // -- AI match analysis (Claude) -----------------------------------------------

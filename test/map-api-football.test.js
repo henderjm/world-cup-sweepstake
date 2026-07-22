@@ -7,7 +7,7 @@ import {
   mapApiFootballMatchDetailFromSummary,
   mapApiFootballMatches,
   mapApiFootballStandings,
-  matchesInTrackingWindow,
+  fixturePollingPlan,
 } from "../src/mapApiFootball.js";
 
 test("maps an API-Football fixture into the app match contract", () => {
@@ -320,12 +320,81 @@ test("normalizes API-Football club names to the existing app join keys", () => {
   assert.equal(match.awayTeam, "Nottingham");
 });
 
-test("opens upstream polling only around tracked fixture kickoffs", () => {
+test("keeps fixture polling idle when the next kickoff is more than two hours away", () => {
   const now = Date.parse("2026-08-15T14:00:00Z");
-  const matches = [
-    { id: 1, utcDate: "2026-08-15T13:00:00Z" },
-    { id: 2, utcDate: "2026-08-15T20:30:01Z" },
-    { id: 3, utcDate: "2026-08-15T07:59:59Z" },
-  ];
-  assert.deepEqual(matchesInTrackingWindow(matches, now).map((match) => match.id), [1]);
+  const plan = fixturePollingPlan(
+    [{ id: 1, status: "TIMED", utcDate: "2026-08-15T16:00:01Z" }],
+    now,
+  );
+  assert.deepEqual(plan, { mode: "idle", requests: [] });
+});
+
+test("polls all fixtures within two hours every fifteen minutes before kickoff", () => {
+  const now = Date.parse("2026-08-15T14:00:00Z");
+  const plan = fixturePollingPlan(
+    [
+      { id: 1, status: "TIMED", utcDate: "2026-08-15T15:30:00Z" },
+      { id: 2, status: "TIMED", utcDate: "2026-08-15T16:00:00Z" },
+      { id: 3, status: "TIMED", utcDate: "2026-08-15T16:00:01Z" },
+    ],
+    now,
+  );
+  assert.equal(plan.mode, "pre_match");
+  assert.equal(plan.requests[0].ttl, 15 * 60);
+  assert.deepEqual(plan.requests[0].fixtures.map((match) => match.id), [1, 2]);
+});
+
+test("expires the final pre-match cache at kickoff", () => {
+  const now = Date.parse("2026-08-15T14:00:00Z");
+  const plan = fixturePollingPlan(
+    [{ id: 1, status: "TIMED", utcDate: "2026-08-15T14:10:00Z" }],
+    now,
+  );
+  assert.equal(plan.mode, "pre_match");
+  assert.equal(plan.requests[0].ttl, 10 * 60 + 5);
+});
+
+test("polls every minute after scheduled kickoff and throughout live play", () => {
+  const now = Date.parse("2026-08-15T14:00:00Z");
+  const waiting = fixturePollingPlan(
+    [{ id: 1, status: "TIMED", utcDate: "2026-08-15T13:59:00Z" }],
+    now,
+  );
+  const live = fixturePollingPlan(
+    [{ id: 1, status: "IN_PLAY", utcDate: "2026-08-15T13:00:00Z" }],
+    now,
+  );
+  assert.equal(waiting.mode, "kickoff_wait");
+  assert.equal(waiting.requests[0].ttl, 60);
+  assert.equal(live.mode, "live");
+  assert.equal(live.requests[0].ttl, 60);
+});
+
+test("keeps staggered pre-match fixtures on a separate fifteen-minute request", () => {
+  const plan = fixturePollingPlan(
+    [
+      { id: 1, status: "IN_PLAY", utcDate: "2026-08-15T13:00:00Z" },
+      { id: 2, status: "TIMED", utcDate: "2026-08-15T15:30:00Z" },
+    ],
+    Date.parse("2026-08-15T14:00:00Z"),
+  );
+  assert.deepEqual(
+    plan.requests.map((request) => ({
+      mode: request.mode,
+      ids: request.fixtures.map((match) => match.id),
+      ttl: request.ttl,
+    })),
+    [
+      { mode: "live", ids: [1], ttl: 60 },
+      { mode: "pre_match", ids: [2], ttl: 15 * 60 },
+    ],
+  );
+});
+
+test("stops polling a fixture as soon as its final state is known", () => {
+  const plan = fixturePollingPlan(
+    [{ id: 1, status: "FINISHED", utcDate: "2026-08-15T13:00:00Z" }],
+    Date.parse("2026-08-15T14:45:00Z"),
+  );
+  assert.deepEqual(plan, { mode: "idle", requests: [] });
 });

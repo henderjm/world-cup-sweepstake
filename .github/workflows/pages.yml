@@ -8,7 +8,7 @@ on:
     # Static fallback refreshes for the 12-hour match window only. The Worker owns
     # minute-live delivery; burning API requests on overnight Pages deploys adds no
     # value. GitHub schedules are UTC and best effort.
-    - cron: "*/5 11-22 * * *"
+    - cron: "0 11-22 * * *"
   workflow_dispatch:
 
 permissions:
