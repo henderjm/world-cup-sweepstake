@@ -122,6 +122,19 @@ export function regulationScore(raw) {
   };
 }
 
+// Pre-season, football-data still serves a full table but in an arbitrary (not
+// alphabetical) order with every row at 0 points, so `position` is meaningless. Sort
+// those blocks by team name and renumber, so the table reads sensibly until real
+// results give it a meaningful order.
+export function alphabetizeStandings(standings) {
+  return (standings ?? []).map((standing) => ({
+    ...standing,
+    table: [...(standing.table ?? [])]
+      .sort((a, b) => teamName(a.team).localeCompare(teamName(b.team)))
+      .map((row, index) => ({ ...row, position: index + 1 })),
+  }));
+}
+
 // Standings keyed by team. `zones` comes from the competition config and stamps each
 // row with the coloured band it sits in (European places, relegation, ...), or null
 // for the neutral middle of the table.

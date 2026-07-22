@@ -1,4 +1,4 @@
-import { buildTeamPerformance, mapFootballDataStandings, normalizeTeamName } from "./domain.js";
+import { alphabetizeStandings, buildTeamPerformance, mapFootballDataStandings, normalizeTeamName } from "./domain.js";
 import { DEFAULT_COMPETITION_CODE, competitionFor, zoneFor } from "./competitions.js";
 import { registerTeams } from "./badges.js";
 import { locationForMatch } from "./locations.js";
@@ -14,17 +14,19 @@ export async function loadModel(comp = DEFAULT_COMPETITION_CODE) {
 }
 
 export function buildModel(raw, scorerData = {}) {
-  // Pre-season the feed already serves a full table, alphabetical with zero points.
-  // Zone bands on that are noise (an alphabetical "European places"), so zones only
-  // apply once somebody has actually played. One effective-zones computation feeds
-  // the standings, the tables and the legend alike.
+  // Pre-season the feed still serves a full table, but in an arbitrary order with
+  // every row at 0 points; alphabetize it so it reads sensibly. Zone bands on that
+  // are also noise (an alphabetical "European places"), so zones only apply once
+  // somebody has actually played. One effective-zones computation feeds the
+  // standings, the tables and the legend alike.
   const base = competitionFor(raw.competition);
   const seasonStarted = (raw.standings ?? []).some((standing) =>
     (standing.table ?? []).some((row) => (row.playedGames ?? 0) > 0),
   );
   const competition = { ...base, zones: seasonStarted ? base.zones : [] };
+  const standingsPayload = seasonStarted ? raw.standings ?? [] : alphabetizeStandings(raw.standings);
   const matches = (raw.matches ?? []).map(normalizeMatch);
-  const standings = mapFootballDataStandings({ standings: raw.standings ?? [] }, competition.zones);
+  const standings = mapFootballDataStandings({ standings: standingsPayload }, competition.zones);
   const hasData = matches.length > 0 || standings.size > 0;
 
   if (!hasData) {
@@ -45,7 +47,7 @@ export function buildModel(raw, scorerData = {}) {
     hasData: true,
     competition,
     matches,
-    tables: buildLeagueTables(raw.standings ?? [], competition, buildTeamPerformance(matches)),
+    tables: buildLeagueTables(standingsPayload, competition, buildTeamPerformance(matches)),
     standings,
     scorers: scorerData.scorers ?? [],
   };
