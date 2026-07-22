@@ -7,6 +7,7 @@
     "fetch:live": "node scripts/fetch-live-data.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.111.0"
+    "@anthropic-ai/sdk": "^0.111.0",
+    "@pushforge/builder": "^2.0.5"
   }
 }

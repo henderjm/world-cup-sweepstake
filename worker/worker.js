@@ -21,8 +21,10 @@
 // validated against the union of all configured competitions' fixtures.
 
 import Anthropic from "@anthropic-ai/sdk";
+import { buildPushHTTPRequest } from "@pushforge/builder";
 import { mapFootballDataMatches } from "../src/domain.js";
 import { mapMatchDetail } from "../src/mapDetail.js";
+import { isLive } from "../src/format.js";
 import {
   ANALYSIS_SCHEMA,
   ANALYSIS_SYSTEM_PROMPT,
@@ -140,6 +142,15 @@ export default {
     if (url.pathname === "/prefs" && request.method === "POST") {
       return handlePrefs(request, env, cors);
     }
+    if (url.pathname === "/push/subscribe" && request.method === "POST") {
+      return handlePushSubscribe(request, env, cors);
+    }
+    if (url.pathname === "/push/unsubscribe" && request.method === "POST") {
+      return handlePushUnsubscribe(request, env, cors);
+    }
+    if (url.pathname === "/push/test" && request.method === "POST") {
+      return handlePushTest(request, env, cors);
+    }
 
     const token = env.FOOTBALL_DATA_TOKEN;
     if (!token) return json({ error: "service not configured" }, 500, cors);
@@ -194,10 +205,19 @@ export default {
   },
 
   // Cron (see [triggers] in wrangler.toml): pre-generates AI analyses during live
-  // play, so a user visit only ever reads a stored copy and never triggers an
-  // Anthropic call itself.
+  // play and fans out push notifications for followed clubs. Run sequentially, not
+  // concurrently: both passes fetch the same /live and per-match detail URLs, and
+  // only a sequential order lets the second pass land on the edge cache the first
+  // one just warmed. Running them in parallel would fire both fetches before either
+  // response is cached, roughly doubling upstream calls against football-data's
+  // ~10 req/min free-tier limit.
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(runScheduledAnalysis(env));
+    ctx.waitUntil(
+      (async () => {
+        await runScheduledAnalysis(env);
+        await runScheduledNotifications(env);
+      })(),
+    );
   },
 };
 
@@ -285,6 +305,26 @@ async function analyseCompetition(env, comp) {
       if (current?.signature === signature) continue; // game state unchanged since last tick
       const body = await generateAnalysis(env, match, live, env.FOOTBALL_DATA_TOKEN, detail);
       await writeLatestAnalysis(env, match.id, { signature, body });
+      // "Analysis ready" pushes only for the full-time read, and only once ever
+      // per match: gated on a dedicated KV marker rather than the analysis cache
+      // signature, so a later regeneration (e.g. an ANALYSIS_PROMPT_VERSION bump
+      // that changes the signature of every recently-finished match) can never
+      // re-send it. Live analyses regenerate every few minutes and would spam
+      // followers, so this only fires for the finished-match read.
+      if (isMatchFinished(match) && pushConfigured(env)) {
+        const notifiedKey = `analysis:notified:${match.id}`;
+        const alreadyNotified = await env.ANALYSIS_CACHE.get(notifiedKey);
+        if (!alreadyNotified) {
+          await sendMatchEvents(env, comp, match, [
+            {
+              pref: "analysis",
+              title: `Analysis ready: ${match.homeTeam} v ${match.awayTeam}`,
+              body: body.headline ?? "The full-time read is in.",
+            },
+          ]);
+          await env.ANALYSIS_CACHE.put(notifiedKey, "1", { expirationTtl: ANALYSIS_KV_TTL });
+        }
+      }
     } catch {
       // one broken match must not block the others; the next tick retries
     }
@@ -599,6 +639,264 @@ function sessionToken() {
 async function sha256Hex(value) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// -- Web Push (Phase 3) --------------------------------------------------------
+// Subscriptions live in D1, one row per browser. The minute cron diffs each
+// followed-relevant match against notify_state and fans out encrypted pushes
+// (VAPID, aes128gcm via @pushforge/builder) for kickoff, goals, red cards and
+// full-time, honouring each user's prefs. Targeting is the follows table; a dead
+// endpoint (404/410 from the push service) is pruned on send.
+
+const NOTIFY_WINDOW_MS = 3 * 60 * 60 * 1000; // matches within this window of kickoff/full-time get diffed
+const DEFAULT_PREFS = { goals: true, kickoff: true, fulltime: true, red: false, analysis: false };
+
+function pushConfigured(env) {
+  return Boolean(env.DB && env.VAPID_PRIVATE_JWK && env.VAPID_PUBLIC_KEY);
+}
+
+async function handlePushSubscribe(request, env, cors) {
+  if (!pushConfigured(env)) return json({ error: "push not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+  let sub;
+  try {
+    sub = (await request.json())?.subscription;
+  } catch {
+    return json({ error: "bad body" }, 400, cors);
+  }
+  const endpoint = String(sub?.endpoint ?? "");
+  const p256dh = String(sub?.keys?.p256dh ?? "");
+  const auth = String(sub?.keys?.auth ?? "");
+  if (!endpoint.startsWith("https://") || endpoint.length > 1024 || !p256dh || p256dh.length > 256 || !auth || auth.length > 256) {
+    return json({ error: "bad subscription" }, 400, cors);
+  }
+  try {
+    // A browser re-subscribing (or a device changing hands between accounts)
+    // simply re-points the endpoint at the current user.
+    await env.DB.prepare(
+      `INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth) VALUES (?1, ?2, ?3, ?4)
+       ON CONFLICT(endpoint) DO UPDATE SET user_id = ?2, p256dh = ?3, auth = ?4`,
+    )
+      .bind(endpoint, user.id, p256dh, auth)
+      .run();
+    return json({ ok: true }, 200, cors);
+  } catch {
+    return json({ error: "push unavailable" }, 502, cors);
+  }
+}
+
+async function handlePushUnsubscribe(request, env, cors) {
+  if (!pushConfigured(env)) return json({ error: "push not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+  let endpoint;
+  try {
+    endpoint = String((await request.json())?.endpoint ?? "");
+  } catch {
+    return json({ error: "bad body" }, 400, cors);
+  }
+  try {
+    await env.DB.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?1 AND user_id = ?2")
+      .bind(endpoint, user.id)
+      .run();
+    return json({ ok: true }, 200, cors);
+  } catch {
+    return json({ error: "push unavailable" }, 502, cors);
+  }
+}
+
+// Sends a test notification to every device the caller has enabled, so the whole
+// pipeline (encryption, the push service, the service worker) is verifiable
+// without waiting for a goal.
+async function handlePushTest(request, env, cors) {
+  if (!pushConfigured(env)) return json({ error: "push not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+  try {
+    const subs = await env.DB.prepare(
+      "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?1",
+    )
+      .bind(user.id)
+      .all();
+    const results = await Promise.all(
+      (subs.results ?? []).map((sub) =>
+        sendPush(env, sub, {
+          title: "Squad Goals test",
+          body: "Push notifications are working on this device.",
+          url: env.SITE_ORIGIN ?? "",
+          tag: "sg-test",
+        }),
+      ),
+    );
+    return json({ sent: results.filter(Boolean).length, devices: subs.results?.length ?? 0 }, 200, cors);
+  } catch {
+    return json({ error: "push unavailable" }, 502, cors);
+  }
+}
+
+async function runScheduledNotifications(env) {
+  if (!pushConfigured(env) || !env.FOOTBALL_DATA_TOKEN) return;
+  for (const comp of parseCompetitions(env)) {
+    try {
+      await notifyCompetition(env, comp);
+    } catch {
+      // one competition failing must not block the others; the next tick retries
+    }
+  }
+}
+
+async function notifyCompetition(env, comp) {
+  const live = await getLive(comp.code, comp.season, env.FOOTBALL_DATA_TOKEN);
+  const now = Date.now();
+  const relevant = live.matches.filter((match) => {
+    if (isLive(match.status)) return true;
+    const kickoff = new Date(match.utcDate).getTime();
+    if (!Number.isFinite(kickoff)) return false;
+    if (isMatchFinished(match)) return now - kickoff < NOTIFY_WINDOW_MS;
+    // Not kicked off yet: baseline it shortly before kickoff so the live
+    // transition below has a non-live prior state to diff against once it
+    // actually goes live, instead of the match's first sighting already being
+    // live (which the "first sighting is a baseline" rule then swallows).
+    return kickoff > now && kickoff - now < NOTIFY_WINDOW_MS;
+  });
+
+  for (const match of relevant) {
+    const prevRow = await env.DB.prepare("SELECT signature FROM notify_state WHERE match_id = ?1")
+      .bind(match.id)
+      .first();
+    let prev = null;
+    if (prevRow) {
+      try {
+        prev = JSON.parse(prevRow.signature);
+      } catch {
+        prev = null;
+      }
+    }
+
+    // Red cards come from match detail; the analysis pass fetches the same URL on
+    // the same tick, so this rides the edge cache rather than spending new calls.
+    // A transient fetch failure carries the previous tick's count forward instead
+    // of resetting it to zero: zeroing it would make the signature regress, and
+    // recovery on a later tick would then read as a fresh increase and fire a
+    // duplicate red-card push for the same dismissal.
+    let reds = prev?.reds ?? 0;
+    let lastRed = null;
+    let detailMinute = null;
+    if (isLive(match.status)) {
+      try {
+        const detail = mapMatchDetail(await fetchJson(`/v4/matches/${match.id}`, env.FOOTBALL_DATA_TOKEN, 25));
+        // YELLOW_RED is a second-yellow dismissal, not a separate RED booking.
+        const redCards = (detail.cards ?? []).filter(
+          (card) => card.card === "RED" || card.card === "YELLOW_RED",
+        );
+        reds = redCards.length;
+        lastRed = redCards[redCards.length - 1] ?? null;
+        detailMinute = detail.minute ?? null;
+      } catch {
+        // detail blip: reds/minute carry forward from the last good read above
+      }
+    }
+
+    const state = {
+      status: match.status,
+      home: match.score?.home ?? null,
+      away: match.score?.away ?? null,
+      reds,
+    };
+    const signature = JSON.stringify(state);
+    if (prevRow?.signature === signature) continue;
+    await env.DB.prepare(
+      `INSERT INTO notify_state (match_id, signature, updated_at) VALUES (?1, ?2, datetime('now'))
+       ON CONFLICT(match_id) DO UPDATE SET signature = ?2, updated_at = datetime('now')`,
+    )
+      .bind(match.id, signature)
+      .run();
+    if (!prevRow) continue; // first sighting is a baseline, never a burst of catch-up pushes
+
+    const events = diffMatchEvents(prev, state, match, lastRed, detailMinute);
+    await sendMatchEvents(env, comp, match, events);
+  }
+}
+
+function diffMatchEvents(prev, cur, match, lastRed, detailMinute) {
+  const events = [];
+  const score = `${cur.home ?? 0}-${cur.away ?? 0}`;
+  const fixture = `${match.homeTeam} v ${match.awayTeam}`;
+  const scoreline = `${match.homeTeam} ${score} ${match.awayTeam}`;
+  const minute = detailMinute ?? match.minute;
+
+  if (!isLive(prev.status) && isLive(cur.status)) {
+    events.push({ pref: "kickoff", title: `Kick-off: ${fixture}`, body: "They're off." });
+  }
+  if ((cur.home ?? 0) > (prev.home ?? 0) || (cur.away ?? 0) > (prev.away ?? 0)) {
+    events.push({ pref: "goals", title: `⚽ ${scoreline}`, body: minute ? `${minute}'` : "Goal!" });
+  }
+  if ((cur.reds ?? 0) > (prev.reds ?? 0)) {
+    events.push({
+      pref: "red",
+      title: `🟥 Red card in ${fixture}`,
+      body: lastRed ? `${lastRed.player} (${lastRed.team}) is off.` : "Down to ten.",
+    });
+  }
+  if (cur.status === "FINISHED" && prev.status !== "FINISHED") {
+    events.push({ pref: "fulltime", title: `FT: ${scoreline}`, body: "Full time." });
+  }
+  return events;
+}
+
+// Sends every event for one match on one tick against a single subscriber lookup
+// (diffMatchEvents can emit up to four events for the same match/tick, and the
+// follows x users x push_subscriptions join is identical across all of them), and
+// fans each event's sends out concurrently rather than one device at a time.
+async function sendMatchEvents(env, comp, match, events) {
+  if (!events.length) return;
+  const subs = await env.DB.prepare(
+    `SELECT DISTINCT s.endpoint, s.p256dh, s.auth, u.prefs FROM follows f
+     JOIN users u ON u.id = f.user_id
+     JOIN push_subscriptions s ON s.user_id = u.id
+     WHERE f.competition = ?1 AND f.team IN (?2, ?3)`,
+  )
+    .bind(comp.code, match.homeTeam, match.awayTeam)
+    .all();
+  const subscribers = subs.results ?? [];
+  if (!subscribers.length) return;
+
+  for (const event of events) {
+    const payload = {
+      title: event.title,
+      body: event.body ?? "",
+      url: `${env.SITE_ORIGIN ?? ""}/?match=${match.id}`,
+      tag: `m${match.id}-${event.pref}`,
+    };
+    const recipients = subscribers.filter((sub) => {
+      const prefs = safePrefs(sub.prefs);
+      return prefs[event.pref] ?? DEFAULT_PREFS[event.pref];
+    });
+    await Promise.all(recipients.map((sub) => sendPush(env, sub, payload)));
+  }
+}
+
+async function sendPush(env, sub, payload) {
+  try {
+    const { endpoint, headers, body } = await buildPushHTTPRequest({
+      privateJWK: env.VAPID_PRIVATE_JWK,
+      message: {
+        payload,
+        options: { ttl: 3600, urgency: "high", topic: payload.tag?.slice(0, 32) },
+        adminContact: env.PUSH_CONTACT ?? "mailto:admin@example.com",
+      },
+      subscription: { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+    });
+    const response = await fetch(endpoint, { method: "POST", headers, body });
+    if (response.status === 404 || response.status === 410) {
+      await env.DB.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?1").bind(sub.endpoint).run();
+      return false;
+    }
+    return response.status < 300;
+  } catch {
+    return false;
+  }
 }
 
 // -- Banter (D1-backed) ------------------------------------------------------

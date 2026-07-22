@@ -1,4 +1,7 @@
 name = "goon-squad-data"
+# Pinned: the wrangler login has access to two accounts, and an unpinned command
+# can silently target the wrong one (a `secret put` once vanished this way).
+account_id = "39e4ee48a8329499000fd46df2cf33f2"
 main = "worker.js"
 compatibility_date = "2026-06-01"
 # The Anthropic SDK (AI analysis) needs the Node compatibility shims when bundled.
@@ -18,6 +21,13 @@ FOOTBALL_DATA_COMPETITIONS = "PL:2026,CL:2026"
 # used — the GIS ID-token flow doesn't need it). Authorized JavaScript origins
 # must include the site origin and http://localhost:8731.
 GOOGLE_CLIENT_ID = "68606512741-6un71mt70pt688bkpcd7r86pjqjmt07l.apps.googleusercontent.com"
+# Web Push VAPID. The public key is public config (it is also in src/push.js); the
+# private half is the VAPID_PRIVATE_JWK secret (npx wrangler secret put). The contact
+# is sent to push services as the VAPID subject, per the spec.
+VAPID_PUBLIC_KEY = "BOJgZCuRFEipYuiJncqnpx199Ncr570h8IeIHAoxEbFYakhhmGz8PpXbMDshAiY9o0HK8HNzW3dh_wAJvk7h-eM"
+PUSH_CONTACT = "mailto:mark.hender@zellor.com"
+# The site origin notifications link back to.
+SITE_ORIGIN = "https://henderjm.github.io/world-cup-sweepstake"
 # AI analysis model. Any override must support adaptive thinking + structured outputs.
 ANTHROPIC_MODEL = "claude-sonnet-5"
 

@@ -601,8 +601,12 @@ export function renderSignedIn(model, account, isFollowed) {
       </section>
       <section class="card">
         <h3 class="card__title">Notifications</h3>
+        <div class="you__prefrow you__device">
+          <span>This device</span>
+          <span data-push-controls><span class="note">Checking…</span></span>
+        </div>
         ${prefs}
-        <p class="note--dim" style="margin-top:10px;">Choices are saved to your account; delivery arrives with push notifications in the next phase.</p>
+        <p class="note--dim" style="margin-top:10px;">Alerts follow your clubs and the switches above, delivered as push notifications to every device you enable.</p>
       </section>
     </div>`;
 }

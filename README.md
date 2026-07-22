@@ -115,6 +115,21 @@ used solely to verify identity at sign-in.
 Match banter (reactions and messages in the match drawer) also lives in D1:
 anyone can read, posting requires signing in, and names come from the account.
 
+## Push notifications (optional)
+
+Signed-in users can enable push on any device from the You section: kickoff,
+goals, red cards and full-time for the clubs they follow, honouring their
+notification switches. The Worker's minute cron diffs match state and delivers
+via Web Push (VAPID); no polling, no third-party service. To enable it:
+
+1. Generate a VAPID P-256 keypair. Put the private JWK in a secret:
+   `npx wrangler secret put VAPID_PRIVATE_JWK`, and the public
+   applicationServerKey in **both** `VAPID_PUBLIC_KEY` in `worker/wrangler.toml`
+   and the constant in `src/push.js`. Set `PUSH_CONTACT` and `SITE_ORIGIN` too.
+2. `npx wrangler deploy` and push the site (the service worker is `sw.js`).
+
+Each signed-in user gets a "Send test" button to verify their device end to end.
+
 ## History
 
 This app started life as a World Cup 2026 sweepstake hub (entrants, a prize pot and
