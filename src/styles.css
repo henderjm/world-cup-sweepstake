@@ -411,10 +411,11 @@ button { font-family: inherit; cursor: pointer; }
   font-weight: 800;
   overflow: hidden;
 }
-.tb img { width: 72%; height: 72%; object-fit: contain; display: block; }
+.tb:has(img) { border: none; }
+.tb img { width: 92%; height: 92%; object-fit: contain; display: block; image-rendering: -webkit-optimize-contrast; }
 .tb--lg { width: 24px; height: 24px; }
 .tb--xl { width: 38px; height: 38px; border-width: 2.5px; font-size: 11px; }
-.tb--xl img { width: 74%; height: 74%; }
+.tb--xl img { width: 92%; height: 92%; }
 
 /* Cards -------------------------------------------------------------------------- */
 
