@@ -159,9 +159,9 @@ function renderDetail(match, detail) {
     })),
     ...(detail.cards ?? []).map((c) => ({
       minute: c.minute,
-      mark: c.card === "RED" ? "red" : "yellow",
+      mark: c.card === "RED" || c.card === "YELLOW_RED" ? "red" : "yellow",
       text: c.player,
-      kind: c.card === "RED" ? "Red card" : "Yellow card",
+      kind: c.card === "RED" || c.card === "YELLOW_RED" ? "Red card" : "Yellow card",
       side: sideAbbr(c.team),
     })),
     ...(detail.subs ?? []).map((s) => ({

@@ -18,7 +18,7 @@ import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { COMPETITIONS } from "../src/competitions.js";
 import { bucketPosition } from "../src/fantasy.js";
 import { normalizeTeamName } from "../src/domain.js";
-import { fetchApiFootball } from "./lib/apiFootball.mjs";
+import { fetchApiFootball, isUnexpectedApiFootballFailure } from "./lib/apiFootball.mjs";
 
 const token = process.env.API_FOOTBALL_KEY;
 const competition = process.env.FANTASY_COMPETITION ?? "PL";
@@ -43,6 +43,7 @@ if (existing && Date.now() - existing.mtimeMs < refreshHours * 60 * 60 * 1000) {
 }
 
 const standings = await fetchApiFootball(`/standings?league=${leagueId}&season=${season}`).catch((error) => {
+  if (isUnexpectedApiFootballFailure(error)) throw error;
   console.warn(`could not load ${competition} standings for club ids: ${error.message}`);
   return { response: [] };
 });
@@ -85,6 +86,7 @@ async function fetchViaSquads(clubs) {
   try {
     payloads = await fetchApiFootball(clubs.map((club) => `/players/squads?team=${club.id}`));
   } catch (error) {
+    if (isUnexpectedApiFootballFailure(error)) throw error;
     console.warn(`squads endpoint unavailable (${error.message}); falling back to lineups`);
     return null;
   }
