@@ -196,6 +196,26 @@ button { font-family: inherit; cursor: pointer; }
 .ticker__item.is-live .ticker__status { color: var(--accent); }
 .ticker__item--idle { border-right: none; color: var(--muted); font-weight: 600; }
 
+/* Birthday banner ------------------------------------------------------------ */
+
+.birthday-banner {
+  max-width: 1180px;
+  margin: 14px auto 0;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 700;
+  text-align: center;
+}
+
+@media (max-width: 1180px) {
+  .birthday-banner {
+    margin: 14px clamp(14px, 3vw, 24px) 0;
+  }
+}
+
 /* Main layout ---------------------------------------------------------------- */
 
 .main {
