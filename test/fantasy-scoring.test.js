@@ -76,6 +76,17 @@ test("a second yellow (YELLOW_RED) scores only the red penalty, not yellow plus 
   assert.equal(scores.get(10).breakdown.cards, SCORING.redCard);
 });
 
+test("a first yellow plus second-yellow dismissal still scores one red penalty", () => {
+  const detail = fixture();
+  detail.cards = [
+    { playerId: 10, card: "YELLOW" },
+    { playerId: 10, card: "YELLOW_RED" },
+    { playerId: 10, card: "RED" },
+  ];
+  const scores = scoreMatchForPlayers(detail);
+  assert.equal(scores.get(10).breakdown.cards, SCORING.redCard);
+});
+
 test("a plain yellow scores the yellow penalty", () => {
   const scores = scoreMatchForPlayers(fixture());
   assert.equal(scores.get(12).breakdown.cards, SCORING.yellowCard);

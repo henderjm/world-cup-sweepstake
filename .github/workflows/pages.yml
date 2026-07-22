@@ -29,6 +29,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
       # Persist fetched match detail across runs. Each deploy checks out main fresh, so
       # without this the Golden Boot tally only ever sees the committed seed files plus
       # whatever one run can re-fetch under the 30/min API cap - matches that fail or get
@@ -59,10 +66,12 @@ jobs:
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
       - name: Configure Pages
         uses: actions/configure-pages@v5
+      - name: Build Svelte app
+        run: npm run build
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: dist
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4

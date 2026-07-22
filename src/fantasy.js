@@ -49,6 +49,10 @@ export function validateFormation(players) {
 // football-data's /v4/teams/{id} squad endpoint returns a coarse, exactly
 // four-value position field — no fuzzy matching needed for that path.
 const SQUAD_POSITION_MAP = {
+  G: "GK",
+  D: "DEF",
+  M: "MID",
+  F: "FWD",
   Goalkeeper: "GK",
   Defence: "DEF",
   Midfield: "MID",

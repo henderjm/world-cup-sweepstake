@@ -217,7 +217,7 @@ function renderDetail(match, detail) {
     ${timeline}
     ${lineups}
     ${meta.length ? `<div class="dz__meta">${meta.join("")}</div>` : ""}
-    <p class="note--dim" style="margin-top:14px;">Lineups, scorers, substitutions and cards from football-data.org.</p>`;
+    <p class="note--dim" style="margin-top:14px;">Lineups, scorers, substitutions and cards update throughout the match.</p>`;
 }
 
 function scheduledNote(match) {

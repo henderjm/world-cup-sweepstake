@@ -10,6 +10,13 @@ test("bucketPosition maps the coarse squad-endpoint values directly", () => {
   assert.equal(bucketPosition("Offence"), "FWD");
 });
 
+test("bucketPosition maps API-Football lineup position codes", () => {
+  assert.equal(bucketPosition("G"), "GK");
+  assert.equal(bucketPosition("D"), "DEF");
+  assert.equal(bucketPosition("M"), "MID");
+  assert.equal(bucketPosition("F"), "FWD");
+});
+
 test("bucketPosition falls back to keyword matching for granular lineup positions", () => {
   assert.equal(bucketPosition("Right-Back"), "DEF");
   assert.equal(bucketPosition("Attacking Midfield"), "MID");

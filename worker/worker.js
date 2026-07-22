@@ -22,8 +22,14 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { buildPushHTTPRequest } from "@pushforge/builder";
-import { mapFootballDataMatches } from "../src/domain.js";
-import { mapMatchDetail } from "../src/mapDetail.js";
+import { COMPETITIONS } from "../src/competitions.js";
+import {
+  mapApiFootballMatchDetail,
+  mapApiFootballMatches,
+  mapApiFootballStandingsPayload,
+  matchesInTrackingWindow,
+  mergeFixtureUpdates,
+} from "../src/mapApiFootball.js";
 import { isLive } from "../src/format.js";
 import {
   ANALYSIS_SCHEMA,
@@ -41,7 +47,7 @@ import {
   validateClientResult,
 } from "../src/paperRunModel.js";
 
-const API = "https://api.football-data.org";
+const API = "https://v3.football.api-sports.io";
 
 // Sentry ingest target for the tunnel. Only envelopes whose DSN matches this exact
 // host + project are relayed, so the tunnel can't be used as an open relay.
@@ -73,9 +79,14 @@ function parseCompetitions(env) {
     .split(",")
     .map((pair) => {
       const [code, season] = pair.split(":").map((part) => part?.trim());
-      return { code: (code ?? "").toUpperCase(), season: season || "2026" };
+      const normalizedCode = (code ?? "").toUpperCase();
+      return {
+        code: normalizedCode,
+        season: season || "2026",
+        leagueId: COMPETITIONS[normalizedCode]?.apiFootballLeagueId,
+      };
     })
-    .filter((comp) => /^[A-Z0-9]{2,6}$/.test(comp.code));
+    .filter((comp) => /^[A-Z0-9]{2,6}$/.test(comp.code) && Number.isInteger(comp.leagueId));
 }
 
 // Is this match id in any configured competition's fixture list? Each getLive is
@@ -84,7 +95,7 @@ function parseCompetitions(env) {
 async function matchKnown(competitions, id, token) {
   for (const comp of competitions) {
     try {
-      const live = await getLive(comp.code, comp.season, token);
+      const live = await getLive(comp, token);
       if (live.matches.some((match) => match.id === id)) return true;
     } catch {
       // one competition's feed being down must not 404 the others
@@ -152,7 +163,7 @@ export default {
       return handlePushTest(request, env, cors);
     }
 
-    const token = env.FOOTBALL_DATA_TOKEN;
+    const token = env.API_FOOTBALL_KEY;
     if (!token) return json({ error: "service not configured" }, 500, cors);
     const competitions = parseCompetitions(env);
     if (!competitions.length) return json({ error: "service not configured" }, 500, cors);
@@ -176,7 +187,7 @@ export default {
           ? competitions.find((entry) => entry.code === liveRoute[1].toUpperCase())
           : competitions[0];
         if (!comp) return json({ error: "unknown competition" }, 404, cors);
-        const data = await getLive(comp.code, comp.season, token);
+        const data = await getLive(comp, token);
         return json(data, 200, { ...cors, "Cache-Control": "public, max-age=15" });
       }
 
@@ -186,8 +197,8 @@ export default {
         if (!(await matchKnown(competitions, id, token))) {
           return json({ error: "unknown match" }, 404, cors);
         }
-        const detail = await fetchJson(`/v4/matches/${id}`, token, 25);
-        return json(mapMatchDetail(detail), 200, { ...cors, "Cache-Control": "public, max-age=25" });
+        const detail = await fetchMatchDetail(id, token);
+        return json(detail, 200, { ...cors, "Cache-Control": "public, max-age=25" });
       }
 
       const analysisRoute = url.pathname.match(/^\/analysis\/(\d{1,12})$/);
@@ -221,32 +232,47 @@ export default {
   },
 };
 
-async function getLive(competition, season, token) {
+async function getLive(comp, token) {
   try {
-    // Both calls pin the season: an unpinned /standings returns football-data's
-    // "current season", which between seasons is still last year's final table and
-    // silently disagrees with the season-pinned fixtures. Standings are optional:
-    // a cup before its league phase has fixtures but no table yet (upstream 404s),
-    // and that must not take down the whole feed. A transient standings blip reuses
-    // the last good table rather than flashing an empty one.
-    const [matches, standings] = await Promise.all([
-      fetchJson(`/v4/competitions/${competition}/matches?season=${season}`, token, 15),
-      fetchJson(`/v4/competitions/${competition}/standings?season=${season}`, token, 30).catch(
-        () => null,
-      ),
-    ]);
+    // The Pro plan is ample if traffic follows tracked fixtures rather than the wall
+    // clock. Cache the season schedule for six hours, then request the small `ids`
+    // live payload only from two hours before kickoff until five hours after it.
+    // Outside that window user polling never reaches a live upstream endpoint.
+    const schedulePayload = await fetchJson(
+      `/fixtures?league=${comp.leagueId}&season=${comp.season}`,
+      token,
+      6 * 60 * 60,
+    );
+    const schedule = mapApiFootballMatches(schedulePayload);
+    const tracked = matchesInTrackingWindow(schedule, Date.now());
+    let matches = schedule;
+    if (tracked.length) {
+      const livePayload = await fetchJson(
+        `/fixtures?ids=${tracked.map((match) => match.id).join("-")}`,
+        token,
+        60,
+      );
+      matches = mergeFixtureUpdates(schedule, mapApiFootballMatches(livePayload));
+    }
+    const standings = await fetchJson(
+      `/standings?league=${comp.leagueId}&season=${comp.season}`,
+      token,
+      tracked.length ? 5 * 60 : 6 * 60 * 60,
+    ).catch(() => null);
     const body = {
-      source: "football-data.org",
+      source: "API-Football",
       lastUpdated: new Date().toISOString(),
-      competition,
-      season,
-      matches: mapFootballDataMatches(matches),
-      standings: standings?.standings ?? lastLive.get(competition)?.standings ?? [],
+      competition: comp.code,
+      season: comp.season,
+      matches,
+      standings: standings
+        ? mapApiFootballStandingsPayload(standings)
+        : lastLive.get(comp.code)?.standings ?? [],
     };
-    lastLive.set(competition, body);
+    lastLive.set(comp.code, body);
     return body;
   } catch (error) {
-    const stale = lastLive.get(competition);
+    const stale = lastLive.get(comp.code);
     if (stale) return stale; // serve stale rather than fail when upstream blips
     throw error;
   }
@@ -276,7 +302,7 @@ async function handleAnalysis(env, id, cors) {
 }
 
 async function runScheduledAnalysis(env) {
-  if (!env.ANTHROPIC_API_KEY || !env.ANALYSIS_CACHE || !env.FOOTBALL_DATA_TOKEN) return;
+  if (!env.ANTHROPIC_API_KEY || !env.ANALYSIS_CACHE || !env.API_FOOTBALL_KEY) return;
   for (const comp of parseCompetitions(env)) {
     await analyseCompetition(env, comp);
   }
@@ -285,7 +311,7 @@ async function runScheduledAnalysis(env) {
 async function analyseCompetition(env, comp) {
   let live;
   try {
-    live = await getLive(comp.code, comp.season, env.FOOTBALL_DATA_TOKEN);
+    live = await getLive(comp, env.API_FOOTBALL_KEY);
   } catch {
     return; // feed down; the next tick retries
   }
@@ -298,12 +324,12 @@ async function analyseCompetition(env, comp) {
       let detail = null;
       let signature = analysisCacheSignature(match);
       if (!isMatchFinished(match)) {
-        detail = mapMatchDetail(await fetchJson(`/v4/matches/${match.id}`, env.FOOTBALL_DATA_TOKEN, 25));
+        detail = await fetchMatchDetail(match.id, env.API_FOOTBALL_KEY);
         signature += `:${analysisEventSignature(detail)}`;
       }
       const current = await readLatestAnalysis(env, match.id);
       if (current?.signature === signature) continue; // game state unchanged since last tick
-      const body = await generateAnalysis(env, match, live, env.FOOTBALL_DATA_TOKEN, detail);
+      const body = await generateAnalysis(env, match, live, env.API_FOOTBALL_KEY, detail);
       await writeLatestAnalysis(env, match.id, { signature, body });
       // "Analysis ready" pushes only for the full-time read, and only once ever
       // per match: gated on a dedicated KV marker rather than the analysis cache
@@ -342,7 +368,7 @@ function analysisWorthGenerating(match) {
 }
 
 async function generateAnalysis(env, match, live, token, detail = null) {
-  detail = detail ?? mapMatchDetail(await fetchJson(`/v4/matches/${match.id}`, token, 25));
+  detail = detail ?? (await fetchMatchDetail(match.id, token));
 
   // Model override must support adaptive thinking + structured outputs.
   const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 60_000 });
@@ -736,7 +762,7 @@ async function handlePushTest(request, env, cors) {
 }
 
 async function runScheduledNotifications(env) {
-  if (!pushConfigured(env) || !env.FOOTBALL_DATA_TOKEN) return;
+  if (!pushConfigured(env) || !env.API_FOOTBALL_KEY) return;
   for (const comp of parseCompetitions(env)) {
     try {
       await notifyCompetition(env, comp);
@@ -747,7 +773,7 @@ async function runScheduledNotifications(env) {
 }
 
 async function notifyCompetition(env, comp) {
-  const live = await getLive(comp.code, comp.season, env.FOOTBALL_DATA_TOKEN);
+  const live = await getLive(comp, env.API_FOOTBALL_KEY);
   const now = Date.now();
   const relevant = live.matches.filter((match) => {
     if (isLive(match.status)) return true;
@@ -785,7 +811,7 @@ async function notifyCompetition(env, comp) {
     let detailMinute = null;
     if (isLive(match.status)) {
       try {
-        const detail = mapMatchDetail(await fetchJson(`/v4/matches/${match.id}`, env.FOOTBALL_DATA_TOKEN, 25));
+        const detail = await fetchMatchDetail(match.id, env.API_FOOTBALL_KEY);
         // YELLOW_RED is a second-yellow dismissal, not a separate RED booking.
         const redCards = (detail.cards ?? []).filter(
           (card) => card.card === "RED" || card.card === "YELLOW_RED",
@@ -1154,9 +1180,19 @@ function corsHeaders(request) {
   };
 }
 
+async function fetchMatchDetail(id, token) {
+  // Pro allows five requests/second. Keep this four-call aggregate sequential so
+  // concurrent cron/user work cannot turn one detail read into an avoidable burst.
+  const fixture = await fetchJson(`/fixtures?id=${id}`, token, 60);
+  const lineups = await fetchJson(`/fixtures/lineups?fixture=${id}`, token, 60);
+  const events = await fetchJson(`/fixtures/events?fixture=${id}`, token, 60);
+  const players = await fetchJson(`/fixtures/players?fixture=${id}`, token, 60);
+  return mapApiFootballMatchDetail(fixture, lineups, events, players);
+}
+
 async function fetchJson(path, token, cacheTtl) {
   const response = await fetch(`${API}${path}`, {
-    headers: { "X-Auth-Token": token },
+    headers: { "x-apisports-key": token },
     cf: { cacheTtl, cacheEverything: true },
   });
   if (!response.ok) throw new Error(`upstream ${response.status}`);

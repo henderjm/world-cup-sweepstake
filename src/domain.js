@@ -18,8 +18,15 @@ const FINISHED_STATUSES = new Set(["FINISHED", "AWARDED"]);
 const TEAM_ALIASES = new Map(
   Object.entries({
     "wolverhampton wanderers": "Wolves",
-    "brighton and hove albion": "Brighton",
-    "brighton & hove albion": "Brighton",
+    "afc bournemouth": "Bournemouth",
+    brighton: "Brighton Hove",
+    "brighton and hove albion": "Brighton Hove",
+    "brighton & hove albion": "Brighton Hove",
+    "manchester city": "Man City",
+    "manchester united": "Man United",
+    "newcastle united": "Newcastle",
+    "nottingham forest": "Nottingham",
+    "tottenham hotspur": "Tottenham",
   }),
 );
 

@@ -4,6 +4,7 @@
 export const COMPETITIONS = {
   PL: {
     code: "PL",
+    apiFootballLeagueId: 39,
     name: "Premier League",
     shortName: "Premier League",
     zones: [
@@ -13,6 +14,7 @@ export const COMPETITIONS = {
   },
   CL: {
     code: "CL",
+    apiFootballLeagueId: 2,
     name: "UEFA Champions League",
     shortName: "Champions League",
     zones: [

@@ -9,12 +9,12 @@ compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
 # Non-secret config. Secrets are set with:
-#   npx wrangler secret put FOOTBALL_DATA_TOKEN
+#   npx wrangler secret put API_FOOTBALL_KEY
 #   npx wrangler secret put ANTHROPIC_API_KEY    (powers the AI-analysis cron; nothing generates without it)
 # Competitions served, as CODE:season pairs; the first is the default for legacy
-# unprefixed routes. Season is football-data's starting year: 2026 = the 2026-27
+# unprefixed routes. Season is the four-digit starting year: 2026 = the 2026-27
 # season. NOTE: these vars are applied on every deploy, so always deploy from an
-# up-to-date checkout.
+# up-to-date checkout. The variable name remains an app-owned compatibility name.
 [vars]
 FOOTBALL_DATA_COMPETITIONS = "PL:2026,CL:2026"
 # Google OAuth web client id (public, not a secret; the client secret is never

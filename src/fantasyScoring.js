@@ -64,15 +64,20 @@ export function scoreMatchForPlayers(detail) {
     if (goal.assistId != null) add(goal.assistId, "assists", SCORING.assist);
   }
 
-  // Cards: a second yellow (YELLOW_RED) is scored as the red-card penalty
-  // only, matching real fantasy football rules (not -1 then -3 additionally).
+  // Cards: collapse each player's match events to their strongest outcome. API-
+  // Football records a first yellow, second yellow and companion red separately;
+  // a dismissal must still score exactly one red-card penalty.
+  const cardOutcome = new Map();
   for (const card of detail.cards ?? []) {
     if (card.card === "RED" || card.card === "YELLOW_RED") {
-      add(card.playerId, "cards", SCORING.redCard);
-    } else if (card.card === "YELLOW") {
-      add(card.playerId, "cards", SCORING.yellowCard);
+      cardOutcome.set(card.playerId, "RED");
+    } else if (card.card === "YELLOW" && !cardOutcome.has(card.playerId)) {
+      cardOutcome.set(card.playerId, "YELLOW");
     }
   }
+  cardOutcome.forEach((outcome, playerId) => {
+    add(playerId, "cards", outcome === "RED" ? SCORING.redCard : SCORING.yellowCard);
+  });
 
   return scores;
 }

@@ -4,11 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 8731",
+    "build": "vite build",
+    "test": "node --test test/*.test.js",
     "fetch:live": "node scripts/fetch-live-data.mjs",
     "fetch:fantasy-players": "node scripts/fetch-fantasy-players.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
     "@pushforge/builder": "^2.0.5"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.2.0",
+    "svelte": "^5.56.7",
+    "vite": "^8.1.5"
   }
 }
