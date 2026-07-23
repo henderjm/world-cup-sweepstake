@@ -55,11 +55,6 @@ export { FantasyDraftRoom } from "./draftRoom.js";
 
 const API = "https://v3.football.api-sports.io";
 
-// Sentry ingest target for the tunnel. Only envelopes whose DSN matches this exact
-// host + project are relayed, so the tunnel can't be used as an open relay.
-const SENTRY_HOST = "o4511587918479360.ingest.de.sentry.io";
-const SENTRY_PROJECT = "4511587923066960";
-
 const ALLOWED_ORIGINS = new Set([
   "https://henderjm.github.io",
   "http://localhost:8731",
@@ -130,12 +125,6 @@ export default {
       } catch {
         // limiter unavailable, fail open
       }
-    }
-
-    // Sentry tunnel: relay browser error/replay envelopes server-side, so ad/tracker
-    // blockers that block the Sentry ingest domain cannot drop them.
-    if (url.pathname === "/tunnel" && request.method === "POST") {
-      return tunnelToSentry(request, cors);
     }
 
     const paperRunRoute = url.pathname.match(/^\/paperrun\/(\d{4}-\d{2}-\d{2})$/);
@@ -482,25 +471,6 @@ function trimAnalysisMemory() {
 
 function isMatchFinished(match) {
   return match.status === "FINISHED" || match.status === "AWARDED";
-}
-
-async function tunnelToSentry(request, cors) {
-  try {
-    const body = await request.arrayBuffer();
-    const header = JSON.parse(new TextDecoder().decode(body).split("\n", 1)[0]);
-    const dsn = new URL(header.dsn);
-    if (dsn.hostname !== SENTRY_HOST || dsn.pathname.replace(/^\//, "") !== SENTRY_PROJECT) {
-      return json({ error: "dsn not allowed" }, 403, cors);
-    }
-    const upstream = await fetch(`https://${SENTRY_HOST}/api/${SENTRY_PROJECT}/envelope/`, {
-      method: "POST",
-      body,
-      headers: { "Content-Type": "application/x-sentry-envelope" },
-    });
-    return new Response(null, { status: upstream.status, headers: cors });
-  } catch {
-    return json({ error: "bad envelope" }, 400, cors);
-  }
 }
 
 // -- Accounts (D1-backed) ------------------------------------------------------

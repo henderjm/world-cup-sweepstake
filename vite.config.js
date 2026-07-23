@@ -14,7 +14,6 @@ export default defineConfig({
         await Promise.all([
           cp("assets", "dist/assets", { recursive: true }),
           cp("data", "dist/data", { recursive: true }),
-          cp("vendor", "dist/vendor", { recursive: true }),
           cp("sw.js", "dist/sw.js"),
         ]);
       },

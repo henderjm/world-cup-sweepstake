@@ -1,5 +1,6 @@
 import { DATA_API } from "./data.js";
 import { authHeaders, isSignedIn, onAccountChange } from "./account.js";
+import { posthog } from "./telemetry.js";
 
 // Per-match banter: shared emoji reactions and one-line messages, stored in the
 // Worker's D1 next to accounts. Reading is open to everyone; posting requires a
@@ -139,6 +140,7 @@ function onClick(event) {
   }
   data.reactions.mine = [...mine];
   renderLive();
+  posthog.capture("banter_reaction_sent", { match_id: matchId, emoji });
   send({ action: "react", emoji });
 }
 
@@ -155,6 +157,7 @@ function onSubmit(event) {
   data.messages = [...(data.messages ?? []), { name: "You", text, pending: true }].slice(-50);
   renderLive();
   scrollFeed();
+  posthog.capture("banter_message_sent", { match_id: matchId });
   send({ action: "message", text });
 }
 

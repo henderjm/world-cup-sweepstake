@@ -2,6 +2,7 @@ import { alphabetizeStandings, buildTeamPerformance, mapStandings, normalizeTeam
 import { DEFAULT_COMPETITION_CODE, competitionFor, zoneFor } from "./competitions.js";
 import { registerTeams } from "./badges.js";
 import { locationForMatch } from "./locations.js";
+import { posthog } from "./telemetry.js";
 
 // Set this to your deployed Cloudflare Worker origin to serve live data without a
 // deploy, e.g. "https://goon-squad-data.<your-subdomain>.workers.dev". Leave empty to
@@ -96,7 +97,7 @@ async function loadLiveData(comp) {
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
     return await response.json();
   } catch (error) {
-    window.Sentry?.captureException?.(error);
+    posthog.captureException(error);
     return {
       source: "Live data pending",
       lastUpdated: "",

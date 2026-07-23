@@ -1,4 +1,5 @@
 import { loadModel } from "./data.js";
+import { posthog } from "./telemetry.js";
 import { COMPETITIONS, DEFAULT_COMPETITION_CODE } from "./competitions.js";
 import {
   knockoutMatches,
@@ -165,7 +166,7 @@ async function start() {
         window.location.reload();
       }
     } catch (error) {
-      window.Sentry?.captureException?.(error);
+      posthog.captureException(error);
     }
     return;
   }
@@ -410,7 +411,7 @@ async function loadPaperRun() {
     if (state.paperrun.date !== date) return;
     state.paperrun.day = day;
   } catch (error) {
-    window.Sentry?.captureException?.(error);
+    posthog.captureException(error);
   } finally {
     state.paperrun.loading = false;
   }
@@ -426,7 +427,10 @@ function mountPaperRun() {
   if (!day.result) metric("count", "paperrun_shown", 1);
   state.paperrun.mount = mountPaperRunGame(host, day, {
     onTick: (snap) => updatePaperRunHud(host, snap),
-    onStart: () => metric("count", "paperrun_started", 1),
+    onStart: () => {
+      metric("count", "paperrun_started", 1);
+      posthog.capture("paper_run_started", { date: state.paperrun.date });
+    },
     onUnavailable: () => {
       const status = host.querySelector("[data-run-status]");
       if (status) status.innerHTML = `<strong>Game unavailable</strong><span>This browser cannot start the canvas game.</span>`;
@@ -435,6 +439,12 @@ function mountPaperRun() {
       const name = displayName();
       metric("count", "paperrun_completed", 1, {
         tags: { score: String(result.score), deliveries: String(result.deliveries), finished: String(result.finished) },
+      });
+      posthog.capture("paper_run_completed", {
+        date: state.paperrun.date,
+        score: result.score,
+        deliveries: result.deliveries,
+        finished: result.finished,
       });
       await savePaperRun(day, { ...result, name });
     },
@@ -1003,6 +1013,7 @@ function setSection(section) {
   state.section = section;
   window.history.replaceState(null, "", `#${section === "scores" ? state.tab : section}`);
   metric("count", "section_view", 1, { tags: { section } });
+  posthog.capture("section_viewed", { section });
   renderAll();
 }
 
@@ -1030,6 +1041,7 @@ function setTab(tab) {
   state.tab = tab;
   window.history.replaceState(null, "", `#${tab}`);
   metric("count", "tab_view", 1, { tags: { tab } });
+  posthog.capture("tab_viewed", { tab });
   renderAll();
 }
 
@@ -1049,6 +1061,7 @@ async function switchCompetition(code) {
     // storage may be blocked; the switch still applies for this visit
   }
   metric("count", "competition_switch", 1, { tags: { competition: code } });
+  posthog.capture("competition_switched", { competition: code });
 
   const fresh = await loadModel(code);
   if (state.competition !== code) return; // switched again while loading
@@ -1112,7 +1125,10 @@ function wireLayoutControls() {
     if (event.target.closest("[data-push-enable]")) {
       metric("count", "push_enable", 1);
       enablePush()
-        .then(() => updatePushControls())
+        .then(() => {
+          posthog.capture("push_notifications_enabled");
+          updatePushControls();
+        })
         .catch((error) => updatePushControls(String(error.message).includes("permission") ? "Permission was not granted." : "Couldn't enable. Try again."));
       return;
     }
@@ -1327,7 +1343,16 @@ function openMatchRow(row) {
   const id = row.getAttribute("data-match-id");
   if (!id) return;
   const match = model.matches.find((item) => String(item.id) === id);
-  if (match) openMatch(match);
+  if (match) {
+    posthog.capture("match_opened", {
+      match_id: match.id,
+      home_team: match.homeTeam,
+      away_team: match.awayTeam,
+      status: match.status,
+      competition: model.competition?.code,
+    });
+    openMatch(match);
+  }
 }
 
 // Desktop and mobile render different layouts (sidebar + aside vs chip row +
@@ -1340,11 +1365,14 @@ function wireViewportChange() {
   });
 }
 
-// Telemetry helpers. Guarded so instrumentation never throws and a blocked Sentry
-// ingest (tracker blockers) simply no-ops.
+// Telemetry helpers. Guarded so instrumentation never throws and a blocked
+// PostHog ingest (tracker blockers) simply no-ops. PostHog has no separate
+// count/distribution/gauge metric types the way Sentry did; every kind becomes
+// a capture event carrying its value and tags as properties, distinguishable
+// by metric_kind for anyone building an insight off it later.
 function metric(kind, name, value, options) {
   try {
-    window.Sentry?.metrics?.[kind]?.(name, value, options);
+    posthog.capture(name, { metric_kind: kind, value, ...(options?.tags ?? {}), ...(options?.unit ? { unit: options.unit } : {}) });
   } catch {
     /* telemetry must never break the app */
   }
@@ -1352,20 +1380,18 @@ function metric(kind, name, value, options) {
 
 function log(level, message, attributes) {
   try {
-    window.Sentry?.logger?.[level]?.(message, attributes);
+    posthog.capture("log", { level, message, ...attributes });
   } catch {
     /* telemetry must never break the app */
   }
 }
 
-// App-load instrumentation via the vendored Replay/Logs/Metrics SDK.
+// App-load instrumentation.
 function trackAppLoad(data, buildMs) {
   if (appLoadMetricSent) return;
   appLoadMetricSent = true;
   const source = data.source ?? "unknown";
   const hasData = Boolean(data.hasData);
-  window.Sentry?.setTag?.("data_source", source);
-  window.Sentry?.setTag?.("has_live_data", String(hasData));
   metric("count", "app_load", 1, { tags: { source, has_data: String(hasData) } });
   if (Number.isFinite(buildMs)) {
     metric("distribution", "model_build_ms", buildMs, { unit: "millisecond" });

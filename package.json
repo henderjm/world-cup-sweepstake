@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
-    "@pushforge/builder": "^2.0.5"
+    "@pushforge/builder": "^2.0.5",
+    "posthog-js": "^1.407.2"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.2.0",
