@@ -106,7 +106,7 @@ async function start() {
         window.location.reload();
       }
     } catch (error) {
-      window.Sentry?.captureException?.(error);
+      posthog.captureException(error);
     }
     return;
   }
@@ -331,7 +331,7 @@ async function loadPaperRun() {
     if (state.paperrun.date !== date) return;
     state.paperrun.day = day;
   } catch (error) {
-    window.Sentry?.captureException?.(error);
+    posthog.captureException(error);
   } finally {
     state.paperrun.loading = false;
   }
@@ -625,11 +625,14 @@ function wireViewportChange() {
   });
 }
 
-// Telemetry helpers. Guarded so instrumentation never throws and a blocked Sentry
-// ingest (tracker blockers) simply no-ops.
+// Telemetry helpers. Guarded so instrumentation never throws and a blocked
+// PostHog ingest (tracker blockers) simply no-ops. PostHog has no separate
+// count/distribution/gauge metric types the way Sentry did; every kind becomes
+// a capture event carrying its value and tags as properties, distinguishable
+// by metric_kind for anyone building an insight off it later.
 function metric(kind, name, value, options) {
   try {
-    window.Sentry?.metrics?.[kind]?.(name, value, options);
+    posthog.capture(name, { metric_kind: kind, value, ...(options?.tags ?? {}), ...(options?.unit ? { unit: options.unit } : {}) });
   } catch {
     /* telemetry must never break the app */
   }
@@ -637,20 +640,18 @@ function metric(kind, name, value, options) {
 
 function log(level, message, attributes) {
   try {
-    window.Sentry?.logger?.[level]?.(message, attributes);
+    posthog.capture("log", { level, message, ...attributes });
   } catch {
     /* telemetry must never break the app */
   }
 }
 
-// App-load instrumentation via the vendored Replay/Logs/Metrics SDK.
+// App-load instrumentation.
 function trackAppLoad(data, buildMs) {
   if (appLoadMetricSent) return;
   appLoadMetricSent = true;
   const source = data.source ?? "unknown";
   const hasData = Boolean(data.hasData);
-  window.Sentry?.setTag?.("data_source", source);
-  window.Sentry?.setTag?.("has_live_data", String(hasData));
   metric("count", "app_load", 1, { tags: { source, has_data: String(hasData) } });
   if (Number.isFinite(buildMs)) {
     metric("distribution", "model_build_ms", buildMs, { unit: "millisecond" });

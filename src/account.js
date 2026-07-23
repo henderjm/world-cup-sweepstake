@@ -80,7 +80,10 @@ export async function restoreAccount() {
   if (!accountAvailable() || !session) return null;
   try {
     account = await api("/me");
-    posthog.identify(account.user.id, { name: account.user.name, email: account.user.email });
+    // The Worker's publicUser() never hands the client the internal numeric user
+    // id (see worker/worker.js), so email is the stable identity to key on here,
+    // and it is also the identity the product wants users assigned by.
+    posthog.identify(account.user.email, { name: account.user.name, email: account.user.email });
     emit();
     return account;
   } catch (error) {
@@ -122,7 +125,7 @@ export async function mountSignIn(container, { onSignedIn, onError }) {
           });
           storeSession(result.token);
           account = { user: result.user, follows: result.follows };
-          posthog.identify(result.user.id, { name: result.user.name, email: result.user.email });
+          posthog.identify(result.user.email, { name: result.user.name, email: result.user.email });
           posthog.capture("user_signed_in", { method: "google" });
           emit();
           onSignedIn?.(account);

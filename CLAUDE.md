@@ -52,7 +52,7 @@ Upstream polling is a state machine, not the browser cadence. The season schedul
 
 ## Module map (`src/`)
 
-- `app.js` orchestration: sections (Scores/Play) + scores tabs, hash routing (`#live/#tables/#knockout/#fixtures/#stats/#play`, legacy aliases kept), polling, desktop/mobile re-render on the 760px matchMedia crossing, event delegation on `#layout`, Sentry telemetry helpers.
+- `app.js` orchestration: sections (Scores/Play) + scores tabs, hash routing (`#live/#tables/#knockout/#fixtures/#stats/#play`, legacy aliases kept), polling, desktop/mobile re-render on the 760px matchMedia crossing, event delegation on `#layout`, PostHog telemetry helpers.
 - `data.js` data loading (`loadModel(comp)` fetches the live feed and scorers in parallel), `buildModel(raw, scorerData)` (league tables with form, standings, team registration).
 - `domain.js` pure mapping/standings logic, team-name normalization, per-team performance/form.
 - `competitions.js` per-competition config (name, table zone bands) and `zoneFor`.
@@ -74,9 +74,9 @@ Upstream polling is a state machine, not the browser cadence. The season schedul
 - **New scores tab:** add it to `SCORES_TABS` in `src/views.js` (label + key) and to `SCORES_TABS` in `src/app.js`, add a `case` to `renderPanel` in `app.js`, and write the renderer in `views.js`. Tabs route via the URL hash; the Knockout tab demonstrates conditional presence (cups only).
 - **New in-panel control** (sort toggle, filter): give it a unique `data-*` attribute (not a shared one), keep its state in the `state` object in `app.js`, read it in the renderer, and handle it in `wireLayoutControls` (click delegation with an early `return` per handler). Reuse the `.segrow`/`.seg` pill markup; see `data-fixture-view` (fixtures), `data-gb-sort` (player stats).
 
-## Telemetry and the Sentry tunnel
+## Telemetry (PostHog)
 
-Sentry is vendored first-party (`vendor/sentry.min.js`) and events are tunnelled through the Worker's `/tunnel` route so tracker blockers that block the Sentry ingest domain cannot drop them. The DSN/host/project in `index.html`, the `SENTRY_HOST`/`SENTRY_PROJECT` allow-check in `worker/worker.js`, and the `tunnel:` URL must all reference the same deployed Worker and Sentry project. All telemetry calls in `app.js` are wrapped so a blocked or absent Sentry never throws.
+`src/telemetry.js` initializes `posthog-js` from `VITE_POSTHOG_KEY`/`VITE_POSTHOG_HOST` (EU ingest, `.env.production`; both are public client tokens, the same trust level as `GOOGLE_CLIENT_ID`, safe to commit). `account.js` calls `posthog.identify(email, { name, email })` on sign-in and on session restore, and `posthog.reset()` on sign-out: email is the identity key because the Worker's `publicUser()` never exposes the internal numeric user id to the client, and email is also the identity the product wants users assigned by. `app.js`'s `metric()`/`log()` helpers translate the old Sentry metrics/logger calls into `posthog.capture()` events (PostHog has no separate count/distribution/gauge metric types, so `metric_kind` rides along as a property instead). All telemetry calls are wrapped so a blocked or absent PostHog never throws.
 
 When changing the deployed origins, keep `ALLOWED_ORIGINS` (worker CORS) and the GitHub Pages URL aligned.
 
