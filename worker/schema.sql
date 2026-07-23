@@ -203,3 +203,10 @@ CREATE TABLE IF NOT EXISTS fantasy_waivers (
   processed_at TEXT
 );
 CREATE INDEX IF NOT EXISTS fantasy_waivers_pending ON fantasy_waivers(league_id, status);
+
+-- Defense in depth for the draft room's commit path: blockConcurrencyWhile in
+-- the FantasyDraftRoom Durable Object already serializes picks within one
+-- instance, but this index is what turns a same-slot double write (an eviction-
+-- boundary race across two instances, in theory) into a rejected insert instead
+-- of silent duplicate-pick corruption.
+CREATE UNIQUE INDEX IF NOT EXISTS fantasy_draft_picks_league_overall ON fantasy_draft_picks(league_id, overall_pick);

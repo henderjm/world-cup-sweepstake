@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { renderFantasyLeagueList, renderFantasyPlayerRows } from "../src/fantasyView.js";
+import { renderFantasyDraftRoom, renderFantasyLeagueList, renderFantasyPlayerRows, renderFantasySessionExpired } from "../src/fantasyView.js";
 
 test("renderFantasyLeagueList escapes a league name containing HTML", () => {
   const html = renderFantasyLeagueList(
@@ -85,4 +85,71 @@ test("renderFantasyPlayerRows escapes player name and team", () => {
   });
   assert.doesNotMatch(html, /<b>Bad<\/b>/);
   assert.match(html, /&lt;b&gt;Bad&lt;\/b&gt;/);
+});
+
+test("renderFantasySessionExpired points at the You section rather than offering a Retry", () => {
+  const html = renderFantasySessionExpired();
+  assert.match(html, /session expired/i);
+  assert.match(html, /data-section-nav="you"/);
+  assert.doesNotMatch(html, /data-fantasy-retry/);
+});
+
+const members = [
+  { userId: 1, name: "Alice" },
+  { userId: 2, name: "Bob" },
+];
+const league = { id: 1, name: "Test League" };
+
+function draftRoomFixture(overrides = {}) {
+  return {
+    status: "drafting",
+    memberIds: [1, 2],
+    overallPick: 2,
+    totalPicks: 30,
+    onClockUserId: 2,
+    round: 1,
+    pickInRound: 2,
+    picks: [],
+    rosters: { 1: [], 2: [] },
+    remainingMs: 42000,
+    ...overrides,
+  };
+}
+
+test("renderFantasyDraftRoom shows a dismissable notice for draft.lastError", () => {
+  const html = renderFantasyDraftRoom({
+    league,
+    members,
+    draft: draftRoomFixture({ lastError: "player already drafted" }),
+    playerPool: [],
+    filter: { position: "All", search: "" },
+    myUserId: 2,
+  });
+  assert.match(html, /player already drafted/);
+  assert.match(html, /data-fantasy-dismiss-error/);
+});
+
+test("renderFantasyDraftRoom shows no error notice when draft.lastError is unset", () => {
+  const html = renderFantasyDraftRoom({
+    league,
+    members,
+    draft: draftRoomFixture(),
+    playerPool: [],
+    filter: { position: "All", search: "" },
+    myUserId: 2,
+  });
+  assert.doesNotMatch(html, /data-fantasy-dismiss-error/);
+});
+
+test("renderFantasyDraftRoom shows a neutral clock label and no Draft buttons during the pick-to-clock gap", () => {
+  const html = renderFantasyDraftRoom({
+    league,
+    members,
+    draft: draftRoomFixture({ onClockUserId: null }),
+    playerPool: [pooledPlayer(1, "MID")],
+    filter: { position: "All", search: "" },
+    myUserId: 2,
+  });
+  assert.match(html, /Next pick/);
+  assert.doesNotMatch(html, /data-fantasy-draft-player/);
 });

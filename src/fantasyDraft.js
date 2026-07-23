@@ -62,6 +62,68 @@ export function draftOrderEntries(memberIds, round, onClockUserId, overallPick) 
   }));
 }
 
+// Pure reducer from the locally-cached room state (null until the first "state"
+// message arrives) plus one server message to the next room state. No side
+// effects: closing the socket on a "complete" message, or logging an "error"
+// message, are the caller's job (see app.js's applyFantasyDraftMessage).
+//
+// Two behaviors folded in here on purpose rather than left to the caller:
+//  - a "pick" message nulls onClockUserId until the paired "clock" message
+//    names the next manager, so the Draft buttons go dark for that gap instead
+//    of staying lit for the manager who just moved (the server would reject a
+//    pick there anyway; this just removes the misleading affordance).
+//  - an "error" message is stashed as lastError for the view to surface, and
+//    cleared by the next "pick" or "clock" (or a fresh "state" resync) so a
+//    stale notice never lingers once the draft has moved on.
+export function reduceDraftMessage(roomState, message) {
+  if (!message) return roomState;
+
+  if (message.type === "state") {
+    return { ...message, lastError: null };
+  }
+
+  if (!roomState) return roomState; // no baseline yet; ignore anything before "state"
+
+  switch (message.type) {
+    case "pick":
+      return {
+        ...roomState,
+        picks: [
+          ...roomState.picks,
+          {
+            round: message.round,
+            pickInRound: message.pickInRound,
+            overallPick: message.overallPick,
+            userId: message.userId,
+            player: message.player,
+          },
+        ],
+        rosters: {
+          ...roomState.rosters,
+          [message.userId]: [...(roomState.rosters?.[message.userId] ?? []), message.player],
+        },
+        overallPick: message.overallPick + 1,
+        onClockUserId: null,
+        lastError: null,
+      };
+    case "clock":
+      return {
+        ...roomState,
+        onClockUserId: message.onClockUserId,
+        overallPick: message.overallPick,
+        round: message.round,
+        pickInRound: message.pickInRound,
+        lastError: null,
+      };
+    case "complete":
+      return { ...roomState, status: "complete" };
+    case "error":
+      return { ...roomState, lastError: message.error };
+    default:
+      return roomState;
+  }
+}
+
 // -- Stateful WebSocket loop -----------------------------------------------------
 
 const RECONNECT_BASE_MS = 1000;
@@ -78,6 +140,15 @@ export function openDraftRoom(leagueId, { onMessage, onTick, onSocketError } = {
   let tickTimer = null;
   let deadline = null;
   let closedByCaller = false;
+  // Set once a "complete" message is actually received. The server closes the
+  // socket with a normal code (1000) once the draft finishes, which looks
+  // identical to a dropped connection to the native "close" event; without this
+  // flag scheduleReconnect would keep retrying forever while the user sits on
+  // the "Draft complete" screen. app.js also closes the socket explicitly on
+  // "complete" (the normal teardown path), but that is a second, independent
+  // layer - this flag is what actually stops the reconnect loop regardless of
+  // whether that call happens to run.
+  let terminal = false;
   let attempt = 0;
 
   function startTicking() {
@@ -94,7 +165,7 @@ export function openDraftRoom(leagueId, { onMessage, onTick, onSocketError } = {
   }
 
   function scheduleReconnect() {
-    if (closedByCaller) return;
+    if (closedByCaller || terminal) return;
     attempt += 1;
     const delay = Math.min(RECONNECT_BASE_MS * 2 ** (attempt - 1), RECONNECT_MAX_MS);
     reconnectTimer = window.setTimeout(connect, delay);
@@ -128,6 +199,7 @@ export function openDraftRoom(leagueId, { onMessage, onTick, onSocketError } = {
         startTicking();
         onTick?.(Math.max(0, deadline - Date.now()));
       } else if (message.type === "complete") {
+        terminal = true;
         stopTicking();
         deadline = null;
       }

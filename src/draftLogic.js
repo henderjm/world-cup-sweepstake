@@ -39,6 +39,15 @@ function countByPosition(roster) {
   return counts;
 }
 
+// D1 surfaces a UNIQUE constraint violation as a rejected promise whose message
+// names the failure; there is no distinct error class to catch. Pulled out as a
+// pure predicate so the Durable Object's lost-race handling (a D1-level backstop
+// for a race blockConcurrencyWhile should already prevent within one instance) is
+// testable without a real D1 binding.
+export function isUniqueConstraintError(error) {
+  return /unique constraint/i.test(error?.message ?? "");
+}
+
 // Rejects a pick in two cases: the player is already drafted somewhere in the
 // league (draftedIds, a Set or array of player ids), or the picking manager's
 // bucket for this player's position is already at its SQUAD_SLOTS cap (the

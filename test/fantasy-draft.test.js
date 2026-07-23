@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { canDraftPlayer, draftOrderEntries, formatCountdown, squadBucketCounts } from "../src/fantasyDraft.js";
+import { canDraftPlayer, draftOrderEntries, formatCountdown, reduceDraftMessage, squadBucketCounts } from "../src/fantasyDraft.js";
 
 test("formatCountdown renders mm:ss and rounds up to the next full second", () => {
   assert.equal(formatCountdown(60000), "1:00");
@@ -102,4 +102,109 @@ test("draftOrderEntries flags a genuinely different next picker mid-round", () =
   const entries = draftOrderEntries([1, 2, 3], 1, 1, 1);
   const next = entries.find((e) => e.isNext);
   assert.equal(next.userId, 2);
+});
+
+// -- reduceDraftMessage ----------------------------------------------------------
+
+function stateMessage(overrides = {}) {
+  return {
+    type: "state",
+    leagueId: 1,
+    status: "drafting",
+    memberIds: [1, 2, 3],
+    overallPick: 1,
+    totalPicks: 45,
+    onClockUserId: 1,
+    round: 1,
+    pickInRound: 1,
+    picks: [],
+    rosters: { 1: [], 2: [], 3: [] },
+    ...overrides,
+  };
+}
+
+test("reduceDraftMessage ignores pick/clock/complete/error before any state baseline", () => {
+  assert.equal(reduceDraftMessage(null, { type: "pick", overallPick: 1, userId: 1, player: player(1, "GK") }), null);
+  assert.equal(reduceDraftMessage(null, { type: "clock", onClockUserId: 1 }), null);
+  assert.equal(reduceDraftMessage(null, { type: "complete" }), null);
+  assert.equal(reduceDraftMessage(null, { type: "error", error: "boom" }), null);
+});
+
+test("reduceDraftMessage seeds room state from the first state message", () => {
+  const next = reduceDraftMessage(null, stateMessage());
+  assert.equal(next.status, "drafting");
+  assert.equal(next.onClockUserId, 1);
+  assert.equal(next.lastError, null);
+});
+
+test("reduceDraftMessage nulls onClockUserId on a pick, until the paired clock message names the next manager", () => {
+  const seeded = reduceDraftMessage(null, stateMessage());
+  const picked = reduceDraftMessage(seeded, {
+    type: "pick",
+    round: 1,
+    pickInRound: 1,
+    overallPick: 1,
+    userId: 1,
+    player: player(1, "GK"),
+  });
+  assert.equal(picked.onClockUserId, null);
+  assert.equal(picked.overallPick, 2);
+  assert.equal(picked.picks.length, 1);
+  assert.deepEqual(picked.rosters[1], [player(1, "GK")]);
+
+  const clocked = reduceDraftMessage(picked, {
+    type: "clock",
+    deadline: Date.now() + 60000,
+    onClockUserId: 2,
+    overallPick: 2,
+    round: 1,
+    pickInRound: 2,
+  });
+  assert.equal(clocked.onClockUserId, 2);
+  // The pick and roster history from the earlier pick must survive a clock update.
+  assert.equal(clocked.picks.length, 1);
+  assert.deepEqual(clocked.rosters[1], [player(1, "GK")]);
+});
+
+test("reduceDraftMessage appends to existing rosters rather than replacing them", () => {
+  let room = reduceDraftMessage(null, stateMessage());
+  room = reduceDraftMessage(room, { type: "pick", round: 1, pickInRound: 1, overallPick: 1, userId: 1, player: player(1, "GK") });
+  room = reduceDraftMessage(room, { type: "clock", onClockUserId: 2, overallPick: 2, round: 1, pickInRound: 2 });
+  room = reduceDraftMessage(room, { type: "pick", round: 1, pickInRound: 2, overallPick: 2, userId: 1, player: player(2, "DEF") });
+  assert.deepEqual(
+    room.rosters[1].map((p) => p.id),
+    [1, 2],
+  );
+});
+
+test("reduceDraftMessage stashes an error and clears it on the next pick", () => {
+  let room = reduceDraftMessage(null, stateMessage());
+  room = reduceDraftMessage(room, { type: "error", error: "not your turn" });
+  assert.equal(room.lastError, "not your turn");
+  room = reduceDraftMessage(room, { type: "pick", round: 1, pickInRound: 1, overallPick: 1, userId: 1, player: player(1, "GK") });
+  assert.equal(room.lastError, null);
+});
+
+test("reduceDraftMessage stashes an error and clears it on the next clock", () => {
+  let room = reduceDraftMessage(null, stateMessage());
+  room = reduceDraftMessage(room, { type: "error", error: "player already drafted" });
+  assert.equal(room.lastError, "player already drafted");
+  room = reduceDraftMessage(room, { type: "clock", onClockUserId: 2, overallPick: 2, round: 1, pickInRound: 2 });
+  assert.equal(room.lastError, null);
+});
+
+test("reduceDraftMessage clears a stale error on a fresh state resync", () => {
+  let room = reduceDraftMessage(null, stateMessage());
+  room = reduceDraftMessage(room, { type: "error", error: "stale" });
+  assert.equal(room.lastError, "stale");
+  room = reduceDraftMessage(room, stateMessage({ onClockUserId: 2 }));
+  assert.equal(room.lastError, null);
+});
+
+test("reduceDraftMessage marks the room complete while preserving its final rosters", () => {
+  let room = reduceDraftMessage(null, stateMessage());
+  room = reduceDraftMessage(room, { type: "pick", round: 1, pickInRound: 1, overallPick: 1, userId: 1, player: player(1, "GK") });
+  room = reduceDraftMessage(room, { type: "complete" });
+  assert.equal(room.status, "complete");
+  assert.deepEqual(room.rosters[1], [player(1, "GK")]);
 });

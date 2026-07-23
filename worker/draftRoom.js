@@ -18,7 +18,13 @@
 // X-Draft-User-Id/X-Draft-League-Id headers on that first request, never a
 // client-supplied token.
 
-import { autoPick, resolvePick, roundRobinSchedule, validatePick } from "../src/draftLogic.js";
+import {
+  autoPick,
+  isUniqueConstraintError,
+  resolvePick,
+  roundRobinSchedule,
+  validatePick,
+} from "../src/draftLogic.js";
 import { SQUAD_SIZE, SQUAD_SLOTS } from "../src/fantasy.js";
 
 const PICK_CLOCK_MS = 60 * 1000;
@@ -86,25 +92,38 @@ export class FantasyDraftRoom {
     const attachment = ws.deserializeAttachment() ?? {};
     if (!Number.isInteger(attachment.userId)) return this.sendError(ws, "not authenticated");
 
-    await this.ensureHydrated(attachment.leagueId);
-    if (this.draft.status !== "drafting") return this.sendError(ws, "draft is not live");
+    // The whole validate-then-write sequence runs inside blockConcurrencyWhile,
+    // which suspends every other incoming event (another socket's pick message,
+    // the alarm firing) until this promise settles. Without it, two handlers can
+    // both await past their own validation (D1/fetch calls yield the event loop)
+    // before either has committed, so both see the same "seat open" state and
+    // both write: the same slot picked twice, or the same user's two tabs both
+    // getting through. Validation is re-read fresh in here (not reused from
+    // before the lock) so a message that was queued behind another one's commit
+    // is judged against the post-commit state, not stale state from before it
+    // queued.
+    await this.state.blockConcurrencyWhile(async () => {
+      await this.ensureHydrated(attachment.leagueId);
+      if (this.draft.status !== "drafting") return this.sendError(ws, "draft is not live");
 
-    const onClock = this.currentOnClockUserId();
-    if (attachment.userId !== onClock) return this.sendError(ws, "not your turn");
+      const onClock = this.currentOnClockUserId();
+      if (attachment.userId !== onClock) return this.sendError(ws, "not your turn");
 
-    const player = this.playersById.get(Number(data.playerId));
-    if (!player) return this.sendError(ws, "unknown player");
+      const player = this.playersById.get(Number(data.playerId));
+      if (!player) return this.sendError(ws, "unknown player");
 
-    const roster = this.draft.rosters.get(attachment.userId) ?? [];
-    const validation = validatePick({
-      roster,
-      draftedIds: this.draft.draftedPlayerIds,
-      player,
-      squadSlots: SQUAD_SLOTS,
+      const roster = this.draft.rosters.get(attachment.userId) ?? [];
+      const validation = validatePick({
+        roster,
+        draftedIds: this.draft.draftedPlayerIds,
+        player,
+        squadSlots: SQUAD_SLOTS,
+      });
+      if (!validation.valid) return this.sendError(ws, validation.error);
+
+      const result = await this.commitPick(attachment.userId, player);
+      if (!result.ok) this.sendError(ws, result.error);
     });
-    if (!validation.valid) return this.sendError(ws, validation.error);
-
-    await this.commitPick(attachment.userId, player);
   }
 
   async webSocketClose(ws) {
@@ -124,41 +143,73 @@ export class FantasyDraftRoom {
   async alarm() {
     const leagueId = await this.state.storage.get("leagueId");
     if (leagueId == null) return; // never joined/started, nothing to autopick
-    await this.ensureHydrated(leagueId);
-    if (this.draft.status !== "drafting") return;
 
-    const onClock = this.currentOnClockUserId();
-    if (onClock == null) return;
-    const roster = this.draft.rosters.get(onClock) ?? [];
-    const available = this.availablePlayers();
-    const player = autoPick(available, roster, SQUAD_SLOTS);
-    if (!player) {
-      // Every open bucket has run out of legal candidates in the pool. This should
-      // not happen (the pool is far larger than a squad) but must not wedge the
-      // draft: broadcast the failure and reschedule so a human can intervene.
-      this.broadcast({ type: "error", error: "autopick found no legal candidate", userId: onClock });
-      await this.scheduleClock();
-      return;
-    }
-    await this.commitPick(onClock, player);
+    // Same serialization as webSocketMessage: without it, this autopick could
+    // interleave with a human's pick landing in the same instant (see the
+    // comment there for the full race).
+    await this.state.blockConcurrencyWhile(async () => {
+      await this.ensureHydrated(leagueId);
+      if (this.draft.status !== "drafting") return;
+
+      const onClock = this.currentOnClockUserId();
+      if (onClock == null) return;
+      const roster = this.draft.rosters.get(onClock) ?? [];
+      const available = this.availablePlayers();
+      const player = autoPick(available, roster, SQUAD_SLOTS);
+      if (!player) {
+        // Every open bucket has run out of legal candidates in the pool. This
+        // should not happen (the pool is far larger than a squad) but must not
+        // alarm-loop forever: do NOT reschedule. The draft simply pauses; the
+        // clock only restarts once this manager (or whoever ends up on the
+        // clock) lands a legal pick through the normal commitPick path below.
+        this.broadcast({ type: "error", error: "autopick found no legal candidate", userId: onClock });
+        return;
+      }
+
+      const result = await this.commitPick(onClock, player);
+      if (!result.ok) {
+        // Lost the race to a human pick that landed a moment earlier (or, in
+        // theory, another instance's write). commitPick already rehydrated;
+        // nothing else to do, the pick that won already rescheduled the clock.
+      }
+    });
   }
 
   // -- Shared pick path (human message or alarm autopick) ------------------------
-
+  // Only ever called from inside a blockConcurrencyWhile block (see
+  // webSocketMessage/alarm above), so within this instance there is never a
+  // second commitPick in flight. The try/catch below is defense in depth for a
+  // race that lock cannot cover: two Durable Object instances for the same
+  // league briefly overlapping (an eviction/wake edge case), where each one's
+  // in-memory overallPick could otherwise agree and both write the same slot.
+  // The fantasy_draft_picks(league_id, overall_pick) unique index makes the
+  // second write fail instead of silently duplicating a pick.
   async commitPick(userId, player) {
+    const leagueId = this.draft.leagueId;
     const overallPick = this.draft.overallPick;
     const resolved = resolvePick(this.draft.memberIds, overallPick, SQUAD_SIZE);
-    if (!resolved) return; // draft already complete, defensive guard
+    if (!resolved) return { ok: false, error: "draft is already complete" };
 
-    await this.env.DB.batch([
-      this.env.DB.prepare(
-        `INSERT INTO fantasy_draft_picks (league_id, round, pick_in_round, overall_pick, user_id, player_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
-      ).bind(this.draft.leagueId, resolved.round, resolved.pickInRound, overallPick, userId, player.id),
-      this.env.DB.prepare(
-        `INSERT INTO fantasy_rosters (league_id, user_id, player_id, acquired_via) VALUES (?1, ?2, ?3, 'draft')`,
-      ).bind(this.draft.leagueId, userId, player.id),
-    ]);
+    try {
+      await this.env.DB.batch([
+        this.env.DB.prepare(
+          `INSERT INTO fantasy_draft_picks (league_id, round, pick_in_round, overall_pick, user_id, player_id)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+        ).bind(leagueId, resolved.round, resolved.pickInRound, overallPick, userId, player.id),
+        this.env.DB.prepare(
+          `INSERT INTO fantasy_rosters (league_id, user_id, player_id, acquired_via) VALUES (?1, ?2, ?3, 'draft')`,
+        ).bind(leagueId, userId, player.id),
+      ]);
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+      // Lost the race: some other write already claimed this overall_pick. Never
+      // trust the in-memory state after this, force a full rehydrate from D1 so
+      // the next attempt (a retry, or the next queued event) sees the real
+      // current pick rather than compounding the drift.
+      this.draft = null;
+      await this.ensureHydrated(leagueId);
+      return { ok: false, error: "not your turn" };
+    }
 
     this.draft.draftedPlayerIds.add(player.id);
     const roster = this.draft.rosters.get(userId) ?? [];
@@ -180,6 +231,7 @@ export class FantasyDraftRoom {
     } else {
       await this.scheduleClock();
     }
+    return { ok: true };
   }
 
   async completeDraft() {
@@ -212,6 +264,11 @@ export class FantasyDraftRoom {
 
   async scheduleClock() {
     const deadline = Date.now() + PICK_CLOCK_MS;
+    // Known, accepted rough edge: a DO eviction and rehydrate partway through a
+    // pick's 60s window does not reset this alarm (it is durable storage, kept
+    // as-is across evictions), so it can fire a little ahead of a client's own
+    // local countdown for that one pick. Self-healing (the broadcast right after
+    // carries the true state) and cosmetic, so left as-is rather than tracked.
     await this.state.storage.setAlarm(deadline);
     const onClock = this.currentOnClockUserId();
     const resolved = resolvePick(this.draft.memberIds, this.draft.overallPick, SQUAD_SIZE);

@@ -51,7 +51,7 @@ import {
   loadPlayerPool,
   startDraft as apiStartDraft,
 } from "./fantasyApi.js";
-import { formatCountdown, openDraftRoom } from "./fantasyDraft.js";
+import { formatCountdown, openDraftRoom, reduceDraftMessage } from "./fantasyDraft.js";
 import {
   renderFantasyComplete,
   renderFantasyDraftRoom,
@@ -61,6 +61,7 @@ import {
   renderFantasyLobby,
   renderFantasyNotConfigured,
   renderFantasyPlayerRows,
+  renderFantasySessionExpired,
   renderFantasySignedOut,
 } from "./fantasyView.js";
 
@@ -114,6 +115,7 @@ function initialFantasyState() {
     joinBusy: false,
     joinError: "",
     loadError: "",
+    sessionExpired: false, // 401 from the fantasy API: distinct from a generic loadError
   };
 }
 
@@ -175,15 +177,19 @@ async function start() {
   onAccountChange(() => {
     syncAccountButton();
     if (state.section === "you") renderLayout();
-    if (state.section === "fantasy") {
+    if (!isSignedIn()) {
       // Signing out mid-draft must drop the socket, not just swap the panel for
       // the signed-out card underneath it.
-      if (!isSignedIn()) {
-        teardownFantasyDraftRoom();
-        state.fantasy = initialFantasyState();
-      }
-      renderLayout();
+      teardownFantasyDraftRoom();
+      state.fantasy = initialFantasyState();
+    } else if (state.fantasy.sessionExpired) {
+      // A fresh sign-in (typically done from the You section, with the
+      // Fantasy tab's "session expired" card left showing underneath) should
+      // forget that stale failure so the next visit to Fantasy retries
+      // instead of getting stuck on the same expired-session message forever.
+      state.fantasy = initialFantasyState();
     }
+    if (state.section === "fantasy") renderLayout();
   });
   restoreAccount().then(syncAccountButton);
 
@@ -455,6 +461,10 @@ function renderFantasy() {
     elements.layout.innerHTML = renderFantasyNotConfigured();
     return;
   }
+  if (f.sessionExpired) {
+    elements.layout.innerHTML = renderFantasySessionExpired();
+    return;
+  }
   if (f.loadError) {
     elements.layout.innerHTML = renderFantasyError(f.loadError);
     return;
@@ -535,12 +545,22 @@ async function loadFantasyLeagues() {
   const f = state.fantasy;
   if (f.leaguesLoading) return;
   f.leaguesLoading = true;
+  f.sessionExpired = false;
   try {
     f.leagues = await apiListLeagues();
     f.loadError = "";
   } catch (error) {
-    f.leagues = [];
-    if (error.status !== 401) f.loadError = error.message || "Couldn't load your leagues.";
+    if (error.status === 401) {
+      // A revoked/expired session renders as its own state rather than falling
+      // through to "no leagues", which would look like the user genuinely has
+      // none. f.leagues stays null (not []) so a later successful retry (e.g.
+      // after signing back in) is not mistaken for "already loaded, empty".
+      f.sessionExpired = true;
+      f.leagues = null;
+    } else {
+      f.leagues = [];
+      f.loadError = error.message || "Couldn't load your leagues.";
+    }
   } finally {
     f.leaguesLoading = false;
   }
@@ -641,26 +661,19 @@ function mountFantasyDraftRoom(leagueId) {
 function applyFantasyDraftMessage(message) {
   const room = state.fantasy.draftRoom;
   if (!room) return;
-  if (message.type === "state") {
-    room.state = message;
-  } else if (message.type === "pick" && room.state) {
-    room.state.picks = [
-      ...room.state.picks,
-      { round: message.round, pickInRound: message.pickInRound, overallPick: message.overallPick, userId: message.userId, player: message.player },
-    ];
-    const rosters = { ...room.state.rosters };
-    rosters[message.userId] = [...(rosters[message.userId] ?? []), message.player];
-    room.state.rosters = rosters;
-    room.state.overallPick = message.overallPick + 1;
-  } else if (message.type === "clock" && room.state) {
-    room.state.onClockUserId = message.onClockUserId;
-    room.state.overallPick = message.overallPick;
-    room.state.round = message.round;
-    room.state.pickInRound = message.pickInRound;
-  } else if (message.type === "complete" && room.state) {
-    room.state.status = "complete";
-  } else if (message.type === "error") {
+  room.state = reduceDraftMessage(room.state, message);
+
+  if (message.type === "error") {
     window.Sentry?.captureMessage?.(`fantasy draft error: ${message.error}`);
+  }
+  if (message.type === "complete") {
+    // The normal teardown path (closedByCaller set, timers/backoff stopped) -
+    // NOT teardownFantasyDraftRoom(), which would also null out room.state and
+    // blank the complete view. openDraftRoom also treats a received "complete"
+    // as terminal on its own (see fantasyDraft.js), so the reconnect loop stops
+    // even if this call were ever skipped; this is the second, independent
+    // layer that also actively closes the socket.
+    room.controller.close();
   }
 }
 
@@ -700,6 +713,7 @@ function closeFantasyLeague() {
   f.myUserId = null;
   f.leagues = null; // refetch so status/member counts are current
   f.loadError = "";
+  f.sessionExpired = false;
   renderLayout();
 }
 
@@ -959,6 +973,12 @@ function wireLayoutControls() {
       state.fantasy.loadError = "";
       if (state.fantasy.activeLeagueId != null) openFantasyLeague(state.fantasy.activeLeagueId);
       else loadFantasyLeagues();
+      return;
+    }
+    if (event.target.closest("[data-fantasy-dismiss-error]")) {
+      const room = state.fantasy.draftRoom;
+      if (room?.state) room.state.lastError = null;
+      renderLayout();
       return;
     }
     const row = event.target.closest("[data-match-id]");

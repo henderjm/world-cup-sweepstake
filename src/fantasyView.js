@@ -30,6 +30,19 @@ export function renderFantasySignedOut() {
     </div>`;
 }
 
+// A revoked/expired session (401 from the fantasy API) is distinct from a
+// generic load failure: retrying the same call will just 401 again, so this
+// points at the You section's sign-in instead of offering a Retry button.
+export function renderFantasySessionExpired() {
+  return `
+    <div class="you you--signin">
+      <span class="brand__mark you__mark">SG</span>
+      <h2 class="you__title">Your session expired</h2>
+      <p class="note">Sign in again from the You section to keep using Fantasy.</p>
+      <button class="seg" type="button" data-section-nav="you">Go to sign in →</button>
+    </div>`;
+}
+
 export function renderFantasyNotConfigured() {
   return `
     <div class="pending">
@@ -167,10 +180,27 @@ export function renderFantasyLobby(league, members) {
 // -- Live draft room (draftStatus: drafting) ------------------------------------
 
 function renderClockBanner(members, onClockUserId, remainingMs, isMyTurn) {
+  // onClockUserId is briefly null between a "pick" and its paired "clock"
+  // message (see reduceDraftMessage in fantasyDraft.js); a neutral label reads
+  // better here than falling back to nameForUser's "Someone".
+  const who = onClockUserId == null ? "Next pick…" : isMyTurn ? "Your pick" : `${esc(nameForUser(onClockUserId, members))} is picking`;
   return `
     <div class="fantasy-clock ${isMyTurn ? "is-mine" : ""}">
-      <span class="fantasy-clock__who">${isMyTurn ? "Your pick" : `${esc(nameForUser(onClockUserId, members))} is picking`}</span>
+      <span class="fantasy-clock__who">${who}</span>
       <span class="fantasy-clock__time" data-fantasy-clock>${formatCountdown(remainingMs)}</span>
+    </div>`;
+}
+
+// A transient server-pushed {type:"error"} (e.g. a stale/duplicate pick
+// attempt): stashed on draft.lastError by reduceDraftMessage, cleared
+// automatically on the next pick/clock message, and dismissable by hand via
+// data-fantasy-dismiss-error. Styled with existing classes only (no new CSS
+// added here): the card shell plus the same error-red text style the create/
+// join forms already use.
+function renderDraftErrorNotice(message) {
+  return `<div class="card" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+      <p class="fantasy-form__error" style="margin:0;">${esc(message)}</p>
+      <button class="seg" type="button" data-fantasy-dismiss-error>Dismiss</button>
     </div>`;
 }
 
@@ -290,6 +320,7 @@ export function renderFantasyDraftRoom({ league, members, draft, playerPool, fil
         <button class="seg" type="button" data-fantasy-back>← Leagues</button>
         <h1 class="hero__title">${esc(league.name)} · Draft</h1>
       </div>
+      ${draft.lastError ? renderDraftErrorNotice(draft.lastError) : ""}
       ${renderClockBanner(members, draft.onClockUserId, draft.remainingMs ?? 0, isMyTurn)}
       ${renderOrderStrip(members, draft.memberIds, draft.round, draft.onClockUserId, draft.overallPick)}
       <div class="fantasy-draftgrid">

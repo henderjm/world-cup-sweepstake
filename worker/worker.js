@@ -801,13 +801,19 @@ async function handleFantasyLeagueJoin(request, env, cors) {
       .bind(league.id, user.id)
       .first();
     if (!existing) {
-      const count = await env.DB.prepare(`SELECT COUNT(*) AS n FROM fantasy_league_members WHERE league_id = ?1`)
-        .bind(league.id)
-        .first();
-      if ((count?.n ?? 0) >= MAX_LEAGUE_SIZE) return json({ error: "league is full" }, 400, cors);
-      await env.DB.prepare(`INSERT INTO fantasy_league_members (league_id, user_id) VALUES (?1, ?2)`)
-        .bind(league.id, user.id)
+      // A single guarded INSERT...SELECT...WHERE instead of COUNT-then-INSERT:
+      // two racing joins reading the same pre-insert count could otherwise both
+      // pass the check and push membership past MAX_LEAGUE_SIZE. D1 executes
+      // this one statement as a single atomic unit, so the COUNT it evaluates
+      // always reflects every previously committed insert; only as many racing
+      // joins as there are free seats can ever affect a row.
+      const insert = await env.DB.prepare(
+        `INSERT INTO fantasy_league_members (league_id, user_id)
+         SELECT ?1, ?2 WHERE (SELECT COUNT(*) FROM fantasy_league_members WHERE league_id = ?1) < ?3`,
+      )
+        .bind(league.id, user.id, MAX_LEAGUE_SIZE)
         .run();
+      if ((insert.meta?.changes ?? 0) === 0) return json({ error: "league is full" }, 400, cors);
     }
     return json({ league: await fantasyLeagueSummary(env, league.id, { includeInviteCode: true }) }, 200, cors);
   } catch {

@@ -3,12 +3,28 @@ import test from "node:test";
 
 import {
   autoPick,
+  isUniqueConstraintError,
   resolvePick,
   roundRobinSchedule,
   snakePickOrder,
   validatePick,
 } from "../src/draftLogic.js";
 import { SQUAD_SIZE, SQUAD_SLOTS } from "../src/fantasy.js";
+
+test("isUniqueConstraintError recognises a D1 unique-violation message", () => {
+  assert.equal(
+    isUniqueConstraintError(new Error("D1_ERROR: UNIQUE constraint failed: fantasy_draft_picks.league_id, fantasy_draft_picks.overall_pick")),
+    true,
+  );
+  assert.equal(isUniqueConstraintError({ message: "unique constraint failed" }), true);
+});
+
+test("isUniqueConstraintError rejects unrelated errors and missing input", () => {
+  assert.equal(isUniqueConstraintError(new Error("network timeout")), false);
+  assert.equal(isUniqueConstraintError(new Error()), false);
+  assert.equal(isUniqueConstraintError(null), false);
+  assert.equal(isUniqueConstraintError(undefined), false);
+});
 
 test("snakePickOrder keeps member order on odd rounds", () => {
   assert.deepEqual(snakePickOrder([1, 2, 3, 4], 1), [1, 2, 3, 4]);
