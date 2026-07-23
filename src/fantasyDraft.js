@@ -66,7 +66,7 @@ export function currentSeasonLabel(now = new Date()) {
 }
 
 // Deterministic "what would you draft right now" heuristic for the suggested-pick
-// card and the pool's SUGGESTED badge: the same autoPick the server falls back to
+// card and the pool's PICK badge: the same autoPick the server falls back to
 // when a manager's clock runs out (src/draftLogic.js), applied to the caller's own
 // roster against the pool with every drafted player (anywhere in the league)
 // removed. Not AI, not a projection: a deterministic scarcest-bucket-first rule,
@@ -77,6 +77,89 @@ export function suggestedPick(availablePlayers, myRoster, draftedIds, squadSlots
   const drafted = draftedIds ?? new Set();
   const undrafted = (availablePlayers ?? []).filter((player) => player?.id != null && !drafted.has?.(player.id));
   return autoPick(undrafted, myRoster ?? [], squadSlots);
+}
+
+// One-line rationale for the suggested-pick card, walking the exact same
+// scarcest-bucket-first path autoPick took rather than inventing a separate
+// explanation: names the position bucket (which is, by construction, the
+// scarcest one with a legal candidate left, since `player` came from
+// suggestedPick above), how many of that bucket's slots remain, and whether the
+// pick was ranked by a real xP figure or, absent that, just the pool's own
+// listed order - honest either way, never claims a stat the player doesn't have.
+export function suggestedPickReason(player, myRoster, squadSlots = SQUAD_SLOTS) {
+  if (!player) return "";
+  const counts = {};
+  for (const owned of myRoster ?? []) {
+    const position = owned?.position;
+    if (position) counts[position] = (counts[position] ?? 0) + 1;
+  }
+  const total = squadSlots[player.position] ?? 0;
+  const remaining = total - (counts[player.position] ?? 0);
+  const stats = normalizePlayerStats(player);
+  const basis = stats.xp != null ? `Highest listed expected points for ${player.position}.` : `First available ${player.position} in the pool.`;
+  return `Fills your scarcest open slot: ${player.position} (${remaining} of ${total} remaining). ${basis}`;
+}
+
+// -- Optional pool-file stat fields (contract) ------------------------------------
+//
+// The player pool file (data/PL/players.json, and any future per-competition
+// equivalent) MAY carry these fields per player, all optional, populated by a
+// future stats bake that does not exist yet:
+//   avg    number    average fantasy points per gameweek so far, e.g. 5.9
+//   form   number[]  recent gameweek points, oldest to newest, e.g. [4, 7, 3, 9, 6];
+//                     any finite numbers work - the sparkline scales relative to
+//                     this player's own max, so raw point totals or 0-1 fractions
+//                     both render correctly
+//   xp     number    the scoring model's expected points for the next gameweek
+//   adp    number    average draft position across leagues (lower = picked earlier)
+//
+// None of these exist in the current synthetic pool or the first real bake, so
+// every reader (the pool table, the suggested-pick rationale) must go through
+// this normalizer and treat a missing field as `null`, rendered as a dim
+// placeholder - never a fabricated number.
+export function normalizePlayerStats(player) {
+  const num = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+  const form = Array.isArray(player?.form) ? player.form.filter((value) => typeof value === "number" && Number.isFinite(value)) : [];
+  return {
+    avg: num(player?.avg),
+    form: form.length ? form : null,
+    xp: num(player?.xp),
+    adp: num(player?.adp),
+  };
+}
+
+// Normalizes a `form` array (see normalizePlayerStats) into up to 5 most-recent
+// sparkline bars, each { height, strong }: height is 0-1 relative to this
+// player's own max (so the tallest recent game is always a full bar regardless
+// of whether the underlying numbers are 0-1 fractions or raw points), and
+// strong marks a bar at or above 60% of that max for the lime accent - a direct
+// reading of the real number, never a fabricated "good form" flag.
+export function formSparklineBars(form) {
+  const values = (form ?? []).slice(-5);
+  if (!values.length) return [];
+  const max = Math.max(...values, 0.0001);
+  return values.map((value) => {
+    const height = Math.max(0, Math.min(1, value / max));
+    return { height, strong: height >= 0.6 };
+  });
+}
+
+// "1st"/"2nd"/"3rd"/"4th"... for the on-the-clock card's "you pick Nth in this
+// round" context sentence. English ordinal suffix rules (11-13 are always "th").
+export function formatOrdinal(n) {
+  const value = Math.trunc(n ?? 0);
+  const rem100 = value % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${value}th`;
+  switch (value % 10) {
+    case 1:
+      return `${value}st`;
+    case 2:
+      return `${value}nd`;
+    case 3:
+      return `${value}rd`;
+    default:
+      return `${value}th`;
+  }
 }
 
 // The order strip for the round currently on the clock, each entry flagged

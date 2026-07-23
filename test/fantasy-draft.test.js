@@ -6,10 +6,14 @@ import {
   currentSeasonLabel,
   draftOrderEntries,
   formatCountdown,
+  formatOrdinal,
   formatPickNumber,
+  formSparklineBars,
+  normalizePlayerStats,
   reduceDraftMessage,
   squadBucketCounts,
   suggestedPick,
+  suggestedPickReason,
 } from "../src/fantasyDraft.js";
 
 test("formatCountdown renders mm:ss and rounds up to the next full second", () => {
@@ -265,4 +269,94 @@ test("suggestedPick returns null once no legal candidate remains", () => {
   const pool = [player(1, "GK")]; // only a GK left, but that bucket is full
   const suggestion = suggestedPick(pool, myRoster, new Set());
   assert.equal(suggestion, null);
+});
+
+// -- formatOrdinal ------------------------------------------------------------------
+
+test("formatOrdinal appends st/nd/rd/th following English rules", () => {
+  assert.equal(formatOrdinal(1), "1st");
+  assert.equal(formatOrdinal(2), "2nd");
+  assert.equal(formatOrdinal(3), "3rd");
+  assert.equal(formatOrdinal(4), "4th");
+});
+
+test("formatOrdinal treats 11-13 as th regardless of the last digit", () => {
+  assert.equal(formatOrdinal(11), "11th");
+  assert.equal(formatOrdinal(12), "12th");
+  assert.equal(formatOrdinal(13), "13th");
+  assert.equal(formatOrdinal(21), "21st");
+  assert.equal(formatOrdinal(112), "112th");
+});
+
+// -- normalizePlayerStats -----------------------------------------------------------
+
+test("normalizePlayerStats passes through finite numeric fields", () => {
+  const stats = normalizePlayerStats({ avg: 5.9, xp: 7.8, adp: 19, form: [4, 7, 3, 9, 6] });
+  assert.deepEqual(stats, { avg: 5.9, form: [4, 7, 3, 9, 6], xp: 7.8, adp: 19 });
+});
+
+test("normalizePlayerStats treats missing or non-numeric fields as null, never a fabricated number", () => {
+  const stats = normalizePlayerStats({ name: "No stats yet" });
+  assert.deepEqual(stats, { avg: null, form: null, xp: null, adp: null });
+});
+
+test("normalizePlayerStats rejects NaN/Infinity and non-array form", () => {
+  const stats = normalizePlayerStats({ avg: NaN, xp: Infinity, adp: "19", form: "WWDLW" });
+  assert.deepEqual(stats, { avg: null, form: null, xp: null, adp: null });
+});
+
+test("normalizePlayerStats drops non-numeric entries out of a form array rather than failing the whole field", () => {
+  const stats = normalizePlayerStats({ form: [4, "x", 6, null, 9] });
+  assert.deepEqual(stats.form, [4, 6, 9]);
+});
+
+// -- formSparklineBars ---------------------------------------------------------------
+
+test("formSparklineBars scales bar heights relative to this player's own max", () => {
+  const bars = formSparklineBars([2, 4, 8, 4, 2]);
+  assert.equal(bars.length, 5);
+  assert.equal(bars[2].height, 1); // the max value is always a full bar
+  assert.equal(bars[0].height, 0.25);
+});
+
+test("formSparklineBars marks bars at or above 60% of the max as strong", () => {
+  const bars = formSparklineBars([10, 5, 6, 3, 1]);
+  assert.deepEqual(bars.map((b) => b.strong), [true, false, true, false, false]);
+});
+
+test("formSparklineBars keeps only the 5 most recent values", () => {
+  const bars = formSparklineBars([1, 2, 3, 4, 5, 6, 7]);
+  assert.equal(bars.length, 5);
+  assert.equal(bars[4].height, 1); // 7 is the most recent and the max of the kept slice
+});
+
+test("formSparklineBars returns an empty array for missing form data (the view renders a placeholder)", () => {
+  assert.deepEqual(formSparklineBars(null), []);
+  assert.deepEqual(formSparklineBars(undefined), []);
+  assert.deepEqual(formSparklineBars([]), []);
+});
+
+// -- suggestedPickReason -------------------------------------------------------------
+
+test("suggestedPickReason names the scarcest bucket and remaining slots, honestly noting no xP data", () => {
+  const reason = suggestedPickReason(player(1, "FWD"), []);
+  assert.match(reason, /scarcest open slot: FWD/);
+  assert.match(reason, /3 of 3 remaining/);
+  assert.match(reason, /First available FWD in the pool\./);
+});
+
+test("suggestedPickReason reflects a partially-filled bucket's remaining count", () => {
+  const myRoster = [player(20, "FWD")];
+  const reason = suggestedPickReason(player(1, "FWD"), myRoster);
+  assert.match(reason, /2 of 3 remaining/);
+});
+
+test("suggestedPickReason cites the real xP figure instead of pool order when the player has one", () => {
+  const withXp = { id: 1, position: "FWD", name: "Test", team: "Test FC", xp: 7.8 };
+  const reason = suggestedPickReason(withXp, []);
+  assert.match(reason, /Highest listed expected points for FWD\./);
+});
+
+test("suggestedPickReason returns an empty string for a null player", () => {
+  assert.equal(suggestedPickReason(null, []), "");
 });

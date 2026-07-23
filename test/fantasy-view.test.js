@@ -96,12 +96,40 @@ test("renderFantasyPlayerRows filters by club", () => {
   assert.doesNotMatch(liverpoolOnly, /Haaland/);
 });
 
-test("renderFantasyPlayerRows badges only the suggested player", () => {
+test("renderFantasyPlayerRows badges only the suggested player with a PICK chip and a tinted row", () => {
   const context = { isMyTurn: true, myRoster: [], draftedIds: new Set(), suggestedId: 2 };
   const suggestedRow = renderFantasyPlayerRows([pooledPlayer(2, "MID")], { position: "All", search: "" }, context);
   const otherRow = renderFantasyPlayerRows([pooledPlayer(1, "MID")], { position: "All", search: "" }, context);
-  assert.match(suggestedRow, /Suggested/);
-  assert.doesNotMatch(otherRow, /Suggested/);
+  assert.match(suggestedRow, /class="chip fantasy-chip--suggested">Pick</);
+  assert.match(suggestedRow, /is-suggested/);
+  assert.doesNotMatch(otherRow, /fantasy-chip--suggested/);
+  assert.doesNotMatch(otherRow, /is-suggested/);
+});
+
+test("renderFantasyPlayerRows renders a dim placeholder bullet for missing AVG/FORM/xP/ADP rather than a fake number", () => {
+  const html = renderFantasyPlayerRows([pooledPlayer(1, "MID")], { position: "All", search: "" }, {
+    isMyTurn: false,
+    myRoster: [],
+    draftedIds: new Set(),
+  });
+  // No avg/form/xp/adp fields on this synthetic player: every stat cell is the
+  // dim placeholder, never a fabricated number.
+  const placeholderCount = (html.match(/fantasy-stat--empty/g) ?? []).length;
+  assert.equal(placeholderCount, 4);
+});
+
+test("renderFantasyPlayerRows renders real AVG/xP/ADP numbers and a sparkline when the pool file has them", () => {
+  const withStats = { id: 1, name: "Player 1", team: "Test FC", position: "MID", avg: 5.9, xp: 7.8, adp: 19, form: [4, 7, 3, 9, 6] };
+  const html = renderFantasyPlayerRows([withStats], { position: "All", search: "" }, {
+    isMyTurn: false,
+    myRoster: [],
+    draftedIds: new Set(),
+  });
+  assert.match(html, />5\.9</);
+  assert.match(html, />7\.8</);
+  assert.match(html, />19</);
+  assert.match(html, /fantasy-sparkline__bar/);
+  assert.doesNotMatch(html, /fantasy-stat--empty/);
 });
 
 test("renderFantasyPlayerRows escapes player name and team", () => {
@@ -180,6 +208,73 @@ test("renderFantasyDraftRoom shows a neutral clock label and no Draft buttons du
   });
   assert.match(html, /Next pick/);
   assert.doesNotMatch(html, /data-fantasy-draft-player/);
+});
+
+test("renderFantasyDraftRoom puts the Round/Pick headline and the manager chip strip in the same row", () => {
+  const html = renderFantasyDraftRoom({
+    league,
+    members,
+    draft: draftRoomFixture(),
+    playerPool: [],
+    filter: { position: "All", search: "" },
+    myUserId: 2,
+  });
+  const statusCard = html.match(/<section class="card fantasy-draftstatus">[\s\S]*?<\/section>/)[0];
+  assert.match(statusCard, /Round 1 · Pick 2/);
+  assert.match(statusCard, /fantasy-orderstrip/);
+  assert.match(statusCard, /Alice/);
+  assert.match(statusCard, /Bob/);
+  // The countdown itself no longer lives in the status card.
+  assert.doesNotMatch(statusCard, /data-fantasy-clock/);
+});
+
+test("renderFantasyDraftRoom's On the clock card names the manager and shows the countdown, separate from the status card", () => {
+  const html = renderFantasyDraftRoom({
+    league,
+    members,
+    draft: draftRoomFixture({ onClockUserId: 1, remainingMs: 27000 }),
+    playerPool: [],
+    filter: { position: "All", search: "" },
+    myUserId: 2,
+  });
+  const onClockCard = html.match(/<section class="card fantasy-onclock[\s\S]*?<\/section>/)?.[0] ?? "";
+  assert.match(onClockCard, /On the clock/);
+  assert.match(onClockCard, /Alice/); // userId 1
+  assert.match(onClockCard, /data-fantasy-clock[^>]*>0:27/);
+  assert.match(onClockCard, /Alice is picking/);
+});
+
+test("On the clock card says 'You're on the clock.' when it is the caller's turn", () => {
+  const html = renderFantasyDraftRoom({
+    league,
+    members,
+    draft: draftRoomFixture({ onClockUserId: 2 }),
+    playerPool: [],
+    filter: { position: "All", search: "" },
+    myUserId: 2,
+  });
+  const onClockCard = html.match(/<section class="card fantasy-onclock[\s\S]*?<\/section>/)[0];
+  assert.match(onClockCard, /You're on the clock\./);
+  assert.match(onClockCard, /is-mine/);
+});
+
+test("On the clock card tells a waiting manager which upcoming pick in this round is theirs", () => {
+  // 3 members, round 1 order [10, 20, 30]; user 30 (myUserId) is 2 picks after
+  // user 10 who is currently on the clock.
+  const html = renderFantasyDraftRoom({
+    league,
+    members: [
+      { userId: 10, name: "First" },
+      { userId: 20, name: "Second" },
+      { userId: 30, name: "Third" },
+    ],
+    draft: draftRoomFixture({ memberIds: [10, 20, 30], onClockUserId: 10, round: 1, overallPick: 1 }),
+    playerPool: [],
+    filter: { position: "All", search: "" },
+    myUserId: 30,
+  });
+  const onClockCard = html.match(/<section class="card fantasy-onclock[\s\S]*?<\/section>/)[0];
+  assert.match(onClockCard, /First is picking\. You pick 2nd in this round\./);
 });
 
 // -- renderFantasyLobby: pre-draft scouting -------------------------------------

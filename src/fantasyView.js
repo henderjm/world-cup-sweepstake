@@ -6,9 +6,13 @@ import {
   currentSeasonLabel,
   draftOrderEntries,
   formatCountdown,
+  formatOrdinal,
   formatPickNumber,
+  formSparklineBars,
+  normalizePlayerStats,
   squadBucketCounts,
   suggestedPick,
+  suggestedPickReason,
 } from "./fantasyDraft.js";
 
 function esc(value) {
@@ -22,6 +26,30 @@ function esc(value) {
 
 function nameForUser(userId, members) {
   return members?.find((member) => member.userId === userId)?.name ?? "Someone";
+}
+
+// Small four-point sparkle, inline SVG (no external asset) for the suggested-pick
+// eyebrow. currentColor so it always matches the purple eyebrow text around it.
+const SPARKLE_ICON = `<svg class="fantasy-sparkle" viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M8 0c.4 2.9 1.1 4.6 2.2 5.8C11.4 6.9 13.1 7.6 16 8c-2.9.4-4.6 1.1-5.8 2.2C9.1 11.4 8.4 13.1 8 16c-.4-2.9-1.1-4.6-2.2-5.8C4.6 9.1 2.9 8.4 0 8c2.9-.4 4.6-1.1 5.8-2.2C7 4.6 7.6 2.9 8 0z"/></svg>`;
+
+// One decimal for AVG/XP, whole number for ADP; a dim placeholder bullet (never
+// a fabricated number) when the pool file doesn't carry that field yet (see
+// normalizePlayerStats in fantasyDraft.js for the field contract).
+function renderStatCell(value, digits) {
+  if (value == null) return `<span class="fantasy-stat fantasy-stat--empty">•</span>`;
+  return `<span class="fantasy-stat">${digits == null ? value : value.toFixed(digits)}</span>`;
+}
+
+// FORM mini-sparkline: up to 5 bars scaled to this player's own max (see
+// formSparklineBars), lime for the stronger recent games, purple-tint otherwise.
+// A single dim placeholder bullet when there is no form data at all, matching
+// the other stat cells rather than drawing a fake flat line.
+function renderFormSparkline(form) {
+  const bars = formSparklineBars(form);
+  if (!bars.length) return `<span class="fantasy-stat fantasy-stat--empty">•</span>`;
+  return `<span class="fantasy-sparkline">${bars
+    .map(({ height, strong }) => `<span class="fantasy-sparkline__bar ${strong ? "is-strong" : ""}" style="height:${Math.round(3 + height * 15)}px"></span>`)
+    .join("")}</span>`;
 }
 
 // -- Signed-out / not-configured / error states --------------------------------
@@ -278,22 +306,12 @@ function renderDraftErrorNotice(message) {
     </div>`;
 }
 
-// "Your pick" / "<name> is picking" / a neutral "Next pick…" for the brief gap
-// between a pick landing and the paired clock message naming the next manager
-// (see reduceDraftMessage in fantasyDraft.js).
-function draftOnClockLabel(members, onClockUserId, isMyTurn) {
-  if (onClockUserId == null) return "Next pick…";
-  if (isMyTurn) return "Your pick";
-  return `${esc(nameForUser(onClockUserId, members))} is picking`;
-}
-
-// Draft status card: "SNAKE DRAFT · <season>" eyebrow, "Round R · Pick N"
-// headline plus the live countdown, and a wrapping chip strip of every manager
-// in draft order with the on-clock manager highlighted purple and the caller
-// marked "(you)". Replaces the old separate clock banner + order strip.
-function renderDraftStatusCard({ members, draft, myUserId, season, isMyTurn }) {
-  const { onClockUserId, remainingMs, round, overallPick, memberIds } = draft;
-  const entries = draftOrderEntries(memberIds, round, onClockUserId, overallPick);
+// Draft status card: "SNAKE DRAFT · <season>" eyebrow, and "Round R · Pick N"
+// on the SAME row as the manager chip strip (headline left, chips right,
+// wrapping below only at narrow widths) - the countdown itself lives in its own
+// On the clock card now (see renderOnClockCard), not here.
+function renderDraftStatusCard({ members, draft, myUserId, season, entries }) {
+  const { round, overallPick } = draft;
   const chips = entries
     .map((entry) => {
       const isMe = entry.userId === myUserId;
@@ -303,39 +321,75 @@ function renderDraftStatusCard({ members, draft, myUserId, season, isMyTurn }) {
     })
     .join("");
   return `
-    <section class="card fantasy-draftstatus ${isMyTurn ? "is-mine" : ""}">
+    <section class="card fantasy-draftstatus">
       <p class="fantasy-eyebrow">Snake draft · ${esc(season)}</p>
       <div class="fantasy-draftstatus__head">
-        <div>
-          <h2 class="fantasy-draftstatus__headline">Round ${round} · Pick ${overallPick}</h2>
-          <p class="fantasy-draftstatus__onclock">${draftOnClockLabel(members, onClockUserId, isMyTurn)}</p>
-        </div>
-        <span class="fantasy-draftstatus__clock" data-fantasy-clock>${formatCountdown(remainingMs)}</span>
+        <h2 class="fantasy-draftstatus__headline">Round ${round} · Pick ${overallPick}</h2>
+        <div class="fantasy-orderstrip">${chips}</div>
       </div>
-      <div class="fantasy-orderstrip">${chips}</div>
+    </section>`;
+}
+
+// On the clock: its own card (mockup order: suggested pick, on the clock,
+// recent picks, your squad). Small purple eyebrow, the manager's name large and
+// bold on the left with the countdown right-aligned on the same row, and a
+// one-line context sentence: "You're on the clock." when it's the caller's
+// turn, otherwise who's picking and, honestly derived from the snake order,
+// either which upcoming pick in this round is the caller's or that it falls in
+// the next round instead.
+function renderOnClockCard({ members, draft, myUserId, entries, isMyTurn }) {
+  const { onClockUserId, remainingMs } = draft;
+  const name = onClockUserId == null ? "Next pick…" : isMyTurn ? "You" : nameForUser(onClockUserId, members);
+  let context = "";
+  if (isMyTurn) {
+    context = "You're on the clock.";
+  } else if (onClockUserId != null) {
+    const onClockName = esc(nameForUser(onClockUserId, members));
+    const onClockIdx = entries.findIndex((entry) => entry.isOnClock);
+    const myIdx = entries.findIndex((entry) => entry.userId === myUserId);
+    if (onClockIdx !== -1 && myIdx !== -1 && myIdx > onClockIdx) {
+      context = `${onClockName} is picking. You pick ${formatOrdinal(myIdx - onClockIdx)} in this round.`;
+    } else if (onClockIdx !== -1 && myIdx !== -1) {
+      context = `${onClockName} is picking. You're up again next round.`;
+    } else {
+      context = `${onClockName} is picking.`;
+    }
+  }
+  return `
+    <section class="card fantasy-onclock ${isMyTurn ? "is-mine" : ""}">
+      <p class="fantasy-eyebrow">On the clock</p>
+      <div class="fantasy-onclock__row">
+        <h2 class="fantasy-onclock__name">${esc(name)}</h2>
+        <span class="fantasy-onclock__time" data-fantasy-clock>${formatCountdown(remainingMs)}</span>
+      </div>
+      <p class="fantasy-onclock__context">${context}</p>
     </section>`;
 }
 
 // Suggested pick: a purple-tinted card naming the player the deterministic
 // autoPick heuristic (src/draftLogic.js, via suggestedPick in fantasyDraft.js)
 // would take for the caller's own roster right now. Not AI, not a projection:
-// the same scarcest-bucket-first rule the server falls back to on a timeout.
-// The Draft button uses the exact same gating as a pool row (my turn, legal
-// pick), so it never offers an action the pool itself would refuse.
+// the same scarcest-bucket-first rule the server falls back to on a timeout,
+// with a one-line rationale walking that exact decision path (suggestedPickReason
+// in fantasyDraft.js). The Draft button uses the exact same gating as a pool
+// row (my turn, legal pick), so it never offers an action the pool itself would
+// refuse.
 function renderSuggestedPickCard(player, context) {
   if (!player) return "";
   const legal = Boolean(context?.isMyTurn) && canDraftPlayer(player, context);
   const action = legal
     ? `<button class="btn fantasy-draft-btn" type="button" data-fantasy-draft-player="${player.id}">Draft</button>`
     : "";
+  const reason = suggestedPickReason(player, context?.myRoster);
   return `
     <section class="card fantasy-suggest">
-      <p class="fantasy-eyebrow">Suggested pick</p>
+      <p class="fantasy-eyebrow">${SPARKLE_ICON} Squad suggests</p>
       <div class="fantasy-suggest__row">
         ${badgeFor(player.team)}
-        <span class="fantasy-suggest__name"><strong>${esc(player.name)}</strong><span class="note--dim">${esc(abbrFor(player.team))}</span></span>
-        <span class="fantasy-pos">${esc(player.position)}</span>
+        <span class="fantasy-suggest__name"><strong>${esc(player.name)}</strong></span>
+        <span class="chip fantasy-suggest__chip">${esc(player.position)} · ${esc(abbrFor(player.team))}</span>
       </div>
+      <p class="fantasy-suggest__reason">${esc(reason)}</p>
       ${action}
     </section>`;
 }
@@ -425,17 +479,22 @@ export function renderFantasyPlayerRows(players, filter, context) {
     .map((player) => {
       const drafted = draftedIds?.has?.(player.id);
       const legal = !drafted && canDraftPlayer(player, { isMyTurn, myRoster, draftedIds });
+      const isSuggested = suggestedId != null && player.id === suggestedId;
       const action = legal
         ? `<button class="btn fantasy-draft-btn" type="button" data-fantasy-draft-player="${player.id}">Draft</button>`
         : drafted
           ? `<span class="note--dim">Drafted</span>`
           : "";
-      const suggestedBadge =
-        suggestedId != null && player.id === suggestedId ? `<span class="chip fantasy-chip--suggested">Suggested</span>` : "";
-      return `<div class="fantasy-player-row ${drafted ? "is-drafted" : ""}">
+      const suggestedBadge = isSuggested ? `<span class="chip fantasy-chip--suggested">Pick</span>` : "";
+      const stats = normalizePlayerStats(player);
+      return `<div class="fantasy-player-row ${drafted ? "is-drafted" : ""} ${isSuggested ? "is-suggested" : ""}">
           ${badgeFor(player.team)}
           <span class="fantasy-player-row__id"><strong>${esc(player.name)}${suggestedBadge}</strong><span class="note--dim">${esc(abbrFor(player.team))}</span></span>
           <span class="fantasy-pos">${esc(player.position)}</span>
+          <span class="fantasy-player-row__stat">${renderStatCell(stats.avg, 1)}</span>
+          <span class="fantasy-player-row__stat">${renderFormSparkline(stats.form)}</span>
+          <span class="fantasy-player-row__stat">${renderStatCell(stats.xp, 1)}</span>
+          <span class="fantasy-player-row__stat">${renderStatCell(stats.adp, 0)}</span>
           <span class="fantasy-player-row__action">${action}</span>
         </div>`;
     })
@@ -471,19 +530,19 @@ export function renderFantasyPlayerPool(players, filter, context) {
     <section class="card fantasy-pool">
       <div class="fantasy-pool__scroll">
         <div class="fantasy-pool__sticky">
-          <div class="fantasy-pool__headrow">
-            <h3 class="card__title">Player pool</h3>
-            <div class="segrow fantasy-pool__positions">${positionPills}</div>
-          </div>
+          <h3 class="card__title">Player pool</h3>
           <div class="fantasy-pool__filters">
+            <div class="segrow fantasy-pool__positions">${positionPills}</div>
             <select class="fantasy-select" data-fantasy-club-filter>${renderClubOptions(players, filter?.club)}</select>
             <input class="fantasy-input" type="text" placeholder="Search players or clubs" value="${esc(filter?.search ?? "")}" data-fantasy-search autocomplete="off" />
           </div>
-          <div class="fantasy-pool__cols">
-            <span>Player</span><span>Pos</span><span></span>
-          </div>
         </div>
-        <div class="fantasy-pool__rows" data-fantasy-pool-list>${renderFantasyPlayerRows(players, filter, context)}</div>
+        <div class="fantasy-pool__table">
+          <div class="fantasy-pool__cols">
+            <span></span><span>Player</span><span>Pos</span><span>Avg</span><span>Form</span><span>xP</span><span>ADP</span><span></span>
+          </div>
+          <div class="fantasy-pool__rows" data-fantasy-pool-list>${renderFantasyPlayerRows(players, filter, context)}</div>
+        </div>
       </div>
     </section>`;
 }
@@ -498,14 +557,16 @@ export function renderFantasyDraftRoom({ members, draft, playerPool, filter, myU
   const isMyTurn = draft.onClockUserId != null && draft.onClockUserId === myUserId;
   const suggested = suggestedPick(playerPool, myRoster, draftedIds);
   const context = { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null };
+  const entries = draftOrderEntries(draft.memberIds, draft.round, draft.onClockUserId, draft.overallPick);
 
   return `
     ${draft.lastError ? renderDraftErrorNotice(draft.lastError) : ""}
-    ${renderDraftStatusCard({ members, draft, myUserId, season, isMyTurn })}
+    ${renderDraftStatusCard({ members, draft, myUserId, season, entries })}
     <div class="fantasy-draftgrid">
       <div class="fantasy-draftgrid__main">${renderFantasyPlayerPool(playerPool, filter, context)}</div>
       <div class="fantasy-draftgrid__side">
         ${renderSuggestedPickCard(suggested, context)}
+        ${renderOnClockCard({ members, draft, myUserId, entries, isMyTurn })}
         <section class="card fantasy-feed-card">
           <h3 class="card__title">Recent picks</h3>
           ${renderPickFeed(draft.picks, members)}

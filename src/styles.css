@@ -35,6 +35,7 @@
   --fantasy-ink: #0a0e14;
   --fantasy-soft: rgb(167 139 250 / 0.14);
   --fantasy-line: rgb(167 139 250 / 0.5);
+  --fantasy-row-tint: rgb(167 139 250 / 0.08);
   --radius: 14px;
   --radius-sm: 10px;
   --shadow: 0 18px 50px rgb(0 0 0 / 0.45);
@@ -1533,34 +1534,26 @@ button { font-family: inherit; cursor: pointer; }
   padding: 6px 12px;
 }
 
-/* Draft status card: eyebrow, round/pick headline, countdown, order chips ------ */
-
-.fantasy-draftstatus.is-mine { border-color: var(--fantasy-line); background: var(--fantasy-soft); }
+/* Draft status card: eyebrow, and the Round/Pick headline INLINE with the order
+   chip strip (headline left, chips right, wrapping below only at narrow
+   widths) - the countdown itself lives in the separate On the clock card. ---- */
 
 .fantasy-draftstatus__head {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
 }
 .fantasy-draftstatus__headline {
+  flex: none;
   font-size: 20px;
   font-weight: 900;
   font-style: italic;
   text-transform: uppercase;
 }
-.fantasy-draftstatus__onclock { font-size: 12px; color: var(--muted); margin-top: 4px; }
-.fantasy-draftstatus.is-mine .fantasy-draftstatus__onclock { color: var(--fantasy-accent); font-weight: 700; }
-.fantasy-draftstatus__clock {
-  font-size: 26px;
-  font-weight: 900;
-  font-variant-numeric: tabular-nums;
-  color: var(--fantasy-accent);
-}
 
-.fantasy-orderstrip { display: flex; gap: 6px; flex-wrap: wrap; }
+.fantasy-orderstrip { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .fantasy-orderchip {
   flex: none;
   padding: 6px 12px;
@@ -1576,16 +1569,47 @@ button { font-family: inherit; cursor: pointer; }
 
 .fantasy-draftgrid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
 @media (max-width: 900px) {
-  .fantasy-draftgrid { grid-template-columns: 1fr; }
+  .fantasy-draftgrid { grid-template-columns: minmax(0, 1fr); }
 }
-.fantasy-draftgrid__side { display: flex; flex-direction: column; gap: 14px; }
+/* min-width: 0 on both tracks: without it a grid item defaults to its content's
+   min-content size, so the pool table's own min-width (needed for its
+   horizontal scroll on narrow screens) would otherwise balloon this whole
+   column - and the grid - past the viewport instead of scrolling internally. */
+.fantasy-draftgrid__main { min-width: 0; }
+.fantasy-draftgrid__side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+/* On the clock: its own card, mockup order suggested/on-the-clock/recent/squad - */
+
+.fantasy-onclock.is-mine { border-color: var(--fantasy-line); background: var(--fantasy-soft); }
+.fantasy-onclock__row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.fantasy-onclock__name { font-size: 20px; font-weight: 900; }
+.fantasy-onclock.is-mine .fantasy-onclock__name { color: var(--fantasy-accent); }
+.fantasy-onclock__time {
+  flex: none;
+  font-size: 28px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: var(--fantasy-accent);
+}
+.fantasy-onclock__context { font-size: 12px; color: var(--muted); margin-top: 6px; }
 
 /* Suggested pick: purple-tinted card, deterministic autoPick heuristic --------- */
 
 .fantasy-suggest { border-color: var(--fantasy-line); background: var(--fantasy-soft); }
-.fantasy-suggest__row { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; }
+.fantasy-suggest .fantasy-eyebrow { display: flex; align-items: center; gap: 6px; }
+.fantasy-sparkle { flex: none; color: var(--fantasy-accent); }
+.fantasy-suggest__row { display: flex; align-items: center; gap: 10px; margin: 6px 0 8px; }
 .fantasy-suggest__name { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .fantasy-suggest__name strong { font-size: 14px; }
+.fantasy-suggest__chip {
+  flex: none;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--fantasy-accent);
+  background: var(--fantasy-soft);
+  border-color: var(--fantasy-line);
+}
+.fantasy-suggest__reason { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0 0 10px; }
 
 /* Player pool: data-table card, sticky filter header inside the scroll region -- */
 
@@ -1599,39 +1623,81 @@ button { font-family: inherit; cursor: pointer; }
   padding: 12px 16px 8px;
   border-bottom: 1px solid var(--line);
 }
-.fantasy-pool__headrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
-.fantasy-pool__headrow .card__title { margin: 0; }
-.fantasy-pool__filters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.fantasy-pool__filters .fantasy-input { max-width: 220px; }
-.fantasy-pool__cols {
-  display: flex;
+.fantasy-pool__sticky .card__title { margin: 0 0 10px; }
+
+/* Filters row: position pills + club select + search all in one aligned row on
+   desktop, wrapping to stack cleanly on narrow widths (mobile). Always in the
+   sticky block (unlike the column header below), so the filters stay reachable
+   no matter how the table itself is scrolled. */
+.fantasy-pool__filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fantasy-pool__positions { flex: none; }
+.fantasy-pool__filters .fantasy-select { flex: none; }
+.fantasy-pool__filters .fantasy-input { flex: 1; min-width: 160px; max-width: 260px; }
+
+/* Below ~480px the pills row + club select + search no longer fit one aligned
+   line even wrapped as flex items (a native <select>'s intrinsic width from
+   its longest option resists shrinking); stack them explicitly full-width
+   instead of leaving it to flex-wrap, so the club filter is never clipped. */
+@media (max-width: 480px) {
+  .fantasy-pool__filters { flex-direction: column; align-items: stretch; }
+  .fantasy-pool__filters .fantasy-select,
+  .fantasy-pool__filters .fantasy-input {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+/* The data table itself (column header + rows): eight columns (badge, name,
+   pos, four stat cells, action) are too dense to fit a 320-375px phone at
+   readable sizes, so this wrapper scrolls horizontally rather than collapsing
+   or hiding any column - the mockup's PLAYER/POS/AVG/FORM/xP/ADP structure
+   stays intact at every width, just panned into view with a swipe on mobile.
+   On viewports wide enough (any real desktop/tablet) the content already fits
+   and this scroll never engages. */
+.fantasy-pool__table { overflow-x: auto; }
+
+/* Column header row and each data row share one grid template so PLAYER / POS /
+   AVG / FORM / xP / ADP / action line up exactly: badge, name, pos, four stat
+   cells, action. The header's first and last cells are empty (badge/action). */
+.fantasy-pool__cols,
+.fantasy-player-row {
+  display: grid;
+  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 40px 70px 36px 36px 76px;
+  min-width: 500px;
   align-items: center;
   gap: 10px;
-  padding: 10px 0 6px;
+}
+.fantasy-pool__cols {
+  /* 26px = the rows wrapper's 16px padding + a row's own 10px padding, so the
+     header's grid tracks line up exactly with each row's grid tracks below. */
+  padding: 10px 26px 6px;
   font-size: 10px;
   font-weight: 900;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--faint);
 }
-.fantasy-pool__cols span:first-child { flex: 1; padding-left: 32px; }
-.fantasy-pool__cols span:nth-child(2) { width: 46px; text-align: center; }
-.fantasy-pool__cols span:last-child { width: 76px; text-align: right; }
+.fantasy-pool__cols span:nth-child(4),
+.fantasy-pool__cols span:nth-child(5),
+.fantasy-pool__cols span:nth-child(6),
+.fantasy-pool__cols span:nth-child(7) {
+  text-align: center;
+}
+.fantasy-pool__cols span:last-child { text-align: right; }
 
 .fantasy-pool__rows { display: flex; flex-direction: column; gap: 4px; padding: 0 16px 12px; }
 
 .fantasy-player-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
 }
 .fantasy-player-row.is-drafted { opacity: 0.45; }
-.fantasy-player-row__id { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.fantasy-player-row.is-suggested { background: var(--fantasy-row-tint); }
+.fantasy-player-row__id { display: flex; flex-direction: column; min-width: 0; }
 .fantasy-player-row__id strong { font-size: 13px; }
-.fantasy-player-row__action { flex: none; width: 76px; text-align: right; }
+.fantasy-player-row__action { text-align: right; }
+.fantasy-player-row__stat { text-align: center; }
 .fantasy-draft-btn {
   padding: 6px 12px;
   font-size: 12px;
@@ -1640,6 +1706,18 @@ button { font-family: inherit; cursor: pointer; }
   color: var(--fantasy-ink);
 }
 .fantasy-draft-btn:hover { background: var(--fantasy-accent-2); }
+
+/* Stat cells: AVG / xP / ADP as plain numbers, a dim placeholder bullet when the
+   pool file doesn't carry that field yet (see normalizePlayerStats). ---------- */
+
+.fantasy-stat { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text); }
+.fantasy-stat--empty { color: var(--faint); }
+
+/* FORM mini-sparkline: up to 5 bars, lime for the stronger recent games, a
+   purple tint otherwise; a single dim bullet placeholder with no data at all. */
+.fantasy-sparkline { display: flex; align-items: flex-end; justify-content: center; gap: 2px; height: 18px; }
+.fantasy-sparkline__bar { display: block; width: 6px; min-height: 3px; border-radius: 2px; background: var(--fantasy-line); }
+.fantasy-sparkline__bar.is-strong { background: var(--accent); }
 
 /* POS chip: fantasy-accent tint pill, shared by pool rows / squad rows / feed -- */
 
