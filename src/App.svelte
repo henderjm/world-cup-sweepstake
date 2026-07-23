@@ -28,7 +28,6 @@
   </header>
 
   <div class="ticker" id="ticker" aria-label="Live and recent scores"></div>
-  <p class="birthday-banner" role="status">🎉 Happy Birthday, Eoin Edwards! 🎂</p>
   <main class="main"><div id="layout" class="layout" aria-live="polite"></div></main>
   <footer class="footer" id="footer"></footer>
 

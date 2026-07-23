@@ -18,7 +18,7 @@ const TEAM_ALIASES = new Map(
   Object.entries({
     "wolverhampton wanderers": "Wolves",
     "afc bournemouth": "Bournemouth",
-    brighton: "Brighton Hove",
+    "brighton": "Brighton Hove",
     "brighton and hove albion": "Brighton Hove",
     "brighton & hove albion": "Brighton Hove",
     "manchester city": "Man City",
