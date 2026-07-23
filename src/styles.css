@@ -27,6 +27,19 @@
   --clay: #ff4d5e;
   --violet: #a78bfa;
   --up: #c8f542;
+  /* Fantasy H2H draft league accent: purple, sampled from the Squad Goals fantasy
+     design export (rgb(167 139 250), same value as --violet above). Fantasy UI
+     only, everything else in the app stays lime. */
+  --fantasy-accent: #a78bfa;
+  --fantasy-accent-2: #c3b5fc;
+  --fantasy-ink: #0a0e14;
+  --fantasy-soft: rgb(167 139 250 / 0.14);
+  --fantasy-line: rgb(167 139 250 / 0.5);
+  --fantasy-row-tint: rgb(167 139 250 / 0.08);
+  /* Pitch tint for the My team gameweek pitch (Squad Goals design export's
+     #0D1A12), a dark green distinct from both the navy background and the
+     purple fantasy accent, used nowhere else. */
+  --fantasy-pitch-bg: #0d1a12;
   --radius: 14px;
   --radius-sm: 10px;
   --shadow: 0 18px 50px rgb(0 0 0 / 0.45);
@@ -1381,3 +1394,510 @@ button { font-family: inherit; cursor: pointer; }
     bottom: 10px;
   }
 }
+
+/* Buttons ------------------------------------------------------------------------
+   .btn/.btn--primary were already used by paperRunView.js and banter.js with no
+   base rule behind them (falling through to the bare `button {}` reset); this
+   fills that gap rather than inventing a third button class for Fantasy. */
+
+.btn {
+  padding: 9px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+.btn:hover { border-color: var(--line); }
+.btn[disabled] { opacity: 0.55; cursor: default; }
+
+.btn--primary {
+  border-color: var(--accent-line);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.btn--primary:hover { background: var(--accent-2); }
+
+/* Fantasy H2H draft league -------------------------------------------------------- */
+/* Purple is this section's only accent (--fantasy-*, defined with the rest of the
+   tokens at the top of this file); every class below stays scoped to .fantasy so
+   the purple never leaks into the lime rest-of-app. */
+
+/* width: 100% + min-width: 0 keeps this grid item pinned to the layout track's
+   actual width instead of growing to fit its widest descendant (the sub-tab
+   strip), so that strip's own overflow-x: auto gets to scroll horizontally on
+   narrow viewports instead of stretching the whole panel past the screen edge. */
+.fantasy { width: 100%; max-width: 960px; min-width: 0; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+
+.fantasy-input, .fantasy-select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 9px 12px;
+}
+.fantasy-select { flex: none; width: auto; max-width: 160px; }
+
+.fantasy-forms { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+
+.fantasy-form__row { display: flex; gap: 8px; margin-top: 8px; }
+
+.fantasy-form__error { color: var(--clay); margin-top: 8px; }
+
+.fantasy-leagues { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+
+.fantasy-league-card { text-align: left; display: flex; flex-direction: column; gap: 6px; }
+.fantasy-league-card:hover { border-color: var(--fantasy-line); }
+
+.fantasy-league-card__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fantasy-league-card__head strong { font-size: 15px; }
+
+.fantasy-chip { font-size: 11px; padding: 3px 10px; }
+.fantasy-chip--pending { color: var(--gold); border-color: rgb(245 197 66 / 0.4); background: rgb(245 197 66 / 0.1); }
+.fantasy-chip--drafting { color: var(--fantasy-accent); border-color: var(--fantasy-line); background: var(--fantasy-soft); }
+.fantasy-chip--complete { color: var(--muted); }
+.fantasy-chip--suggested {
+  margin-left: 6px;
+  font-size: 9px;
+  padding: 2px 7px;
+  color: var(--fantasy-ink);
+  background: var(--fantasy-accent);
+  border: none;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
+.fantasy-panel-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+/* League header: purple eyebrow, italic display title, chip row --------------- */
+
+.fantasy-league-head { margin-top: 2px; }
+.fantasy-eyebrow {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fantasy-accent);
+}
+
+/* Sub-tab bar: MY TEAM / DRAFT ROOM live, MATCHUP / STANDINGS inert ------------ */
+
+.fantasy-subtabs {
+  display: flex;
+  gap: 18px;
+  min-width: 0;
+  border-bottom: 1px solid rgb(255 255 255 / 0.08);
+  margin: 16px 0 4px;
+  overflow-x: auto;
+}
+.fantasy-subtab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 2px 10px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.fantasy-subtab.is-active { border-bottom-color: var(--fantasy-accent); color: var(--text); }
+.fantasy-subtab[disabled] { color: var(--faint); cursor: default; }
+
+.fantasy-panel-body { margin-top: 16px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+
+.fantasy-myteam-empty { padding: 24px 4px; }
+
+.fantasy-members { display: flex; flex-direction: column; gap: 2px; }
+.fantasy-member-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid rgb(255 255 255 / 0.05); }
+.fantasy-member-row:first-child { border-top: none; }
+.fantasy-member-row__pos { width: 22px; text-align: center; font-size: 12px; color: var(--muted); font-weight: 800; }
+.fantasy-member-row__name { font-size: 13px; font-weight: 700; }
+
+.fantasy-invite__row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.fantasy-invite__code {
+  font-family: monospace;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+}
+
+/* Draft status card: eyebrow, and the Round/Pick headline INLINE with the order
+   chip strip (headline left, chips right, wrapping below only at narrow
+   widths) - the countdown itself lives in the separate On the clock card. ---- */
+
+.fantasy-draftstatus__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.fantasy-draftstatus__headline {
+  flex: none;
+  font-size: 20px;
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
+}
+
+.fantasy-orderstrip { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.fantasy-orderchip {
+  flex: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.fantasy-orderchip.is-onclock { border-color: var(--fantasy-line); background: var(--fantasy-accent); color: var(--fantasy-ink); }
+.fantasy-orderchip__you { font-weight: 600; opacity: 0.75; }
+
+.fantasy-draftgrid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
+@media (max-width: 900px) {
+  .fantasy-draftgrid { grid-template-columns: minmax(0, 1fr); }
+}
+/* min-width: 0 on both tracks: without it a grid item defaults to its content's
+   min-content size, so the pool table's own min-width (needed for its
+   horizontal scroll on narrow screens) would otherwise balloon this whole
+   column - and the grid - past the viewport instead of scrolling internally. */
+.fantasy-draftgrid__main { min-width: 0; }
+.fantasy-draftgrid__side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+/* On the clock: its own card, mockup order suggested/on-the-clock/recent/squad - */
+
+.fantasy-onclock.is-mine { border-color: var(--fantasy-line); background: var(--fantasy-soft); }
+.fantasy-onclock__row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.fantasy-onclock__name { font-size: 20px; font-weight: 900; }
+.fantasy-onclock.is-mine .fantasy-onclock__name { color: var(--fantasy-accent); }
+.fantasy-onclock__time {
+  flex: none;
+  font-size: 28px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: var(--fantasy-accent);
+}
+.fantasy-onclock__context { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+/* Suggested pick: purple-tinted card, deterministic autoPick heuristic --------- */
+
+.fantasy-suggest { border-color: var(--fantasy-line); background: var(--fantasy-soft); }
+.fantasy-suggest .fantasy-eyebrow { display: flex; align-items: center; gap: 6px; }
+.fantasy-sparkle { flex: none; color: var(--fantasy-accent); }
+.fantasy-suggest__row { display: flex; align-items: center; gap: 10px; margin: 6px 0 8px; }
+.fantasy-suggest__name { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.fantasy-suggest__name strong { font-size: 14px; }
+.fantasy-suggest__chip {
+  flex: none;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--fantasy-accent);
+  background: var(--fantasy-soft);
+  border-color: var(--fantasy-line);
+}
+.fantasy-suggest__reason { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0 0 10px; }
+
+/* Player pool: data-table card, sticky filter header inside the scroll region -- */
+
+.fantasy-pool { padding: 0; overflow: hidden; }
+.fantasy-pool__scroll { max-height: 620px; overflow-y: auto; }
+.fantasy-pool__sticky {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.fantasy-pool__sticky .card__title { margin: 0 0 10px; }
+
+/* Filters row: position pills + club select + search all in one aligned row on
+   desktop, wrapping to stack cleanly on narrow widths (mobile). Always in the
+   sticky block (unlike the column header below), so the filters stay reachable
+   no matter how the table itself is scrolled. */
+.fantasy-pool__filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fantasy-pool__positions { flex: none; }
+.fantasy-pool__filters .fantasy-select { flex: none; }
+.fantasy-pool__filters .fantasy-input { flex: 1; min-width: 160px; max-width: 260px; }
+
+/* Below ~480px the pills row + club select + search no longer fit one aligned
+   line even wrapped as flex items (a native <select>'s intrinsic width from
+   its longest option resists shrinking); stack them explicitly full-width
+   instead of leaving it to flex-wrap, so the club filter is never clipped. */
+@media (max-width: 480px) {
+  .fantasy-pool__filters { flex-direction: column; align-items: stretch; }
+  .fantasy-pool__filters .fantasy-select,
+  .fantasy-pool__filters .fantasy-input {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+/* The data table itself (column header + rows): eight columns (badge, name,
+   pos, four stat cells, action) are too dense to fit a 320-375px phone at
+   readable sizes, so this wrapper scrolls horizontally rather than collapsing
+   or hiding any column - the mockup's PLAYER/POS/AVG/FORM/xP/ADP structure
+   stays intact at every width, just panned into view with a swipe on mobile.
+   On viewports wide enough (any real desktop/tablet) the content already fits
+   and this scroll never engages. */
+.fantasy-pool__table { overflow-x: auto; }
+
+/* Column header row and each data row share one grid template so PLAYER / POS /
+   AVG / FORM / xP / ADP / action line up exactly: badge, name, pos, four stat
+   cells, action. The header's first and last cells are empty (badge/action). */
+.fantasy-pool__cols,
+.fantasy-player-row {
+  display: grid;
+  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 40px 70px 36px 36px 76px;
+  min-width: 500px;
+  align-items: center;
+  gap: 10px;
+}
+.fantasy-pool__cols {
+  /* 26px = the rows wrapper's 16px padding + a row's own 10px padding, so the
+     header's grid tracks line up exactly with each row's grid tracks below. */
+  padding: 10px 26px 6px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.fantasy-pool__cols span:nth-child(4),
+.fantasy-pool__cols span:nth-child(5),
+.fantasy-pool__cols span:nth-child(6),
+.fantasy-pool__cols span:nth-child(7) {
+  text-align: center;
+}
+.fantasy-pool__cols span:last-child { text-align: right; }
+
+.fantasy-pool__rows { display: flex; flex-direction: column; gap: 4px; padding: 0 16px 12px; }
+
+.fantasy-player-row {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.fantasy-player-row.is-drafted { opacity: 0.45; }
+.fantasy-player-row.is-suggested { background: var(--fantasy-row-tint); }
+.fantasy-player-row__id { display: flex; flex-direction: column; min-width: 0; }
+.fantasy-player-row__id strong { font-size: 13px; }
+.fantasy-player-row__action { text-align: right; }
+.fantasy-player-row__stat { text-align: center; }
+.fantasy-draft-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-color: var(--fantasy-line);
+  background: var(--fantasy-accent);
+  color: var(--fantasy-ink);
+}
+.fantasy-draft-btn:hover { background: var(--fantasy-accent-2); }
+
+/* Stat cells: AVG / xP / ADP as plain numbers, a dim placeholder bullet when the
+   pool file doesn't carry that field yet (see normalizePlayerStats). ---------- */
+
+.fantasy-stat { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text); }
+.fantasy-stat--empty { color: var(--faint); }
+
+/* FORM mini-sparkline: up to 5 bars, lime for the stronger recent games, a
+   purple tint otherwise; a single dim bullet placeholder with no data at all. */
+.fantasy-sparkline { display: flex; align-items: flex-end; justify-content: center; gap: 2px; height: 18px; }
+.fantasy-sparkline__bar { display: block; width: 6px; min-height: 3px; border-radius: 2px; background: var(--fantasy-line); }
+.fantasy-sparkline__bar.is-strong { background: var(--accent); }
+
+/* POS chip: fantasy-accent tint pill, shared by pool rows / squad rows / feed -- */
+
+.fantasy-pos {
+  flex: none;
+  width: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 0;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--fantasy-accent);
+  background: var(--fantasy-soft);
+  border: 1px solid var(--fantasy-line);
+}
+
+/* Your squad: R.PP pick numbers, POS chips, compact bucket meter in the header - */
+
+.fantasy-myteam { display: flex; flex-direction: column; gap: 10px; }
+.fantasy-myteam__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.fantasy-myteam__head .card__title { margin: 0; }
+
+.fantasy-bucketmeter { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: var(--muted); }
+.fantasy-bucket { display: flex; gap: 4px; }
+.fantasy-bucket strong { color: var(--text); }
+.fantasy-bucket.is-full strong { color: var(--fantasy-accent); }
+
+.fantasy-squad-rows { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
+.fantasy-myteam--full .fantasy-squad-rows { max-height: none; }
+.fantasy-squad-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12px;
+}
+.fantasy-squad-row__pick { flex: none; width: 30px; color: var(--faint); font-weight: 800; font-variant-numeric: tabular-nums; }
+.fantasy-squad-row__name { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.fantasy-squad-row__name strong { font-size: 12px; }
+
+.fantasy-feed-card { max-height: 420px; overflow-y: auto; }
+.fantasy-feed { display: flex; flex-direction: column; gap: 8px; }
+.fantasy-feed__row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.fantasy-feed__pick { color: var(--faint); font-weight: 800; width: 30px; flex: none; font-variant-numeric: tabular-nums; }
+.fantasy-feed__player { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.fantasy-feed__player strong { font-size: 12px; }
+.fantasy-feed__by { color: var(--muted); white-space: nowrap; }
+
+.fantasy-rosters { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.fantasy-roster-card .fantasy-squad-rows { max-height: none; }
+
+/* My team pitch view (draftStatus: complete) --------------------------------- */
+
+.fantasy-myteam-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 900px) {
+  .fantasy-myteam-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.fantasy-myteam-grid__main,
+.fantasy-myteam-grid__rail { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+.fantasy-pitch__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.fantasy-lineup-note { margin-top: 2px; }
+.fantasy-pitch__editcontrols { display: flex; gap: 8px; flex: none; }
+
+.fantasy-pitch__field {
+  background: var(--fantasy-pitch-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 4px;
+  background-image:
+    radial-gradient(circle at 50% 50%, transparent 55px, rgb(255 255 255 / 0.06) 56px, transparent 57px),
+    linear-gradient(rgb(255 255 255 / 0.06), rgb(255 255 255 / 0.06));
+  background-size: 100% 100%, 100% 1px;
+  background-position: 0 0, 0 50%;
+  background-repeat: no-repeat;
+}
+.fantasy-pitch__row { display: flex; justify-content: space-evenly; flex-wrap: wrap; gap: 4px; margin: 10px 0; }
+
+.fantasy-pitch__player {
+  flex: 0 1 84px;
+  width: 84px;
+  min-width: 60px;
+  text-align: center;
+  position: relative;
+  background: none;
+  border: none;
+  border-radius: 10px;
+  padding: 4px 2px;
+  color: inherit;
+  font-family: inherit;
+}
+.fantasy-pitch__player:hover,
+.fantasy-pitch__player:focus-visible { background: rgb(255 255 255 / 0.05); outline: none; }
+.fantasy-pitch__player.is-pending { background: var(--fantasy-soft); box-shadow: inset 0 0 0 1px var(--fantasy-line); }
+.fantasy-pitch__player.is-dimmed { opacity: 0.35; }
+.fantasy-pitch__crest { display: flex; justify-content: center; }
+.fantasy-pitch__crest .tb { width: 32px; height: 32px; font-size: 10px; }
+.fantasy-pitch__capbadge {
+  position: absolute;
+  top: 0;
+  right: 12px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 9px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fantasy-pitch__name { margin: 6px 0 0; font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fantasy-pitch__club { margin: 1px 0 0; font-size: 10px; color: var(--muted); }
+.fantasy-pitch__xp { margin: 2px 0 0; font-size: 9.5px; font-weight: 800; color: var(--fantasy-accent); white-space: nowrap; }
+.fantasy-pitch__xp.is-empty { color: var(--faint); font-weight: 600; }
+.fantasy-pitch__captainbtn {
+  display: block;
+  margin: 5px auto 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--fantasy-line);
+  background: var(--fantasy-soft);
+  color: var(--fantasy-accent);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.fantasy-bench__rows { display: flex; flex-direction: column; gap: 2px; }
+.fantasy-bench-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 4px;
+  border-top: 1px solid rgb(255 255 255 / 0.05);
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  background: none;
+  border-radius: 6px;
+  text-align: left;
+  color: inherit;
+  font-family: inherit;
+}
+.fantasy-bench-row:first-child { border-top: none; }
+.fantasy-bench-row:hover,
+.fantasy-bench-row:focus-visible { background: rgb(255 255 255 / 0.04); outline: none; }
+.fantasy-bench-row.is-pending { background: var(--fantasy-soft); }
+.fantasy-bench-row.is-dimmed { opacity: 0.35; }
+.fantasy-bench-row__name { display: flex; flex-direction: column; min-width: 0; }
+.fantasy-bench-row__name strong { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fantasy-bench-row__xp { font-size: 11px; font-weight: 800; color: var(--fantasy-accent); white-space: nowrap; }
+
+.fantasy-squadxp-card .fantasy-eyebrow { display: flex; align-items: center; gap: 6px; }
+.fantasy-squadxp { display: flex; flex-direction: column; gap: 9px; margin-top: 8px; }
+.fantasy-squadxp__row { display: grid; grid-template-columns: minmax(0, 1fr) 70px 34px; gap: 8px; align-items: center; }
+.fantasy-squadxp__name { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fantasy-squadxp__bar { height: 5px; border-radius: 3px; background: rgb(255 255 255 / 0.08); overflow: hidden; }
+.fantasy-squadxp__bar span { display: block; height: 100%; border-radius: 3px; background: var(--fantasy-accent); }
+.fantasy-squadxp__value { text-align: right; font-size: 12px; font-weight: 900; color: var(--fantasy-accent); font-variant-numeric: tabular-nums; }
+.fantasy-squadxp__value.fantasy-stat--empty { color: var(--faint); }
+
+/* Player stats drawer: reuses the .dz match-drawer shell (styles.css's Match
+   drawer section) so the two feel like the same interaction. */
+.fantasy-drawer__head { text-align: center; padding: 4px 0 16px; border-bottom: 1px solid rgb(255 255 255 / 0.06); margin-bottom: 14px; }
+.fantasy-drawer__head .tb--xl { margin: 0 auto; }
+.fantasy-drawer__head .chip { margin-top: 10px; }
+.fantasy-drawer__name { margin: 10px 0 2px; font-size: 16px; font-weight: 900; }
+.fantasy-drawer__stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 8px; }
+.fantasy-drawer__stat { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 10px; background: var(--surface-2); }
+.fantasy-drawer__stat .note--dim { text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; }

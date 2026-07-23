@@ -34,6 +34,13 @@ export function authHeaders() {
   return session ? { Authorization: `Bearer ${session}` } : {};
 }
 
+// Raw bearer token for the one route that cannot send an Authorization header:
+// the fantasy draft room WebSocket (browsers cannot set headers on a WS upgrade),
+// which instead carries the token as a ?token= query parameter. See fantasyApi.js.
+export function sessionToken() {
+  return session;
+}
+
 export function onAccountChange(fn) {
   listeners.add(fn);
   return () => listeners.delete(fn);

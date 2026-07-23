@@ -6,7 +6,19 @@ import { locationForMatch } from "./locations.js";
 // Set this to your deployed Cloudflare Worker origin to serve live data without a
 // deploy, e.g. "https://goon-squad-data.<your-subdomain>.workers.dev". Leave empty to
 // use the static data/<comp>/live.json baked by the hourly GitHub Action fallback.
-export const DATA_API = "https://goon-squad-data.gs-wc.workers.dev";
+// Dev builds only: a "gs-data-api" localStorage entry redirects the app at a local
+// `wrangler dev` Worker (http://localhost:8787) so accounts, banter and the fantasy
+// draft room can be exercised end to end without touching production. Vite strips
+// the whole branch from production builds via import.meta.env.DEV.
+export const DATA_API = (import.meta.env?.DEV && devApiOverride()) || "https://goon-squad-data.gs-wc.workers.dev";
+
+function devApiOverride() {
+  try {
+    return window.localStorage.getItem("gs-data-api");
+  } catch {
+    return null;
+  }
+}
 
 export async function loadModel(comp = DEFAULT_COMPETITION_CODE) {
   const [raw, scorerData] = await Promise.all([loadLiveData(comp), loadScorers(comp)]);

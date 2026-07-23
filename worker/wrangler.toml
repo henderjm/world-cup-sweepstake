@@ -60,6 +60,17 @@ database_id = "69070b1b-d4f5-4c2d-9e0d-cf64dd44ab39"
 # Banter lives in D1 (banter_messages, banter_reactions in schema.sql); its old KV
 # namespace (b615f8b1d77c47b9a01219387908d0c6) is unused and can be deleted.
 
+# Fantasy H2H live draft room (Phase 4.2): one Durable Object per league, holding
+# the snake draft's turn order and pick clock in memory, with fantasy_draft_picks
+# in DB (above) as the only source of truth it rehydrates from on every wake.
+[[durable_objects.bindings]]
+name = "DRAFT_ROOM"
+class_name = "FantasyDraftRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["FantasyDraftRoom"]
+
 # AI analysis storage (required for the feature): the cron writes generated analyses
 # here and GET /analysis/:id is a pure read of it. Created with:
 #   npx wrangler kv namespace create ANALYSIS_CACHE
