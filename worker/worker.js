@@ -894,6 +894,9 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
 
     return json(
       {
+        // members[], picks[] and the draft room's onClockUserId are all keyed by
+        // numeric user id, so the caller needs to know which one is theirs.
+        viewerUserId: user.id,
         league: {
           id: league.id,
           name: league.name,

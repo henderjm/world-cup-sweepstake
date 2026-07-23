@@ -597,7 +597,7 @@ async function openFantasyLeague(id) {
     const detail = await apiLoadLeague(id);
     if (f.activeLeagueId !== id) return; // navigated elsewhere mid-flight
     f.league = detail;
-    f.myUserId = resolveMyFantasyUserId(detail.league, detail.members);
+    f.myUserId = detail.viewerUserId ?? null;
     if (detail.league.draftStatus !== "pending") {
       await ensureFantasyPlayerPool();
       if (f.activeLeagueId === id) mountFantasyDraftRoom(id);
@@ -607,21 +607,6 @@ async function openFantasyLeague(id) {
     f.loadError = error.message || "Couldn't load this league.";
   }
   if (state.section === "fantasy") renderLayout();
-}
-
-// GET /me and the fantasy routes never hand the client its own numeric user id
-// (publicUser() strips it, see worker/worker.js) even though members[]/picks[]/
-// onClockUserId are all keyed by it. The commissioner's id is exposed
-// (league.commissionerUserId), so that resolves for free; anyone else is
-// inferred by matching the signed-in account's display name against
-// members[].name (the same value the Worker derives from the same users row),
-// which is correct as long as no two managers in a league share a display name.
-function resolveMyFantasyUserId(league, members) {
-  if (league.isCommissioner) return league.commissionerUserId;
-  const account = currentAccount();
-  const myName = (account?.user?.name || account?.user?.email?.split("@")[0] || "").trim();
-  if (!myName) return null;
-  return members.find((member) => member.name === myName)?.userId ?? null;
 }
 
 async function ensureFantasyPlayerPool() {
