@@ -49,6 +49,7 @@ import {
   validateClientResult,
 } from "../src/paperRunModel.js";
 import { MAX_LEAGUE_SIZE } from "../src/fantasy.js";
+import { defaultLineup, resolveEffectiveLineup, validateLineupSelection } from "../src/fantasyLineups.js";
 
 export { FantasyDraftRoom } from "./draftRoom.js";
 
@@ -189,6 +190,13 @@ export default {
     const fantasyDraftStartRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/draft\/start$/);
     if (fantasyDraftStartRoute && request.method === "POST") {
       return handleFantasyDraftStart(request, env, Number(fantasyDraftStartRoute[1]), cors);
+    }
+    const fantasyLineupRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/lineup$/);
+    if (fantasyLineupRoute && request.method === "GET") {
+      return handleFantasyLineupGet(request, env, Number(fantasyLineupRoute[1]), cors);
+    }
+    if (fantasyLineupRoute && request.method === "POST") {
+      return handleFantasyLineupSet(request, env, Number(fantasyLineupRoute[1]), cors);
     }
     const fantasyLeagueDetailRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)$/);
     if (fantasyLeagueDetailRoute && request.method === "GET") {
@@ -874,7 +882,7 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
       .first();
     if (!membership) return json({ error: "not a member" }, 403, cors);
 
-    const [members, picks, roster] = await Promise.all([
+    const [members, picks, roster, currentGameweek] = await Promise.all([
       env.DB.prepare(
         `SELECT m.user_id, m.draft_position, u.name, u.email FROM fantasy_league_members m
          JOIN users u ON u.id = m.user_id
@@ -889,13 +897,8 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
       )
         .bind(leagueId)
         .all(),
-      env.DB.prepare(
-        `SELECT r.player_id, pl.name, pl.team, pl.position FROM fantasy_rosters r
-         JOIN fantasy_players pl ON pl.id = r.player_id
-         WHERE r.league_id = ?1 AND r.user_id = ?2`,
-      )
-        .bind(leagueId, user.id)
-        .all(),
+      fantasyRosterFor(env, leagueId, user.id),
+      currentFantasyGameweek(env),
     ]);
 
     return json(
@@ -903,6 +906,7 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
         // members[], picks[] and the draft room's onClockUserId are all keyed by
         // numeric user id, so the caller needs to know which one is theirs.
         viewerUserId: user.id,
+        currentGameweek,
         league: {
           id: league.id,
           name: league.name,
@@ -923,12 +927,7 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
           userId: row.user_id,
           player: { id: row.player_id, name: row.name, team: row.team, position: row.position },
         })),
-        roster: (roster.results ?? []).map((row) => ({
-          id: row.player_id,
-          name: row.name,
-          team: row.team,
-          position: row.position,
-        })),
+        roster,
       },
       200,
       cors,
@@ -1093,6 +1092,148 @@ async function upsertFantasyPlayerPool(env) {
         ).bind(player.id, player.name ?? "", player.team ?? "", player.position ?? "MID"),
       ),
     );
+  }
+}
+
+// -- Fantasy starting lineups (Phase 4.4) -------------------------------------
+// Reads resolve the effective lineup for the current gameweek per the
+// fantasy_lineups inheritance rule (see schema.sql and src/fantasyLineups.js);
+// nothing is ever copy-written between gameweeks. Writes are always for the
+// server-derived current gameweek, never a client-supplied one, so nobody can
+// rewrite an earlier week's result after it has already scored.
+
+// PL is the only fantasy competition (see schema.sql's fantasy_lineups comment
+// on why the 38-matchday PL season maps 1:1 onto weekly gameweeks), so this is
+// unconditionally the PL feed. The smallest matchday still in play is "now";
+// once every match is finished the season's final matchday holds until the
+// next one opens. Any failure (feed down, PL not configured, local dev with a
+// dummy API key) falls back to gameweek 1 rather than erroring the route.
+async function currentFantasyGameweek(env) {
+  try {
+    const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
+    if (!comp || !env.API_FOOTBALL_KEY) return 1;
+    const live = await getLive(comp, env.API_FOOTBALL_KEY);
+    const matchdays = (live.matches ?? [])
+      .filter((match) => Number.isInteger(match.matchday))
+      .map((match) => ({ matchday: match.matchday, finished: isMatchFinished(match) }));
+    if (!matchdays.length) return 1;
+    const unfinished = matchdays.filter((entry) => !entry.finished);
+    if (unfinished.length) return Math.min(...unfinished.map((entry) => entry.matchday));
+    return Math.max(...matchdays.map((entry) => entry.matchday));
+  } catch {
+    return 1;
+  }
+}
+
+async function fantasyRosterFor(env, leagueId, userId) {
+  const rows = await env.DB.prepare(
+    `SELECT r.player_id AS id, pl.name, pl.team, pl.position FROM fantasy_rosters r
+     JOIN fantasy_players pl ON pl.id = r.player_id
+     WHERE r.league_id = ?1 AND r.user_id = ?2`,
+  )
+    .bind(leagueId, userId)
+    .all();
+  return rows.results ?? [];
+}
+
+async function handleFantasyLineupGet(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+
+    const gameweek = await currentFantasyGameweek(env);
+    const [roster, lineupRows] = await Promise.all([
+      fantasyRosterFor(env, leagueId, user.id),
+      env.DB.prepare(
+        `SELECT gameweek, player_id, is_captain FROM fantasy_lineups WHERE league_id = ?1 AND user_id = ?2`,
+      )
+        .bind(leagueId, user.id)
+        .all(),
+    ]);
+
+    const resolved = resolveEffectiveLineup(lineupRows.results ?? [], gameweek);
+    let source = "set";
+    let starters = resolved.starters;
+    if (resolved.gameweek == null) {
+      starters = defaultLineup(roster).starters; // computed on read, never written to D1
+      source = "default";
+    } else if (resolved.inherited) {
+      source = "inherited";
+    }
+
+    const starterIds = new Set(starters.map((entry) => entry.playerId));
+    const bench = roster.filter((player) => !starterIds.has(player.id)).map((player) => player.id);
+
+    return json({ gameweek, source, starters, bench }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+async function handleFantasyLineupSet(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "bad body" }, 400, cors);
+  }
+  const starters = Array.isArray(body?.starters) ? body.starters.map(Number) : null;
+  const captainId = body?.captainId == null ? null : Number(body.captainId);
+  if (!starters || starters.some((id) => !Number.isInteger(id)) || !Number.isInteger(captainId)) {
+    return json({ error: "bad selection" }, 400, cors);
+  }
+
+  try {
+    const league = await env.DB.prepare(`SELECT draft_status FROM fantasy_leagues WHERE id = ?1`)
+      .bind(leagueId)
+      .first();
+    if (!league) return json({ error: "unknown league" }, 404, cors);
+
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+    if (league.draft_status !== "complete") return json({ error: "draft not complete" }, 400, cors);
+
+    const roster = await fantasyRosterFor(env, leagueId, user.id);
+    const validation = validateLineupSelection({ starters, captainId, roster });
+    if (!validation.ok) return json({ error: validation.error }, 400, cors);
+
+    const gameweek = await currentFantasyGameweek(env);
+    await env.DB.batch([
+      env.DB.prepare(`DELETE FROM fantasy_lineups WHERE league_id = ?1 AND user_id = ?2 AND gameweek = ?3`).bind(
+        leagueId,
+        user.id,
+        gameweek,
+      ),
+      ...starters.map((playerId) =>
+        env.DB.prepare(
+          `INSERT INTO fantasy_lineups (league_id, user_id, gameweek, player_id, is_captain) VALUES (?1, ?2, ?3, ?4, ?5)`,
+        ).bind(leagueId, user.id, gameweek, playerId, playerId === captainId ? 1 : 0),
+      ),
+    ]);
+
+    const starterEntries = starters.map((playerId) => ({ playerId, isCaptain: playerId === captainId }));
+    const starterIds = new Set(starters);
+    const bench = roster.filter((player) => !starterIds.has(player.id)).map((player) => player.id);
+
+    return json({ gameweek, source: "set", starters: starterEntries, bench }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
   }
 }
 
