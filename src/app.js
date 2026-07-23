@@ -45,14 +45,16 @@ import { mountPaperRunGame } from "./paperRunGame.js";
 import {
   createLeague as apiCreateLeague,
   fantasyAvailable,
+  getLineup as apiGetLineup,
   isFantasyNotDeployed,
   joinLeague as apiJoinLeague,
   listLeagues as apiListLeagues,
   loadLeague as apiLoadLeague,
   loadPlayerPool,
+  setLineup as apiSetLineup,
   startDraft as apiStartDraft,
 } from "./fantasyApi.js";
-import { formatCountdown, openDraftRoom, reduceDraftMessage, suggestedPick } from "./fantasyDraft.js";
+import { formatCountdown, openDraftRoom, reduceDraftMessage, suggestedPick, swapLineup } from "./fantasyDraft.js";
 import {
   renderFantasyComplete,
   renderFantasyDraftRoom,
@@ -64,6 +66,7 @@ import {
   renderFantasyMyTeamPanel,
   renderFantasyNotConfigured,
   renderFantasyPlayerRows,
+  renderFantasyRosterPanel,
   renderFantasySessionExpired,
   renderFantasySignedOut,
 } from "./fantasyView.js";
@@ -115,6 +118,11 @@ function initialFantasyState() {
     draftRoom: null, // { controller, state, remainingMs } once a socket is open
     filter: { position: "All", club: "All", search: "" },
     subTab: "draftroom", // "draftroom" | "myteam"; matchup/standings are disabled Soon tabs
+    lineup: null, // { gameweek, source, starters: [{playerId,isCaptain}], bench } from GET .../lineup
+    lineupLoading: false,
+    lineupError: "",
+    lineupEdit: null, // working copy while editing: { starters, captainId, bench, pendingId, saving, error }
+    playerDrawerId: null, // My team pitch/bench: id of the player whose stats drawer is open
     createBusy: false,
     createError: "",
     joinBusy: false,
@@ -541,7 +549,7 @@ function renderFantasyDraftPanel() {
 
   const body =
     subTab === "myteam"
-      ? renderFantasyMyTeamPanel(room.picks, f.myUserId)
+      ? renderFantasyMyTeamBody(league, room)
       : room.status === "complete"
         ? renderFantasyComplete(members, room.picks)
         : renderFantasyDraftRoom({
@@ -565,6 +573,154 @@ function renderFantasyDraftPanel() {
     const scrollEl = elements.layout.querySelector(".fantasy-pool__scroll");
     if (scrollEl) scrollEl.scrollTop = poolScrollTop;
   }
+}
+
+// My team body: the draft-era simple squad list (renderFantasyMyTeamPanel) for
+// a league still pending/drafting, or the pitch/bench/Squad xP roster panel
+// once the draft is complete and the season's 15-man squads are fixed. The
+// roster panel needs its own fetch (the lineup, not part of the draft room's
+// WebSocket state), lazily kicked off here the first time it renders without
+// one yet - the same "trigger the load, render what we have" shape as
+// loadPaperRun/loadFantasyPlayerPoolForLobby.
+function renderFantasyMyTeamBody(league, room) {
+  if (league.draftStatus !== "complete") {
+    return renderFantasyMyTeamPanel(room.picks, state.fantasy.myUserId);
+  }
+  const f = state.fantasy;
+  if (!f.lineup && !f.lineupLoading && !f.lineupError) loadFantasyLineup(f.activeLeagueId);
+  return renderFantasyRosterPanel({
+    currentGameweek: f.league.currentGameweek,
+    roster: f.league.roster,
+    lineup: f.lineup,
+    playerPool: f.playerPool?.players ?? [],
+    picks: f.league.picks,
+    editState: f.lineupEdit,
+    drawerPlayerId: f.playerDrawerId,
+    lineupError: f.lineupError,
+  });
+}
+
+async function loadFantasyLineup(leagueId) {
+  const f = state.fantasy;
+  if (f.lineupLoading) return;
+  f.lineupLoading = true;
+  f.lineupError = "";
+  try {
+    const lineup = await apiGetLineup(leagueId);
+    if (f.activeLeagueId !== leagueId) return; // navigated elsewhere mid-flight
+    f.lineup = lineup;
+  } catch (error) {
+    if (f.activeLeagueId !== leagueId) return;
+    f.lineupError = error.message || "Couldn't load your lineup.";
+  } finally {
+    if (f.activeLeagueId === leagueId) f.lineupLoading = false;
+  }
+  if (state.section === "fantasy") renderLayout();
+}
+
+function startFantasyLineupEdit() {
+  const f = state.fantasy;
+  if (!f.lineup) return;
+  const captainEntry = f.lineup.starters.find((entry) => entry.isCaptain);
+  f.lineupEdit = {
+    starters: f.lineup.starters.map((entry) => entry.playerId),
+    captainId: captainEntry?.playerId ?? f.lineup.starters[0]?.playerId ?? null,
+    bench: [...f.lineup.bench],
+    pendingId: null,
+    saving: false,
+    error: "",
+  };
+  renderLayout();
+}
+
+// Tapping a pitch/bench tile: in edit mode this drives the swap-selection flow
+// (see handleFantasyLineupTileClick); otherwise it opens/closes that player's
+// stats drawer. A second tap on the same player closes the drawer rather than
+// re-opening it, matching a simple toggle.
+function handleFantasyPlayerTileClick(playerId) {
+  if (!Number.isInteger(playerId)) return;
+  const f = state.fantasy;
+  if (f.lineupEdit) {
+    handleFantasyLineupTileClick(playerId);
+    return;
+  }
+  f.playerDrawerId = f.playerDrawerId === playerId ? null : playerId;
+  renderLayout();
+}
+
+// Swap-selection flow: the first tap in edit mode focuses a player
+// (pendingId); a second tap on a player from the OPPOSITE group (starter vs
+// bench) attempts the swap via the pure swapLineup helper, reconciling the
+// working copy only on success; a second tap on the SAME group just moves the
+// focus (never attempts a same-group "swap", which would be a no-op at best);
+// tapping the already-pending player deselects it.
+function handleFantasyLineupTileClick(playerId) {
+  const edit = state.fantasy.lineupEdit;
+  if (!edit) return;
+  edit.error = "";
+
+  if (edit.pendingId == null) {
+    edit.pendingId = playerId;
+    renderLayout();
+    return;
+  }
+  if (edit.pendingId === playerId) {
+    edit.pendingId = null;
+    renderLayout();
+    return;
+  }
+
+  const pendingIsStarter = edit.starters.includes(edit.pendingId);
+  const targetIsStarter = edit.starters.includes(playerId);
+  if (pendingIsStarter === targetIsStarter) {
+    edit.pendingId = playerId;
+    renderLayout();
+    return;
+  }
+
+  const roster = state.fantasy.league?.roster ?? [];
+  const result = swapLineup(
+    { starters: edit.starters, captainId: edit.captainId, bench: edit.bench, roster },
+    edit.pendingId,
+    playerId,
+  );
+  if (!result.ok) {
+    edit.error = result.error;
+    edit.pendingId = null;
+    renderLayout();
+    return;
+  }
+  edit.starters = result.starters;
+  edit.bench = result.bench;
+  edit.captainId = result.captainId;
+  edit.pendingId = null;
+  renderLayout();
+}
+
+function handleFantasyMakeCaptain(playerId) {
+  const edit = state.fantasy.lineupEdit;
+  if (!edit || !Number.isInteger(playerId) || !edit.starters.includes(playerId)) return;
+  edit.captainId = playerId;
+  edit.pendingId = null;
+  renderLayout();
+}
+
+async function saveFantasyLineup() {
+  const f = state.fantasy;
+  const edit = f.lineupEdit;
+  if (!edit || edit.saving) return;
+  edit.saving = true;
+  edit.error = "";
+  renderLayout();
+  try {
+    const saved = await apiSetLineup(f.activeLeagueId, { starters: edit.starters, captainId: edit.captainId });
+    f.lineup = saved;
+    f.lineupEdit = null;
+  } catch (error) {
+    edit.saving = false;
+    edit.error = error.message || "Couldn't save your lineup.";
+  }
+  renderLayout();
 }
 
 function fantasyFormState() {
@@ -657,6 +813,11 @@ async function openFantasyLeague(id) {
   f.loadError = "";
   f.notDeployed = false;
   f.subTab = "draftroom";
+  f.lineup = null;
+  f.lineupLoading = false;
+  f.lineupError = "";
+  f.lineupEdit = null;
+  f.playerDrawerId = null;
   renderLayout();
   try {
     const detail = await apiLoadLeague(id);
@@ -794,6 +955,11 @@ function closeFantasyLeague() {
   f.loadError = "";
   f.sessionExpired = false;
   f.notDeployed = false;
+  f.lineup = null;
+  f.lineupLoading = false;
+  f.lineupError = "";
+  f.lineupEdit = null;
+  f.playerDrawerId = null;
   renderLayout();
 }
 
@@ -1012,6 +1178,8 @@ function wireLayoutControls() {
     const fantasySubtabButton = event.target.closest("[data-fantasy-subtab]");
     if (fantasySubtabButton && !fantasySubtabButton.disabled) {
       state.fantasy.subTab = fantasySubtabButton.dataset.fantasySubtab;
+      state.fantasy.lineupEdit = null;
+      state.fantasy.playerDrawerId = null;
       renderLayout();
       return;
     }
@@ -1054,6 +1222,44 @@ function wireLayoutControls() {
       state.fantasy.draftRoom?.controller.sendPick(Number(fantasyDraftButton.dataset.fantasyDraftPlayer));
       return;
     }
+    const lineupEditButton = event.target.closest("[data-fantasy-lineup-edit]");
+    if (lineupEditButton) {
+      startFantasyLineupEdit();
+      return;
+    }
+    const lineupCancelButton = event.target.closest("[data-fantasy-lineup-cancel]");
+    if (lineupCancelButton) {
+      state.fantasy.lineupEdit = null;
+      renderLayout();
+      return;
+    }
+    const lineupSaveButton = event.target.closest("[data-fantasy-lineup-save]");
+    if (lineupSaveButton && !lineupSaveButton.disabled) {
+      saveFantasyLineup();
+      return;
+    }
+    const lineupRetryButton = event.target.closest("[data-fantasy-lineup-retry]");
+    if (lineupRetryButton) {
+      state.fantasy.lineupError = "";
+      loadFantasyLineup(state.fantasy.activeLeagueId);
+      return;
+    }
+    const makeCaptainButton = event.target.closest("[data-fantasy-make-captain]");
+    if (makeCaptainButton) {
+      handleFantasyMakeCaptain(Number(makeCaptainButton.dataset.fantasyMakeCaptain));
+      return;
+    }
+    const drawerCloseTarget = event.target.closest("[data-fantasy-player-drawer-close]");
+    if (drawerCloseTarget) {
+      state.fantasy.playerDrawerId = null;
+      renderLayout();
+      return;
+    }
+    const pitchTile = event.target.closest("[data-fantasy-player-id]");
+    if (pitchTile) {
+      handleFantasyPlayerTileClick(Number(pitchTile.dataset.fantasyPlayerId));
+      return;
+    }
     const fantasyRetryButton = event.target.closest("[data-fantasy-retry]");
     if (fantasyRetryButton) {
       state.fantasy.loadError = "";
@@ -1081,11 +1287,26 @@ function wireLayoutControls() {
       joinFantasyLeague(event.target.value);
       return;
     }
+    if (event.key === "Escape" && state.fantasy.playerDrawerId != null) {
+      state.fantasy.playerDrawerId = null;
+      renderLayout();
+      return;
+    }
     if (event.key !== "Enter" && event.key !== " ") return;
     const row = event.target.closest("[data-match-id]");
     if (row) {
       event.preventDefault();
       openMatchRow(row);
+      return;
+    }
+    // The nested "Make captain" button handles its own Enter/Space via the
+    // native click it generates; without this guard closest() would also
+    // match the ancestor pitch tile below and double-fire a tile click.
+    if (event.target.closest("[data-fantasy-make-captain]")) return;
+    const tile = event.target.closest("[data-fantasy-player-id]");
+    if (tile) {
+      event.preventDefault();
+      handleFantasyPlayerTileClick(Number(tile.dataset.fantasyPlayerId));
     }
   });
   elements.layout.addEventListener("input", (event) => {

@@ -9,6 +9,7 @@ import {
   renderFantasyLobby,
   renderFantasyMyTeamPanel,
   renderFantasyPlayerRows,
+  renderFantasyRosterPanel,
   renderFantasySessionExpired,
 } from "../src/fantasyView.js";
 
@@ -391,4 +392,273 @@ test("renderFantasyComplete groups picks by manager with R.PP numbers and escape
   assert.match(html, /1\.02/);
   assert.match(html, /Alisson/);
   assert.match(html, /Haaland/);
+});
+
+// -- renderFantasyRosterPanel (My team pitch view, draftStatus: complete) ----------
+
+// GK1, DEF4, MID4, FWD2 starting XI (11) with one bench player per position (4).
+function rosterFixture() {
+  return [
+    pooledPlayer(1, "GK", "Keeper One"),
+    pooledPlayer(2, "DEF", "Defender One"),
+    pooledPlayer(3, "DEF", "Defender Two"),
+    pooledPlayer(4, "DEF", "Defender Three"),
+    pooledPlayer(5, "DEF", "Defender Four"),
+    pooledPlayer(6, "MID", "Midfielder One"),
+    pooledPlayer(7, "MID", "Midfielder Two"),
+    pooledPlayer(8, "MID", "Midfielder Three"),
+    pooledPlayer(9, "MID", "Midfielder Four"),
+    pooledPlayer(10, "FWD", "Forward One"),
+    pooledPlayer(11, "FWD", "Forward Two"),
+    pooledPlayer(12, "GK", "Bench Keeper"),
+    pooledPlayer(13, "DEF", "Bench Defender"),
+    pooledPlayer(14, "MID", "Bench Midfielder"),
+    pooledPlayer(15, "FWD", "Bench Forward"),
+  ];
+}
+
+const ROSTER_STARTERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+const ROSTER_BENCH = [12, 13, 14, 15];
+
+function baseLineup(overrides = {}) {
+  return {
+    gameweek: 5,
+    source: "set",
+    starters: ROSTER_STARTERS.map((playerId) => ({ playerId, isCaptain: playerId === 10 })),
+    bench: ROSTER_BENCH,
+    ...overrides,
+  };
+}
+
+// Pulls out one player tile's own class list so a dimmed/pending assertion
+// can't accidentally match a class living on some other tile in the page.
+function tileClasses(html, playerId) {
+  const match = html.match(new RegExp(`<div class="([^"]*)" data-fantasy-player-id="${playerId}"`));
+  return match ? match[1] : null;
+}
+
+test("renderFantasyRosterPanel lays out all 11 starters and 4 bench players with the right slots and captain badge", () => {
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup(),
+    playerPool: [],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "",
+  });
+
+  for (const id of ROSTER_STARTERS) {
+    assert.match(html, new RegExp(`data-fantasy-player-id="${id}" data-fantasy-slot="starter"`));
+  }
+  for (const id of ROSTER_BENCH) {
+    assert.match(html, new RegExp(`data-fantasy-player-id="${id}" data-fantasy-slot="bench"`));
+  }
+  assert.match(html, /Gameweek 5/);
+  // Exactly one captain badge, on player 10.
+  assert.equal((html.match(/fantasy-pitch__capbadge/g) ?? []).length, 1);
+  assert.ok(tileClasses(html, 10), "the captain's own tile renders");
+  assert.doesNotMatch(html, /data-fantasy-make-captain/); // no affordance without an edit in progress
+});
+
+test("renderFantasyRosterPanel shows a real xP value for a player the pool has stats for, a placeholder otherwise", () => {
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup(),
+    playerPool: [{ id: 10, name: "Forward One", team: "Test FC", position: "FWD", xp: 8.4 }],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "",
+  });
+  assert.match(html, /xP 8\.4/);
+  assert.match(html, /xP •/); // every other starter still lacks stats
+  assert.match(html, /Expected points from last-5 form, minutes and fixture difficulty\./);
+});
+
+test("renderFantasyRosterPanel shows the Squad xP placeholder line when no starter has real stats", () => {
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup(),
+    playerPool: [],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "",
+  });
+  assert.match(html, /xP arrives with player stats\./);
+  assert.doesNotMatch(html, /Expected points from last-5 form/);
+});
+
+test("renderFantasyRosterPanel surfaces the inherited and default source notes, and neither for a freshly set lineup", () => {
+  const inherited = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup({ source: "inherited" }),
+    playerPool: [],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "",
+  });
+  assert.match(inherited, /Carried over from an earlier gameweek\./);
+
+  const defaulted = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup({ source: "default" }),
+    playerPool: [],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "",
+  });
+  assert.match(defaulted, /Auto-picked XI: set your own\./);
+
+  const set = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup({ source: "set" }),
+    playerPool: [],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "",
+  });
+  assert.doesNotMatch(set, /Carried over/);
+  assert.doesNotMatch(set, /Auto-picked/);
+});
+
+test("renderFantasyRosterPanel dims illegal swap targets and marks the pending tile while editing", () => {
+  // Bench player 13 (DEF) is pending; the sole GK starter (1) is the only
+  // illegal target (benching it would drop GK below its minimum of 1), so it
+  // alone should render dimmed. A same-group bench tile (14) is never dimmed.
+  const editState = { starters: ROSTER_STARTERS, captainId: 10, bench: ROSTER_BENCH, pendingId: 13, saving: false, error: "" };
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup(),
+    playerPool: [],
+    picks: [],
+    editState,
+    drawerPlayerId: null,
+    lineupError: "",
+  });
+
+  assert.match(tileClasses(html, 1), /is-dimmed/);
+  assert.doesNotMatch(tileClasses(html, 6), /is-dimmed/);
+  assert.match(tileClasses(html, 13), /is-pending/);
+  assert.doesNotMatch(tileClasses(html, 14), /is-pending|is-dimmed/);
+});
+
+test("renderFantasyRosterPanel shows Save/Cancel and a captain affordance on the pending starter while editing", () => {
+  const editState = { starters: ROSTER_STARTERS, captainId: 10, bench: ROSTER_BENCH, pendingId: 2, saving: false, error: "" };
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup(),
+    playerPool: [],
+    picks: [],
+    editState,
+    drawerPlayerId: null,
+    lineupError: "",
+  });
+  assert.match(html, /data-fantasy-lineup-save/);
+  assert.match(html, /data-fantasy-lineup-cancel/);
+  assert.match(html, /data-fantasy-make-captain="2"/);
+  assert.doesNotMatch(html, /data-fantasy-lineup-edit>/);
+});
+
+test("renderFantasyRosterPanel surfaces an edit error in the shared form-error style", () => {
+  const editState = { starters: ROSTER_STARTERS, captainId: 10, bench: ROSTER_BENCH, pendingId: null, saving: false, error: "DEF count 2 outside 3-5" };
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup(),
+    playerPool: [],
+    picks: [],
+    editState,
+    drawerPlayerId: null,
+    lineupError: "",
+  });
+  assert.match(html, /fantasy-form__error/);
+  assert.match(html, /DEF count 2 outside 3-5/);
+});
+
+test("renderFantasyRosterPanel's player drawer shows the draft pick and real stats when they exist", () => {
+  const picks = [
+    { round: 1, pickInRound: 1, overallPick: 1, userId: 1, player: { id: 10, name: "Forward One", team: "Test FC", position: "FWD" } },
+  ];
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup(),
+    playerPool: [{ id: 10, name: "Forward One", team: "Test FC", position: "FWD", xp: 8.4 }],
+    picks,
+    editState: null,
+    drawerPlayerId: 10,
+    lineupError: "",
+  });
+  assert.match(html, /Pick 1\.01/);
+  assert.match(html, /Forward One/);
+  assert.doesNotMatch(html, /data-fantasy-player-drawer hidden/);
+});
+
+test("renderFantasyRosterPanel's player drawer shows a calm note when a player has no stats yet", () => {
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup(),
+    playerPool: [],
+    picks: [],
+    editState: null,
+    drawerPlayerId: 2,
+    lineupError: "",
+  });
+  assert.match(html, /More stats coming with live player data\./);
+});
+
+test("renderFantasyRosterPanel's player drawer is hidden when no player id is given", () => {
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup(),
+    playerPool: [],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "",
+  });
+  assert.match(html, /data-fantasy-player-drawer hidden/);
+});
+
+test("renderFantasyRosterPanel shows a loading note before the lineup has loaded, or the error state on failure", () => {
+  const loading = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: null,
+    playerPool: [],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "",
+  });
+  assert.match(loading, /Loading your lineup/);
+
+  const failed = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: null,
+    playerPool: [],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "Couldn't load your lineup.",
+  });
+  assert.match(failed, /fantasy-form__error/);
+  assert.match(failed, /Couldn't load your lineup\./);
+  assert.match(failed, /data-fantasy-lineup-retry/);
 });

@@ -9,11 +9,13 @@ import {
   formatOrdinal,
   formatPickNumber,
   formSparklineBars,
+  legalSwapTargets,
   normalizePlayerStats,
   reduceDraftMessage,
   squadBucketCounts,
   suggestedPick,
   suggestedPickReason,
+  swapLineup,
 } from "../src/fantasyDraft.js";
 
 test("formatCountdown renders mm:ss and rounds up to the next full second", () => {
@@ -359,4 +361,113 @@ test("suggestedPickReason cites the real xP figure instead of pool order when th
 
 test("suggestedPickReason returns an empty string for a null player", () => {
   assert.equal(suggestedPickReason(null, []), "");
+});
+
+// -- swapLineup / legalSwapTargets (My team pitch editing) --------------------------
+
+// GK1, DEF4, MID4, FWD2 starting (11), plus one bench player per position (4),
+// matching the SQUAD_SLOTS totals a real 15-man roster would have.
+function lineupRoster() {
+  return [
+    player(1, "GK"),
+    player(2, "DEF"),
+    player(3, "DEF"),
+    player(4, "DEF"),
+    player(5, "DEF"),
+    player(6, "MID"),
+    player(7, "MID"),
+    player(8, "MID"),
+    player(9, "MID"),
+    player(10, "FWD"),
+    player(11, "FWD"),
+    player(12, "GK"), // bench
+    player(13, "DEF"), // bench
+    player(14, "MID"), // bench
+    player(15, "FWD"), // bench
+  ];
+}
+
+const STARTERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+const BENCH = [12, 13, 14, 15];
+
+test("swapLineup swaps a bench player in for a starter of the same position", () => {
+  const roster = lineupRoster();
+  const result = swapLineup({ starters: STARTERS, captainId: 10, bench: BENCH, roster }, 2, 13);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.starters, [1, 13, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  assert.deepEqual(result.bench, [12, 2, 14, 15]);
+  assert.equal(result.captainId, 10); // captain untouched by an unrelated swap
+});
+
+test("swapLineup reassigns captaincy to the incoming starter when the captain is benched", () => {
+  const roster = lineupRoster();
+  const result = swapLineup({ starters: STARTERS, captainId: 1, bench: BENCH, roster }, 1, 12);
+  assert.equal(result.ok, true);
+  assert.equal(result.captainId, 12); // GK captain swapped out; the new GK inherits the armband
+});
+
+test("swapLineup rejects swapping two starters (not one starter and one bench player)", () => {
+  const roster = lineupRoster();
+  const result = swapLineup({ starters: STARTERS, captainId: 10, bench: BENCH, roster }, 2, 3);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /one starter and one bench player/);
+});
+
+test("swapLineup rejects swapping two bench players", () => {
+  const roster = lineupRoster();
+  const result = swapLineup({ starters: STARTERS, captainId: 10, bench: BENCH, roster }, 12, 13);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /one starter and one bench player/);
+});
+
+test("swapLineup rejects a swap that would push a position outside its legal range", () => {
+  // DEF is already at its floor of 3 in this fixture; bringing in a MID bench
+  // player for one of them would drop DEF to 2.
+  const roster = [
+    player(1, "GK"),
+    player(2, "DEF"),
+    player(3, "DEF"),
+    player(4, "DEF"),
+    player(5, "MID"),
+    player(6, "MID"),
+    player(7, "MID"),
+    player(8, "MID"),
+    player(9, "MID"),
+    player(10, "FWD"),
+    player(11, "FWD"),
+    player(12, "MID"), // bench
+  ];
+  const starters = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  const result = swapLineup({ starters, captainId: 10, bench: [12], roster }, 2, 12);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /DEF/);
+});
+
+test("swapLineup rejects an unknown player id", () => {
+  const roster = lineupRoster();
+  const result = swapLineup({ starters: STARTERS, captainId: 10, bench: BENCH, roster }, 2, 999);
+  assert.equal(result.ok, false);
+});
+
+test("legalSwapTargets returns an empty set with no pending selection", () => {
+  const roster = lineupRoster();
+  const targets = legalSwapTargets({ starters: STARTERS, captainId: 10, bench: BENCH, roster }, null);
+  assert.equal(targets.size, 0);
+});
+
+test("legalSwapTargets excludes the one starter whose position would drop below its minimum", () => {
+  const roster = lineupRoster();
+  // Bench player 13 is DEF; swapping it in for anyone except the sole GK
+  // starter keeps every position within its legal range (DEF can rise to 5,
+  // MID/FWD can fall by one and stay at or above their minimums) - only
+  // benching the GK (dropping GK to 0) is illegal.
+  const targets = legalSwapTargets({ starters: STARTERS, captainId: 10, bench: BENCH, roster }, 13);
+  assert.equal(targets.has(1), false);
+  for (const id of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]) assert.equal(targets.has(id), true, `expected ${id} to be a legal target`);
+});
+
+test("legalSwapTargets is empty for a pending id not on either side of the lineup", () => {
+  const roster = lineupRoster();
+  const targets = legalSwapTargets({ starters: STARTERS, captainId: 10, bench: BENCH, roster }, 999);
+  assert.equal(targets.size, 0);
 });

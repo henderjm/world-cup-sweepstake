@@ -66,6 +66,28 @@ export async function startDraft(id) {
   return (await api(`/fantasy/league/${id}/draft/start`, { method: "POST" })).league;
 }
 
+// GET the effective starting XI for the current gameweek: { gameweek, source:
+// "set" | "inherited" | "default", starters: [{ playerId, isCaptain }], bench:
+// [playerId] }. Member-only (401/403), 404/501 if the league or the fantasy
+// routes themselves don't exist yet - same isFantasyNotDeployed handling as
+// the rest of this module.
+export async function getLineup(leagueId) {
+  return api(`/fantasy/league/${leagueId}/lineup`);
+}
+
+// POSTs a full replacement starting XI + captain for the current (server-
+// derived) gameweek; the Worker always writes to its own idea of "now", never
+// a client-supplied gameweek. Returns the same shape as getLineup with
+// source: "set", or throws with error.status 400 and a plain-English
+// error.message on a validation failure (wrong XI size, illegal formation,
+// captain not among the starters, a player not on the caller's roster).
+export async function setLineup(leagueId, { starters, captainId }) {
+  return api(`/fantasy/league/${leagueId}/lineup`, {
+    method: "POST",
+    body: JSON.stringify({ starters, captainId }),
+  });
+}
+
 // Browsers cannot set an Authorization header on a WebSocket handshake, so the
 // bearer token rides as a query parameter instead (the one exception to
 // Authorization-only auth in this codebase; see worker/worker.js

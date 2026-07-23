@@ -9,6 +9,7 @@ import {
   formatOrdinal,
   formatPickNumber,
   formSparklineBars,
+  legalSwapTargets,
   normalizePlayerStats,
   squadBucketCounts,
   suggestedPick,
@@ -453,6 +454,291 @@ export function renderFantasyMyTeamPanel(picks, myUserId) {
     return `<div class="fantasy-myteam-empty"><p class="note">You haven't drafted anyone yet. Head to the Draft room to make your first pick.</p></div>`;
   }
   return renderMySquad(picks, myUserId, { compact: false });
+}
+
+// -- My team pitch view (draftStatus: complete) ---------------------------------
+//
+// Once a draft is complete a manager's 15-man squad is fixed for the season, so
+// the My team tab stops showing the draft-era "Your squad" pick list (that stays
+// for pending/drafting leagues via renderFantasyMyTeamPanel above) and instead
+// shows this gameweek's starting XI on a pitch, the bench below it, and a Squad
+// xP rail card, wired to GET/POST /fantasy/league/:id/lineup (src/fantasyApi.js)
+// and the swap-legality helpers in fantasyDraft.js. Every renderer here is pure:
+// app.js owns the edit-mode working copy (state.fantasy.lineupEdit) and the
+// open player-drawer id, passed in as plain data.
+
+// Attacker-to-keeper, matching how a real formation reads top-to-bottom on a
+// pitch graphic (mirrors the Squad Goals design export's own pitchRows order).
+const PITCH_ROW_ORDER = ["FWD", "MID", "DEF", "GK"];
+
+// A tile (starter or bench row) dims once a swap is pending and this tile is in
+// the opposite group from the pending selection but would not produce a legal
+// XI if tapped. Tiles in the SAME group as the pending selection (including the
+// pending tile itself) are never dimmed - tapping one just moves the focus,
+// it never attempts an invalid same-group "swap" (see handleFantasyLineupTileClick
+// in app.js).
+function isTileDimmed(playerId, { pending, legalTargets, starterIds }) {
+  if (pending == null || pending === playerId) return false;
+  const pendingIsStarter = starterIds.includes(pending);
+  const tileIsStarter = starterIds.includes(playerId);
+  if (pendingIsStarter === tileIsStarter) return false;
+  return !legalTargets.has(playerId);
+}
+
+function renderPitchTile(player, { isCaptain, isPending, isDimmed, editing }, statsById) {
+  const stats = normalizePlayerStats(statsById.get(player.id) ?? {});
+  const xpText = stats.xp != null ? `xP ${stats.xp.toFixed(1)}` : "xP •";
+  const classes = ["fantasy-pitch__player"];
+  if (isPending) classes.push("is-pending");
+  if (isDimmed) classes.push("is-dimmed");
+  return `
+    <div class="${classes.join(" ")}" data-fantasy-player-id="${player.id}" data-fantasy-slot="starter" role="button" tabindex="0">
+      ${isCaptain ? `<span class="fantasy-pitch__capbadge" aria-label="Captain">C</span>` : ""}
+      <span class="fantasy-pitch__crest">${badgeFor(player.team)}</span>
+      <p class="fantasy-pitch__name">${esc(player.name)}</p>
+      <p class="fantasy-pitch__club">${esc(abbrFor(player.team))}</p>
+      <p class="fantasy-pitch__xp ${stats.xp == null ? "is-empty" : ""}">${xpText}</p>
+      ${editing && isPending ? `<button class="fantasy-pitch__captainbtn" type="button" data-fantasy-make-captain="${player.id}">Make captain</button>` : ""}
+    </div>`;
+}
+
+function renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById }) {
+  const byId = new Map(roster.map((player) => [player.id, player]));
+  const editing = Boolean(editState);
+  const pending = editState?.pendingId ?? null;
+  const legalTargets =
+    editing && pending != null
+      ? legalSwapTargets({ starters: starterIds, captainId, bench: benchIds, roster }, pending)
+      : new Set();
+
+  const rows = PITCH_ROW_ORDER.map((position) => {
+    const players = starterIds.map((id) => byId.get(id)).filter((player) => player && player.position === position);
+    if (!players.length) return "";
+    const tiles = players
+      .map((player) =>
+        renderPitchTile(
+          player,
+          {
+            isCaptain: player.id === captainId,
+            isPending: pending === player.id,
+            isDimmed: isTileDimmed(player.id, { pending, legalTargets, starterIds }),
+            editing,
+          },
+          statsById,
+        ),
+      )
+      .join("");
+    return `<div class="fantasy-pitch__row">${tiles}</div>`;
+  }).join("");
+
+  return `<div class="fantasy-pitch__field">${rows}</div>`;
+}
+
+function renderLineupSourceNote(lineup) {
+  if (!lineup) return "";
+  // The lineup API's "gameweek" field is always the current gameweek, even
+  // when source is "inherited" (see worker/worker.js's handleFantasyLineupGet):
+  // it does not surface which earlier gameweek the carried-over XI was actually
+  // set for. Naming a specific GW number here would be a guess, not a fact, so
+  // this stays honest about *that* a lineup was inherited rather than claiming
+  // to know exactly *when* it was last set.
+  if (lineup.source === "inherited") {
+    return `<p class="note fantasy-lineup-note">Carried over from an earlier gameweek.</p>`;
+  }
+  if (lineup.source === "default") {
+    return `<p class="note fantasy-lineup-note">Auto-picked XI: set your own.</p>`;
+  }
+  return "";
+}
+
+function renderPitchHead(currentGameweek, lineup, editState) {
+  const editing = Boolean(editState);
+  const controls = editing
+    ? `<div class="fantasy-pitch__editcontrols">
+        <button class="seg" type="button" data-fantasy-lineup-cancel ${editState.saving ? "disabled" : ""}>Cancel</button>
+        <button class="btn btn--primary" type="button" data-fantasy-lineup-save ${editState.saving ? "disabled" : ""}>${editState.saving ? "Saving…" : "Save"}</button>
+      </div>`
+    : `<button class="seg" type="button" data-fantasy-lineup-edit>Edit lineup</button>`;
+  return `
+    <div class="fantasy-pitch__head">
+      <div>
+        <p class="fantasy-eyebrow">Gameweek ${currentGameweek ?? "?"}</p>
+        ${renderLineupSourceNote(lineup)}
+      </div>
+      ${controls}
+    </div>
+    ${editState?.error ? `<p class="fantasy-form__error">${esc(editState.error)}</p>` : ""}`;
+}
+
+function renderBenchRow(player, { isPending, isDimmed }, statsById) {
+  const stats = normalizePlayerStats(statsById.get(player.id) ?? {});
+  const xpCell = stats.xp != null ? `<span class="fantasy-bench-row__xp">xP ${stats.xp.toFixed(1)}</span>` : renderStatCell(null);
+  const classes = ["fantasy-bench-row"];
+  if (isPending) classes.push("is-pending");
+  if (isDimmed) classes.push("is-dimmed");
+  return `
+    <div class="${classes.join(" ")}" data-fantasy-player-id="${player.id}" data-fantasy-slot="bench" role="button" tabindex="0">
+      ${badgeFor(player.team)}
+      <span class="fantasy-bench-row__name"><strong>${esc(player.name)}</strong><span class="note--dim">${esc(abbrFor(player.team))}</span></span>
+      <span class="fantasy-pos">${esc(player.position)}</span>
+      ${xpCell}
+    </div>`;
+}
+
+function renderBench({ roster, starterIds, benchIds, captainId, editState, statsById }) {
+  const byId = new Map(roster.map((player) => [player.id, player]));
+  const editing = Boolean(editState);
+  const pending = editState?.pendingId ?? null;
+  const legalTargets =
+    editing && pending != null
+      ? legalSwapTargets({ starters: starterIds, captainId, bench: benchIds, roster }, pending)
+      : new Set();
+
+  const rows = benchIds
+    .map((id) => byId.get(id))
+    .filter(Boolean)
+    .map((player) =>
+      renderBenchRow(
+        player,
+        {
+          isPending: pending === player.id,
+          isDimmed: isTileDimmed(player.id, { pending, legalTargets, starterIds }),
+        },
+        statsById,
+      ),
+    )
+    .join("");
+
+  return `
+    <section class="card fantasy-bench">
+      <h3 class="card__title">Bench</h3>
+      <div class="fantasy-bench__rows">${rows || `<p class="note">No bench players.</p>`}</div>
+    </section>`;
+}
+
+// Squad xP: one horizontal bar row per starter (name, a bar scaled to this
+// squad's own highest real xP, and the number), using only the real xp field
+// from normalizePlayerStats - never a fabricated figure. The explainer
+// sentence only appears once at least one starter actually has a real xp
+// value; otherwise a single honest placeholder line replaces it so the card
+// never implies a projection model is running when the pool has no stats yet.
+function renderSquadXp({ roster, starterIds, statsById }) {
+  const byId = new Map(roster.map((player) => [player.id, player]));
+  const entries = starterIds
+    .map((id) => byId.get(id))
+    .filter(Boolean)
+    .map((player) => ({ player, xp: normalizePlayerStats(statsById.get(player.id) ?? {}).xp }));
+  const maxXp = Math.max(0.0001, ...entries.map((entry) => entry.xp ?? 0));
+  const hasAny = entries.some((entry) => entry.xp != null);
+
+  const rows = entries
+    .map(({ player, xp }) => {
+      const width = xp != null ? `${Math.max(4, Math.round((xp / maxXp) * 100))}%` : "0%";
+      const value = xp != null ? `<span class="fantasy-squadxp__value">${xp.toFixed(1)}</span>` : `<span class="fantasy-squadxp__value fantasy-stat--empty">•</span>`;
+      return `
+        <div class="fantasy-squadxp__row">
+          <span class="fantasy-squadxp__name">${esc(player.name)}</span>
+          <span class="fantasy-squadxp__bar"><span style="width:${width};"></span></span>
+          ${value}
+        </div>`;
+    })
+    .join("");
+
+  return `
+    <section class="card fantasy-squadxp-card">
+      <h3 class="fantasy-eyebrow">${SPARKLE_ICON} Squad xP</h3>
+      <div class="fantasy-squadxp">${rows || `<p class="note">No starters yet.</p>`}</div>
+      <p class="note--dim" style="margin-top:8px;">${
+        hasAny ? "Expected points from last-5 form, minutes and fixture difficulty." : "xP arrives with player stats."
+      }</p>
+    </section>`;
+}
+
+// Player stats drawer: a simplified match-drawer-style right slide-in (same .dz
+// shell as matchDetail.js) with crest, name, club, position, draft pick (from
+// the picks log, when this manager's own pick - other members' picks are also
+// in `picks` but a player is only ever on one roster) and whichever of
+// avg/form/xp/adp exist. Always rendered (hidden when no player is open) so
+// app.js can toggle it by re-rendering the panel rather than managing a second
+// piece of imperative DOM state.
+function renderPlayerDrawer(player, { picks, statsById }) {
+  if (!player) return `<div class="dz fantasy-player-drawer" data-fantasy-player-drawer hidden></div>`;
+
+  const pick = (picks ?? []).find((entry) => entry.player?.id === player.id);
+  const pickLabel = pick ? formatPickNumber(pick.round, pick.pickInRound) : null;
+  const stats = normalizePlayerStats(statsById.get(player.id) ?? {});
+  const hasStats = stats.avg != null || stats.form != null || stats.xp != null || stats.adp != null;
+
+  const statRows = hasStats
+    ? `<div class="fantasy-drawer__stats">
+        <div class="fantasy-drawer__stat"><span class="note--dim">Avg</span>${renderStatCell(stats.avg, 1)}</div>
+        <div class="fantasy-drawer__stat"><span class="note--dim">Form</span>${renderFormSparkline(stats.form)}</div>
+        <div class="fantasy-drawer__stat"><span class="note--dim">xP</span>${renderStatCell(stats.xp, 1)}</div>
+        <div class="fantasy-drawer__stat"><span class="note--dim">ADP</span>${renderStatCell(stats.adp, 0)}</div>
+      </div>`
+    : `<p class="note">More stats coming with live player data.</p>`;
+
+  return `
+    <div class="dz fantasy-player-drawer" data-fantasy-player-drawer>
+      <div class="dz__scrim" data-fantasy-player-drawer-close></div>
+      <div class="dz__panel">
+        <div class="dz__bar">
+          <span class="dz__tag">Player</span>
+          <button class="dz__close" type="button" data-fantasy-player-drawer-close aria-label="Close">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+          </button>
+        </div>
+        <div class="fantasy-drawer__head">
+          ${badgeFor(player.team, "xl")}
+          <p class="fantasy-drawer__name">${esc(player.name)}</p>
+          <p class="note">${esc(player.team)} · ${esc(player.position)}</p>
+          ${pickLabel ? `<span class="chip">Pick ${esc(pickLabel)}</span>` : ""}
+        </div>
+        <h4>Stats</h4>
+        ${statRows}
+      </div>
+    </div>`;
+}
+
+// Top-level My team body for a completed-draft league: pitch + bench in the
+// main column, Squad xP in the rail (CSS reflows the rail below on mobile, see
+// .fantasy-myteam-grid in styles.css), plus the (usually hidden) player drawer.
+// `lineup` is the last loaded/saved GET response; `editState` is the working
+// copy while editing (state.fantasy.lineupEdit in app.js) or null when not
+// editing - every id array/captainId this function reads comes from editState
+// when present, else straight off `lineup`, so there is exactly one source of
+// truth for "what the pitch currently shows" at any given moment.
+export function renderFantasyRosterPanel({ currentGameweek, roster, lineup, playerPool, picks, editState, drawerPlayerId, lineupError }) {
+  if (!lineup) {
+    return lineupError
+      ? `<div class="card"><p class="fantasy-form__error">${esc(lineupError)}</p><button class="seg" type="button" data-fantasy-lineup-retry>Retry</button></div>`
+      : `<p class="note">Loading your lineup…</p>`;
+  }
+
+  const statsById = new Map((playerPool ?? []).map((player) => [player.id, player]));
+  const starterIds = editState ? editState.starters : lineup.starters.map((entry) => entry.playerId);
+  const captainId = editState ? editState.captainId : (lineup.starters.find((entry) => entry.isCaptain)?.playerId ?? null);
+  const benchIds = editState ? editState.bench : lineup.bench;
+
+  const pitchCard = `
+    <section class="card fantasy-pitch">
+      ${renderPitchHead(currentGameweek, lineup, editState)}
+      ${renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById })}
+    </section>`;
+
+  const drawerPlayer = drawerPlayerId != null ? (roster ?? []).find((player) => player.id === drawerPlayerId) ?? null : null;
+
+  return `
+    <div class="fantasy-myteam-grid">
+      <div class="fantasy-myteam-grid__main">
+        ${pitchCard}
+        ${renderBench({ roster, starterIds, benchIds, captainId, editState, statsById })}
+      </div>
+      <div class="fantasy-myteam-grid__rail">
+        ${renderSquadXp({ roster, starterIds, statsById })}
+      </div>
+    </div>
+    ${renderPlayerDrawer(drawerPlayer, { picks, statsById })}`;
 }
 
 const POSITION_FILTERS = ["All", "GK", "DEF", "MID", "FWD"];

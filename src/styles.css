@@ -36,6 +36,10 @@
   --fantasy-soft: rgb(167 139 250 / 0.14);
   --fantasy-line: rgb(167 139 250 / 0.5);
   --fantasy-row-tint: rgb(167 139 250 / 0.08);
+  /* Pitch tint for the My team gameweek pitch (Squad Goals design export's
+     #0D1A12), a dark green distinct from both the navy background and the
+     purple fantasy accent, used nowhere else. */
+  --fantasy-pitch-bg: #0d1a12;
   --radius: 14px;
   --radius-sm: 10px;
   --shadow: 0 18px 50px rgb(0 0 0 / 0.45);
@@ -1774,3 +1778,126 @@ button { font-family: inherit; cursor: pointer; }
 
 .fantasy-rosters { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
 .fantasy-roster-card .fantasy-squad-rows { max-height: none; }
+
+/* My team pitch view (draftStatus: complete) --------------------------------- */
+
+.fantasy-myteam-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 900px) {
+  .fantasy-myteam-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.fantasy-myteam-grid__main,
+.fantasy-myteam-grid__rail { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+.fantasy-pitch__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.fantasy-lineup-note { margin-top: 2px; }
+.fantasy-pitch__editcontrols { display: flex; gap: 8px; flex: none; }
+
+.fantasy-pitch__field {
+  background: var(--fantasy-pitch-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 4px;
+  background-image:
+    radial-gradient(circle at 50% 50%, transparent 55px, rgb(255 255 255 / 0.06) 56px, transparent 57px),
+    linear-gradient(rgb(255 255 255 / 0.06), rgb(255 255 255 / 0.06));
+  background-size: 100% 100%, 100% 1px;
+  background-position: 0 0, 0 50%;
+  background-repeat: no-repeat;
+}
+.fantasy-pitch__row { display: flex; justify-content: space-evenly; flex-wrap: wrap; gap: 4px; margin: 10px 0; }
+
+.fantasy-pitch__player {
+  flex: 0 1 84px;
+  width: 84px;
+  min-width: 60px;
+  text-align: center;
+  position: relative;
+  background: none;
+  border: none;
+  border-radius: 10px;
+  padding: 4px 2px;
+  color: inherit;
+  font-family: inherit;
+}
+.fantasy-pitch__player:hover,
+.fantasy-pitch__player:focus-visible { background: rgb(255 255 255 / 0.05); outline: none; }
+.fantasy-pitch__player.is-pending { background: var(--fantasy-soft); box-shadow: inset 0 0 0 1px var(--fantasy-line); }
+.fantasy-pitch__player.is-dimmed { opacity: 0.35; }
+.fantasy-pitch__crest { display: flex; justify-content: center; }
+.fantasy-pitch__crest .tb { width: 32px; height: 32px; font-size: 10px; }
+.fantasy-pitch__capbadge {
+  position: absolute;
+  top: 0;
+  right: 12px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 9px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fantasy-pitch__name { margin: 6px 0 0; font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fantasy-pitch__club { margin: 1px 0 0; font-size: 10px; color: var(--muted); }
+.fantasy-pitch__xp { margin: 2px 0 0; font-size: 9.5px; font-weight: 800; color: var(--fantasy-accent); white-space: nowrap; }
+.fantasy-pitch__xp.is-empty { color: var(--faint); font-weight: 600; }
+.fantasy-pitch__captainbtn {
+  display: block;
+  margin: 5px auto 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--fantasy-line);
+  background: var(--fantasy-soft);
+  color: var(--fantasy-accent);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.fantasy-bench__rows { display: flex; flex-direction: column; gap: 2px; }
+.fantasy-bench-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 4px;
+  border-top: 1px solid rgb(255 255 255 / 0.05);
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  background: none;
+  border-radius: 6px;
+  text-align: left;
+  color: inherit;
+  font-family: inherit;
+}
+.fantasy-bench-row:first-child { border-top: none; }
+.fantasy-bench-row:hover,
+.fantasy-bench-row:focus-visible { background: rgb(255 255 255 / 0.04); outline: none; }
+.fantasy-bench-row.is-pending { background: var(--fantasy-soft); }
+.fantasy-bench-row.is-dimmed { opacity: 0.35; }
+.fantasy-bench-row__name { display: flex; flex-direction: column; min-width: 0; }
+.fantasy-bench-row__name strong { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fantasy-bench-row__xp { font-size: 11px; font-weight: 800; color: var(--fantasy-accent); white-space: nowrap; }
+
+.fantasy-squadxp-card .fantasy-eyebrow { display: flex; align-items: center; gap: 6px; }
+.fantasy-squadxp { display: flex; flex-direction: column; gap: 9px; margin-top: 8px; }
+.fantasy-squadxp__row { display: grid; grid-template-columns: minmax(0, 1fr) 70px 34px; gap: 8px; align-items: center; }
+.fantasy-squadxp__name { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fantasy-squadxp__bar { height: 5px; border-radius: 3px; background: rgb(255 255 255 / 0.08); overflow: hidden; }
+.fantasy-squadxp__bar span { display: block; height: 100%; border-radius: 3px; background: var(--fantasy-accent); }
+.fantasy-squadxp__value { text-align: right; font-size: 12px; font-weight: 900; color: var(--fantasy-accent); font-variant-numeric: tabular-nums; }
+.fantasy-squadxp__value.fantasy-stat--empty { color: var(--faint); }
+
+/* Player stats drawer: reuses the .dz match-drawer shell (styles.css's Match
+   drawer section) so the two feel like the same interaction. */
+.fantasy-drawer__head { text-align: center; padding: 4px 0 16px; border-bottom: 1px solid rgb(255 255 255 / 0.06); margin-bottom: 14px; }
+.fantasy-drawer__head .tb--xl { margin: 0 auto; }
+.fantasy-drawer__head .chip { margin-top: 10px; }
+.fantasy-drawer__name { margin: 10px 0 2px; font-size: 16px; font-weight: 900; }
+.fantasy-drawer__stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 8px; }
+.fantasy-drawer__stat { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 10px; background: var(--surface-2); }
+.fantasy-drawer__stat .note--dim { text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; }

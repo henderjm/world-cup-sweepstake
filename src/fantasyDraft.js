@@ -13,6 +13,7 @@
 import { autoPick, resolvePick, snakePickOrder, validatePick } from "./draftLogic.js";
 import { SQUAD_SLOTS } from "./fantasy.js";
 import { draftSocketUrl } from "./fantasyApi.js";
+import { validateLineupSelection } from "./fantasyLineups.js";
 
 // -- Pure logic ----------------------------------------------------------------
 
@@ -237,6 +238,71 @@ export function reduceDraftMessage(roomState, message) {
     default:
       return roomState;
   }
+}
+
+// -- Starting-lineup edit helpers (My Team pitch editing) -----------------------
+//
+// A lineup edit's working copy is { starters: number[11], captainId, bench:
+// number[4] } - the same shape the lineup API round-trips (see
+// src/fantasyApi.js's getLineup/setLineup), kept client-side while a manager
+// swaps players between the pitch and the bench before saving. Swapping one
+// starter for one bench player is the only mutation the pitch view offers
+// (there is no legal reason to "swap" two starters or two bench players - the
+// set is unordered, so that would be a silent no-op); anything else is
+// rejected with a plain-English error rather than quietly doing nothing.
+
+// Swaps aId and bId between the starters/bench working copy, re-validating the
+// whole resulting XI (not just position counts in isolation) via
+// fantasyLineups.js's validateLineupSelection - the same rule the Worker
+// enforces on save, reused rather than re-implemented so the UI never allows a
+// swap the server would then reject. If the outgoing captain is the player
+// being benched, captaincy defaults to the new starting XI's first player (the
+// same "first starter chosen" default fantasyLineups.js's defaultLineup uses)
+// so a swap can never leave a save with no legal captain; the manager can
+// always pick someone else afterwards via "Make captain".
+export function swapLineup({ starters, captainId, bench, roster }, aId, bId) {
+  const startersList = starters ?? [];
+  const benchList = bench ?? [];
+  if (aId == null || bId == null || aId === bId) {
+    return { ok: false, error: "pick one starter and one bench player to swap" };
+  }
+  const aIsStarter = startersList.includes(aId);
+  const bIsStarter = startersList.includes(bId);
+  if (aIsStarter === bIsStarter) {
+    return { ok: false, error: "pick one starter and one bench player to swap" };
+  }
+
+  const nextStarters = startersList.map((id) => (id === aId ? bId : id === bId ? aId : id));
+  const nextBench = benchList.map((id) => (id === aId ? bId : id === bId ? aId : id));
+  const nextCaptainId = nextStarters.includes(captainId) ? captainId : nextStarters[0];
+
+  const validation = validateLineupSelection({ starters: nextStarters, captainId: nextCaptainId, roster });
+  if (!validation.ok) return { ok: false, error: validation.error };
+
+  return { ok: true, starters: nextStarters, bench: nextBench, captainId: nextCaptainId };
+}
+
+// Which ids in the opposite group are legal to swap with `pendingId` right
+// now - drives which bench/starter tiles the pitch view dims while a manager
+// has one player selected mid-swap. Walks the exact same swapLineup path
+// rather than re-deriving the position-count rule, so a tile is only ever
+// shown as legal if tapping it would actually succeed. Returns an empty Set
+// when nothing is selected.
+export function legalSwapTargets({ starters, captainId, bench, roster }, pendingId) {
+  const legal = new Set();
+  if (pendingId == null) return legal;
+  const startersList = starters ?? [];
+  const benchList = bench ?? [];
+  const isStarter = startersList.includes(pendingId);
+  const isBench = benchList.includes(pendingId);
+  if (!isStarter && !isBench) return legal;
+
+  const candidates = isStarter ? benchList : startersList;
+  for (const candidateId of candidates) {
+    const result = swapLineup({ starters: startersList, captainId, bench: benchList, roster }, pendingId, candidateId);
+    if (result.ok) legal.add(candidateId);
+  }
+  return legal;
 }
 
 // -- Stateful WebSocket loop -----------------------------------------------------
