@@ -42,6 +42,27 @@ import {
 } from "./paperRunApi.js";
 import { renderPaperRunPanel, updatePaperRunHud } from "./paperRunView.js";
 import { mountPaperRunGame } from "./paperRunGame.js";
+import {
+  createLeague as apiCreateLeague,
+  fantasyAvailable,
+  joinLeague as apiJoinLeague,
+  listLeagues as apiListLeagues,
+  loadLeague as apiLoadLeague,
+  loadPlayerPool,
+  startDraft as apiStartDraft,
+} from "./fantasyApi.js";
+import { formatCountdown, openDraftRoom } from "./fantasyDraft.js";
+import {
+  renderFantasyComplete,
+  renderFantasyDraftRoom,
+  renderFantasyEmptyState,
+  renderFantasyError,
+  renderFantasyLeagueList,
+  renderFantasyLobby,
+  renderFantasyNotConfigured,
+  renderFantasyPlayerRows,
+  renderFantasySignedOut,
+} from "./fantasyView.js";
 
 const elements = {
   ticker: document.querySelector("#ticker"),
@@ -57,9 +78,11 @@ const SCORES_TABS = ["live", "tables", "knockout", "fixtures", "stats"];
 const HASH_ALIASES = { goldenboot: "stats", paperrun: "play" };
 const COMPETITION_STORAGE_KEY = "gs-competition";
 
+const NON_SCORES_SECTIONS = ["play", "you", "fantasy"];
+
 const initialHash = HASH_ALIASES[window.location.hash.replace("#", "")] ?? window.location.hash.replace("#", "");
 const state = {
-  section: initialHash === "play" ? "play" : initialHash === "you" ? "you" : "scores",
+  section: NON_SCORES_SECTIONS.includes(initialHash) ? initialHash : "scores",
   tab: SCORES_TABS.includes(initialHash) ? initialHash : "live",
   competition: storedCompetition(),
   fixtureView: "results",
@@ -71,7 +94,28 @@ const state = {
     loading: false,
     mount: null,
   },
+  fantasy: initialFantasyState(),
 };
+
+// Fresh fantasy state: used on boot and whenever a signed-out transition (or a
+// fully-closed league) needs to forget everything the previous session loaded.
+function initialFantasyState() {
+  return {
+    leagues: null,
+    leaguesLoading: false,
+    activeLeagueId: null,
+    league: null, // { league, members, picks, roster } from GET /fantasy/league/:id
+    myUserId: null,
+    playerPool: null,
+    draftRoom: null, // { controller, state, remainingMs } once a socket is open
+    filter: { position: "All", search: "" },
+    createBusy: false,
+    createError: "",
+    joinBusy: false,
+    joinError: "",
+    loadError: "",
+  };
+}
 
 function storedCompetition() {
   try {
@@ -131,6 +175,15 @@ async function start() {
   onAccountChange(() => {
     syncAccountButton();
     if (state.section === "you") renderLayout();
+    if (state.section === "fantasy") {
+      // Signing out mid-draft must drop the socket, not just swap the panel for
+      // the signed-out card underneath it.
+      if (!isSignedIn()) {
+        teardownFantasyDraftRoom();
+        state.fantasy = initialFantasyState();
+      }
+      renderLayout();
+    }
   });
   restoreAccount().then(syncAccountButton);
 
@@ -238,6 +291,13 @@ function renderLayout() {
     return;
   }
   destroyPaperRunMount();
+
+  if (state.section === "fantasy") {
+    elements.layout.className = "layout";
+    renderFantasy();
+    return;
+  }
+  teardownFantasyDraftRoom();
 
   if (state.section === "you") {
     elements.layout.className = "layout";
@@ -380,6 +440,287 @@ function destroyPaperRunMount() {
   if (!state.paperrun.mount) return;
   state.paperrun.mount.destroy();
   state.paperrun.mount = null;
+}
+
+// -- Fantasy section -----------------------------------------------------------
+
+function renderFantasy() {
+  const f = state.fantasy;
+
+  if (!isSignedIn()) {
+    elements.layout.innerHTML = renderFantasySignedOut();
+    return;
+  }
+  if (!fantasyAvailable()) {
+    elements.layout.innerHTML = renderFantasyNotConfigured();
+    return;
+  }
+  if (f.loadError) {
+    elements.layout.innerHTML = renderFantasyError(f.loadError);
+    return;
+  }
+
+  if (f.activeLeagueId == null) {
+    if (!f.leagues) {
+      elements.layout.innerHTML = `<p class="note">Loading your leagues…</p>`;
+      loadFantasyLeagues();
+      return;
+    }
+    elements.layout.innerHTML = f.leagues.length
+      ? renderFantasyLeagueList(f.leagues, fantasyFormState())
+      : renderFantasyEmptyState(fantasyFormState());
+    return;
+  }
+
+  if (!f.league) {
+    elements.layout.innerHTML = `<p class="note">Loading league…</p>`;
+    return; // openFantasyLeague already has the fetch in flight
+  }
+
+  if (f.league.league.draftStatus === "pending") {
+    elements.layout.innerHTML = renderFantasyLobby(f.league.league, f.league.members);
+    return;
+  }
+
+  if (!f.draftRoom?.state) {
+    elements.layout.innerHTML = `<p class="note">Connecting to the draft room…</p>`;
+    return;
+  }
+
+  renderFantasyDraftPanel();
+}
+
+// Rendering the draft room replaces the search input wholesale, which would
+// normally steal focus/caret out from under someone typing; save and restore
+// them across the swap since this path re-renders on every WS message.
+function renderFantasyDraftPanel() {
+  const f = state.fantasy;
+  const wasSearchFocused = document.activeElement?.matches?.("[data-fantasy-search]");
+  const caret = wasSearchFocused ? document.activeElement.selectionStart : null;
+
+  const room = f.draftRoom.state;
+  if (room.status === "complete") {
+    elements.layout.innerHTML = renderFantasyComplete(f.league.league, f.league.members, room.rosters);
+    return;
+  }
+  elements.layout.innerHTML = renderFantasyDraftRoom({
+    league: f.league.league,
+    members: f.league.members,
+    draft: { ...room, remainingMs: f.draftRoom.remainingMs },
+    playerPool: f.playerPool?.players ?? [],
+    filter: f.filter,
+    myUserId: f.myUserId,
+  });
+
+  if (wasSearchFocused) {
+    const input = elements.layout.querySelector("[data-fantasy-search]");
+    if (input) {
+      input.focus();
+      input.setSelectionRange(caret, caret);
+    }
+  }
+}
+
+function fantasyFormState() {
+  const f = state.fantasy;
+  return {
+    createBusy: f.createBusy,
+    createError: f.createError,
+    joinBusy: f.joinBusy,
+    joinError: f.joinError,
+  };
+}
+
+async function loadFantasyLeagues() {
+  const f = state.fantasy;
+  if (f.leaguesLoading) return;
+  f.leaguesLoading = true;
+  try {
+    f.leagues = await apiListLeagues();
+    f.loadError = "";
+  } catch (error) {
+    f.leagues = [];
+    if (error.status !== 401) f.loadError = error.message || "Couldn't load your leagues.";
+  } finally {
+    f.leaguesLoading = false;
+  }
+  if (state.section === "fantasy") renderLayout();
+}
+
+async function createFantasyLeague(name) {
+  const trimmed = String(name ?? "").trim();
+  if (!trimmed || state.fantasy.createBusy) return;
+  state.fantasy.createBusy = true;
+  state.fantasy.createError = "";
+  renderLayout();
+  try {
+    const league = await apiCreateLeague(trimmed);
+    state.fantasy.createBusy = false;
+    state.fantasy.leagues = null; // refetch next list view so isCommissioner etc. is consistent
+    renderLayout();
+    await openFantasyLeague(league.id);
+  } catch (error) {
+    state.fantasy.createBusy = false;
+    state.fantasy.createError = error.message || "Couldn't create the league.";
+    renderLayout();
+  }
+}
+
+async function joinFantasyLeague(code) {
+  const trimmed = String(code ?? "").trim();
+  if (!trimmed || state.fantasy.joinBusy) return;
+  state.fantasy.joinBusy = true;
+  state.fantasy.joinError = "";
+  renderLayout();
+  try {
+    const league = await apiJoinLeague(trimmed);
+    state.fantasy.joinBusy = false;
+    state.fantasy.leagues = null;
+    renderLayout();
+    await openFantasyLeague(league.id);
+  } catch (error) {
+    state.fantasy.joinBusy = false;
+    state.fantasy.joinError = error.message || "Couldn't join that league.";
+    renderLayout();
+  }
+}
+
+async function openFantasyLeague(id) {
+  teardownFantasyDraftRoom();
+  const f = state.fantasy;
+  f.activeLeagueId = id;
+  f.league = null;
+  f.myUserId = null;
+  f.loadError = "";
+  renderLayout();
+  try {
+    const detail = await apiLoadLeague(id);
+    if (f.activeLeagueId !== id) return; // navigated elsewhere mid-flight
+    f.league = detail;
+    f.myUserId = resolveMyFantasyUserId(detail.league, detail.members);
+    if (detail.league.draftStatus !== "pending") {
+      await ensureFantasyPlayerPool();
+      if (f.activeLeagueId === id) mountFantasyDraftRoom(id);
+    }
+  } catch (error) {
+    if (f.activeLeagueId !== id) return;
+    f.loadError = error.message || "Couldn't load this league.";
+  }
+  if (state.section === "fantasy") renderLayout();
+}
+
+// GET /me and the fantasy routes never hand the client its own numeric user id
+// (publicUser() strips it, see worker/worker.js) even though members[]/picks[]/
+// onClockUserId are all keyed by it. The commissioner's id is exposed
+// (league.commissionerUserId), so that resolves for free; anyone else is
+// inferred by matching the signed-in account's display name against
+// members[].name (the same value the Worker derives from the same users row),
+// which is correct as long as no two managers in a league share a display name.
+function resolveMyFantasyUserId(league, members) {
+  if (league.isCommissioner) return league.commissionerUserId;
+  const account = currentAccount();
+  const myName = (account?.user?.name || account?.user?.email?.split("@")[0] || "").trim();
+  if (!myName) return null;
+  return members.find((member) => member.name === myName)?.userId ?? null;
+}
+
+async function ensureFantasyPlayerPool() {
+  if (state.fantasy.playerPool) return;
+  try {
+    state.fantasy.playerPool = await loadPlayerPool();
+  } catch (error) {
+    window.Sentry?.captureException?.(error);
+    state.fantasy.playerPool = { players: [] };
+  }
+}
+
+function mountFantasyDraftRoom(leagueId) {
+  const controller = openDraftRoom(leagueId, {
+    onMessage: (message) => {
+      if (state.fantasy.activeLeagueId !== leagueId) return;
+      applyFantasyDraftMessage(message);
+      if (state.section === "fantasy") renderLayout();
+    },
+    onTick: (remainingMs) => {
+      if (state.fantasy.activeLeagueId !== leagueId || !state.fantasy.draftRoom) return;
+      state.fantasy.draftRoom.remainingMs = remainingMs;
+      updateFantasyClockDisplay(remainingMs);
+    },
+    onSocketError: (error) => {
+      window.Sentry?.captureException?.(error);
+    },
+  });
+  state.fantasy.draftRoom = { controller, state: null, remainingMs: 0 };
+}
+
+function applyFantasyDraftMessage(message) {
+  const room = state.fantasy.draftRoom;
+  if (!room) return;
+  if (message.type === "state") {
+    room.state = message;
+  } else if (message.type === "pick" && room.state) {
+    room.state.picks = [
+      ...room.state.picks,
+      { round: message.round, pickInRound: message.pickInRound, overallPick: message.overallPick, userId: message.userId, player: message.player },
+    ];
+    const rosters = { ...room.state.rosters };
+    rosters[message.userId] = [...(rosters[message.userId] ?? []), message.player];
+    room.state.rosters = rosters;
+    room.state.overallPick = message.overallPick + 1;
+  } else if (message.type === "clock" && room.state) {
+    room.state.onClockUserId = message.onClockUserId;
+    room.state.overallPick = message.overallPick;
+    room.state.round = message.round;
+    room.state.pickInRound = message.pickInRound;
+  } else if (message.type === "complete" && room.state) {
+    room.state.status = "complete";
+  } else if (message.type === "error") {
+    window.Sentry?.captureMessage?.(`fantasy draft error: ${message.error}`);
+  }
+}
+
+function updateFantasyClockDisplay(remainingMs) {
+  const el = elements.layout.querySelector("[data-fantasy-clock]");
+  if (el) el.textContent = formatCountdown(remainingMs);
+}
+
+function refreshFantasyPool() {
+  const list = elements.layout.querySelector("[data-fantasy-pool-list]");
+  const room = state.fantasy.draftRoom?.state;
+  if (!list || !room) return;
+  const myRoster = room.rosters?.[state.fantasy.myUserId] ?? [];
+  const draftedIds = new Set(
+    Object.values(room.rosters ?? {})
+      .flat()
+      .map((player) => player.id),
+  );
+  const isMyTurn = room.onClockUserId != null && room.onClockUserId === state.fantasy.myUserId;
+  list.innerHTML = renderFantasyPlayerRows(state.fantasy.playerPool?.players ?? [], state.fantasy.filter, {
+    isMyTurn,
+    myRoster,
+    draftedIds,
+  });
+}
+
+async function startFantasyDraft(id) {
+  await apiStartDraft(id);
+  await openFantasyLeague(id);
+}
+
+function closeFantasyLeague() {
+  teardownFantasyDraftRoom();
+  const f = state.fantasy;
+  f.activeLeagueId = null;
+  f.league = null;
+  f.myUserId = null;
+  f.leagues = null; // refetch so status/member counts are current
+  f.loadError = "";
+  renderLayout();
+}
+
+function teardownFantasyDraftRoom() {
+  state.fantasy.draftRoom?.controller.close();
+  state.fantasy.draftRoom = null;
 }
 
 // -- Device push controls ---------------------------------------------------------
@@ -570,16 +911,97 @@ function wireLayoutControls() {
       return;
     }
     if (event.target.closest("[data-map-link]")) return;
+    const fantasyCreateButton = event.target.closest("[data-fantasy-create-submit]");
+    if (fantasyCreateButton) {
+      createFantasyLeague(elements.layout.querySelector("[data-fantasy-create-name]")?.value);
+      return;
+    }
+    const fantasyJoinButton = event.target.closest("[data-fantasy-join-submit]");
+    if (fantasyJoinButton) {
+      joinFantasyLeague(elements.layout.querySelector("[data-fantasy-join-code]")?.value);
+      return;
+    }
+    const fantasyLeagueCard = event.target.closest("[data-fantasy-league]");
+    if (fantasyLeagueCard) {
+      openFantasyLeague(Number(fantasyLeagueCard.dataset.fantasyLeague));
+      return;
+    }
+    if (event.target.closest("[data-fantasy-back]")) {
+      closeFantasyLeague();
+      return;
+    }
+    const fantasyCopyButton = event.target.closest("[data-fantasy-copy-invite]");
+    if (fantasyCopyButton) {
+      const code = fantasyCopyButton.dataset.fantasyCopyInvite ?? "";
+      navigator.clipboard
+        ?.writeText(code)
+        .then(() => {
+          fantasyCopyButton.textContent = "Copied";
+          window.setTimeout(() => {
+            fantasyCopyButton.textContent = "Copy";
+          }, 2000);
+        })
+        .catch(() => {});
+      return;
+    }
+    const fantasyStartButton = event.target.closest("[data-fantasy-start-draft]");
+    if (fantasyStartButton && !fantasyStartButton.disabled) {
+      fantasyStartButton.disabled = true;
+      startFantasyDraft(state.fantasy.activeLeagueId).catch((error) => {
+        fantasyStartButton.disabled = false;
+        state.fantasy.loadError = error.message || "Couldn't start the draft.";
+        renderLayout();
+      });
+      return;
+    }
+    const fantasyPositionButton = event.target.closest("[data-fantasy-position-filter]");
+    if (fantasyPositionButton) {
+      state.fantasy.filter.position = fantasyPositionButton.dataset.fantasyPositionFilter;
+      elements.layout.querySelectorAll("[data-fantasy-position-filter]").forEach((button) => {
+        button.classList.toggle("is-active", button === fantasyPositionButton);
+      });
+      refreshFantasyPool();
+      return;
+    }
+    const fantasyDraftButton = event.target.closest("[data-fantasy-draft-player]");
+    if (fantasyDraftButton) {
+      fantasyDraftButton.disabled = true;
+      state.fantasy.draftRoom?.controller.sendPick(Number(fantasyDraftButton.dataset.fantasyDraftPlayer));
+      return;
+    }
+    const fantasyRetryButton = event.target.closest("[data-fantasy-retry]");
+    if (fantasyRetryButton) {
+      state.fantasy.loadError = "";
+      if (state.fantasy.activeLeagueId != null) openFantasyLeague(state.fantasy.activeLeagueId);
+      else loadFantasyLeagues();
+      return;
+    }
     const row = event.target.closest("[data-match-id]");
     if (row) openMatchRow(row);
   });
   elements.layout.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && event.target.closest("[data-fantasy-create-name]")) {
+      event.preventDefault();
+      createFantasyLeague(event.target.value);
+      return;
+    }
+    if (event.key === "Enter" && event.target.closest("[data-fantasy-join-code]")) {
+      event.preventDefault();
+      joinFantasyLeague(event.target.value);
+      return;
+    }
     if (event.key !== "Enter" && event.key !== " ") return;
     const row = event.target.closest("[data-match-id]");
     if (row) {
       event.preventDefault();
       openMatchRow(row);
     }
+  });
+  elements.layout.addEventListener("input", (event) => {
+    const search = event.target.closest("[data-fantasy-search]");
+    if (!search) return;
+    state.fantasy.filter.search = search.value;
+    refreshFantasyPool();
   });
 }
 

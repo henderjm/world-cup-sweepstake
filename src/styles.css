@@ -1381,3 +1381,168 @@ button { font-family: inherit; cursor: pointer; }
     bottom: 10px;
   }
 }
+
+/* Buttons ------------------------------------------------------------------------
+   .btn/.btn--primary were already used by paperRunView.js and banter.js with no
+   base rule behind them (falling through to the bare `button {}` reset); this
+   fills that gap rather than inventing a third button class for Fantasy. */
+
+.btn {
+  padding: 9px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+.btn:hover { border-color: var(--line); }
+.btn[disabled] { opacity: 0.55; cursor: default; }
+
+.btn--primary {
+  border-color: var(--accent-line);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.btn--primary:hover { background: var(--accent-2); }
+
+/* Fantasy H2H draft league -------------------------------------------------------- */
+
+.fantasy { max-width: 960px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+
+.fantasy-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 9px 12px;
+}
+
+.fantasy-forms { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+
+.fantasy-form__row { display: flex; gap: 8px; margin-top: 8px; }
+
+.fantasy-form__error { color: var(--clay); margin-top: 8px; }
+
+.fantasy-leagues { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+
+.fantasy-league-card { text-align: left; display: flex; flex-direction: column; gap: 6px; }
+.fantasy-league-card:hover { border-color: rgb(200 245 66 / 0.55); }
+
+.fantasy-league-card__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fantasy-league-card__head strong { font-size: 15px; }
+
+.fantasy-chip { font-size: 11px; padding: 3px 10px; }
+.fantasy-chip--pending { color: var(--gold); border-color: rgb(245 197 66 / 0.4); background: rgb(245 197 66 / 0.1); }
+.fantasy-chip--drafting { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
+.fantasy-chip--complete { color: var(--muted); }
+
+.fantasy-panel-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+.fantasy-members { display: flex; flex-direction: column; gap: 2px; }
+.fantasy-member-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid rgb(255 255 255 / 0.05); }
+.fantasy-member-row:first-child { border-top: none; }
+.fantasy-member-row__pos { width: 22px; text-align: center; font-size: 12px; color: var(--muted); font-weight: 800; }
+.fantasy-member-row__name { font-size: 13px; font-weight: 700; }
+
+.fantasy-invite__row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.fantasy-invite__code {
+  font-family: monospace;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+}
+
+.fantasy-clock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.fantasy-clock.is-mine { border-color: var(--accent-line); background: var(--accent-soft); }
+.fantasy-clock__who { font-size: 13px; font-weight: 800; }
+.fantasy-clock.is-mine .fantasy-clock__who { color: var(--accent); }
+.fantasy-clock__time { font-size: 20px; font-weight: 900; font-variant-numeric: tabular-nums; }
+
+.fantasy-orderstrip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.fantasy-orderchip {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+}
+.fantasy-orderchip__name { font-size: 12px; font-weight: 700; white-space: nowrap; }
+.fantasy-orderchip__tag { font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; }
+.fantasy-orderchip.is-onclock { border-color: var(--accent-line); background: var(--accent-soft); }
+.fantasy-orderchip.is-onclock .fantasy-orderchip__tag { color: var(--accent); }
+.fantasy-orderchip.is-next { border-color: var(--line); }
+
+.fantasy-draftgrid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
+@media (max-width: 900px) {
+  .fantasy-draftgrid { grid-template-columns: 1fr; }
+}
+
+.fantasy-pool { display: flex; flex-direction: column; gap: 10px; }
+.fantasy-pool__controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.fantasy-pool__controls .fantasy-input { max-width: 240px; }
+.fantasy-pool__list { display: flex; flex-direction: column; gap: 4px; max-height: 560px; overflow-y: auto; }
+
+.fantasy-player-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.fantasy-player-row.is-drafted { opacity: 0.45; }
+.fantasy-player-row__id { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.fantasy-player-row__id strong { font-size: 13px; }
+.fantasy-player-row__action { flex: none; }
+.fantasy-draft-btn { padding: 6px 12px; font-size: 12px; }
+
+.fantasy-myteam { display: flex; flex-direction: column; gap: 10px; }
+.fantasy-squadrows { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.fantasy-squadrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12px;
+}
+.fantasy-squadrow__pos { font-weight: 800; color: var(--muted); }
+.fantasy-squadrow__count { font-weight: 800; }
+.fantasy-squadrow__count.is-full { color: var(--accent); }
+
+.fantasy-squad-players { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+.fantasy-squad-player { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.fantasy-squad-player span:last-child { color: var(--faint); margin-left: auto; }
+
+.fantasy-feed-card { max-height: 420px; overflow-y: auto; }
+.fantasy-feed { display: flex; flex-direction: column; gap: 8px; }
+.fantasy-feed__row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.fantasy-feed__pick { color: var(--faint); font-weight: 800; width: 26px; flex: none; }
+.fantasy-feed__player { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.fantasy-feed__player strong { font-size: 12px; }
+.fantasy-feed__by { color: var(--muted); white-space: nowrap; }
+
+.fantasy-rosters { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.fantasy-roster-card .fantasy-squad-players { max-height: none; }

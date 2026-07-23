@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Squad Goals**: a Svelte/Vite football tracker (FotMob-style live scores, league table, fixtures, player stats) covering the Premier League and the Champions League with a competition switcher, with the other European cups on the roadmap, followed by user sign-up, push notifications and a fantasy draft. Hosted as a static build on GitHub Pages. `src/App.svelte` owns the application shell while the existing plain-JavaScript feature modules remain framework-independent.
 
-The UI implements the "Squad Goals" design (source of record: `docs/design/squad-goals.dc.html`, exported from the Claude Design project): navy `#0A0E14` background, lime `#C8F542` accent, Archivo with italic-uppercase display type, card surfaces `#12181F`. Sections are Scores and Paper Run (Play), with Fantasy and Profile present in the nav as inert "Soon" entries until their phases ship. Design tokens live at the top of `src/styles.css` and keep the pre-reskin custom-property names so carried-over components restyle automatically.
+The UI implements the "Squad Goals" design (source of record: `docs/design/squad-goals.dc.html`, exported from the Claude Design project): navy `#0A0E14` background, lime `#C8F542` accent, Archivo with italic-uppercase display type, card surfaces `#12181F`. Sections are Scores, Fantasy (the H2H draft league) and Paper Run (Play). Design tokens live at the top of `src/styles.css` and keep the pre-reskin custom-property names so carried-over components restyle automatically.
 
 The app began as a World Cup 2026 sweepstake hub; the sweepstake (entrants, pot, prizes, Monte Carlo projection) was removed after the tournament. See `README.md` for hosting/deploy steps.
 
@@ -69,6 +69,9 @@ Upstream polling is a state machine, not the browser cadence. The season schedul
 - `matchDetail.js` match drawer: right slide-in with score header, then AI analysis, timeline (goals/cards/subs merged in match order), line-ups and banter in one scroll; fetches per-match detail on open (Worker `/match/:id` or static `data/<comp>/matches/<id>.json`).
 - `banter.js` shared per-match reactions and messages, D1-backed. Reading is public; posting requires a signed-in session (names come from the account, no client-supplied identity). POST responses are strongly consistent, so the optimistic UI reconciles against them without flicker; an `inflight` counter drops poll responses that would race a pending post.
 - `paperRun*.js` the Paper Run daily mini-game (model, API, view, game loop); rendered as the Play section.
+- `fantasyApi.js` fantasy H2H client: league CRUD/lobby fetch calls reusing `account.js`'s bearer session, the draft-room WebSocket URL (bearer token as a query param, since browsers cannot set a header on a WS upgrade), and the baked `data/PL/players.json` player pool fetch.
+- `fantasyDraft.js` draft-room countdown formatting, legal-pick/squad-bucket derivation (built on `draftLogic.js`), and the stateful WebSocket loop (`openDraftRoom`) that keeps local draft state in sync with `FantasyDraftRoom`, with reconnect backoff and a locally-driven 1-second clock.
+- `fantasyView.js` HTML-string renderers for the Fantasy section: signed-out/not-configured/error states, create/join forms, league list, lobby, the live draft room (clock banner, snake order strip, pick feed, filterable player pool, my-squad panel), and the post-draft roster board.
 - `locations.js` venue → city/map-link fallback; `mapApiFootball.js` provider mapping.
 
 ## Adding a tab or panel control
