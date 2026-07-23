@@ -48,6 +48,9 @@ import {
   sortLeaderboard,
   validateClientResult,
 } from "../src/paperRunModel.js";
+import { MAX_LEAGUE_SIZE } from "../src/fantasy.js";
+
+export { FantasyDraftRoom } from "./draftRoom.js";
 
 const API = "https://v3.football.api-sports.io";
 
@@ -166,6 +169,30 @@ export default {
     }
     if (url.pathname === "/push/test" && request.method === "POST") {
       return handlePushTest(request, env, cors);
+    }
+
+    // Fantasy H2H draft league (Phase 4.2). All routes require a signed-in
+    // session; D1/DRAFT_ROOM absence degrades to 501 like the rest of accounts.
+    if (url.pathname === "/fantasy/leagues" && request.method === "POST") {
+      return handleFantasyLeagueCreate(request, env, cors);
+    }
+    if (url.pathname === "/fantasy/leagues" && request.method === "GET") {
+      return handleFantasyLeagueList(request, env, cors);
+    }
+    if (url.pathname === "/fantasy/leagues/join" && request.method === "POST") {
+      return handleFantasyLeagueJoin(request, env, cors);
+    }
+    const fantasyDraftWsRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/draft\/ws$/);
+    if (fantasyDraftWsRoute && request.method === "GET") {
+      return handleFantasyDraftWs(request, env, Number(fantasyDraftWsRoute[1]), cors);
+    }
+    const fantasyDraftStartRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/draft\/start$/);
+    if (fantasyDraftStartRoute && request.method === "POST") {
+      return handleFantasyDraftStart(request, env, Number(fantasyDraftStartRoute[1]), cors);
+    }
+    const fantasyLeagueDetailRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)$/);
+    if (fantasyLeagueDetailRoute && request.method === "GET") {
+      return handleFantasyLeagueDetail(request, env, Number(fantasyLeagueDetailRoute[1]), cors);
     }
 
     const token = env.API_FOOTBALL_KEY;
@@ -638,7 +665,10 @@ function bearerToken(request) {
 }
 
 async function sessionUser(request, env) {
-  const token = bearerToken(request);
+  return sessionUserForToken(bearerToken(request), env);
+}
+
+async function sessionUserForToken(token, env) {
   if (!token) return null;
   try {
     return await env.DB.prepare(
@@ -651,6 +681,17 @@ async function sessionUser(request, env) {
   } catch {
     return null;
   }
+}
+
+// Browsers' WebSocket constructor cannot set an Authorization header on the
+// handshake request, so the draft-room upgrade route accepts the same bearer
+// session token as a query parameter as a fallback (checked after the header, so
+// any client that *can* send Authorization still gets the normal path).
+async function sessionUserFromWsRequest(request, env) {
+  const headerToken = bearerToken(request);
+  if (headerToken) return sessionUserForToken(headerToken, env);
+  const queryToken = new URL(request.url).searchParams.get("token") ?? "";
+  return /^[A-Za-z0-9_-]{20,128}$/.test(queryToken) ? sessionUserForToken(queryToken, env) : null;
 }
 
 async function userFollows(env, userId) {
@@ -682,6 +723,368 @@ function sessionToken() {
 async function sha256Hex(value) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// -- Fantasy H2H draft league (Phase 4.2) -------------------------------------
+// League CRUD and draft bootstrap live here; the live draft clock itself is the
+// FantasyDraftRoom Durable Object (draftRoom.js), one instance per league. This
+// Worker is the only place a client-supplied token is ever checked for the draft
+// room: handleFantasyDraftWs verifies the session and league membership against
+// D1, then forwards the upgrade to the DO with the verified user id in a header
+// the DO trusts blindly (it never re-parses a token itself).
+
+const FANTASY_NAME_MAX = 60;
+
+async function handleFantasyLeagueCreate(request, env, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "bad body" }, 400, cors);
+  }
+  const name = cleanLabel(body?.name, FANTASY_NAME_MAX);
+  if (!name) return json({ error: "bad name" }, 400, cors);
+
+  try {
+    let leagueId = null;
+    // Invite codes are unique; a collision is astronomically unlikely at 40 bits
+    // of entropy but retried a few times rather than trusted blindly.
+    for (let attempt = 0; attempt < 5 && leagueId == null; attempt++) {
+      try {
+        const result = await env.DB.prepare(
+          `INSERT INTO fantasy_leagues (name, commissioner_user_id, invite_code) VALUES (?1, ?2, ?3)`,
+        )
+          .bind(name, user.id, fantasyInviteCode())
+          .run();
+        leagueId = result.meta.last_row_id;
+      } catch (error) {
+        if (attempt === 4) throw error;
+      }
+    }
+    await env.DB.prepare(`INSERT INTO fantasy_league_members (league_id, user_id) VALUES (?1, ?2)`)
+      .bind(leagueId, user.id)
+      .run();
+    return json({ league: await fantasyLeagueSummary(env, leagueId, { includeInviteCode: true }) }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+async function handleFantasyLeagueJoin(request, env, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "bad body" }, 400, cors);
+  }
+  const code = String(body?.code ?? "").trim().toUpperCase();
+  if (!code) return json({ error: "bad code" }, 400, cors);
+
+  try {
+    const league = await env.DB.prepare(`SELECT id, draft_status FROM fantasy_leagues WHERE invite_code = ?1`)
+      .bind(code)
+      .first();
+    if (!league) return json({ error: "unknown invite code" }, 404, cors);
+    if (league.draft_status !== "pending") return json({ error: "draft already started" }, 400, cors);
+
+    const existing = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(league.id, user.id)
+      .first();
+    if (!existing) {
+      const count = await env.DB.prepare(`SELECT COUNT(*) AS n FROM fantasy_league_members WHERE league_id = ?1`)
+        .bind(league.id)
+        .first();
+      if ((count?.n ?? 0) >= MAX_LEAGUE_SIZE) return json({ error: "league is full" }, 400, cors);
+      await env.DB.prepare(`INSERT INTO fantasy_league_members (league_id, user_id) VALUES (?1, ?2)`)
+        .bind(league.id, user.id)
+        .run();
+    }
+    return json({ league: await fantasyLeagueSummary(env, league.id, { includeInviteCode: true }) }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+async function handleFantasyLeagueList(request, env, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const rows = await env.DB.prepare(
+      `SELECT l.id, l.name, l.draft_status, l.commissioner_user_id,
+              (SELECT COUNT(*) FROM fantasy_league_members m WHERE m.league_id = l.id) AS member_count
+       FROM fantasy_leagues l
+       JOIN fantasy_league_members mine ON mine.league_id = l.id AND mine.user_id = ?1
+       ORDER BY l.created_at DESC`,
+    )
+      .bind(user.id)
+      .all();
+    return json(
+      {
+        leagues: (rows.results ?? []).map((row) => ({
+          id: row.id,
+          name: row.name,
+          draftStatus: row.draft_status,
+          memberCount: row.member_count,
+          isCommissioner: row.commissioner_user_id === user.id,
+        })),
+      },
+      200,
+      cors,
+    );
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const league = await env.DB.prepare(
+      `SELECT id, name, commissioner_user_id, invite_code, draft_status FROM fantasy_leagues WHERE id = ?1`,
+    )
+      .bind(leagueId)
+      .first();
+    if (!league) return json({ error: "unknown league" }, 404, cors);
+
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+
+    const [members, picks, roster] = await Promise.all([
+      env.DB.prepare(
+        `SELECT m.user_id, m.draft_position, u.name, u.email FROM fantasy_league_members m
+         JOIN users u ON u.id = m.user_id
+         WHERE m.league_id = ?1 ORDER BY m.draft_position IS NULL, m.draft_position, m.joined_at`,
+      )
+        .bind(leagueId)
+        .all(),
+      env.DB.prepare(
+        `SELECT p.round, p.pick_in_round, p.overall_pick, p.user_id, p.player_id, pl.name, pl.team, pl.position
+         FROM fantasy_draft_picks p JOIN fantasy_players pl ON pl.id = p.player_id
+         WHERE p.league_id = ?1 ORDER BY p.overall_pick`,
+      )
+        .bind(leagueId)
+        .all(),
+      env.DB.prepare(
+        `SELECT r.player_id, pl.name, pl.team, pl.position FROM fantasy_rosters r
+         JOIN fantasy_players pl ON pl.id = r.player_id
+         WHERE r.league_id = ?1 AND r.user_id = ?2`,
+      )
+        .bind(leagueId, user.id)
+        .all(),
+    ]);
+
+    return json(
+      {
+        league: {
+          id: league.id,
+          name: league.name,
+          draftStatus: league.draft_status,
+          commissionerUserId: league.commissioner_user_id,
+          isCommissioner: league.commissioner_user_id === user.id,
+          inviteCode: league.invite_code,
+        },
+        members: (members.results ?? []).map((row) => ({
+          userId: row.user_id,
+          name: row.name || String(row.email ?? "").split("@")[0] || "Someone",
+          draftPosition: row.draft_position,
+        })),
+        picks: (picks.results ?? []).map((row) => ({
+          round: row.round,
+          pickInRound: row.pick_in_round,
+          overallPick: row.overall_pick,
+          userId: row.user_id,
+          player: { id: row.player_id, name: row.name, team: row.team, position: row.position },
+        })),
+        roster: (roster.results ?? []).map((row) => ({
+          id: row.player_id,
+          name: row.name,
+          team: row.team,
+          position: row.position,
+        })),
+      },
+      200,
+      cors,
+    );
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+async function handleFantasyDraftStart(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  if (!env.DRAFT_ROOM) return json({ error: "draft not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const league = await env.DB.prepare(
+      `SELECT id, commissioner_user_id, draft_status FROM fantasy_leagues WHERE id = ?1`,
+    )
+      .bind(leagueId)
+      .first();
+    if (!league) return json({ error: "unknown league" }, 404, cors);
+    if (league.commissioner_user_id !== user.id) return json({ error: "commissioner only" }, 403, cors);
+    if (league.draft_status !== "pending") return json({ error: "draft already started" }, 400, cors);
+
+    const members = await env.DB.prepare(`SELECT user_id FROM fantasy_league_members WHERE league_id = ?1`)
+      .bind(leagueId)
+      .all();
+    const memberIds = (members.results ?? []).map((row) => row.user_id);
+    if (memberIds.length < 2) return json({ error: "need at least 2 members" }, 400, cors);
+
+    await upsertFantasyPlayerPool(env);
+
+    const order = shuffle(memberIds);
+    await env.DB.batch([
+      ...order.map((userId, index) =>
+        env.DB.prepare(
+          `UPDATE fantasy_league_members SET draft_position = ?1 WHERE league_id = ?2 AND user_id = ?3`,
+        ).bind(index + 1, leagueId, userId),
+      ),
+      env.DB.prepare(`UPDATE fantasy_leagues SET draft_status = 'drafting' WHERE id = ?1`).bind(leagueId),
+    ]);
+
+    // Wake the DO immediately so the first pick clock starts now, rather than
+    // waiting for whichever manager opens the draft room first.
+    try {
+      const id = env.DRAFT_ROOM.idFromName(String(leagueId));
+      await env.DRAFT_ROOM.get(id).fetch("https://draft-room/start", {
+        method: "POST",
+        headers: { "X-Draft-League-Id": String(leagueId) },
+      });
+    } catch {
+      // the DO self-hydrates on the first WebSocket join even if this wake fails
+    }
+
+    return json({ league: await fantasyLeagueSummary(env, leagueId) }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// Forwards a verified WebSocket upgrade to the league's Durable Object. Browsers
+// cannot set an Authorization header on a WebSocket handshake, so this is the one
+// route that also accepts the bearer token as a ?token= query parameter (see
+// sessionUserFromWsRequest); everywhere else in the API keeps Authorization only.
+async function handleFantasyDraftWs(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  if (!env.DRAFT_ROOM) return json({ error: "draft not configured" }, 501, cors);
+
+  const origin = request.headers.get("Origin");
+  if (origin && !ALLOWED_ORIGINS.has(origin)) return json({ error: "origin not allowed" }, 403, cors);
+  if (request.headers.get("Upgrade") !== "websocket") {
+    return json({ error: "expected websocket upgrade" }, 426, cors);
+  }
+
+  const user = await sessionUserFromWsRequest(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+
+  const id = env.DRAFT_ROOM.idFromName(String(leagueId));
+  const stub = env.DRAFT_ROOM.get(id);
+  const forwardUrl = new URL(request.url);
+  forwardUrl.pathname = "/join";
+  // new Request(url, request) is the documented Cloudflare pattern for changing a
+  // WebSocket upgrade request's URL before forwarding it to a Durable Object: it
+  // preserves the runtime's underlying client-socket linkage, which a Request
+  // built from a plain {method, headers} init would lose.
+  const forwarded = new Request(forwardUrl, request);
+  forwarded.headers.set("X-Draft-User-Id", String(user.id));
+  forwarded.headers.set("X-Draft-League-Id", String(leagueId));
+  return stub.fetch(forwarded);
+}
+
+function fantasyInviteCode() {
+  const bytes = new Uint8Array(5); // 40 bits, unguessable, short enough to share
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
+async function fantasyLeagueSummary(env, leagueId, { includeInviteCode = false } = {}) {
+  const league = await env.DB.prepare(
+    `SELECT id, name, draft_status, commissioner_user_id, invite_code FROM fantasy_leagues WHERE id = ?1`,
+  )
+    .bind(leagueId)
+    .first();
+  const count = await env.DB.prepare(`SELECT COUNT(*) AS n FROM fantasy_league_members WHERE league_id = ?1`)
+    .bind(leagueId)
+    .first();
+  const summary = {
+    id: league.id,
+    name: league.name,
+    draftStatus: league.draft_status,
+    memberCount: count?.n ?? 0,
+  };
+  if (includeInviteCode) summary.inviteCode = league.invite_code;
+  return summary;
+}
+
+// Fisher-Yates, used only to pick a random snake draft order; not
+// security-sensitive, but crypto.getRandomValues costs nothing extra here.
+function shuffle(list) {
+  const array = [...list];
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1);
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+// Upserts the baked draftable player pool into fantasy_players so the draft's
+// foreign keys (fantasy_draft_picks.player_id, fantasy_rosters.player_id) hold.
+// Fetched from the same static site origin the frontend and the DO both read,
+// so there is exactly one source for "what a player id means".
+async function upsertFantasyPlayerPool(env) {
+  const origin = env.SITE_ORIGIN ?? "";
+  const response = await fetch(`${origin}/data/PL/players.json`);
+  if (!response.ok) throw new Error(`player pool fetch failed: ${response.status}`);
+  const body = await response.json();
+  const players = (body.players ?? []).filter((player) => player?.id != null);
+  if (!players.length) return;
+
+  // D1 batches are practically bounded; chunk the upsert so a large squad pool
+  // (all 20 PL clubs, ~500-600 players) never risks a single oversized batch.
+  const CHUNK = 100;
+  for (let i = 0; i < players.length; i += CHUNK) {
+    const chunk = players.slice(i, i + CHUNK);
+    await env.DB.batch(
+      chunk.map((player) =>
+        env.DB.prepare(
+          `INSERT INTO fantasy_players (id, name, team, position) VALUES (?1, ?2, ?3, ?4)
+           ON CONFLICT(id) DO UPDATE SET name = ?2, team = ?3, position = ?4, updated_at = datetime('now')`,
+        ).bind(player.id, player.name ?? "", player.team ?? "", player.position ?? "MID"),
+      ),
+    );
+  }
 }
 
 // -- Web Push (Phase 3) --------------------------------------------------------
