@@ -10,6 +10,8 @@ import {
   formatPickNumber,
   formSparklineBars,
   legalSwapTargets,
+  matchupBarWidths,
+  matchupLeadSide,
   normalizePlayerStats,
   squadBucketCounts,
   suggestedPick,
@@ -174,19 +176,17 @@ export function renderFantasyLeagueList(leagues, formState = {}) {
 
 // -- Once inside a league: shared header (eyebrow, title, chips, sub-tabs) ------
 
-// The sub-tab bar's two live tabs. MATCHUP and STANDINGS render alongside them,
-// disabled, with the app's existing "Soon" chip: they are future phases (H2H
-// scoring and the league table need the schedule/scoring pipeline this phase
-// doesn't build). The active tab's label doubles as the view's display title.
-const FANTASY_SUBTAB_LABELS = { myteam: "My team", draftroom: "Draft room" };
+// All four sub-tabs are live as of Phase 4.3 (H2H scoring). The active tab's
+// label doubles as the view's display title (see renderFantasyLeagueHeader).
+const FANTASY_SUBTAB_LABELS = { matchup: "Matchup", myteam: "My team", draftroom: "Draft room", standings: "Standings" };
 
 function renderFantasySubtabs(activeSubTab) {
   return `
     <div class="fantasy-subtabs">
-      <button class="fantasy-subtab" type="button" disabled>Matchup <span class="soon">Soon</span></button>
+      <button class="fantasy-subtab ${activeSubTab === "matchup" ? "is-active" : ""}" type="button" data-fantasy-subtab="matchup">Matchup</button>
       <button class="fantasy-subtab ${activeSubTab === "myteam" ? "is-active" : ""}" type="button" data-fantasy-subtab="myteam">My team</button>
       <button class="fantasy-subtab ${activeSubTab === "draftroom" ? "is-active" : ""}" type="button" data-fantasy-subtab="draftroom">Draft room</button>
-      <button class="fantasy-subtab" type="button" disabled>Standings <span class="soon">Soon</span></button>
+      <button class="fantasy-subtab ${activeSubTab === "standings" ? "is-active" : ""}" type="button" data-fantasy-subtab="standings">Standings</button>
     </div>`;
 }
 
@@ -220,6 +220,128 @@ export function renderFantasyLeagueShell(league, members, activeSubTab, bodyHtml
       ${renderFantasyLeagueHeader(league, members, activeSubTab)}
       <div class="fantasy-panel-body">${bodyHtml}</div>
     </div>`;
+}
+
+// -- Matchup tab (Phase 4.3) -----------------------------------------------------
+
+const MATCHUP_STATUS_LABEL = { scheduled: "Scheduled", live: "Live", final: "Final" };
+
+// Single centerpiece card: gameweek header, a status chip, both managers' names
+// and scores side by side with a lead indicator (highlight + comparison bar),
+// and a clear bye-week / not-yet-started state instead of a bare 0-0. `matchup`
+// is the raw GET /fantasy/league/:id/matchup response (src/fantasyApi.js) or
+// null while the first load for this league is still in flight; `error` is a
+// load failure distinct from "not loaded yet", with its own retry control
+// (mirrors the lineup card's own retry, see renderFantasyRosterPanel).
+export function renderFantasyMatchupPanel(matchup, { error = "" } = {}) {
+  if (!matchup) {
+    return error
+      ? `<div class="card"><p class="fantasy-form__error">${esc(error)}</p><button class="seg" type="button" data-fantasy-matchup-retry>Retry</button></div>`
+      : `<p class="note">Loading your matchup…</p>`;
+  }
+
+  const { gameweek, status, me, opponent } = matchup;
+  const statusLabel = MATCHUP_STATUS_LABEL[status] ?? status;
+
+  if (!opponent) {
+    return `
+      <section class="card fantasy-matchup fantasy-matchup--bye">
+        <p class="fantasy-eyebrow">Gameweek ${esc(gameweek)}</p>
+        <h2 class="fantasy-matchup__bye-title">Bye week</h2>
+        <p class="note">No fixture for you this gameweek. Everyone in the league can't always be paired up evenly, so this round you sit out; you're back in the schedule from next gameweek.</p>
+      </section>`;
+  }
+
+  // A "scheduled" matchup hasn't kicked off, so its 0-0 score would read as a
+  // final result rather than "not started" - show a dim placeholder bullet
+  // instead (the same convention normalizePlayerStats/renderStatCell already
+  // use for "no real number yet") and skip the lead bar entirely.
+  const started = status !== "scheduled";
+  const leader = started ? matchupLeadSide(me.score, opponent.score) : "tied";
+  const widths = started ? matchupBarWidths(me.score, opponent.score) : null;
+
+  return `
+    <section class="card fantasy-matchup">
+      <div class="fantasy-matchup__head">
+        <p class="fantasy-eyebrow">Gameweek ${esc(gameweek)}</p>
+        <span class="chip fantasy-status-chip fantasy-status-chip--${esc(status)}">${esc(statusLabel)}</span>
+      </div>
+      <div class="fantasy-matchup__row">
+        <div class="fantasy-matchup__side ${leader === "me" ? "is-ahead" : ""}">
+          <p class="fantasy-matchup__name">${esc(me.name)}</p>
+          <p class="fantasy-matchup__score">${started ? esc(me.score) : `<span class="fantasy-stat--empty">•</span>`}</p>
+        </div>
+        <span class="fantasy-matchup__vs">vs</span>
+        <div class="fantasy-matchup__side fantasy-matchup__side--opponent ${leader === "opponent" ? "is-ahead" : ""}">
+          <p class="fantasy-matchup__name">${esc(opponent.name)}</p>
+          <p class="fantasy-matchup__score">${started ? esc(opponent.score) : `<span class="fantasy-stat--empty">•</span>`}</p>
+        </div>
+      </div>
+      ${
+        started
+          ? `<div class="fantasy-matchup__bar"><span class="fantasy-matchup__bar-me" style="width:${widths.me}%"></span><span class="fantasy-matchup__bar-opp" style="width:${widths.opponent}%"></span></div>`
+          : `<p class="note fantasy-matchup__pending">Not started yet: scores will fill in once this gameweek's matches kick off.</p>`
+      }
+    </section>`;
+}
+
+// -- Standings tab (Phase 4.3) ----------------------------------------------------
+
+// Full-league table through the last completed gameweek. `standings` is the
+// raw GET /fantasy/league/:id/standings response (src/fantasyApi.js) or null
+// while the first load for this league is still in flight. `myUserId` (already
+// tracked on state.fantasy elsewhere in app.js) highlights the caller's own
+// row. throughGameweek === 0 means no gameweek has completed yet anywhere in
+// the season, not specifically "gameweek 1" (a league could start mid-season),
+// so the empty state stays generic rather than naming a gameweek number.
+export function renderFantasyStandingsPanel(standings, { error = "", myUserId } = {}) {
+  if (!standings) {
+    return error
+      ? `<div class="card"><p class="fantasy-form__error">${esc(error)}</p><button class="seg" type="button" data-fantasy-standings-retry>Retry</button></div>`
+      : `<p class="note">Loading standings…</p>`;
+  }
+
+  const { throughGameweek, standings: rows } = standings;
+
+  if (throughGameweek === 0) {
+    return `
+      <section class="card fantasy-standings-empty">
+        <h3 class="card__title">Standings</h3>
+        <p class="note">Standings appear once your league's first gameweek finishes. Nobody has a completed gameweek yet.</p>
+      </section>`;
+  }
+
+  const body = (rows ?? [])
+    .map((row, index) => {
+      const isMe = myUserId != null && row.userId === myUserId;
+      return `<div class="fantasy-standings-row ${isMe ? "is-me" : ""}">
+          <span class="fantasy-standings-row__rank">${index + 1}</span>
+          <span class="fantasy-standings-row__name">${esc(row.name)}${isMe ? ` <span class="note--dim">(you)</span>` : ""}</span>
+          <span>${esc(row.played)}</span>
+          <span>${esc(row.wins)}</span>
+          <span>${esc(row.draws)}</span>
+          <span>${esc(row.losses)}</span>
+          <span>${esc(row.pointsFor)}</span>
+          <span>${esc(row.pointsAgainst)}</span>
+          <span class="fantasy-standings-row__pts">${esc(row.recordPoints)}</span>
+        </div>`;
+    })
+    .join("");
+
+  return `
+    <section class="card fantasy-standings">
+      <div class="fantasy-standings__head">
+        <h3 class="card__title">Standings</h3>
+        <p class="note">Through gameweek ${esc(throughGameweek)}</p>
+      </div>
+      <div class="fantasy-standings__table">
+        <div class="fantasy-standings__cols">
+          <span>Rank</span><span>Manager</span><span>P</span><span>W</span><span>D</span><span>L</span><span>PF</span><span>PA</span><span>PTS</span>
+        </div>
+        <div class="fantasy-standings__rows">${body}</div>
+      </div>
+      <p class="note--dim fantasy-standings__footnote">PTS is the head-to-head record (win 3, draw 1, loss 0), not football points.</p>
+    </section>`;
 }
 
 // -- Lobby (draftStatus: pending) -----------------------------------------------

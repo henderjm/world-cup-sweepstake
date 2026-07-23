@@ -88,6 +88,25 @@ export async function setLineup(leagueId, { starters, captainId }) {
   });
 }
 
+// GET the caller's current-gameweek head-to-head: { gameweek, status: "scheduled"
+// | "live" | "final", me: { userId, name, score }, opponent: { userId, name,
+// score } | null }. A null opponent is a bye week (round-robin scheduling can
+// produce one for an odd-sized league), not an error. Member-only (401/403),
+// 404/501 if the league or the fantasy routes themselves don't exist yet -
+// same isFantasyNotDeployed handling as the rest of this module.
+export async function loadMatchup(leagueId) {
+  return api(`/fantasy/league/${leagueId}/matchup`);
+}
+
+// GET the league table through the last completed gameweek: { throughGameweek,
+// standings: [{ userId, name, played, wins, draws, losses, pointsFor,
+// pointsAgainst, recordPoints }, ...] }, already sorted by the Worker
+// (recordPoints desc, then pointsFor, then name). throughGameweek is 0 when no
+// gameweek has completed yet - an empty-standings state, not an error.
+export async function loadStandings(leagueId) {
+  return api(`/fantasy/league/${leagueId}/standings`);
+}
+
 // Browsers cannot set an Authorization header on a WebSocket handshake, so the
 // bearer token rides as a query parameter instead (the one exception to
 // Authorization-only auth in this codebase; see worker/worker.js

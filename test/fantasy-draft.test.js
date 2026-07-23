@@ -10,6 +10,8 @@ import {
   formatPickNumber,
   formSparklineBars,
   legalSwapTargets,
+  matchupBarWidths,
+  matchupLeadSide,
   normalizePlayerStats,
   reduceDraftMessage,
   squadBucketCounts,
@@ -470,4 +472,38 @@ test("legalSwapTargets is empty for a pending id not on either side of the lineu
   const roster = lineupRoster();
   const targets = legalSwapTargets({ starters: STARTERS, captainId: 10, bench: BENCH, roster }, 999);
   assert.equal(targets.size, 0);
+});
+
+// -- Matchup tab pure helpers (Phase 4.3) -----------------------------------------
+
+test("matchupLeadSide picks the higher score's side", () => {
+  assert.equal(matchupLeadSide(42, 37), "me");
+  assert.equal(matchupLeadSide(37, 42), "opponent");
+});
+
+test("matchupLeadSide is tied on equal scores, including 0-0", () => {
+  assert.equal(matchupLeadSide(10, 10), "tied");
+  assert.equal(matchupLeadSide(0, 0), "tied");
+});
+
+test("matchupLeadSide treats missing scores as zero", () => {
+  assert.equal(matchupLeadSide(undefined, undefined), "tied");
+  assert.equal(matchupLeadSide(5, undefined), "me");
+});
+
+test("matchupBarWidths splits proportionally to the two scores and always sums to 100", () => {
+  const widths = matchupBarWidths(75, 25);
+  assert.equal(widths.me, 75);
+  assert.equal(widths.opponent, 25);
+  assert.equal(widths.me + widths.opponent, 100);
+});
+
+test("matchupBarWidths splits a scoreless matchup evenly instead of dividing by zero", () => {
+  assert.deepEqual(matchupBarWidths(0, 0), { me: 50, opponent: 50 });
+});
+
+test("matchupBarWidths ignores negative input rather than producing an out-of-range width", () => {
+  const widths = matchupBarWidths(-5, 10);
+  assert.equal(widths.me, 0);
+  assert.equal(widths.opponent, 100);
 });
