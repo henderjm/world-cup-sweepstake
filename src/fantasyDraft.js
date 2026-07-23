@@ -10,7 +10,7 @@
 // Object relies on, so the client must agree with it exactly rather than keep a
 // second copy that could drift.
 
-import { resolvePick, snakePickOrder, validatePick } from "./draftLogic.js";
+import { autoPick, resolvePick, snakePickOrder, validatePick } from "./draftLogic.js";
 import { SQUAD_SLOTS } from "./fantasy.js";
 import { draftSocketUrl } from "./fantasyApi.js";
 
@@ -45,6 +45,38 @@ export function canDraftPlayer(player, { isMyTurn, myRoster, draftedIds, squadSl
   if (!isMyTurn || !player || player.id == null) return false;
   const validation = validatePick({ roster: myRoster, draftedIds: draftedIds ?? new Set(), player, squadSlots });
   return validation.valid;
+}
+
+// "2.08" style pick label (round, then the pick-in-round zero-padded to two
+// digits), used by both the recent-picks feed and the caller's own squad list
+// so a pick's position in the draft order is glanceable without cross-referencing
+// the overall pick count.
+export function formatPickNumber(round, pickInRound) {
+  return `${round}.${String(pickInRound).padStart(2, "0")}`;
+}
+
+// Season label for the draft status card ("2026/27"), derived from today's date
+// rather than any match/league data (the fantasy league itself carries no season
+// field): the same July-cutoff heuristic src/views.js's seasonLabel uses for the
+// scores model, so the two stay consistent without one depending on the other.
+export function currentSeasonLabel(now = new Date()) {
+  const year = now.getFullYear();
+  const start = now.getMonth() >= 6 ? year : year - 1;
+  return `${start}/${String((start + 1) % 100).padStart(2, "0")}`;
+}
+
+// Deterministic "what would you draft right now" heuristic for the suggested-pick
+// card and the pool's SUGGESTED badge: the same autoPick the server falls back to
+// when a manager's clock runs out (src/draftLogic.js), applied to the caller's own
+// roster against the pool with every drafted player (anywhere in the league)
+// removed. Not AI, not a projection: a deterministic scarcest-bucket-first rule,
+// reused rather than re-derived so the suggestion never disagrees with what a
+// timeout would actually pick for you. Returns null once no legal candidate is
+// left (squad complete, or pool exhausted for every open bucket).
+export function suggestedPick(availablePlayers, myRoster, draftedIds, squadSlots = SQUAD_SLOTS) {
+  const drafted = draftedIds ?? new Set();
+  const undrafted = (availablePlayers ?? []).filter((player) => player?.id != null && !drafted.has?.(player.id));
+  return autoPick(undrafted, myRoster ?? [], squadSlots);
 }
 
 // The order strip for the round currently on the clock, each entry flagged

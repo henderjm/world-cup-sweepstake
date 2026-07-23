@@ -52,14 +52,16 @@ import {
   loadPlayerPool,
   startDraft as apiStartDraft,
 } from "./fantasyApi.js";
-import { formatCountdown, openDraftRoom, reduceDraftMessage } from "./fantasyDraft.js";
+import { formatCountdown, openDraftRoom, reduceDraftMessage, suggestedPick } from "./fantasyDraft.js";
 import {
   renderFantasyComplete,
   renderFantasyDraftRoom,
   renderFantasyEmptyState,
   renderFantasyError,
   renderFantasyLeagueList,
+  renderFantasyLeagueShell,
   renderFantasyLobby,
+  renderFantasyMyTeamPanel,
   renderFantasyNotConfigured,
   renderFantasyPlayerRows,
   renderFantasySessionExpired,
@@ -111,7 +113,8 @@ function initialFantasyState() {
     playerPool: null,
     playerPoolLoading: false,
     draftRoom: null, // { controller, state, remainingMs } once a socket is open
-    filter: { position: "All", search: "" },
+    filter: { position: "All", club: "All", search: "" },
+    subTab: "draftroom", // "draftroom" | "myteam"; matchup/standings are disabled Soon tabs
     createBusy: false,
     createError: "",
     joinBusy: false,
@@ -497,16 +500,20 @@ function renderFantasy() {
     return; // openFantasyLeague already has the fetch in flight
   }
 
-  if (f.league.league.draftStatus === "pending") {
+  const { league, members } = f.league;
+  const subTab = f.subTab ?? "draftroom";
+
+  if (league.draftStatus === "pending") {
     // Pre-draft scouting needs the player pool too, loaded lazily the moment
     // the lobby actually renders (mirrors renderPaperRun's "kick off the load
     // if it hasn't started, render what we have now" pattern) rather than
     // blocking the lobby itself behind an extra fetch.
     if (!f.playerPool && !f.playerPoolLoading) loadFantasyPlayerPoolForLobby();
-    elements.layout.innerHTML = renderFantasyLobby(f.league.league, f.league.members, {
-      playerPool: f.playerPool,
-      filter: f.filter,
-    });
+    const body =
+      subTab === "myteam"
+        ? renderFantasyMyTeamPanel([], f.myUserId)
+        : renderFantasyLobby(league, members, { playerPool: f.playerPool, filter: f.filter });
+    elements.layout.innerHTML = renderFantasyLeagueShell(league, members, subTab, body);
     return;
   }
 
@@ -518,27 +525,34 @@ function renderFantasy() {
   renderFantasyDraftPanel();
 }
 
-// Rendering the draft room replaces the search input wholesale, which would
-// normally steal focus/caret out from under someone typing; save and restore
-// them across the swap since this path re-renders on every WS message.
+// Rendering the draft room replaces the search input (and the pool's scroll
+// region) wholesale, which would normally steal focus/caret out from under
+// someone typing and jump the pool back to the top; save and restore both
+// across the swap since this path re-renders on every WS message.
 function renderFantasyDraftPanel() {
   const f = state.fantasy;
   const wasSearchFocused = document.activeElement?.matches?.("[data-fantasy-search]");
   const caret = wasSearchFocused ? document.activeElement.selectionStart : null;
+  const poolScrollTop = elements.layout.querySelector(".fantasy-pool__scroll")?.scrollTop ?? null;
 
   const room = f.draftRoom.state;
-  if (room.status === "complete") {
-    elements.layout.innerHTML = renderFantasyComplete(f.league.league, f.league.members, room.rosters);
-    return;
-  }
-  elements.layout.innerHTML = renderFantasyDraftRoom({
-    league: f.league.league,
-    members: f.league.members,
-    draft: { ...room, remainingMs: f.draftRoom.remainingMs },
-    playerPool: f.playerPool?.players ?? [],
-    filter: f.filter,
-    myUserId: f.myUserId,
-  });
+  const { league, members } = f.league;
+  const subTab = f.subTab ?? "draftroom";
+
+  const body =
+    subTab === "myteam"
+      ? renderFantasyMyTeamPanel(room.picks, f.myUserId)
+      : room.status === "complete"
+        ? renderFantasyComplete(members, room.picks)
+        : renderFantasyDraftRoom({
+            league,
+            members,
+            draft: { ...room, remainingMs: f.draftRoom.remainingMs },
+            playerPool: f.playerPool?.players ?? [],
+            filter: f.filter,
+            myUserId: f.myUserId,
+          });
+  elements.layout.innerHTML = renderFantasyLeagueShell(league, members, subTab, body);
 
   if (wasSearchFocused) {
     const input = elements.layout.querySelector("[data-fantasy-search]");
@@ -546,6 +560,10 @@ function renderFantasyDraftPanel() {
       input.focus();
       input.setSelectionRange(caret, caret);
     }
+  }
+  if (poolScrollTop != null) {
+    const scrollEl = elements.layout.querySelector(".fantasy-pool__scroll");
+    if (scrollEl) scrollEl.scrollTop = poolScrollTop;
   }
 }
 
@@ -638,6 +656,7 @@ async function openFantasyLeague(id) {
   f.myUserId = null;
   f.loadError = "";
   f.notDeployed = false;
+  f.subTab = "draftroom";
   renderLayout();
   try {
     const detail = await apiLoadLeague(id);
@@ -738,7 +757,7 @@ function updateFantasyClockDisplay(remainingMs) {
 // exact same renderer with no Draft buttons.
 function fantasyPoolContext() {
   const room = state.fantasy.draftRoom?.state;
-  if (!room) return { isMyTurn: false, myRoster: [], draftedIds: new Set() };
+  if (!room) return { isMyTurn: false, myRoster: [], draftedIds: new Set(), suggestedId: null };
   const myRoster = room.rosters?.[state.fantasy.myUserId] ?? [];
   const draftedIds = new Set(
     Object.values(room.rosters ?? {})
@@ -746,7 +765,8 @@ function fantasyPoolContext() {
       .map((player) => player.id),
   );
   const isMyTurn = room.onClockUserId != null && room.onClockUserId === state.fantasy.myUserId;
-  return { isMyTurn, myRoster, draftedIds };
+  const suggested = suggestedPick(state.fantasy.playerPool?.players ?? [], myRoster, draftedIds);
+  return { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null };
 }
 
 function refreshFantasyPool() {
@@ -989,6 +1009,12 @@ function wireLayoutControls() {
       closeFantasyLeague();
       return;
     }
+    const fantasySubtabButton = event.target.closest("[data-fantasy-subtab]");
+    if (fantasySubtabButton && !fantasySubtabButton.disabled) {
+      state.fantasy.subTab = fantasySubtabButton.dataset.fantasySubtab;
+      renderLayout();
+      return;
+    }
     const fantasyCopyButton = event.target.closest("[data-fantasy-copy-invite]");
     if (fantasyCopyButton) {
       const code = fantasyCopyButton.dataset.fantasyCopyInvite ?? "";
@@ -1066,6 +1092,12 @@ function wireLayoutControls() {
     const search = event.target.closest("[data-fantasy-search]");
     if (!search) return;
     state.fantasy.filter.search = search.value;
+    refreshFantasyPool();
+  });
+  elements.layout.addEventListener("change", (event) => {
+    const clubSelect = event.target.closest("[data-fantasy-club-filter]");
+    if (!clubSelect) return;
+    state.fantasy.filter.club = clubSelect.value;
     refreshFantasyPool();
   });
 }

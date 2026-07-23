@@ -1,7 +1,15 @@
-import { badgeFor } from "./badges.js";
+import { abbrFor, badgeFor } from "./badges.js";
 import { dateLabel } from "./format.js";
-import { MAX_LEAGUE_SIZE, SQUAD_SIZE, SQUAD_SLOTS } from "./fantasy.js";
-import { canDraftPlayer, draftOrderEntries, formatCountdown, squadBucketCounts } from "./fantasyDraft.js";
+import { MAX_LEAGUE_SIZE } from "./fantasy.js";
+import {
+  canDraftPlayer,
+  currentSeasonLabel,
+  draftOrderEntries,
+  formatCountdown,
+  formatPickNumber,
+  squadBucketCounts,
+  suggestedPick,
+} from "./fantasyDraft.js";
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"]/g, (char) => ({
@@ -135,6 +143,56 @@ export function renderFantasyLeagueList(leagues, formState = {}) {
     </div>`;
 }
 
+// -- Once inside a league: shared header (eyebrow, title, chips, sub-tabs) ------
+
+// The sub-tab bar's two live tabs. MATCHUP and STANDINGS render alongside them,
+// disabled, with the app's existing "Soon" chip: they are future phases (H2H
+// scoring and the league table need the schedule/scoring pipeline this phase
+// doesn't build). The active tab's label doubles as the view's display title.
+const FANTASY_SUBTAB_LABELS = { myteam: "My team", draftroom: "Draft room" };
+
+function renderFantasySubtabs(activeSubTab) {
+  return `
+    <div class="fantasy-subtabs">
+      <button class="fantasy-subtab" type="button" disabled>Matchup <span class="soon">Soon</span></button>
+      <button class="fantasy-subtab ${activeSubTab === "myteam" ? "is-active" : ""}" type="button" data-fantasy-subtab="myteam">My team</button>
+      <button class="fantasy-subtab ${activeSubTab === "draftroom" ? "is-active" : ""}" type="button" data-fantasy-subtab="draftroom">Draft room</button>
+      <button class="fantasy-subtab" type="button" disabled>Standings <span class="soon">Soon</span></button>
+    </div>`;
+}
+
+// League header: purple uppercase eyebrow ("<LEAGUE NAME> · H2H"), a big italic
+// display title tracking whichever sub-tab is active, and a chip row (manager
+// count, draft type). Shared by every in-league state (lobby, live draft,
+// complete, my team) so switching sub-tabs never reflows the page around it.
+export function renderFantasyLeagueHeader(league, members, activeSubTab) {
+  const count = (members ?? []).length;
+  return `
+    <div class="fantasy-panel-head">
+      <button class="seg" type="button" data-fantasy-back>← Leagues</button>
+    </div>
+    <div class="fantasy-league-head">
+      <p class="fantasy-eyebrow">${esc(league.name)} · H2H</p>
+      <h1 class="hero__title">${esc(FANTASY_SUBTAB_LABELS[activeSubTab] ?? "Draft room")}</h1>
+      <div class="hero__meta">
+        <span class="chip">${count} manager${count === 1 ? "" : "s"}</span>
+        <span class="chip">Snake draft</span>
+      </div>
+    </div>
+    ${renderFantasySubtabs(activeSubTab)}`;
+}
+
+// Wraps a sub-tab's body with the shared header inside the standard .fantasy
+// shell, so app.js only needs to pick the right body renderer per (draftStatus,
+// subTab) and never re-implements the header/tabs itself.
+export function renderFantasyLeagueShell(league, members, activeSubTab, bodyHtml) {
+  return `
+    <div class="fantasy fantasy-leaguepanel">
+      ${renderFantasyLeagueHeader(league, members, activeSubTab)}
+      <div class="fantasy-panel-body">${bodyHtml}</div>
+    </div>`;
+}
+
 // -- Lobby (draftStatus: pending) -----------------------------------------------
 
 // Meta line above the scouting list: when squads were last baked, and (per
@@ -149,31 +207,24 @@ function renderPoolMeta(playerPool) {
   return bits.length ? `<p class="note">${bits.join(" · ")}</p>` : "";
 }
 
-// Pre-draft scouting: the same searchable/filterable player list the live
+// Pre-draft scouting: the same searchable/filterable player pool card the live
 // draft room uses, reused as-is with an inert context (isMyTurn: false, no
 // roster, nobody drafted) so canDraftPlayer never lights up a Draft button -
-// read-only rows, not a parallel renderer to keep in sync. The pool is
-// supplementary here, so its own absence (fetch 404, never baked in
-// production) degrades to a quiet note rather than hiding the rest of the
-// lobby or looking like a bug.
+// read-only rows, not a parallel renderer to keep in sync. It therefore also
+// inherits the pool's position pills, club filter, search and sticky header for
+// free. The pool is supplementary here, so its own absence (fetch 404, never
+// baked in production) degrades to a quiet note rather than hiding the rest of
+// the lobby or looking like a bug.
 function renderScoutingSection(playerPool, filter) {
   if (!playerPool) {
-    return `<section class="card">
-        <h3 class="card__title">Scout the player pool</h3>
-        <p class="note">Loading player pool…</p>
-      </section>`;
+    return `<section class="card"><h3 class="card__title">Player pool</h3><p class="note">Loading player pool…</p></section>`;
   }
   if (playerPool.unavailable || !(playerPool.players ?? []).length) {
-    return `<section class="card">
-        <h3 class="card__title">Scout the player pool</h3>
-        <p class="note">Player pool not available yet.</p>
-      </section>`;
+    return `<section class="card"><h3 class="card__title">Player pool</h3><p class="note">Player pool not available yet.</p></section>`;
   }
-  return `<section class="card">
-      <h3 class="card__title">Scout the player pool</h3>
-      ${renderPoolMeta(playerPool)}
-      ${renderFantasyPlayerPool(playerPool.players, filter, { isMyTurn: false, myRoster: [], draftedIds: new Set() })}
-    </section>`;
+  return `
+    ${renderPoolMeta(playerPool)}
+    ${renderFantasyPlayerPool(playerPool.players, filter, { isMyTurn: false, myRoster: [], draftedIds: new Set() })}`;
 }
 
 export function renderFantasyLobby(league, members, { playerPool, filter } = {}) {
@@ -196,41 +247,23 @@ export function renderFantasyLobby(league, members, { playerPool, filter } = {})
     : `<p class="note">Waiting for the commissioner to start the draft.</p>`;
 
   return `
-    <div class="fantasy">
-      <div class="fantasy-panel-head">
-        <button class="seg" type="button" data-fantasy-back>← Leagues</button>
-        <h1 class="hero__title">${esc(league.name)}</h1>
+    <section class="card">
+      <h3 class="card__title">Managers · ${members.length}/${MAX_LEAGUE_SIZE}</h3>
+      <div class="fantasy-members">${rows}</div>
+    </section>
+    <section class="card fantasy-invite">
+      <h3 class="card__title">Invite code</h3>
+      <div class="fantasy-invite__row">
+        <code class="fantasy-invite__code">${esc(league.inviteCode)}</code>
+        <button class="seg" type="button" data-fantasy-copy-invite="${esc(league.inviteCode)}">Copy</button>
       </div>
-      <section class="card">
-        <h3 class="card__title">Managers · ${members.length}/${MAX_LEAGUE_SIZE}</h3>
-        <div class="fantasy-members">${rows}</div>
-      </section>
-      <section class="card fantasy-invite">
-        <h3 class="card__title">Invite code</h3>
-        <div class="fantasy-invite__row">
-          <code class="fantasy-invite__code">${esc(league.inviteCode)}</code>
-          <button class="seg" type="button" data-fantasy-copy-invite="${esc(league.inviteCode)}">Copy</button>
-        </div>
-        <p class="note">Share this code so friends can join before the draft starts.</p>
-      </section>
-      <section class="card fantasy-start">${startControl}</section>
-      ${renderScoutingSection(playerPool, filter ?? { position: "All", search: "" })}
-    </div>`;
+      <p class="note">Share this code so friends can join before the draft starts.</p>
+    </section>
+    <section class="card fantasy-start">${startControl}</section>
+    ${renderScoutingSection(playerPool, filter ?? { position: "All", club: "All", search: "" })}`;
 }
 
 // -- Live draft room (draftStatus: drafting) ------------------------------------
-
-function renderClockBanner(members, onClockUserId, remainingMs, isMyTurn) {
-  // onClockUserId is briefly null between a "pick" and its paired "clock"
-  // message (see reduceDraftMessage in fantasyDraft.js); a neutral label reads
-  // better here than falling back to nameForUser's "Someone".
-  const who = onClockUserId == null ? "Next pick…" : isMyTurn ? "Your pick" : `${esc(nameForUser(onClockUserId, members))} is picking`;
-  return `
-    <div class="fantasy-clock ${isMyTurn ? "is-mine" : ""}">
-      <span class="fantasy-clock__who">${who}</span>
-      <span class="fantasy-clock__time" data-fantasy-clock>${formatCountdown(remainingMs)}</span>
-    </div>`;
-}
 
 // A transient server-pushed {type:"error"} (e.g. a stale/duplicate pick
 // attempt): stashed on draft.lastError by reduceDraftMessage, cleared
@@ -245,18 +278,66 @@ function renderDraftErrorNotice(message) {
     </div>`;
 }
 
-function renderOrderStrip(members, memberIds, round, onClockUserId, overallPick) {
+// "Your pick" / "<name> is picking" / a neutral "Next pick…" for the brief gap
+// between a pick landing and the paired clock message naming the next manager
+// (see reduceDraftMessage in fantasyDraft.js).
+function draftOnClockLabel(members, onClockUserId, isMyTurn) {
+  if (onClockUserId == null) return "Next pick…";
+  if (isMyTurn) return "Your pick";
+  return `${esc(nameForUser(onClockUserId, members))} is picking`;
+}
+
+// Draft status card: "SNAKE DRAFT · <season>" eyebrow, "Round R · Pick N"
+// headline plus the live countdown, and a wrapping chip strip of every manager
+// in draft order with the on-clock manager highlighted purple and the caller
+// marked "(you)". Replaces the old separate clock banner + order strip.
+function renderDraftStatusCard({ members, draft, myUserId, season, isMyTurn }) {
+  const { onClockUserId, remainingMs, round, overallPick, memberIds } = draft;
   const entries = draftOrderEntries(memberIds, round, onClockUserId, overallPick);
-  return `<div class="fantasy-orderstrip">${entries
+  const chips = entries
     .map((entry) => {
-      const cls = entry.isOnClock ? "is-onclock" : entry.isNext ? "is-next" : "";
-      const tag = entry.isOnClock ? "On the clock" : entry.isNext ? "Next" : "";
-      return `<div class="fantasy-orderchip ${cls}">
-          <span class="fantasy-orderchip__name">${esc(nameForUser(entry.userId, members))}</span>
-          ${tag ? `<span class="fantasy-orderchip__tag">${tag}</span>` : ""}
+      const isMe = entry.userId === myUserId;
+      return `<div class="fantasy-orderchip ${entry.isOnClock ? "is-onclock" : ""}">
+          ${esc(nameForUser(entry.userId, members))}${isMe ? ` <span class="fantasy-orderchip__you">(you)</span>` : ""}
         </div>`;
     })
-    .join("")}</div>`;
+    .join("");
+  return `
+    <section class="card fantasy-draftstatus ${isMyTurn ? "is-mine" : ""}">
+      <p class="fantasy-eyebrow">Snake draft · ${esc(season)}</p>
+      <div class="fantasy-draftstatus__head">
+        <div>
+          <h2 class="fantasy-draftstatus__headline">Round ${round} · Pick ${overallPick}</h2>
+          <p class="fantasy-draftstatus__onclock">${draftOnClockLabel(members, onClockUserId, isMyTurn)}</p>
+        </div>
+        <span class="fantasy-draftstatus__clock" data-fantasy-clock>${formatCountdown(remainingMs)}</span>
+      </div>
+      <div class="fantasy-orderstrip">${chips}</div>
+    </section>`;
+}
+
+// Suggested pick: a purple-tinted card naming the player the deterministic
+// autoPick heuristic (src/draftLogic.js, via suggestedPick in fantasyDraft.js)
+// would take for the caller's own roster right now. Not AI, not a projection:
+// the same scarcest-bucket-first rule the server falls back to on a timeout.
+// The Draft button uses the exact same gating as a pool row (my turn, legal
+// pick), so it never offers an action the pool itself would refuse.
+function renderSuggestedPickCard(player, context) {
+  if (!player) return "";
+  const legal = Boolean(context?.isMyTurn) && canDraftPlayer(player, context);
+  const action = legal
+    ? `<button class="btn fantasy-draft-btn" type="button" data-fantasy-draft-player="${player.id}">Draft</button>`
+    : "";
+  return `
+    <section class="card fantasy-suggest">
+      <p class="fantasy-eyebrow">Suggested pick</p>
+      <div class="fantasy-suggest__row">
+        ${badgeFor(player.team)}
+        <span class="fantasy-suggest__name"><strong>${esc(player.name)}</strong><span class="note--dim">${esc(abbrFor(player.team))}</span></span>
+        <span class="fantasy-pos">${esc(player.position)}</span>
+      </div>
+      ${action}
+    </section>`;
 }
 
 function renderPickFeed(picks, members) {
@@ -265,42 +346,69 @@ function renderPickFeed(picks, members) {
   return `<div class="fantasy-feed">${recent
     .map(
       (pick) => `<div class="fantasy-feed__row">
-        <span class="fantasy-feed__pick">#${pick.overallPick}</span>
+        <span class="fantasy-feed__pick">${formatPickNumber(pick.round, pick.pickInRound)}</span>
         ${badgeFor(pick.player.team)}
-        <span class="fantasy-feed__player"><strong>${esc(pick.player.name)}</strong><span class="note--dim">${esc(pick.player.position)} · ${esc(pick.player.team)}</span></span>
+        <span class="fantasy-feed__player"><strong>${esc(pick.player.name)}</strong><span class="note--dim">${esc(pick.player.position)} · ${esc(abbrFor(pick.player.team))}</span></span>
         <span class="fantasy-feed__by">${esc(nameForUser(pick.userId, members))}</span>
       </div>`,
     )
     .join("")}</div>`;
 }
 
-export function renderMySquad(roster) {
+// Your squad: R.PP pick number, player name, club abbreviation, POS chip, plus a
+// compact bucket meter (GK n/2, DEF n/5, MID n/5, FWD n/3) in the card header so
+// legality stays glanceable. Driven from `picks` (not a bare roster array) so the
+// R.PP numbers are always derivable; `compact` controls the sidebar's internal
+// scroll cap versus the My team tab's full-height display of the same card.
+export function renderMySquad(picks, myUserId, { compact = true } = {}) {
+  const myPicks = [...(picks ?? [])].filter((pick) => pick.userId === myUserId).sort((a, b) => a.overallPick - b.overallPick);
+  const roster = myPicks.map((pick) => pick.player);
   const buckets = squadBucketCounts(roster);
-  const rows = Object.entries(buckets)
+  const meter = Object.entries(buckets)
     .map(
-      ([position, { filled, total }]) => `<div class="fantasy-squadrow">
-        <span class="fantasy-squadrow__pos">${position}</span>
-        <span class="fantasy-squadrow__count ${filled >= total ? "is-full" : ""}">${filled}/${total}</span>
+      ([position, { filled, total }]) =>
+        `<span class="fantasy-bucket ${filled >= total ? "is-full" : ""}">${esc(position)} <strong>${filled}/${total}</strong></span>`,
+    )
+    .join("");
+  const rows = myPicks
+    .map(
+      (pick) => `<div class="fantasy-squad-row">
+        <span class="fantasy-squad-row__pick">${formatPickNumber(pick.round, pick.pickInRound)}</span>
+        ${badgeFor(pick.player.team)}
+        <span class="fantasy-squad-row__name"><strong>${esc(pick.player.name)}</strong><span class="note--dim">${esc(abbrFor(pick.player.team))}</span></span>
+        <span class="fantasy-pos">${esc(pick.player.position)}</span>
       </div>`,
     )
     .join("");
-  const players = (roster ?? [])
-    .map((player) => `<div class="fantasy-squad-player">${badgeFor(player.team)}<span>${esc(player.name)}</span></div>`)
-    .join("");
   return `
-    <section class="card fantasy-myteam">
-      <h3 class="card__title">My squad · ${(roster ?? []).length}/${SQUAD_SIZE}</h3>
-      <div class="fantasy-squadrows">${rows}</div>
-      ${players ? `<div class="fantasy-squad-players">${players}</div>` : `<p class="note">No players drafted yet.</p>`}
+    <section class="card fantasy-myteam ${compact ? "" : "fantasy-myteam--full"}">
+      <div class="fantasy-myteam__head">
+        <h3 class="card__title">Your squad</h3>
+        <div class="fantasy-bucketmeter">${meter}</div>
+      </div>
+      <div class="fantasy-squad-rows">${rows || `<p class="note">No players drafted yet.</p>`}</div>
     </section>`;
+}
+
+// My team tab: the caller's roster (see renderMySquad) at full width, once the
+// draft has at least one pick for them; otherwise a quiet nudge back to the
+// Draft room rather than an empty-looking card.
+export function renderFantasyMyTeamPanel(picks, myUserId) {
+  const hasPicks = (picks ?? []).some((pick) => pick.userId === myUserId);
+  if (!hasPicks) {
+    return `<div class="fantasy-myteam-empty"><p class="note">You haven't drafted anyone yet. Head to the Draft room to make your first pick.</p></div>`;
+  }
+  return renderMySquad(picks, myUserId, { compact: false });
 }
 
 const POSITION_FILTERS = ["All", "GK", "DEF", "MID", "FWD"];
 
 function filterPlayers(players, filter) {
   const search = (filter?.search ?? "").trim().toLowerCase();
+  const club = filter?.club ?? "All";
   return (players ?? []).filter((player) => {
     if (filter?.position && filter.position !== "All" && player.position !== filter.position) return false;
+    if (club !== "All" && player.team !== club) return false;
     if (!search) return true;
     return player.name.toLowerCase().includes(search) || player.team.toLowerCase().includes(search);
   });
@@ -312,40 +420,75 @@ function filterPlayers(players, filter) {
 export function renderFantasyPlayerRows(players, filter, context) {
   const filtered = filterPlayers(players, filter);
   if (!filtered.length) return `<p class="note">No players match.</p>`;
-  const { isMyTurn, myRoster, draftedIds } = context ?? {};
+  const { isMyTurn, myRoster, draftedIds, suggestedId } = context ?? {};
   return filtered
     .map((player) => {
       const drafted = draftedIds?.has?.(player.id);
       const legal = !drafted && canDraftPlayer(player, { isMyTurn, myRoster, draftedIds });
       const action = legal
-        ? `<button class="btn btn--primary fantasy-draft-btn" type="button" data-fantasy-draft-player="${player.id}">Draft</button>`
+        ? `<button class="btn fantasy-draft-btn" type="button" data-fantasy-draft-player="${player.id}">Draft</button>`
         : drafted
           ? `<span class="note--dim">Drafted</span>`
           : "";
+      const suggestedBadge =
+        suggestedId != null && player.id === suggestedId ? `<span class="chip fantasy-chip--suggested">Suggested</span>` : "";
       return `<div class="fantasy-player-row ${drafted ? "is-drafted" : ""}">
           ${badgeFor(player.team)}
-          <span class="fantasy-player-row__id"><strong>${esc(player.name)}</strong><span class="note--dim">${esc(player.position)} · ${esc(player.team)}</span></span>
+          <span class="fantasy-player-row__id"><strong>${esc(player.name)}${suggestedBadge}</strong><span class="note--dim">${esc(abbrFor(player.team))}</span></span>
+          <span class="fantasy-pos">${esc(player.position)}</span>
           <span class="fantasy-player-row__action">${action}</span>
         </div>`;
     })
     .join("");
 }
 
-export function renderFantasyPlayerPool(players, filter, context) {
-  return `
-    <div class="fantasy-pool">
-      <div class="fantasy-pool__controls">
-        <div class="segrow">${POSITION_FILTERS.map(
-          (position) =>
-            `<button class="seg ${position === (filter?.position ?? "All") ? "is-active" : ""}" type="button" data-fantasy-position-filter="${position}">${position}</button>`,
-        ).join("")}</div>
-        <input class="fantasy-input" type="text" placeholder="Search players or clubs" value="${esc(filter?.search ?? "")}" data-fantasy-search autocomplete="off" />
-      </div>
-      <div class="fantasy-pool__list" data-fantasy-pool-list>${renderFantasyPlayerRows(players, filter, context)}</div>
-    </div>`;
+// Distinct clubs represented in the pool, alphabetised: fed straight from the
+// player data (never a hardcoded team list, matching the "flows from the feed"
+// rule the rest of the app follows for badges/teams).
+function renderClubOptions(players, selectedClub) {
+  const clubs = [...new Set((players ?? []).map((player) => player.team).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const selected = selectedClub ?? "All";
+  const allOption = `<option value="All"${selected === "All" ? " selected" : ""}>All clubs</option>`;
+  return (
+    allOption +
+    clubs.map((club) => `<option value="${esc(club)}"${selected === club ? " selected" : ""}>${esc(club)}</option>`).join("")
+  );
 }
 
-export function renderFantasyDraftRoom({ league, members, draft, playerPool, filter, myUserId }) {
+// Player pool as a data-table card: PLAYER POOL label, position pills, club
+// filter and search all live in a sticky header inside the single scrolling
+// region, so they stay reachable no matter how far down a 500-row pool you've
+// scrolled. Column header row (Player / Pos / action) sits in the same sticky
+// block, directly above the rows it labels.
+export function renderFantasyPlayerPool(players, filter, context) {
+  const activePosition = filter?.position ?? "All";
+  const positionPills = POSITION_FILTERS.map(
+    (position) =>
+      `<button class="seg ${position === activePosition ? "is-active" : ""}" type="button" data-fantasy-position-filter="${position}">${position}</button>`,
+  ).join("");
+
+  return `
+    <section class="card fantasy-pool">
+      <div class="fantasy-pool__scroll">
+        <div class="fantasy-pool__sticky">
+          <div class="fantasy-pool__headrow">
+            <h3 class="card__title">Player pool</h3>
+            <div class="segrow fantasy-pool__positions">${positionPills}</div>
+          </div>
+          <div class="fantasy-pool__filters">
+            <select class="fantasy-select" data-fantasy-club-filter>${renderClubOptions(players, filter?.club)}</select>
+            <input class="fantasy-input" type="text" placeholder="Search players or clubs" value="${esc(filter?.search ?? "")}" data-fantasy-search autocomplete="off" />
+          </div>
+          <div class="fantasy-pool__cols">
+            <span>Player</span><span>Pos</span><span></span>
+          </div>
+        </div>
+        <div class="fantasy-pool__rows" data-fantasy-pool-list>${renderFantasyPlayerRows(players, filter, context)}</div>
+      </div>
+    </section>`;
+}
+
+export function renderFantasyDraftRoom({ members, draft, playerPool, filter, myUserId, season = currentSeasonLabel() }) {
   const myRoster = draft.rosters?.[myUserId] ?? [];
   const draftedIds = new Set(
     Object.values(draft.rosters ?? {})
@@ -353,55 +496,50 @@ export function renderFantasyDraftRoom({ league, members, draft, playerPool, fil
       .map((player) => player.id),
   );
   const isMyTurn = draft.onClockUserId != null && draft.onClockUserId === myUserId;
-  const context = { isMyTurn, myRoster, draftedIds };
+  const suggested = suggestedPick(playerPool, myRoster, draftedIds);
+  const context = { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null };
 
   return `
-    <div class="fantasy fantasy-draftroom">
-      <div class="fantasy-panel-head">
-        <button class="seg" type="button" data-fantasy-back>← Leagues</button>
-        <h1 class="hero__title">${esc(league.name)} · Draft</h1>
-      </div>
-      ${draft.lastError ? renderDraftErrorNotice(draft.lastError) : ""}
-      ${renderClockBanner(members, draft.onClockUserId, draft.remainingMs ?? 0, isMyTurn)}
-      ${renderOrderStrip(members, draft.memberIds, draft.round, draft.onClockUserId, draft.overallPick)}
-      <div class="fantasy-draftgrid">
-        <div class="fantasy-draftgrid__main">${renderFantasyPlayerPool(playerPool, filter, context)}</div>
-        <div class="fantasy-draftgrid__side">
-          ${renderMySquad(myRoster)}
-          <section class="card fantasy-feed-card">
-            <h3 class="card__title">Recent picks</h3>
-            ${renderPickFeed(draft.picks, members)}
-          </section>
-        </div>
+    ${draft.lastError ? renderDraftErrorNotice(draft.lastError) : ""}
+    ${renderDraftStatusCard({ members, draft, myUserId, season, isMyTurn })}
+    <div class="fantasy-draftgrid">
+      <div class="fantasy-draftgrid__main">${renderFantasyPlayerPool(playerPool, filter, context)}</div>
+      <div class="fantasy-draftgrid__side">
+        ${renderSuggestedPickCard(suggested, context)}
+        <section class="card fantasy-feed-card">
+          <h3 class="card__title">Recent picks</h3>
+          ${renderPickFeed(draft.picks, members)}
+        </section>
+        ${renderMySquad(draft.picks, myUserId, { compact: true })}
       </div>
     </div>`;
 }
 
 // -- Draft complete --------------------------------------------------------------
 
-export function renderFantasyComplete(league, members, rosters) {
+// All-rosters view, restyled to the same squad-row card language as Your squad
+// (point 6): manager name as the card header, R.PP numbers derived from the
+// picks log, POS chips.
+export function renderFantasyComplete(members, picks) {
   const groups = (members ?? [])
     .map((member) => {
-      const roster = rosters?.[member.userId] ?? [];
-      const players = roster
+      const memberPicks = [...(picks ?? [])].filter((pick) => pick.userId === member.userId).sort((a, b) => a.overallPick - b.overallPick);
+      const rows = memberPicks
         .map(
-          (player) =>
-            `<div class="fantasy-squad-player">${badgeFor(player.team)}<span>${esc(player.name)}</span><span class="note--dim">${esc(player.position)}</span></div>`,
+          (pick) => `<div class="fantasy-squad-row">
+              <span class="fantasy-squad-row__pick">${formatPickNumber(pick.round, pick.pickInRound)}</span>
+              ${badgeFor(pick.player.team)}
+              <span class="fantasy-squad-row__name"><strong>${esc(pick.player.name)}</strong><span class="note--dim">${esc(abbrFor(pick.player.team))}</span></span>
+              <span class="fantasy-pos">${esc(pick.player.position)}</span>
+            </div>`,
         )
         .join("");
       return `<section class="card fantasy-roster-card">
           <h3 class="card__title">${esc(member.name)}</h3>
-          <div class="fantasy-squad-players">${players || `<p class="note">No players.</p>`}</div>
+          <div class="fantasy-squad-rows">${rows || `<p class="note">No players.</p>`}</div>
         </section>`;
     })
     .join("");
 
-  return `
-    <div class="fantasy">
-      <div class="fantasy-panel-head">
-        <button class="seg" type="button" data-fantasy-back>← Leagues</button>
-        <h1 class="hero__title">${esc(league.name)} · Draft complete</h1>
-      </div>
-      <div class="fantasy-rosters">${groups}</div>
-    </div>`;
+  return `<div class="fantasy-rosters">${groups}</div>`;
 }

@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { canDraftPlayer, draftOrderEntries, formatCountdown, reduceDraftMessage, squadBucketCounts } from "../src/fantasyDraft.js";
+import {
+  canDraftPlayer,
+  currentSeasonLabel,
+  draftOrderEntries,
+  formatCountdown,
+  formatPickNumber,
+  reduceDraftMessage,
+  squadBucketCounts,
+  suggestedPick,
+} from "../src/fantasyDraft.js";
 
 test("formatCountdown renders mm:ss and rounds up to the next full second", () => {
   assert.equal(formatCountdown(60000), "1:00");
@@ -207,4 +216,53 @@ test("reduceDraftMessage marks the room complete while preserving its final rost
   room = reduceDraftMessage(room, { type: "complete" });
   assert.equal(room.status, "complete");
   assert.deepEqual(room.rosters[1], [player(1, "GK")]);
+});
+
+// -- formatPickNumber --------------------------------------------------------------
+
+test("formatPickNumber renders round.pickInRound with the pick zero-padded to two digits", () => {
+  assert.equal(formatPickNumber(1, 1), "1.01");
+  assert.equal(formatPickNumber(2, 8), "2.08");
+  assert.equal(formatPickNumber(3, 12), "3.12");
+});
+
+// -- currentSeasonLabel -------------------------------------------------------------
+
+test("currentSeasonLabel reads a July-or-later date as the season starting that year", () => {
+  assert.equal(currentSeasonLabel(new Date(2026, 6, 23)), "2026/27");
+  assert.equal(currentSeasonLabel(new Date(2026, 11, 1)), "2026/27");
+});
+
+test("currentSeasonLabel reads a date before July as still part of the previous year's season", () => {
+  assert.equal(currentSeasonLabel(new Date(2027, 0, 15)), "2026/27");
+  assert.equal(currentSeasonLabel(new Date(2027, 5, 30)), "2026/27");
+});
+
+// -- suggestedPick -------------------------------------------------------------------
+
+test("suggestedPick defers to autoPick's scarcest-bucket-first rule for an empty roster", () => {
+  const pool = [player(1, "GK"), player(2, "DEF"), player(3, "MID"), player(4, "FWD")];
+  const suggestion = suggestedPick(pool, [], new Set());
+  // GK has the smallest cap (2), so an empty roster's scarcest bucket is GK.
+  assert.equal(suggestion.id, 1);
+});
+
+test("suggestedPick excludes players already drafted anywhere in the league", () => {
+  const pool = [player(1, "GK"), player(2, "GK")];
+  const suggestion = suggestedPick(pool, [], new Set([1]));
+  assert.equal(suggestion.id, 2);
+});
+
+test("suggestedPick skips a bucket that is already full on the caller's roster", () => {
+  const myRoster = [player(10, "GK"), player(11, "GK")]; // GK cap is 2, now full
+  const pool = [player(1, "GK"), player(2, "FWD")];
+  const suggestion = suggestedPick(pool, myRoster, new Set());
+  assert.equal(suggestion.id, 2);
+});
+
+test("suggestedPick returns null once no legal candidate remains", () => {
+  const myRoster = [player(10, "GK"), player(11, "GK")];
+  const pool = [player(1, "GK")]; // only a GK left, but that bucket is full
+  const suggestion = suggestedPick(pool, myRoster, new Set());
+  assert.equal(suggestion, null);
 });
