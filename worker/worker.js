@@ -51,7 +51,12 @@ import {
 import { MAX_LEAGUE_SIZE, bucketPosition } from "../src/fantasy.js";
 import { defaultLineup, resolveEffectiveLineup, validateLineupSelection } from "../src/fantasyLineups.js";
 import { scoreMatchForPlayers } from "../src/fantasyScoring.js";
-import { gameweekStatus, rosterGameweekPoints, standingsFromFixtures } from "../src/fantasyGameweek.js";
+import {
+  currentGameweekFromMatches,
+  gameweekStatus,
+  rosterGameweekPoints,
+  standingsFromFixtures,
+} from "../src/fantasyGameweek.js";
 
 export { FantasyDraftRoom } from "./draftRoom.js";
 
@@ -1095,13 +1100,7 @@ async function currentFantasyGameweek(env) {
     const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
     if (!comp || !env.API_FOOTBALL_KEY) return 1;
     const live = await getLive(comp, env.API_FOOTBALL_KEY);
-    const matchdays = (live.matches ?? [])
-      .filter((match) => Number.isInteger(match.matchday))
-      .map((match) => ({ matchday: match.matchday, finished: isMatchFinished(match) }));
-    if (!matchdays.length) return 1;
-    const unfinished = matchdays.filter((entry) => !entry.finished);
-    if (unfinished.length) return Math.min(...unfinished.map((entry) => entry.matchday));
-    return Math.max(...matchdays.map((entry) => entry.matchday));
+    return currentGameweekFromMatches(live.matches);
   } catch {
     return 1;
   }
@@ -1279,8 +1278,12 @@ async function runScheduledFantasyScoring(env) {
       // missed the fetch:fantasy-players bake) still need a fantasy_players
       // row before fantasy_player_scores/fantasy_rosters can reference them.
       // OR IGNORE so the curated pool is never clobbered for a player already
-      // known good.
-      await upsertFantasyPlayersFromDetail(env, detail);
+      // known good. scoreMatchForPlayers can credit a goal/assist/card id that
+      // never appears in the lineup or bench (an events/lineups discrepancy
+      // upstream), so every scored id gets a placeholder row too, not just
+      // the lineup+bench ids, or that match's whole score write would fail
+      // its foreign key and retry forever on every future tick.
+      await upsertFantasyPlayersFromDetail(env, detail, scores.keys());
       await writeFantasyPlayerScores(env, match.matchday, scores);
       await env.DB.prepare(`INSERT OR IGNORE INTO fantasy_scored_matches (match_id) VALUES (?1)`)
         .bind(match.id)
@@ -1311,12 +1314,14 @@ async function fantasyScoredMatchIds(env, ids) {
   return new Set((rows.results ?? []).map((row) => row.match_id));
 }
 
-async function upsertFantasyPlayersFromDetail(env, detail) {
+async function upsertFantasyPlayersFromDetail(env, detail, extraIds = []) {
   const players = [];
+  const seen = new Set();
   for (const side of ["home", "away"]) {
     const team = detail[side];
     for (const player of [...(team?.lineup ?? []), ...(team?.bench ?? [])]) {
-      if (player.id == null) continue;
+      if (player.id == null || seen.has(player.id)) continue;
+      seen.add(player.id);
       players.push({
         id: player.id,
         name: player.name || "",
@@ -1324,6 +1329,16 @@ async function upsertFantasyPlayersFromDetail(env, detail) {
         position: bucketPosition(player.pos) ?? "MID",
       });
     }
+  }
+  // scoreMatchForPlayers can credit an id (a goal scorer, assister or carded
+  // player) that never showed up in either side's lineup or bench, an
+  // events/lineups discrepancy upstream. A bare placeholder row is enough to
+  // satisfy fantasy_player_scores' foreign key; a later squads-pool bake or
+  // draft start fills in the real name/team/position via its own REPLACE.
+  for (const id of extraIds) {
+    if (id == null || seen.has(id)) continue;
+    seen.add(id);
+    players.push({ id, name: "", team: "", position: "MID" });
   }
   if (!players.length) return;
   await env.DB.batch(
@@ -1393,9 +1408,10 @@ async function recomputeLeagueGameweek(env, leagueId, gameweek, playerPoints) {
     .all();
   const fixtureUpdates = [];
   for (const fixture of fixtures.results ?? []) {
-    // Written per side, and only for a side whose score we actually have this
-    // pass, so an opponent who has not been scored yet keeps their existing
-    // (possibly still null) score instead of being overwritten with one.
+    // gwScores always has every league member (rosterGameweekPoints defaults
+    // an unscored player to 0 rather than skipping them), so both sides of
+    // every fixture get written every pass; the has() check just guards
+    // against a fixture referencing a user who has since left the league.
     if (gwScores.has(fixture.home_user_id)) {
       fixtureUpdates.push(
         env.DB.prepare(

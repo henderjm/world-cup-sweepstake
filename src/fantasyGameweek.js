@@ -5,6 +5,7 @@
 // outside the Worker.
 
 import { isFinished, isLive } from "./format.js";
+import { TERMINAL_MATCH_STATUSES } from "./mapApiFootball.js";
 
 // Rolls up one manager's resolved starting XI into a gameweek total. `lineup`
 // is the { starters: [{ playerId, isCaptain }] } shape resolveEffectiveLineup
@@ -28,14 +29,36 @@ export function rosterGameweekPoints(lineup, playerPointsMap) {
 // vocabulary (see src/format.js): "scheduled" if none of this gameweek's
 // matches have started yet (including an empty match list for that
 // gameweek, e.g. it hasn't been loaded), "final" once every one of them is
-// FINISHED/AWARDED, otherwise "live" (at least one match under way or
-// finished while another has not kicked off).
+// settled (TERMINAL_MATCH_STATUSES: FINISHED/AWARDED, or a CANCELLED/
+// POSTPONED fixture that will never produce a score), otherwise "live" (at
+// least one match under way or finished while another has not kicked off).
+// A postponed match must count as settled here, or a gameweek containing
+// one would report "live" forever even once every playable match is done.
 export function gameweekStatus(matches, gameweek) {
   const relevant = (matches ?? []).filter((match) => match.matchday === gameweek);
   if (!relevant.length) return "scheduled";
-  if (relevant.every((match) => isFinished(match.status))) return "final";
+  if (relevant.every((match) => TERMINAL_MATCH_STATUSES.has(match.status))) return "final";
   const started = relevant.some((match) => isFinished(match.status) || isLive(match.status));
   return started ? "live" : "scheduled";
+}
+
+// The gameweek that is still "in progress" from the season's point of view:
+// the smallest matchday with at least one match not yet settled, or (once
+// every match is settled) one past the season's last matchday, so the final
+// gameweek itself is treated as fully in the past rather than perpetually
+// "current" (standingsFromFixtures' callers filter to gameweek < current,
+// and a "current" that never advances past 38 would permanently exclude
+// gameweek 38 from standings). A CANCELLED/POSTPONED match counts as
+// settled: it is never going to become FINISHED/AWARDED, so treating it as
+// still-pending would freeze the whole season at that gameweek forever.
+export function currentGameweekFromMatches(matches) {
+  const matchdays = (matches ?? [])
+    .filter((match) => Number.isInteger(match.matchday))
+    .map((match) => ({ matchday: match.matchday, settled: TERMINAL_MATCH_STATUSES.has(match.status) }));
+  if (!matchdays.length) return 1;
+  const unsettled = matchdays.filter((entry) => !entry.settled);
+  if (unsettled.length) return Math.min(...unsettled.map((entry) => entry.matchday));
+  return Math.max(...matchdays.map((entry) => entry.matchday)) + 1;
 }
 
 // Ranks `members` from `fixtures`, an array of already-decided { gameweek,

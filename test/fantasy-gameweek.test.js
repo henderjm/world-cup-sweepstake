@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { gameweekStatus, rosterGameweekPoints, standingsFromFixtures } from "../src/fantasyGameweek.js";
+import {
+  currentGameweekFromMatches,
+  gameweekStatus,
+  rosterGameweekPoints,
+  standingsFromFixtures,
+} from "../src/fantasyGameweek.js";
 
 // -- rosterGameweekPoints -------------------------------------------------------
 
@@ -142,4 +147,65 @@ test("standingsFromFixtures still lists a member with a bye week, played reflect
   assert.ok(carol);
   assert.equal(carol.played, 0);
   assert.equal(carol.recordPoints, 0);
+});
+
+// -- gameweekStatus with a postponed/cancelled fixture -----------------------
+
+test("gameweekStatus treats a postponed match as settled, not perpetually live", () => {
+  // A postponed fixture never becomes FINISHED/AWARDED, so a naive
+  // isFinished-only check would keep this gameweek "live" forever even
+  // though nothing further is going to happen in it.
+  const matches = [
+    { matchday: 5, status: "FINISHED" },
+    { matchday: 5, status: "POSTPONED" },
+  ];
+  assert.equal(gameweekStatus(matches, 5), "final");
+});
+
+test("gameweekStatus treats a cancelled match the same way", () => {
+  const matches = [
+    { matchday: 5, status: "FINISHED" },
+    { matchday: 5, status: "CANCELLED" },
+  ];
+  assert.equal(gameweekStatus(matches, 5), "final");
+});
+
+// -- currentGameweekFromMatches -----------------------------------------------
+
+test("currentGameweekFromMatches returns the smallest matchday with an unsettled match", () => {
+  const matches = [
+    { matchday: 3, status: "FINISHED" },
+    { matchday: 4, status: "IN_PLAY" },
+    { matchday: 5, status: "TIMED" },
+  ];
+  assert.equal(currentGameweekFromMatches(matches), 4);
+});
+
+test("currentGameweekFromMatches is not stuck forever by a postponed match in an earlier gameweek", () => {
+  // Gameweek 4 has one postponed fixture (never becomes FINISHED/AWARDED)
+  // alongside a finished one; gameweek 5 is still fully upcoming. The
+  // postponed match must not freeze "current" at 4 forever.
+  const matches = [
+    { matchday: 4, status: "FINISHED" },
+    { matchday: 4, status: "POSTPONED" },
+    { matchday: 5, status: "TIMED" },
+  ];
+  assert.equal(currentGameweekFromMatches(matches), 5);
+});
+
+test("currentGameweekFromMatches rolls one gameweek past the season once everything is settled", () => {
+  // Every match done (including a cancellation): the final real gameweek
+  // must count as fully in the past, or standings (gameweek < current)
+  // would exclude it forever.
+  const matches = [
+    { matchday: 37, status: "FINISHED" },
+    { matchday: 38, status: "FINISHED" },
+    { matchday: 38, status: "CANCELLED" },
+  ];
+  assert.equal(currentGameweekFromMatches(matches), 39);
+});
+
+test("currentGameweekFromMatches defaults to 1 for an empty or matchday-less match list", () => {
+  assert.equal(currentGameweekFromMatches([]), 1);
+  assert.equal(currentGameweekFromMatches([{ status: "FINISHED" }]), 1);
 });
