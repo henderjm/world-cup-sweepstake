@@ -45,6 +45,7 @@ import { mountPaperRunGame } from "./paperRunGame.js";
 import {
   createLeague as apiCreateLeague,
   fantasyAvailable,
+  isFantasyNotDeployed,
   joinLeague as apiJoinLeague,
   listLeagues as apiListLeagues,
   loadLeague as apiLoadLeague,
@@ -108,6 +109,7 @@ function initialFantasyState() {
     league: null, // { league, members, picks, roster } from GET /fantasy/league/:id
     myUserId: null,
     playerPool: null,
+    playerPoolLoading: false,
     draftRoom: null, // { controller, state, remainingMs } once a socket is open
     filter: { position: "All", search: "" },
     createBusy: false,
@@ -116,6 +118,7 @@ function initialFantasyState() {
     joinError: "",
     loadError: "",
     sessionExpired: false, // 401 from the fantasy API: distinct from a generic loadError
+    notDeployed: false, // 404/501: the Worker predates (or has disabled) the fantasy routes
   };
 }
 
@@ -461,6 +464,13 @@ function renderFantasy() {
     elements.layout.innerHTML = renderFantasyNotConfigured();
     return;
   }
+  if (f.notDeployed) {
+    // Same card as fantasyAvailable() === false: a 404/501 from the fantasy
+    // routes reads the same to the user (not ready yet), whether the Worker
+    // isn't configured client-side or hasn't shipped the routes server-side.
+    elements.layout.innerHTML = renderFantasyNotConfigured();
+    return;
+  }
   if (f.sessionExpired) {
     elements.layout.innerHTML = renderFantasySessionExpired();
     return;
@@ -488,7 +498,15 @@ function renderFantasy() {
   }
 
   if (f.league.league.draftStatus === "pending") {
-    elements.layout.innerHTML = renderFantasyLobby(f.league.league, f.league.members);
+    // Pre-draft scouting needs the player pool too, loaded lazily the moment
+    // the lobby actually renders (mirrors renderPaperRun's "kick off the load
+    // if it hasn't started, render what we have now" pattern) rather than
+    // blocking the lobby itself behind an extra fetch.
+    if (!f.playerPool && !f.playerPoolLoading) loadFantasyPlayerPoolForLobby();
+    elements.layout.innerHTML = renderFantasyLobby(f.league.league, f.league.members, {
+      playerPool: f.playerPool,
+      filter: f.filter,
+    });
     return;
   }
 
@@ -546,11 +564,18 @@ async function loadFantasyLeagues() {
   if (f.leaguesLoading) return;
   f.leaguesLoading = true;
   f.sessionExpired = false;
+  f.notDeployed = false;
   try {
     f.leagues = await apiListLeagues();
     f.loadError = "";
   } catch (error) {
-    if (error.status === 401) {
+    if (isFantasyNotDeployed(error)) {
+      // A production client can predate the Worker's fantasy routes deploy
+      // (404) or hit a Worker missing the DB/DRAFT_ROOM bindings (501); both
+      // read as "not ready yet", not an error to retry.
+      f.notDeployed = true;
+      f.leagues = null;
+    } else if (error.status === 401) {
       // A revoked/expired session renders as its own state rather than falling
       // through to "no leagues", which would look like the user genuinely has
       // none. f.leagues stays null (not []) so a later successful retry (e.g.
@@ -612,6 +637,7 @@ async function openFantasyLeague(id) {
   f.league = null;
   f.myUserId = null;
   f.loadError = "";
+  f.notDeployed = false;
   renderLayout();
   try {
     const detail = await apiLoadLeague(id);
@@ -624,19 +650,43 @@ async function openFantasyLeague(id) {
     }
   } catch (error) {
     if (f.activeLeagueId !== id) return;
-    f.loadError = error.message || "Couldn't load this league.";
+    if (isFantasyNotDeployed(error)) f.notDeployed = true;
+    else f.loadError = error.message || "Couldn't load this league.";
   }
   if (state.section === "fantasy") renderLayout();
 }
 
+// Loads the shared PL player pool once (cached across leagues for the rest of
+// the session, since it isn't league-scoped data); race-guarded against a
+// second concurrent call from either the draft-room mount path above or the
+// lobby's own lazy trigger below.
 async function ensureFantasyPlayerPool() {
-  if (state.fantasy.playerPool) return;
+  const f = state.fantasy;
+  if (f.playerPool || f.playerPoolLoading) return;
+  f.playerPoolLoading = true;
   try {
-    state.fantasy.playerPool = await loadPlayerPool();
+    f.playerPool = await loadPlayerPool();
   } catch (error) {
-    window.Sentry?.captureException?.(error);
-    state.fantasy.playerPool = { players: [] };
+    // A 404 is the expected, calm case today (the pool has never been baked
+    // in production); anything else still gets a Sentry breadcrumb. Either
+    // way the lobby/draft room degrade to "pool not available" rather than
+    // breaking, since the pool is supplementary, not load-bearing.
+    if (error?.status !== 404) window.Sentry?.captureException?.(error);
+    f.playerPool = { players: [], complete: false, lastUpdated: null, unavailable: true };
+  } finally {
+    f.playerPoolLoading = false;
   }
+}
+
+// The lobby's own lazy trigger (renderFantasy calls this the first time it
+// renders a pending-draft league without a pool yet), mirroring
+// loadPaperRun()'s shape: guard against having navigated away mid-fetch, and
+// only re-render if still on the page that cares.
+async function loadFantasyPlayerPoolForLobby() {
+  const leagueId = state.fantasy.activeLeagueId;
+  await ensureFantasyPlayerPool();
+  if (state.fantasy.activeLeagueId !== leagueId) return;
+  if (state.section === "fantasy") renderLayout();
 }
 
 function mountFantasyDraftRoom(leagueId) {
@@ -682,10 +732,13 @@ function updateFantasyClockDisplay(remainingMs) {
   if (el) el.textContent = formatCountdown(remainingMs);
 }
 
-function refreshFantasyPool() {
-  const list = elements.layout.querySelector("[data-fantasy-pool-list]");
+// Legal-pick context for the player pool list: the live turn/roster state
+// while a draft room socket is open, or an inert read-only context (no turn,
+// nobody drafted) for the lobby's pre-draft scouting list, which reuses the
+// exact same renderer with no Draft buttons.
+function fantasyPoolContext() {
   const room = state.fantasy.draftRoom?.state;
-  if (!list || !room) return;
+  if (!room) return { isMyTurn: false, myRoster: [], draftedIds: new Set() };
   const myRoster = room.rosters?.[state.fantasy.myUserId] ?? [];
   const draftedIds = new Set(
     Object.values(room.rosters ?? {})
@@ -693,11 +746,17 @@ function refreshFantasyPool() {
       .map((player) => player.id),
   );
   const isMyTurn = room.onClockUserId != null && room.onClockUserId === state.fantasy.myUserId;
-  list.innerHTML = renderFantasyPlayerRows(state.fantasy.playerPool?.players ?? [], state.fantasy.filter, {
-    isMyTurn,
-    myRoster,
-    draftedIds,
-  });
+  return { isMyTurn, myRoster, draftedIds };
+}
+
+function refreshFantasyPool() {
+  const list = elements.layout.querySelector("[data-fantasy-pool-list]");
+  if (!list) return;
+  list.innerHTML = renderFantasyPlayerRows(
+    state.fantasy.playerPool?.players ?? [],
+    state.fantasy.filter,
+    fantasyPoolContext(),
+  );
 }
 
 async function startFantasyDraft(id) {
@@ -714,6 +773,7 @@ function closeFantasyLeague() {
   f.leagues = null; // refetch so status/member counts are current
   f.loadError = "";
   f.sessionExpired = false;
+  f.notDeployed = false;
   renderLayout();
 }
 

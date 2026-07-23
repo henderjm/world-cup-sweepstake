@@ -1,4 +1,5 @@
 import { badgeFor } from "./badges.js";
+import { dateLabel } from "./format.js";
 import { MAX_LEAGUE_SIZE, SQUAD_SIZE, SQUAD_SLOTS } from "./fantasy.js";
 import { canDraftPlayer, draftOrderEntries, formatCountdown, squadBucketCounts } from "./fantasyDraft.js";
 
@@ -136,7 +137,46 @@ export function renderFantasyLeagueList(leagues, formState = {}) {
 
 // -- Lobby (draftStatus: pending) -----------------------------------------------
 
-export function renderFantasyLobby(league, members) {
+// Meta line above the scouting list: when squads were last baked, and (per
+// the players.json `complete` flag) whether the pool is still an incomplete
+// accumulation from match lineups rather than the full published squads.
+function renderPoolMeta(playerPool) {
+  const bits = [];
+  if (playerPool.lastUpdated) bits.push(`Squads updated ${esc(dateLabel(playerPool.lastUpdated))}`);
+  if (playerPool.complete === false) {
+    bits.push("still accumulating from match lineups, not every squad is complete yet");
+  }
+  return bits.length ? `<p class="note">${bits.join(" · ")}</p>` : "";
+}
+
+// Pre-draft scouting: the same searchable/filterable player list the live
+// draft room uses, reused as-is with an inert context (isMyTurn: false, no
+// roster, nobody drafted) so canDraftPlayer never lights up a Draft button -
+// read-only rows, not a parallel renderer to keep in sync. The pool is
+// supplementary here, so its own absence (fetch 404, never baked in
+// production) degrades to a quiet note rather than hiding the rest of the
+// lobby or looking like a bug.
+function renderScoutingSection(playerPool, filter) {
+  if (!playerPool) {
+    return `<section class="card">
+        <h3 class="card__title">Scout the player pool</h3>
+        <p class="note">Loading player pool…</p>
+      </section>`;
+  }
+  if (playerPool.unavailable || !(playerPool.players ?? []).length) {
+    return `<section class="card">
+        <h3 class="card__title">Scout the player pool</h3>
+        <p class="note">Player pool not available yet.</p>
+      </section>`;
+  }
+  return `<section class="card">
+      <h3 class="card__title">Scout the player pool</h3>
+      ${renderPoolMeta(playerPool)}
+      ${renderFantasyPlayerPool(playerPool.players, filter, { isMyTurn: false, myRoster: [], draftedIds: new Set() })}
+    </section>`;
+}
+
+export function renderFantasyLobby(league, members, { playerPool, filter } = {}) {
   const sorted = [...members].sort(
     (a, b) => (a.draftPosition ?? 999) - (b.draftPosition ?? 999) || a.name.localeCompare(b.name),
   );
@@ -174,6 +214,7 @@ export function renderFantasyLobby(league, members) {
         <p class="note">Share this code so friends can join before the draft starts.</p>
       </section>
       <section class="card fantasy-start">${startControl}</section>
+      ${renderScoutingSection(playerPool, filter ?? { position: "All", search: "" })}
     </div>`;
 }
 

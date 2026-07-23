@@ -11,6 +11,19 @@ export function fantasyAvailable() {
   return Boolean(DATA_API);
 }
 
+// A 404 means the /fantasy/* routes themselves don't exist on the deployed
+// Worker yet (a client shipped ahead of the backend deploy - the exact
+// scenario that used to render "Couldn't load Fantasy: not found" with a
+// Retry button that would just 404 again); 501 means the routes exist but the
+// feature's bindings (DB/DRAFT_ROOM) are missing server-side (see
+// worker/worker.js). Both read to the user as "not available yet", not a bug,
+// so both map to the same not-configured card as fantasyAvailable() === false
+// rather than the generic error+retry path. Genuine errors (500s, network
+// failures) are not covered here and keep going through error+retry.
+export function isFantasyNotDeployed(error) {
+  return error?.status === 404 || error?.status === 501;
+}
+
 async function api(path, options = {}) {
   const headers = { ...(options.headers ?? {}), ...authHeaders() };
   if (options.body) headers["Content-Type"] = "application/json";
@@ -73,6 +86,13 @@ export function draftSocketUrl(leagueId) {
 // is not competition-parameterized the way live.json is.
 export async function loadPlayerPool() {
   const response = await fetch(`./data/PL/players.json?cache=${Date.now()}`, { cache: "no-store" });
-  if (!response.ok) throw new Error(`player pool ${response.status}`);
+  if (!response.ok) {
+    // A 404 here is the expected, calm case today: the pool has never been
+    // baked in production yet. Carry the status so the caller can tell that
+    // apart from a genuine failure without parsing the message string.
+    const error = new Error(`player pool ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
   return response.json();
 }

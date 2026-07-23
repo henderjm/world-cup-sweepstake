@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { renderFantasyDraftRoom, renderFantasyLeagueList, renderFantasyPlayerRows, renderFantasySessionExpired } from "../src/fantasyView.js";
+import {
+  renderFantasyDraftRoom,
+  renderFantasyLeagueList,
+  renderFantasyLobby,
+  renderFantasyPlayerRows,
+  renderFantasySessionExpired,
+} from "../src/fantasyView.js";
 
 test("renderFantasyLeagueList escapes a league name containing HTML", () => {
   const html = renderFantasyLeagueList(
@@ -152,4 +158,46 @@ test("renderFantasyDraftRoom shows a neutral clock label and no Draft buttons du
   });
   assert.match(html, /Next pick/);
   assert.doesNotMatch(html, /data-fantasy-draft-player/);
+});
+
+// -- renderFantasyLobby: pre-draft scouting -------------------------------------
+
+function lobbyLeague(overrides = {}) {
+  return { id: 1, name: "Test League", commissionerUserId: 1, isCommissioner: true, inviteCode: "AB12CD34", ...overrides };
+}
+const lobbyMembers = [{ userId: 1, name: "Alice", draftPosition: null }];
+
+test("renderFantasyLobby shows scouting rows with no Draft buttons and no players marked drafted", () => {
+  const pool = { source: "test", lastUpdated: "2026-07-01T00:00:00Z", complete: true, players: [pooledPlayer(1, "GK"), pooledPlayer(2, "FWD")] };
+  const html = renderFantasyLobby(lobbyLeague(), lobbyMembers, { playerPool: pool, filter: { position: "All", search: "" } });
+  assert.match(html, /Scout the player pool/);
+  assert.match(html, /Player 1/);
+  assert.match(html, /Player 2/);
+  assert.doesNotMatch(html, /data-fantasy-draft-player/);
+  assert.doesNotMatch(html, /Drafted/);
+});
+
+test("renderFantasyLobby shows the loading note before the pool has arrived", () => {
+  const html = renderFantasyLobby(lobbyLeague(), lobbyMembers, { playerPool: null, filter: { position: "All", search: "" } });
+  assert.match(html, /Loading player pool/);
+});
+
+test("renderFantasyLobby shows the accumulating hint and the updated date for an incomplete pool", () => {
+  const pool = { source: "test", lastUpdated: "2026-07-01T12:00:00Z", complete: false, players: [pooledPlayer(1, "MID")] };
+  const html = renderFantasyLobby(lobbyLeague(), lobbyMembers, { playerPool: pool, filter: { position: "All", search: "" } });
+  assert.match(html, /Squads updated/);
+  assert.match(html, /still accumulating from match lineups/);
+});
+
+test("renderFantasyLobby shows a quiet not-available note when the pool file is absent", () => {
+  const pool = { players: [], complete: false, lastUpdated: null, unavailable: true };
+  const html = renderFantasyLobby(lobbyLeague(), lobbyMembers, { playerPool: pool, filter: { position: "All", search: "" } });
+  assert.match(html, /Player pool not available yet/);
+  assert.doesNotMatch(html, /data-fantasy-search/);
+});
+
+test("renderFantasyLobby also treats a genuinely empty (non-unavailable) pool as not-available rather than an empty list", () => {
+  const pool = { players: [], complete: true, lastUpdated: "2026-07-01T00:00:00Z" };
+  const html = renderFantasyLobby(lobbyLeague(), lobbyMembers, { playerPool: pool, filter: { position: "All", search: "" } });
+  assert.match(html, /Player pool not available yet/);
 });
