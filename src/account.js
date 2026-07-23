@@ -1,4 +1,5 @@
 import { DATA_API } from "./data.js";
+import { posthog } from "./telemetry.js";
 
 // Accounts: Google sign-in via Google Identity Services, an opaque bearer session
 // from the Worker kept in localStorage, followed clubs and notification prefs.
@@ -79,6 +80,7 @@ export async function restoreAccount() {
   if (!accountAvailable() || !session) return null;
   try {
     account = await api("/me");
+    posthog.identify(account.user.id, { name: account.user.name, email: account.user.email });
     emit();
     return account;
   } catch (error) {
@@ -120,6 +122,8 @@ export async function mountSignIn(container, { onSignedIn, onError }) {
           });
           storeSession(result.token);
           account = { user: result.user, follows: result.follows };
+          posthog.identify(result.user.id, { name: result.user.name, email: result.user.email });
+          posthog.capture("user_signed_in", { method: "google" });
           emit();
           onSignedIn?.(account);
         } catch (error) {
@@ -145,6 +149,8 @@ export async function signOut() {
   } catch {
     // best-effort; the local session is dropped regardless
   }
+  posthog.capture("user_signed_out");
+  posthog.reset();
   storeSession(null);
   account = null;
   emit();
@@ -156,6 +162,8 @@ export async function toggleFollow(competition, team) {
     body: JSON.stringify({ competition, team }),
   });
   if (account) account.follows = result.follows;
+  const nowFollowed = result.follows.some((f) => f.competition === competition && f.team === team);
+  posthog.capture("team_followed", { competition, team, following: nowFollowed });
   emit();
   return result.follows;
 }

@@ -1,4 +1,5 @@
 import { loadModel } from "./data.js";
+import { posthog } from "./telemetry.js";
 import { COMPETITIONS, DEFAULT_COMPETITION_CODE } from "./competitions.js";
 import {
   knockoutMatches,
@@ -346,7 +347,10 @@ function mountPaperRun() {
   if (!day.result) metric("count", "paperrun_shown", 1);
   state.paperrun.mount = mountPaperRunGame(host, day, {
     onTick: (snap) => updatePaperRunHud(host, snap),
-    onStart: () => metric("count", "paperrun_started", 1),
+    onStart: () => {
+      metric("count", "paperrun_started", 1);
+      posthog.capture("paper_run_started", { date: state.paperrun.date });
+    },
     onUnavailable: () => {
       const status = host.querySelector("[data-run-status]");
       if (status) status.innerHTML = `<strong>Game unavailable</strong><span>This browser cannot start the canvas game.</span>`;
@@ -355,6 +359,12 @@ function mountPaperRun() {
       const name = displayName();
       metric("count", "paperrun_completed", 1, {
         tags: { score: String(result.score), deliveries: String(result.deliveries), finished: String(result.finished) },
+      });
+      posthog.capture("paper_run_completed", {
+        date: state.paperrun.date,
+        score: result.score,
+        deliveries: result.deliveries,
+        finished: result.finished,
       });
       await savePaperRun(day, { ...result, name });
     },
@@ -417,6 +427,7 @@ function setSection(section) {
   state.section = section;
   window.history.replaceState(null, "", `#${section === "scores" ? state.tab : section}`);
   metric("count", "section_view", 1, { tags: { section } });
+  posthog.capture("section_viewed", { section });
   renderAll();
 }
 
@@ -444,6 +455,7 @@ function setTab(tab) {
   state.tab = tab;
   window.history.replaceState(null, "", `#${tab}`);
   metric("count", "tab_view", 1, { tags: { tab } });
+  posthog.capture("tab_viewed", { tab });
   renderAll();
 }
 
@@ -463,6 +475,7 @@ async function switchCompetition(code) {
     // storage may be blocked; the switch still applies for this visit
   }
   metric("count", "competition_switch", 1, { tags: { competition: code } });
+  posthog.capture("competition_switched", { competition: code });
 
   const fresh = await loadModel(code);
   if (state.competition !== code) return; // switched again while loading
@@ -526,7 +539,10 @@ function wireLayoutControls() {
     if (event.target.closest("[data-push-enable]")) {
       metric("count", "push_enable", 1);
       enablePush()
-        .then(() => updatePushControls())
+        .then(() => {
+          posthog.capture("push_notifications_enabled");
+          updatePushControls();
+        })
         .catch((error) => updatePushControls(String(error.message).includes("permission") ? "Permission was not granted." : "Couldn't enable. Try again."));
       return;
     }
@@ -587,7 +603,16 @@ function openMatchRow(row) {
   const id = row.getAttribute("data-match-id");
   if (!id) return;
   const match = model.matches.find((item) => String(item.id) === id);
-  if (match) openMatch(match);
+  if (match) {
+    posthog.capture("match_opened", {
+      match_id: match.id,
+      home_team: match.homeTeam,
+      away_team: match.awayTeam,
+      status: match.status,
+      competition: model.competition?.code,
+    });
+    openMatch(match);
+  }
 }
 
 // Desktop and mobile render different layouts (sidebar + aside vs chip row +
