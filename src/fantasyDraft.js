@@ -305,6 +305,39 @@ export function legalSwapTargets({ starters, captainId, bench, roster }, pending
   return legal;
 }
 
+// -- Matchup tab pure helpers (Phase 4.3) ---------------------------------------
+//
+// The Matchup tab's score-comparison bar needs two small, independently
+// testable derivations: which side (if either) is ahead, and how wide each
+// half of the bar should be. Both are pure number-in, value-out functions so
+// the view never has to special-case a scoreless (not-started) matchup
+// itself - see renderFantasyMatchupPanel in fantasyView.js, which only calls
+// these once it already knows the matchup has actually started.
+
+// Which side leads the head-to-head score right now: "me" | "opponent" |
+// "tied". A tie (including 0-0) is a legitimate result, not treated as
+// ambiguous; the view decides separately whether a still-scheduled fixture
+// should be showing scores at all.
+export function matchupLeadSide(meScore, opponentScore) {
+  const me = meScore ?? 0;
+  const opponent = opponentScore ?? 0;
+  if (me > opponent) return "me";
+  if (opponent > me) return "opponent";
+  return "tied";
+}
+
+// Bar widths (0-100, always summing to 100) for the score-lead comparison
+// bar. A scoreless matchup (both sides at 0) splits the bar evenly rather
+// than dividing by zero.
+export function matchupBarWidths(meScore, opponentScore) {
+  const me = Math.max(0, meScore ?? 0);
+  const opponent = Math.max(0, opponentScore ?? 0);
+  const total = me + opponent;
+  if (total <= 0) return { me: 50, opponent: 50 };
+  const mePercent = Math.round((me / total) * 100);
+  return { me: mePercent, opponent: 100 - mePercent };
+}
+
 // -- Stateful WebSocket loop -----------------------------------------------------
 
 const RECONNECT_BASE_MS = 1000;

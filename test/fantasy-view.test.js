@@ -7,10 +7,12 @@ import {
   renderFantasyLeagueHeader,
   renderFantasyLeagueList,
   renderFantasyLobby,
+  renderFantasyMatchupPanel,
   renderFantasyMyTeamPanel,
   renderFantasyPlayerRows,
   renderFantasyRosterPanel,
   renderFantasySessionExpired,
+  renderFantasyStandingsPanel,
 } from "../src/fantasyView.js";
 
 test("renderFantasyLeagueList escapes a league name containing HTML", () => {
@@ -330,13 +332,25 @@ test("renderFantasyLeagueHeader shows the purple eyebrow, the active sub-tab's t
   assert.match(html, /Snake draft/);
 });
 
-test("renderFantasyLeagueHeader marks the active sub-tab and leaves Matchup/Standings disabled", () => {
+test("renderFantasyLeagueHeader marks the active sub-tab and leaves the other three live", () => {
   const html = renderFantasyLeagueHeader({ name: "Test League" }, members, "myteam");
   const myTeamButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="myteam">/)[0];
   assert.match(myTeamButton, /is-active/);
-  const matchupButton = html.match(/<button class="fantasy-subtab[^>]*>Matchup/)[0];
-  assert.match(matchupButton, /disabled/);
-  assert.match(html, /Soon/);
+  const matchupButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="matchup">/)[0];
+  assert.doesNotMatch(matchupButton, /disabled/);
+  const standingsButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="standings">/)[0];
+  assert.doesNotMatch(standingsButton, /disabled/);
+  assert.doesNotMatch(html, /Soon/);
+});
+
+test("renderFantasyLeagueHeader shows Matchup as the active tab's title", () => {
+  const html = renderFantasyLeagueHeader({ name: "Test League" }, members, "matchup");
+  assert.match(html, /<h1 class="hero__title">Matchup<\/h1>/);
+});
+
+test("renderFantasyLeagueHeader shows Standings as the active tab's title", () => {
+  const html = renderFantasyLeagueHeader({ name: "Test League" }, members, "standings");
+  assert.match(html, /<h1 class="hero__title">Standings<\/h1>/);
 });
 
 test("renderFantasyLeagueHeader escapes the league name", () => {
@@ -661,4 +675,109 @@ test("renderFantasyRosterPanel shows a loading note before the lineup has loaded
   assert.match(failed, /fantasy-form__error/);
   assert.match(failed, /Couldn't load your lineup\./);
   assert.match(failed, /data-fantasy-lineup-retry/);
+});
+
+// -- Matchup panel (Phase 4.3) -----------------------------------------------------
+
+test("renderFantasyMatchupPanel shows a loading note before the matchup has loaded, or the error state with retry on failure", () => {
+  const loading = renderFantasyMatchupPanel(null, {});
+  assert.match(loading, /Loading your matchup/);
+
+  const failed = renderFantasyMatchupPanel(null, { error: "Couldn't load your matchup." });
+  assert.match(failed, /fantasy-form__error/);
+  assert.match(failed, /Couldn't load your matchup\./);
+  assert.match(failed, /data-fantasy-matchup-retry/);
+});
+
+test("renderFantasyMatchupPanel explains a bye week plainly when opponent is null", () => {
+  const html = renderFantasyMatchupPanel({ gameweek: 7, status: "scheduled", me: { userId: 1, name: "Alex", score: 0 }, opponent: null });
+  assert.match(html, /Bye week/);
+  assert.match(html, /No fixture for you this gameweek/);
+  assert.doesNotMatch(html, /vs/);
+});
+
+test("renderFantasyMatchupPanel shows a pending score (not a bare 0-0) while the matchup is scheduled", () => {
+  const html = renderFantasyMatchupPanel({
+    gameweek: 7,
+    status: "scheduled",
+    me: { userId: 1, name: "Alex", score: 0 },
+    opponent: { userId: 2, name: "Sam", score: 0 },
+  });
+  assert.match(html, /Not started yet/);
+  assert.doesNotMatch(html, /fantasy-matchup__bar-me/);
+  assert.match(html, /fantasy-stat--empty/);
+});
+
+test("renderFantasyMatchupPanel highlights the leading side once the matchup has started", () => {
+  const html = renderFantasyMatchupPanel({
+    gameweek: 7,
+    status: "live",
+    me: { userId: 1, name: "Alex", score: 42 },
+    opponent: { userId: 2, name: "Sam", score: 37 },
+  });
+  const [meSide] = html.match(/<div class="fantasy-matchup__side [^"]*">[\s\S]*?Alex[\s\S]*?<\/div>/) ?? [];
+  assert.ok(meSide);
+  assert.match(meSide, /is-ahead/);
+  assert.match(html, /42/);
+  assert.match(html, /37/);
+  assert.match(html, /fantasy-matchup__bar-me/);
+});
+
+test("renderFantasyMatchupPanel escapes manager names", () => {
+  const html = renderFantasyMatchupPanel({
+    gameweek: 7,
+    status: "final",
+    me: { userId: 1, name: `<script>alert(1)</script>`, score: 10 },
+    opponent: { userId: 2, name: "Sam", score: 5 },
+  });
+  assert.doesNotMatch(html, /<script>alert/);
+  assert.match(html, /&lt;script&gt;/);
+});
+
+// -- Standings panel (Phase 4.3) ---------------------------------------------------
+
+test("renderFantasyStandingsPanel shows a loading note before standings have loaded, or the error state with retry on failure", () => {
+  const loading = renderFantasyStandingsPanel(null, {});
+  assert.match(loading, /Loading standings/);
+
+  const failed = renderFantasyStandingsPanel(null, { error: "Couldn't load the standings." });
+  assert.match(failed, /fantasy-form__error/);
+  assert.match(failed, /Couldn't load the standings\./);
+  assert.match(failed, /data-fantasy-standings-retry/);
+});
+
+test("renderFantasyStandingsPanel shows a generic (non gameweek-1-specific) empty state when throughGameweek is 0", () => {
+  const html = renderFantasyStandingsPanel({ throughGameweek: 0, standings: [] }, {});
+  assert.match(html, /Standings appear once your league's first gameweek finishes/);
+  assert.doesNotMatch(html, /gameweek 1/i);
+});
+
+test("renderFantasyStandingsPanel renders every column and highlights the caller's own row", () => {
+  const standings = {
+    throughGameweek: 6,
+    standings: [
+      { userId: 12, name: "Alex", played: 6, wins: 4, draws: 1, losses: 1, pointsFor: 320, pointsAgainst: 260, recordPoints: 13 },
+      { userId: 19, name: "Sam", played: 6, wins: 3, draws: 1, losses: 2, pointsFor: 300, pointsAgainst: 280, recordPoints: 10 },
+    ],
+  };
+  const html = renderFantasyStandingsPanel(standings, { myUserId: 19 });
+  assert.match(html, /Alex/);
+  assert.match(html, /Sam/);
+  assert.match(html, />13</);
+  assert.match(html, />10</);
+  assert.match(html, /Through gameweek 6/);
+  const samRow = html.match(/<div class="fantasy-standings-row[^"]*">[\s\S]*?Sam[\s\S]*?<\/div>/)[0];
+  assert.match(samRow, /is-me/);
+  const alexRow = html.match(/<div class="fantasy-standings-row[^"]*">[\s\S]*?Alex[\s\S]*?<\/div>/)[0];
+  assert.doesNotMatch(alexRow, /is-me/);
+});
+
+test("renderFantasyStandingsPanel escapes manager names", () => {
+  const standings = {
+    throughGameweek: 2,
+    standings: [{ userId: 1, name: `<script>alert(1)</script>`, played: 2, wins: 2, draws: 0, losses: 0, pointsFor: 80, pointsAgainst: 40, recordPoints: 6 }],
+  };
+  const html = renderFantasyStandingsPanel(standings, {});
+  assert.doesNotMatch(html, /<script>alert/);
+  assert.match(html, /&lt;script&gt;/);
 });

@@ -29,7 +29,7 @@ const LIVE_MATCH_STATUSES = new Set([
   "PENALTY_SHOOTOUT",
   "BREAK",
 ]);
-const TERMINAL_MATCH_STATUSES = new Set([
+export const TERMINAL_MATCH_STATUSES = new Set([
   "FINISHED",
   "AWARDED",
   "CANCELLED",

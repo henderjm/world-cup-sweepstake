@@ -51,7 +51,9 @@ import {
   joinLeague as apiJoinLeague,
   listLeagues as apiListLeagues,
   loadLeague as apiLoadLeague,
+  loadMatchup as apiLoadMatchup,
   loadPlayerPool,
+  loadStandings as apiLoadStandings,
   setLineup as apiSetLineup,
   startDraft as apiStartDraft,
 } from "./fantasyApi.js";
@@ -64,12 +66,14 @@ import {
   renderFantasyLeagueList,
   renderFantasyLeagueShell,
   renderFantasyLobby,
+  renderFantasyMatchupPanel,
   renderFantasyMyTeamPanel,
   renderFantasyNotConfigured,
   renderFantasyPlayerRows,
   renderFantasyRosterPanel,
   renderFantasySessionExpired,
   renderFantasySignedOut,
+  renderFantasyStandingsPanel,
 } from "./fantasyView.js";
 
 const elements = {
@@ -118,12 +122,18 @@ function initialFantasyState() {
     playerPoolLoading: false,
     draftRoom: null, // { controller, state, remainingMs } once a socket is open
     filter: { position: "All", club: "All", search: "" },
-    subTab: "draftroom", // "draftroom" | "myteam"; matchup/standings are disabled Soon tabs
+    subTab: "draftroom", // "draftroom" | "myteam" | "matchup" | "standings"
     lineup: null, // { gameweek, source, starters: [{playerId,isCaptain}], bench } from GET .../lineup
     lineupLoading: false,
     lineupError: "",
     lineupEdit: null, // working copy while editing: { starters, captainId, bench, pendingId, saving, error }
     playerDrawerId: null, // My team pitch/bench: id of the player whose stats drawer is open
+    matchup: null, // { gameweek, status, me, opponent } from GET .../matchup
+    matchupLoading: false,
+    matchupError: "",
+    standings: null, // { throughGameweek, standings } from GET .../standings
+    standingsLoading: false,
+    standingsError: "",
     createBusy: false,
     createError: "",
     joinBusy: false,
@@ -530,7 +540,11 @@ function renderFantasy() {
     const body =
       subTab === "myteam"
         ? renderFantasyMyTeamPanel([], f.myUserId)
-        : renderFantasyLobby(league, members, { playerPool: f.playerPool, filter: f.filter });
+        : subTab === "matchup"
+          ? renderFantasyMatchupBody()
+          : subTab === "standings"
+            ? renderFantasyStandingsBody()
+            : renderFantasyLobby(league, members, { playerPool: f.playerPool, filter: f.filter });
     elements.layout.innerHTML = renderFantasyLeagueShell(league, members, subTab, body);
     return;
   }
@@ -560,16 +574,20 @@ function renderFantasyDraftPanel() {
   const body =
     subTab === "myteam"
       ? renderFantasyMyTeamBody(league, room)
-      : room.status === "complete"
-        ? renderFantasyComplete(members, room.picks)
-        : renderFantasyDraftRoom({
-            league,
-            members,
-            draft: { ...room, remainingMs: f.draftRoom.remainingMs },
-            playerPool: f.playerPool?.players ?? [],
-            filter: f.filter,
-            myUserId: f.myUserId,
-          });
+      : subTab === "matchup"
+        ? renderFantasyMatchupBody()
+        : subTab === "standings"
+          ? renderFantasyStandingsBody()
+          : room.status === "complete"
+            ? renderFantasyComplete(members, room.picks)
+            : renderFantasyDraftRoom({
+                league,
+                members,
+                draft: { ...room, remainingMs: f.draftRoom.remainingMs },
+                playerPool: f.playerPool?.players ?? [],
+                filter: f.filter,
+                myUserId: f.myUserId,
+              });
   elements.layout.innerHTML = renderFantasyLeagueShell(league, members, subTab, body);
 
   if (wasSearchFocused) {
@@ -624,6 +642,59 @@ async function loadFantasyLineup(leagueId) {
     f.lineupError = error.message || "Couldn't load your lineup.";
   } finally {
     if (f.activeLeagueId === leagueId) f.lineupLoading = false;
+  }
+  if (state.section === "fantasy") renderLayout();
+}
+
+// Matchup/Standings bodies: the same "trigger the load the first time it
+// renders without data yet, render what we have now" shape as
+// renderFantasyMyTeamBody's lineup fetch above (and loadPaperRun before it).
+// Neither tab depends on the draft room's own data, so they fetch and cache
+// independently of it and survive switching away to another sub-tab.
+function renderFantasyMatchupBody() {
+  const f = state.fantasy;
+  if (!f.matchup && !f.matchupLoading && !f.matchupError) loadFantasyMatchup(f.activeLeagueId);
+  return renderFantasyMatchupPanel(f.matchup, { error: f.matchupError });
+}
+
+function renderFantasyStandingsBody() {
+  const f = state.fantasy;
+  if (!f.standings && !f.standingsLoading && !f.standingsError) loadFantasyStandings(f.activeLeagueId);
+  return renderFantasyStandingsPanel(f.standings, { error: f.standingsError, myUserId: f.myUserId });
+}
+
+async function loadFantasyMatchup(leagueId) {
+  const f = state.fantasy;
+  if (f.matchupLoading) return;
+  f.matchupLoading = true;
+  f.matchupError = "";
+  try {
+    const matchup = await apiLoadMatchup(leagueId);
+    if (f.activeLeagueId !== leagueId) return; // navigated elsewhere mid-flight
+    f.matchup = matchup;
+  } catch (error) {
+    if (f.activeLeagueId !== leagueId) return;
+    f.matchupError = error.message || "Couldn't load your matchup.";
+  } finally {
+    if (f.activeLeagueId === leagueId) f.matchupLoading = false;
+  }
+  if (state.section === "fantasy") renderLayout();
+}
+
+async function loadFantasyStandings(leagueId) {
+  const f = state.fantasy;
+  if (f.standingsLoading) return;
+  f.standingsLoading = true;
+  f.standingsError = "";
+  try {
+    const standings = await apiLoadStandings(leagueId);
+    if (f.activeLeagueId !== leagueId) return; // navigated elsewhere mid-flight
+    f.standings = standings;
+  } catch (error) {
+    if (f.activeLeagueId !== leagueId) return;
+    f.standingsError = error.message || "Couldn't load the standings.";
+  } finally {
+    if (f.activeLeagueId === leagueId) f.standingsLoading = false;
   }
   if (state.section === "fantasy") renderLayout();
 }
@@ -828,6 +899,12 @@ async function openFantasyLeague(id) {
   f.lineupError = "";
   f.lineupEdit = null;
   f.playerDrawerId = null;
+  f.matchup = null;
+  f.matchupLoading = false;
+  f.matchupError = "";
+  f.standings = null;
+  f.standingsLoading = false;
+  f.standingsError = "";
   renderLayout();
   try {
     const detail = await apiLoadLeague(id);
@@ -970,6 +1047,12 @@ function closeFantasyLeague() {
   f.lineupError = "";
   f.lineupEdit = null;
   f.playerDrawerId = null;
+  f.matchup = null;
+  f.matchupLoading = false;
+  f.matchupError = "";
+  f.standings = null;
+  f.standingsLoading = false;
+  f.standingsError = "";
   renderLayout();
 }
 
@@ -1258,6 +1341,18 @@ function wireLayoutControls() {
     if (lineupRetryButton) {
       state.fantasy.lineupError = "";
       loadFantasyLineup(state.fantasy.activeLeagueId);
+      return;
+    }
+    const matchupRetryButton = event.target.closest("[data-fantasy-matchup-retry]");
+    if (matchupRetryButton) {
+      state.fantasy.matchupError = "";
+      loadFantasyMatchup(state.fantasy.activeLeagueId);
+      return;
+    }
+    const standingsRetryButton = event.target.closest("[data-fantasy-standings-retry]");
+    if (standingsRetryButton) {
+      state.fantasy.standingsError = "";
+      loadFantasyStandings(state.fantasy.activeLeagueId);
       return;
     }
     const makeCaptainButton = event.target.closest("[data-fantasy-make-captain]");

@@ -1901,3 +1901,81 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-drawer__stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 8px; }
 .fantasy-drawer__stat { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 10px; background: var(--surface-2); }
 .fantasy-drawer__stat .note--dim { text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; }
+
+/* Matchup tab (Phase 4.3): centerpiece card, purple accent throughout --------- */
+
+.fantasy-matchup__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+.fantasy-status-chip--scheduled { color: var(--muted); }
+.fantasy-status-chip--live { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
+.fantasy-status-chip--final { color: var(--fantasy-accent); border-color: var(--fantasy-line); background: var(--fantasy-soft); }
+
+.fantasy-matchup__row { display: flex; align-items: center; justify-content: center; gap: 18px; margin: 18px 0 14px; text-align: center; }
+.fantasy-matchup__side { flex: 1; min-width: 0; padding: 10px; border-radius: var(--radius-sm); }
+.fantasy-matchup__side.is-ahead { background: var(--fantasy-soft); box-shadow: inset 0 0 0 1px var(--fantasy-line); }
+.fantasy-matchup__name {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fantasy-matchup__side.is-ahead .fantasy-matchup__name { color: var(--fantasy-accent); }
+.fantasy-matchup__score { margin: 0; font-size: 34px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.fantasy-matchup__vs { flex: none; font-size: 12px; font-weight: 800; text-transform: uppercase; color: var(--faint); }
+
+.fantasy-matchup__bar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 0.08);
+}
+.fantasy-matchup__bar-me { display: block; height: 100%; background: var(--fantasy-accent); }
+.fantasy-matchup__bar-opp { display: block; height: 100%; background: rgb(255 255 255 / 0.14); }
+.fantasy-matchup__pending { text-align: center; margin: 0; }
+
+.fantasy-matchup--bye { text-align: center; padding: 28px 16px; }
+.fantasy-matchup__bye-title { margin: 4px 0 8px; font-size: 20px; font-weight: 900; font-style: italic; text-transform: uppercase; }
+
+/* Standings tab (Phase 4.3): Rank/Manager/P/W/D/L/PF/PA/PTS table ------------- */
+
+.fantasy-standings__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.fantasy-standings__head .card__title { margin: 0; }
+
+.fantasy-standings__table { margin-top: 10px; overflow-x: auto; }
+.fantasy-standings__cols,
+.fantasy-standings-row {
+  display: grid;
+  grid-template-columns: 34px minmax(110px, 1.6fr) repeat(4, 26px) repeat(2, 40px) 44px;
+  min-width: 480px;
+  align-items: center;
+  gap: 8px;
+}
+.fantasy-standings__cols {
+  padding: 0 10px 8px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.fantasy-standings__cols span:nth-child(n + 3),
+.fantasy-standings-row span:nth-child(n + 3) { text-align: center; }
+
+.fantasy-standings__rows { display: flex; flex-direction: column; gap: 4px; }
+.fantasy-standings-row {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12px;
+}
+.fantasy-standings-row.is-me { background: var(--fantasy-soft); box-shadow: inset 0 0 0 1px var(--fantasy-line); }
+.fantasy-standings-row__rank { font-weight: 800; color: var(--muted); }
+.fantasy-standings-row__name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fantasy-standings-row.is-me .fantasy-standings-row__name { color: var(--fantasy-accent); }
+.fantasy-standings-row__pts { font-weight: 900; color: var(--fantasy-accent); }
+
+.fantasy-standings__footnote { margin-top: 10px; }
+.fantasy-standings-empty { text-align: left; }

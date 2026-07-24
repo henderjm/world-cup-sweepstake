@@ -48,8 +48,15 @@ import {
   sortLeaderboard,
   validateClientResult,
 } from "../src/paperRunModel.js";
-import { MAX_LEAGUE_SIZE } from "../src/fantasy.js";
+import { MAX_LEAGUE_SIZE, bucketPosition } from "../src/fantasy.js";
 import { defaultLineup, resolveEffectiveLineup, validateLineupSelection } from "../src/fantasyLineups.js";
+import { scoreMatchForPlayers } from "../src/fantasyScoring.js";
+import {
+  currentGameweekFromMatches,
+  gameweekStatus,
+  rosterGameweekPoints,
+  standingsFromFixtures,
+} from "../src/fantasyGameweek.js";
 
 export { FantasyDraftRoom } from "./draftRoom.js";
 
@@ -187,6 +194,14 @@ export default {
     if (fantasyLineupRoute && request.method === "POST") {
       return handleFantasyLineupSet(request, env, Number(fantasyLineupRoute[1]), cors);
     }
+    const fantasyMatchupRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/matchup$/);
+    if (fantasyMatchupRoute && request.method === "GET") {
+      return handleFantasyMatchup(request, env, Number(fantasyMatchupRoute[1]), cors);
+    }
+    const fantasyStandingsRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/standings$/);
+    if (fantasyStandingsRoute && request.method === "GET") {
+      return handleFantasyStandings(request, env, Number(fantasyStandingsRoute[1]), cors);
+    }
     const fantasyLeagueDetailRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)$/);
     if (fantasyLeagueDetailRoute && request.method === "GET") {
       return handleFantasyLeagueDetail(request, env, Number(fantasyLeagueDetailRoute[1]), cors);
@@ -245,16 +260,18 @@ export default {
   },
 
   // Cron (see [triggers] in wrangler.toml): pre-generates AI analyses during live
-  // play and fans out push notifications for followed clubs. Run sequentially, not
-  // concurrently: both passes fetch the same /live and per-match detail URLs, and
-  // only a sequential order lets the second pass land on the edge cache the first
-  // one just warmed. Running them in parallel would fire both fetches before either
-  // response is cached, needlessly spending the daily API-Football allowance.
+  // play, fans out push notifications for followed clubs, and scores finished PL
+  // fantasy matches. Run sequentially, not concurrently: all three passes fetch the
+  // same /live and per-match detail URLs, and only a sequential order lets each
+  // later pass land on the edge cache an earlier one just warmed. Running them in
+  // parallel would fire the fetches before any response is cached, needlessly
+  // spending the daily API-Football allowance.
   async scheduled(controller, env, ctx) {
     ctx.waitUntil(
       (async () => {
         await runScheduledAnalysis(env);
         await runScheduledNotifications(env);
+        await runScheduledFantasyScoring(env);
       })(),
     );
   },
@@ -1083,13 +1100,7 @@ async function currentFantasyGameweek(env) {
     const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
     if (!comp || !env.API_FOOTBALL_KEY) return 1;
     const live = await getLive(comp, env.API_FOOTBALL_KEY);
-    const matchdays = (live.matches ?? [])
-      .filter((match) => Number.isInteger(match.matchday))
-      .map((match) => ({ matchday: match.matchday, finished: isMatchFinished(match) }));
-    if (!matchdays.length) return 1;
-    const unfinished = matchdays.filter((entry) => !entry.finished);
-    if (unfinished.length) return Math.min(...unfinished.map((entry) => entry.matchday));
-    return Math.max(...matchdays.map((entry) => entry.matchday));
+    return currentGameweekFromMatches(live.matches);
   } catch {
     return 1;
   }
@@ -1106,6 +1117,31 @@ async function fantasyRosterFor(env, leagueId, userId) {
   return rows.results ?? [];
 }
 
+// Shared by the /lineup GET route and the scoring cron: resolves one
+// manager's starting XI for `gameweek` exactly the same way in both places
+// (fantasy_lineups exact-match, else inherited from the latest earlier
+// gameweek, else defaultLineup's computed-on-read fill), so the two callers
+// can never disagree about "what were they playing that week".
+async function resolveManagerLineup(env, leagueId, userId, gameweek) {
+  const [roster, lineupRows] = await Promise.all([
+    fantasyRosterFor(env, leagueId, userId),
+    env.DB.prepare(`SELECT gameweek, player_id, is_captain FROM fantasy_lineups WHERE league_id = ?1 AND user_id = ?2`)
+      .bind(leagueId, userId)
+      .all(),
+  ]);
+
+  const resolved = resolveEffectiveLineup(lineupRows.results ?? [], gameweek);
+  let source = "set";
+  let starters = resolved.starters;
+  if (resolved.gameweek == null) {
+    starters = defaultLineup(roster).starters; // computed on read, never written to D1
+    source = "default";
+  } else if (resolved.inherited) {
+    source = "inherited";
+  }
+  return { roster, starters, source };
+}
+
 async function handleFantasyLineupGet(request, env, leagueId, cors) {
   if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
   const user = await sessionUser(request, env);
@@ -1120,24 +1156,7 @@ async function handleFantasyLineupGet(request, env, leagueId, cors) {
     if (!membership) return json({ error: "not a member" }, 403, cors);
 
     const gameweek = await currentFantasyGameweek(env);
-    const [roster, lineupRows] = await Promise.all([
-      fantasyRosterFor(env, leagueId, user.id),
-      env.DB.prepare(
-        `SELECT gameweek, player_id, is_captain FROM fantasy_lineups WHERE league_id = ?1 AND user_id = ?2`,
-      )
-        .bind(leagueId, user.id)
-        .all(),
-    ]);
-
-    const resolved = resolveEffectiveLineup(lineupRows.results ?? [], gameweek);
-    let source = "set";
-    let starters = resolved.starters;
-    if (resolved.gameweek == null) {
-      starters = defaultLineup(roster).starters; // computed on read, never written to D1
-      source = "default";
-    } else if (resolved.inherited) {
-      source = "inherited";
-    }
+    const { roster, starters, source } = await resolveManagerLineup(env, leagueId, user.id, gameweek);
 
     const starterIds = new Set(starters.map((entry) => entry.playerId));
     const bench = roster.filter((player) => !starterIds.has(player.id)).map((player) => player.id);
@@ -1202,6 +1221,338 @@ async function handleFantasyLineupSet(request, env, leagueId, cors) {
     const bench = roster.filter((player) => !starterIds.has(player.id)).map((player) => player.id);
 
     return json({ gameweek, source: "set", starters: starterEntries, bench }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// -- Fantasy gameweek scoring (Phase 4.3) -------------------------------------
+// PL-only, same reasoning as everywhere else in fantasy: the 38-matchday PL
+// season is what "gameweek" means here, so a match's own matchday IS the
+// fantasy gameweek it scores into, no separate mapping table required.
+//
+// The minute cron finds newly-FINISHED PL matches, scores each one exactly
+// once via scoreMatchForPlayers, and only then rolls the affected gameweek(s)
+// up into every complete-draft league's fantasy_gameweek_scores and
+// fantasy_h2h_fixtures. Double-scoring/double-counting is avoided two ways:
+//   - fantasy_scored_matches is a dedup ledger checked BEFORE a match is
+//     processed, so a match already scored on an earlier tick is never
+//     refetched or rescored (mirrors notify_state's "first sighting" pattern).
+//   - fantasy_player_scores is keyed on (gameweek, player_id) and written with
+//     INSERT OR REPLACE, so even a rare retry (e.g. this tick dies after
+//     writing scores but before the match makes it into the dedup ledger)
+//     lands the same values again rather than summing them twice. Gameweek
+//     totals are always recomputed by resumming fantasy_player_scores, never
+//     incremented, so the same idempotency extends to fantasy_gameweek_scores
+//     and fantasy_h2h_fixtures.
+
+async function runScheduledFantasyScoring(env) {
+  if (!env.DB || !env.API_FOOTBALL_KEY) return;
+  const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
+  if (!comp) return; // fantasy is PL-only; nothing to score without PL configured
+
+  let live;
+  try {
+    live = await getLive(comp, env.API_FOOTBALL_KEY);
+  } catch {
+    return; // feed down; the next tick retries
+  }
+
+  const candidates = live.matches.filter((match) => isMatchFinished(match) && Number.isInteger(match.matchday));
+  if (!candidates.length) return;
+
+  const alreadyScored = await fantasyScoredMatchIds(
+    env,
+    candidates.map((match) => match.id),
+  );
+  const newlyFinished = candidates.filter((match) => !alreadyScored.has(match.id));
+  if (!newlyFinished.length) return;
+
+  const touchedGameweeks = new Set();
+  for (const [index, match] of newlyFinished.entries()) {
+    try {
+      if (index > 0) await sleep(MATCH_DETAIL_PACING_MS);
+      const detail = await fetchMatchDetail(match.id, env.API_FOOTBALL_KEY);
+      const scores = scoreMatchForPlayers(detail);
+      // Players never in the baked squad pool (a late loan, a call-up who
+      // missed the fetch:fantasy-players bake) still need a fantasy_players
+      // row before fantasy_player_scores/fantasy_rosters can reference them.
+      // OR IGNORE so the curated pool is never clobbered for a player already
+      // known good. scoreMatchForPlayers can credit a goal/assist/card id that
+      // never appears in the lineup or bench (an events/lineups discrepancy
+      // upstream), so every scored id gets a placeholder row too, not just
+      // the lineup+bench ids, or that match's whole score write would fail
+      // its foreign key and retry forever on every future tick.
+      await upsertFantasyPlayersFromDetail(env, detail, scores.keys());
+      await writeFantasyPlayerScores(env, match.matchday, scores);
+      await env.DB.prepare(`INSERT OR IGNORE INTO fantasy_scored_matches (match_id) VALUES (?1)`)
+        .bind(match.id)
+        .run();
+      touchedGameweeks.add(match.matchday);
+    } catch {
+      // one broken match must not block the others; since it never reaches
+      // fantasy_scored_matches, the next tick retries it from scratch
+    }
+  }
+  if (!touchedGameweeks.size) return; // no new data this tick, no D1 rollup work needed
+
+  for (const gameweek of touchedGameweeks) {
+    try {
+      await recomputeFantasyGameweek(env, gameweek);
+    } catch {
+      // one gameweek's rollup failing must not block the others; retried next tick
+    }
+  }
+}
+
+async function fantasyScoredMatchIds(env, ids) {
+  if (!ids.length) return new Set();
+  const placeholders = ids.map((_, index) => `?${index + 1}`).join(",");
+  const rows = await env.DB.prepare(`SELECT match_id FROM fantasy_scored_matches WHERE match_id IN (${placeholders})`)
+    .bind(...ids)
+    .all();
+  return new Set((rows.results ?? []).map((row) => row.match_id));
+}
+
+async function upsertFantasyPlayersFromDetail(env, detail, extraIds = []) {
+  const players = [];
+  const seen = new Set();
+  for (const side of ["home", "away"]) {
+    const team = detail[side];
+    for (const player of [...(team?.lineup ?? []), ...(team?.bench ?? [])]) {
+      if (player.id == null || seen.has(player.id)) continue;
+      seen.add(player.id);
+      players.push({
+        id: player.id,
+        name: player.name || "",
+        team: team?.name || "",
+        position: bucketPosition(player.pos) ?? "MID",
+      });
+    }
+  }
+  // scoreMatchForPlayers can credit an id (a goal scorer, assister or carded
+  // player) that never showed up in either side's lineup or bench, an
+  // events/lineups discrepancy upstream. A bare placeholder row is enough to
+  // satisfy fantasy_player_scores' foreign key; a later squads-pool bake or
+  // draft start fills in the real name/team/position via its own REPLACE.
+  for (const id of extraIds) {
+    if (id == null || seen.has(id)) continue;
+    seen.add(id);
+    players.push({ id, name: "", team: "", position: "MID" });
+  }
+  if (!players.length) return;
+  await env.DB.batch(
+    players.map((player) =>
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO fantasy_players (id, name, team, position, active) VALUES (?1, ?2, ?3, ?4, 1)`,
+      ).bind(player.id, player.name, player.team, player.position),
+    ),
+  );
+}
+
+async function writeFantasyPlayerScores(env, gameweek, scores) {
+  const entries = [...scores.entries()];
+  if (!entries.length) return;
+  await env.DB.batch(
+    entries.map(([playerId, entry]) =>
+      env.DB.prepare(
+        `INSERT OR REPLACE INTO fantasy_player_scores (gameweek, player_id, points, breakdown, computed_at)
+         VALUES (?1, ?2, ?3, ?4, datetime('now'))`,
+      ).bind(gameweek, playerId, entry.points, JSON.stringify(entry.breakdown)),
+    ),
+  );
+}
+
+// Rolls one gameweek's freshly-scored players up into every complete-draft
+// league's totals and head-to-head fixtures.
+async function recomputeFantasyGameweek(env, gameweek) {
+  const scoreRows = await env.DB.prepare(`SELECT player_id, points FROM fantasy_player_scores WHERE gameweek = ?1`)
+    .bind(gameweek)
+    .all();
+  const playerPoints = new Map((scoreRows.results ?? []).map((row) => [row.player_id, row.points]));
+
+  const leagues = await env.DB.prepare(`SELECT id FROM fantasy_leagues WHERE draft_status = 'complete'`).all();
+  for (const league of leagues.results ?? []) {
+    await recomputeLeagueGameweek(env, league.id, gameweek, playerPoints);
+  }
+}
+
+async function recomputeLeagueGameweek(env, leagueId, gameweek, playerPoints) {
+  const members = await env.DB.prepare(`SELECT user_id FROM fantasy_league_members WHERE league_id = ?1`)
+    .bind(leagueId)
+    .all();
+  const memberIds = (members.results ?? []).map((row) => row.user_id);
+  if (!memberIds.length) return;
+
+  const gwScores = new Map();
+  for (const userId of memberIds) {
+    const { starters } = await resolveManagerLineup(env, leagueId, userId, gameweek);
+    const { points } = rosterGameweekPoints({ starters }, playerPoints);
+    gwScores.set(userId, points);
+  }
+
+  await env.DB.batch(
+    memberIds.map((userId) =>
+      env.DB.prepare(
+        `INSERT INTO fantasy_gameweek_scores (league_id, user_id, gameweek, points, computed_at)
+         VALUES (?1, ?2, ?3, ?4, datetime('now'))
+         ON CONFLICT(league_id, user_id, gameweek) DO UPDATE SET points = ?4, computed_at = datetime('now')`,
+      ).bind(leagueId, userId, gameweek, gwScores.get(userId)),
+    ),
+  );
+
+  const fixtures = await env.DB.prepare(
+    `SELECT home_user_id, away_user_id FROM fantasy_h2h_fixtures WHERE league_id = ?1 AND gameweek = ?2`,
+  )
+    .bind(leagueId, gameweek)
+    .all();
+  const fixtureUpdates = [];
+  for (const fixture of fixtures.results ?? []) {
+    // gwScores always has every league member (rosterGameweekPoints defaults
+    // an unscored player to 0 rather than skipping them), so both sides of
+    // every fixture get written every pass; the has() check just guards
+    // against a fixture referencing a user who has since left the league.
+    if (gwScores.has(fixture.home_user_id)) {
+      fixtureUpdates.push(
+        env.DB.prepare(
+          `UPDATE fantasy_h2h_fixtures SET home_score = ?1 WHERE league_id = ?2 AND gameweek = ?3 AND home_user_id = ?4`,
+        ).bind(gwScores.get(fixture.home_user_id), leagueId, gameweek, fixture.home_user_id),
+      );
+    }
+    if (gwScores.has(fixture.away_user_id)) {
+      fixtureUpdates.push(
+        env.DB.prepare(
+          `UPDATE fantasy_h2h_fixtures SET away_score = ?1 WHERE league_id = ?2 AND gameweek = ?3 AND home_user_id = ?4`,
+        ).bind(gwScores.get(fixture.away_user_id), leagueId, gameweek, fixture.home_user_id),
+      );
+    }
+  }
+  if (fixtureUpdates.length) await env.DB.batch(fixtureUpdates);
+}
+
+async function fantasyGameweekScore(env, leagueId, userId, gameweek) {
+  const row = await env.DB.prepare(
+    `SELECT points FROM fantasy_gameweek_scores WHERE league_id = ?1 AND user_id = ?2 AND gameweek = ?3`,
+  )
+    .bind(leagueId, userId, gameweek)
+    .first();
+  return row?.points ?? 0;
+}
+
+// GET /fantasy/league/:id/matchup: the caller's current-gameweek head-to-head,
+// with live-updating scores read straight from fantasy_gameweek_scores rather
+// than the possibly-stale fantasy_h2h_fixtures row (which only settles once
+// the cron rolls that gameweek up). A null opponent means a bye week, which
+// round-robin scheduling can produce for an odd-sized league.
+async function handleFantasyMatchup(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+
+    const gameweek = await currentFantasyGameweek(env);
+
+    let status = "scheduled";
+    try {
+      if (env.API_FOOTBALL_KEY) {
+        const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
+        if (comp) {
+          const live = await getLive(comp, env.API_FOOTBALL_KEY);
+          status = gameweekStatus(live.matches, gameweek);
+        }
+      }
+    } catch {
+      // feed unavailable this tick; "scheduled" is the safe, non-alarming default
+    }
+
+    const fixture = await env.DB.prepare(
+      `SELECT home_user_id, away_user_id FROM fantasy_h2h_fixtures
+       WHERE league_id = ?1 AND gameweek = ?2 AND (home_user_id = ?3 OR away_user_id = ?3)`,
+    )
+      .bind(leagueId, gameweek, user.id)
+      .first();
+
+    const meScore = await fantasyGameweekScore(env, leagueId, user.id, gameweek);
+    const me = { userId: user.id, name: user.name || "You", score: meScore };
+
+    if (!fixture) {
+      return json({ gameweek, status, me, opponent: null }, 200, cors);
+    }
+
+    const opponentId = fixture.home_user_id === user.id ? fixture.away_user_id : fixture.home_user_id;
+    const [opponentRow, opponentScore] = await Promise.all([
+      env.DB.prepare(`SELECT name, email FROM users WHERE id = ?1`).bind(opponentId).first(),
+      fantasyGameweekScore(env, leagueId, opponentId, gameweek),
+    ]);
+    const opponent = {
+      userId: opponentId,
+      name: opponentRow?.name || String(opponentRow?.email ?? "").split("@")[0] || "Someone",
+      score: opponentScore,
+    };
+
+    return json({ gameweek, status, me, opponent }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// GET /fantasy/league/:id/standings: only gameweeks strictly before the
+// current one count, so a mid-gameweek score can never flicker the table
+// before that gameweek is actually done.
+async function handleFantasyStandings(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+
+    const currentGameweek = await currentFantasyGameweek(env);
+    const throughGameweek = currentGameweek - 1;
+
+    const [membersRows, fixtureRows] = await Promise.all([
+      env.DB.prepare(
+        `SELECT m.user_id, u.name, u.email FROM fantasy_league_members m
+         JOIN users u ON u.id = m.user_id
+         WHERE m.league_id = ?1`,
+      )
+        .bind(leagueId)
+        .all(),
+      throughGameweek >= 1
+        ? env.DB.prepare(
+            `SELECT gameweek, home_user_id, away_user_id, home_score, away_score
+             FROM fantasy_h2h_fixtures WHERE league_id = ?1 AND gameweek <= ?2`,
+          )
+            .bind(leagueId, throughGameweek)
+            .all()
+        : Promise.resolve({ results: [] }),
+    ]);
+
+    const members = (membersRows.results ?? []).map((row) => ({
+      userId: row.user_id,
+      name: row.name || String(row.email ?? "").split("@")[0] || "Someone",
+    }));
+    const fixtures = (fixtureRows.results ?? []).map((row) => ({
+      gameweek: row.gameweek,
+      homeUserId: row.home_user_id,
+      awayUserId: row.away_user_id,
+      homeScore: row.home_score,
+      awayScore: row.away_score,
+    }));
+
+    return json({ throughGameweek, standings: standingsFromFixtures(fixtures, members) }, 200, cors);
   } catch {
     return json({ error: "fantasy unavailable" }, 502, cors);
   }
