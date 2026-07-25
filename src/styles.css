@@ -1461,6 +1461,7 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-chip--pending { color: var(--gold); border-color: rgb(245 197 66 / 0.4); background: rgb(245 197 66 / 0.1); }
 .fantasy-chip--drafting { color: var(--fantasy-accent); border-color: var(--fantasy-line); background: var(--fantasy-soft); }
 .fantasy-chip--complete { color: var(--muted); }
+.fantasy-chip--locked { color: var(--muted); border-color: rgb(255 255 255 / 0.12); }
 .fantasy-chip--suggested {
   margin-left: 6px;
   font-size: 9px;

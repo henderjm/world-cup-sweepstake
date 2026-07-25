@@ -64,6 +64,7 @@ import {
   resolveWaiverRun,
   validateAcquisition,
 } from "../src/fantasyWaivers.js";
+import { lockedPlayerIds, playerLockState } from "../src/fantasyLocks.js";
 
 export { FantasyDraftRoom } from "./draftRoom.js";
 
@@ -1148,6 +1149,25 @@ async function currentFantasyGameweek(env) {
   }
 }
 
+// The PL match list for kickoff-lock checks (src/fantasyLocks.js), read off
+// the same edge-cached getLive() every other fantasy handler already calls
+// for gameweek status. Returns null, not an empty array, when the feed is
+// unavailable (no API key locally, upstream down, PL not configured), so a
+// caller can tell "nothing to check against" apart from "checked, nothing is
+// locked" and choose to fail open rather than block every free-agent move on
+// a feed blip.
+async function currentFantasyMatches(env) {
+  try {
+    if (!env.API_FOOTBALL_KEY) return null;
+    const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
+    if (!comp) return null;
+    const live = await getLive(comp, env.API_FOOTBALL_KEY);
+    return live.matches ?? [];
+  } catch {
+    return null;
+  }
+}
+
 async function fantasyRosterFor(env, leagueId, userId) {
   const rows = await env.DB.prepare(
     `SELECT r.player_id AS id, pl.name, pl.team, pl.position FROM fantasy_rosters r
@@ -1740,6 +1760,14 @@ async function handleFantasyWaiversView(request, env, leagueId, cors) {
       (player) => !ownedIds.has(player.id) && !wireIds.has(player.id),
     );
 
+    // Kickoff lock (src/fantasyLocks.js), computed over every active player so
+    // the client can mark a free agent OR a roster player as locked without a
+    // second round trip. A null match list (feed unavailable) means nothing
+    // can be checked, so nothing is reported locked here either, matching the
+    // instant-add route's own fail-open behavior rather than disagreeing with it.
+    const matches = await currentFantasyMatches(env);
+    const locked = matches ? lockedPlayerIds(allPlayers.results ?? [], matches, currentGameweek, Date.now()) : new Set();
+
     const mine = (stateRows.results ?? []).find((row) => row.user_id === user.id);
 
     let lastRun = null;
@@ -1779,6 +1807,7 @@ async function handleFantasyWaiversView(request, env, leagueId, cors) {
           budgetRemaining: row.faab_remaining,
         })),
         freeAgents,
+        lockedPlayerIds: [...locked],
         wire: (wireRows.results ?? []).map((row) => ({
           player: { id: row.player_id, name: row.name, team: row.team, position: row.position },
           clearsAfterGameweek: row.clears_after_gameweek,
@@ -1980,6 +2009,41 @@ async function handleFantasyFreeAgentAdd(request, env, leagueId, cors) {
     if (!validation.ok) return json({ error: validation.error }, 400, cors);
 
     const gameweek = await currentFantasyGameweek(env);
+
+    // Kickoff lock (see src/fantasyLocks.js): reject the swap if EITHER side's
+    // club has already kicked off this gameweek, closing the exploit where an
+    // instant add/drop could bank (or dodge) points that have already been
+    // decided. Only the instant path needs this - a queued waiver claim
+    // resolves at the gameweek boundary, by which point every match in the
+    // settling gameweek is already terminal by construction, so the same
+    // check there would reject every processed claim (see runLeagueWaiverRun
+    // and CLAUDE.md). If the live feed is unavailable (no API key locally,
+    // upstream down), currentFantasyMatches returns null and this fails OPEN,
+    // allowing the move: freezing every free-agent transaction league-wide on
+    // a feed blip is worse than the rare window where a manager could exploit
+    // that specific outage, and a genuine feed error is never swallowed
+    // silently, it is a deliberate null the lock check treats as "nothing to
+    // check against" (see currentFantasyMatches's own comment).
+    const matches = await currentFantasyMatches(env);
+    if (matches) {
+      const addLock = playerLockState({ team: addPlayer.team, matches, gameweek, now: Date.now() });
+      if (addLock.locked) {
+        return json(
+          { error: `${addPlayer.name} is locked: ${addPlayer.team} have already kicked off this gameweek` },
+          400,
+          cors,
+        );
+      }
+      const dropLock = playerLockState({ team: dropPlayer.team, matches, gameweek, now: Date.now() });
+      if (dropLock.locked) {
+        return json(
+          { error: `${dropPlayer.name} is locked: ${dropPlayer.team} have already kicked off this gameweek` },
+          400,
+          cors,
+        );
+      }
+    }
+
     // Guarded on the add player still being unowned/unwired at write time:
     // two managers racing the same free agent can both pass the read-time
     // check above, but only one INSERT...SELECT...WHERE can win the roster

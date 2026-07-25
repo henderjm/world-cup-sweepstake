@@ -811,7 +811,8 @@ async function reloadFantasyWaivers() {
 function refreshFantasyFreeAgentRows() {
   const list = elements.layout.querySelector("[data-fantasy-fa-list]");
   if (!list) return;
-  list.innerHTML = renderFantasyFreeAgentRows(state.fantasy.waivers?.freeAgents ?? [], state.fantasy.waiverFreeAgentFilter);
+  const lockedIds = new Set(state.fantasy.waivers?.lockedPlayerIds ?? []);
+  list.innerHTML = renderFantasyFreeAgentRows(state.fantasy.waivers?.freeAgents ?? [], state.fantasy.waiverFreeAgentFilter, lockedIds);
 }
 
 function refreshFantasyWireRows() {

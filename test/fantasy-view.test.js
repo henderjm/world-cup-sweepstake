@@ -953,6 +953,21 @@ test("renderFantasyFreeAgentRows shows an Add action per row", () => {
   assert.match(html, />Add</);
 });
 
+test("renderFantasyFreeAgentRows shows a Locked chip instead of Add for a locked player id", () => {
+  const players = [waiverPlayer(1, "MID", "Locked Mid"), waiverPlayer(2, "MID", "Open Mid")];
+  const html = renderFantasyFreeAgentRows(players, { position: "All", search: "" }, new Set([1]));
+  assert.match(html, /fantasy-chip--locked/);
+  assert.match(html, />Locked</);
+  assert.doesNotMatch(html, /data-fantasy-fa-add="1"/);
+  assert.match(html, /data-fantasy-fa-add="2"/); // player 2 is not locked, still gets an Add button
+});
+
+test("renderFantasyFreeAgentRows shows an Add action, not Locked, when no lockedIds are given", () => {
+  const html = renderFantasyFreeAgentRows([waiverPlayer(1, "MID")], { position: "All", search: "" });
+  assert.doesNotMatch(html, /fantasy-chip--locked/);
+  assert.match(html, /data-fantasy-fa-add="1"/);
+});
+
 test("renderFantasyWireRows filters by position and shows a Claim action per row", () => {
   const wire = [
     { player: waiverPlayer(1, "GK", "Alisson", "Liverpool"), clearsAfterGameweek: 5 },
@@ -1008,6 +1023,37 @@ test("renderFantasyClaimFlow explains when the caller has no same-position playe
   const html = renderFantasyClaimFlow(flow, { roster, mode: "faab" });
   assert.match(html, /You have no FWD to drop/);
   assert.match(html, /data-fantasy-claim-submit[^>]*disabled/);
+});
+
+test("renderFantasyClaimFlow excludes a locked roster player from drop candidates on the free-agent path, and explains why", () => {
+  const roster = [
+    { id: 20, name: "Locked Def", team: "Test FC", position: "DEF" },
+    { id: 21, name: "Open Def", team: "Test FC", position: "DEF" },
+  ];
+  const flow = { addPlayer: waiverPlayer(10, "DEF", "New Def"), path: "free_agent", dropPlayerId: null };
+  const html = renderFantasyClaimFlow(flow, { roster, mode: "faab", lockedIds: new Set([20]) });
+  assert.doesNotMatch(html, /Locked Def/);
+  assert.match(html, /Open Def/);
+  assert.match(html, /list is shorter than usual/);
+});
+
+test("renderFantasyClaimFlow does not filter locked players out of drop candidates on the waiver-claim path", () => {
+  const roster = [{ id: 20, name: "Locked Def", team: "Test FC", position: "DEF" }];
+  const flow = { addPlayer: waiverPlayer(10, "DEF", "Wire Def"), path: "waiver", dropPlayerId: null };
+  const html = renderFantasyClaimFlow(flow, { roster, mode: "faab", lockedIds: new Set([20]) });
+  // A queued claim resolves at the next gameweek boundary, long after this
+  // gameweek's matches are decided, so the kickoff lock has nothing to say
+  // about it (see CLAUDE.md/runLeagueWaiverRun): the drop candidate must
+  // still be offered.
+  assert.match(html, /Locked Def/);
+  assert.doesNotMatch(html, /list is shorter than usual/);
+});
+
+test("renderFantasyClaimFlow explains a fully-locked same-position roster distinctly from having none at all", () => {
+  const roster = [{ id: 20, name: "Locked Def", team: "Test FC", position: "DEF" }];
+  const flow = { addPlayer: waiverPlayer(10, "DEF", "New Def"), path: "free_agent", dropPlayerId: null };
+  const html = renderFantasyClaimFlow(flow, { roster, mode: "faab", lockedIds: new Set([20]) });
+  assert.match(html, /You have no DEF to drop that isn't locked/);
 });
 
 test("renderFantasyClaimFlow surfaces a submit error in the shared form-error style", () => {

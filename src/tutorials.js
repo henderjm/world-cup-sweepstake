@@ -174,13 +174,13 @@ export const TUTORIALS = [
       {
         type: "callout",
         body: [
-          "Nothing is locked while matches are being played, either. A free agent add goes through instantly at any time, including mid-gameweek, and a player added after he has already banked points this gameweek still brings those points with him.",
+          "A free agent add still goes through instantly, but every player is individually locked the moment his own club's match kicks off that gameweek, not by a single league-wide cutoff. You cannot add a player whose club has already played, and you cannot drop one either, so neither side of the swap can be picked with the benefit of hindsight on a match that has already been decided.",
         ],
       },
       {
         type: "callout",
         body: [
-          "Neither of those is a bug in the sense of code doing the wrong thing. The rules simply do not say anything about locking yet: they are rules not yet written, the natural next decision if this league gets competitive.",
+          "That lock only applies to the instant add. A queued waiver claim does not need it: it resolves at the gameweek boundary, once every match in the gameweek that just finished is already over for everybody, so there is no hindsight left to guard against by the time it is actually processed.",
         ],
       },
       {

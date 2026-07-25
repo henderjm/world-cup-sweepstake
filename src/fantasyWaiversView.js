@@ -44,9 +44,15 @@ export function priorityOrdinalLabel(priority, total) {
 // full (the same-position-swap invariant). Returns an empty array for a
 // missing position rather than the whole roster - offering every player as a
 // droppable would be actively wrong, not just unhelpful.
-export function dropCandidates(roster, position) {
+//
+// `lockedIds` (a Set, optional) additionally excludes any player whose club
+// has already kicked off this gameweek (see src/fantasyLocks.js): dropping
+// him after his game has been decided is exactly the exploit the kickoff
+// lock closes, so he is never offered as a drop candidate here, mirroring
+// the Worker's own check in handleFantasyFreeAgentAdd.
+export function dropCandidates(roster, position, lockedIds) {
   if (!position) return [];
-  return (roster ?? []).filter((player) => player?.position === position);
+  return (roster ?? []).filter((player) => player?.position === position && !lockedIds?.has?.(player?.id));
 }
 
 // True only when addPlayer and dropPlayer share a position - the same check

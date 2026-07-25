@@ -81,6 +81,20 @@ test("dropCandidates returns an empty array for a missing position rather than t
   assert.deepEqual(dropCandidates(roster, undefined), []);
 });
 
+test("dropCandidates additionally excludes locked player ids when a lockedIds set is given", () => {
+  assert.deepEqual(
+    dropCandidates(roster, "DEF", new Set([2])).map((p) => p.id),
+    [3],
+  );
+});
+
+test("dropCandidates ignores lockedIds entirely when it is not given", () => {
+  assert.deepEqual(
+    dropCandidates(roster, "DEF").map((p) => p.id),
+    [2, 3],
+  );
+});
+
 test("isLegalDropCandidate is true only when both players share a position", () => {
   assert.equal(isLegalDropCandidate({ position: "DEF" }, { position: "DEF" }), true);
   assert.equal(isLegalDropCandidate({ position: "DEF" }, { position: "MID" }), false);

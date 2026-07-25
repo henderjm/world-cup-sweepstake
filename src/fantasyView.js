@@ -1065,26 +1065,33 @@ function renderFantasyWaiversStatus(waivers) {
 
 // -- Free agents: instant add, first come first served ------------------------
 
-function renderFreeAgentRow(player) {
+// `locked` is true once addPlayer.team's fixture has kicked off this
+// gameweek (src/fantasyLocks.js): the Add button is replaced with a "Locked"
+// chip so a manager can never bank a player's already-decided match.
+function renderFreeAgentRow(player, locked) {
+  const action = locked
+    ? `<span class="chip fantasy-chip fantasy-chip--locked" title="Locked: their club has already kicked off this gameweek">Locked</span>`
+    : `<button class="btn fantasy-draft-btn" type="button" data-fantasy-fa-add="${player.id}">Add</button>`;
   return `<div class="fantasy-fa-row">
       ${badgeFor(player.team)}
       <span class="fantasy-fa-row__id"><strong>${esc(player.name)}</strong><span class="note--dim">${esc(abbrFor(player.team))}</span></span>
       <span class="fantasy-pos">${esc(player.position)}</span>
-      <span class="fantasy-fa-row__action"><button class="btn fantasy-draft-btn" type="button" data-fantasy-fa-add="${player.id}">Add</button></span>
+      <span class="fantasy-fa-row__action">${action}</span>
     </div>`;
 }
 
 // The rows only, exported so app.js can refresh just this list on every
 // filter keystroke/change (mirrors renderFantasyPlayerRows for the draft
 // pool) - the search input itself lives outside this container, so a
-// targeted refresh never has to fight for its own focus back.
-export function renderFantasyFreeAgentRows(players, filter) {
+// targeted refresh never has to fight for its own focus back. `lockedIds`
+// (a Set, optional) comes straight off the waivers response.
+export function renderFantasyFreeAgentRows(players, filter, lockedIds) {
   const filtered = filterPlayers(players, filter);
   if (!filtered.length) return `<p class="note">No free agents match.</p>`;
-  return filtered.map(renderFreeAgentRow).join("");
+  return filtered.map((player) => renderFreeAgentRow(player, Boolean(lockedIds?.has?.(player.id)))).join("");
 }
 
-function renderFantasyFreeAgents(freeAgents, filter) {
+function renderFantasyFreeAgents(freeAgents, filter, lockedIds) {
   const activePosition = filter?.position ?? "All";
   const positionPills = POSITION_FILTERS.map(
     (position) =>
@@ -1095,7 +1102,7 @@ function renderFantasyFreeAgents(freeAgents, filter) {
       <div class="fantasy-pool__scroll">
         <div class="fantasy-pool__sticky">
           <h3 class="card__title">Free agents</h3>
-          <p class="note">Unowned and available now: add one instantly for a same-position drop from your squad.</p>
+          <p class="note">Unowned and available now: add one instantly for a same-position drop from your squad. A player whose club has already kicked off this gameweek shows Locked instead, so nobody can bank a match that has already been decided.</p>
           <div class="fantasy-pool__filters">
             <div class="segrow fantasy-pool__positions">${positionPills}</div>
             <select class="fantasy-select" data-fantasy-fa-club-filter>${renderClubOptions(freeAgents, filter?.club)}</select>
@@ -1104,7 +1111,7 @@ function renderFantasyFreeAgents(freeAgents, filter) {
         </div>
         <div class="fantasy-pool__table">
           <div class="fantasy-fa-cols"><span></span><span>Player</span><span>Pos</span><span></span></div>
-          <div class="fantasy-fa-rows" data-fantasy-fa-list>${renderFantasyFreeAgentRows(freeAgents, filter)}</div>
+          <div class="fantasy-fa-rows" data-fantasy-fa-list>${renderFantasyFreeAgentRows(freeAgents, filter, lockedIds)}</div>
         </div>
       </div>
     </section>`;
@@ -1178,9 +1185,20 @@ function renderFantasyWire(wire, filter) {
 // a manager is mid-acquisition (state.fantasy.waiverFlow in app.js); `mode`
 // is the league's current waiver mode, only consulted to decide whether a bid
 // field belongs here (a free-agent add never bids, regardless of mode).
-export function renderFantasyClaimFlow(flow, { roster, mode } = {}) {
+// `lockedIds` (a Set, optional) excludes any roster player whose own club
+// has already kicked off this gameweek from the drop candidates, the same
+// kickoff lock the Worker enforces server-side (src/fantasyLocks.js) - but
+// only for a free-agent add. A queued waiver claim is deliberately exempt:
+// it resolves at the next gameweek boundary, long after this gameweek's
+// matches are decided either way, so the lock has nothing meaningful to say
+// about a drop that will not actually happen until then (see CLAUDE.md and
+// worker.js's runLeagueWaiverRun).
+export function renderFantasyClaimFlow(flow, { roster, mode, lockedIds } = {}) {
   const { addPlayer, path, dropPlayerId, busy = false, error = "" } = flow;
-  const candidates = dropCandidates(roster, addPlayer.position);
+  const effectiveLockedIds = path === "free_agent" ? lockedIds : null;
+  const allSamePosition = dropCandidates(roster, addPlayer.position, null);
+  const candidates = dropCandidates(roster, addPlayer.position, effectiveLockedIds);
+  const someLocked = candidates.length < allSamePosition.length;
   const drops = candidates.length
     ? candidates
         .map(
@@ -1190,7 +1208,7 @@ export function renderFantasyClaimFlow(flow, { roster, mode } = {}) {
             </button>`,
         )
         .join("")
-    : `<p class="note">You have no ${esc(addPlayer.position)} to drop, so this swap isn't possible right now.</p>`;
+    : `<p class="note">You have no ${esc(addPlayer.position)} to drop${someLocked ? " that isn't locked" : ""}, so this swap isn't possible right now.</p>`;
   const bidField =
     path === "waiver" && mode === "faab"
       ? `<label class="fantasy-claim-flow__bid">Bid (credits)
@@ -1209,6 +1227,7 @@ export function renderFantasyClaimFlow(flow, { roster, mode } = {}) {
         </div>
       </div>
       <p class="note">Every squad slot is always full, so adding a ${esc(addPlayer.position)} means dropping one of your own ${esc(addPlayer.position)}s. Choose which one below.</p>
+      ${someLocked ? `<p class="note">This list is shorter than usual: a ${esc(addPlayer.position)} whose own club has already kicked off this gameweek is locked and can't be dropped.</p>` : ""}
       <div class="fantasy-claim-flow__drops">${drops}</div>
       ${bidField}
       ${error ? `<p class="fantasy-form__error">${esc(error)}</p>` : ""}
@@ -1365,11 +1384,12 @@ export function renderFantasyWaiversPanel(
   }
 
   const playersById = buildWaiverPlayerLookup({ freeAgents: waivers.freeAgents, wire: waivers.wire, roster });
+  const lockedIds = new Set(waivers.lockedPlayerIds ?? []);
 
   return `
-    ${flow ? renderFantasyClaimFlow(flow, { roster, mode: waivers.mode }) : ""}
+    ${flow ? renderFantasyClaimFlow(flow, { roster, mode: waivers.mode, lockedIds }) : ""}
     ${renderFantasyWaiversStatus(waivers)}
-    ${renderFantasyFreeAgents(waivers.freeAgents, freeAgentFilter)}
+    ${renderFantasyFreeAgents(waivers.freeAgents, freeAgentFilter, lockedIds)}
     ${renderFantasyWire(waivers.wire, wireFilter)}
     ${renderFantasyMyClaims(waivers.myClaims, playersById)}
     ${renderFantasyPriorities(waivers.priorities, myUserId, waivers.mode)}
