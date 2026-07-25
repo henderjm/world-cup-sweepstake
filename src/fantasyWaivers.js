@@ -123,12 +123,23 @@ export function orderClaims(claims, { mode, priorities, standings } = {}) {
 }
 
 // Checks one claim against the run's working state, in the same order the
-// rejection vocabulary is documented in: a taken player first (the only check
-// whose wording depends on mode), then ownership of the declared drop, then
-// the position-match invariant, then (faab only) the bid against the
-// already-decremented remaining budget.
+// rejection vocabulary is documented in: the degenerate add-equals-drop case
+// first (this is an engine-level safety net: validateAcquisition already
+// blocks it at submission, but the working-state checks below cannot be
+// trusted to catch it on their own — a same-player claim trivially owns its
+// own "drop", trivially matches its own position, and would otherwise be
+// processed and pushed onto wireAdds while the roster write it triggers is a
+// no-op, leaving the engine's own ownership bookkeeping out of sync with
+// reality), then a taken player (the only other check whose wording depends
+// on mode), then ownership of the declared drop, then the position-match
+// invariant, then (faab only) the bid against the already-decremented
+// remaining budget.
 function evaluateClaim({ claim, mode, takenThisRun, workingOwnedBy, workingBudgets, playerLookup }) {
   const { userId, addPlayerId, dropPlayerId, bid } = claim;
+
+  if (addPlayerId === dropPlayerId) {
+    return { ok: false, error: "Cannot add and drop the same player" };
+  }
 
   if (takenThisRun.has(addPlayerId)) {
     // Same underlying condition (someone else already won this wire player

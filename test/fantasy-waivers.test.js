@@ -449,6 +449,44 @@ test("resolveWaiverRun is deterministic: identical input always produces identic
   assert.deepEqual(first, second);
 });
 
+test("resolveWaiverRun rejects a claim whose addPlayerId equals its dropPlayerId, engine-level", () => {
+  // validateAcquisition already blocks this at submission time, but the
+  // engine must not rely on that: workingOwnedBy.get(dropPlayerId) trivially
+  // equals userId for a same-player claim (they still hold it) and
+  // addPosition/dropPosition trivially match, so without an explicit guard
+  // this would process, wrongly land the player in wireAdds while it stays
+  // on the roster, and leave the engine's own ownership bookkeeping (the
+  // set-then-immediately-delete of the same playerId) out of sync with the
+  // roster write the caller would perform.
+  const claims = [{ claimId: 1, userId: 1, addPlayerId: 10, dropPlayerId: 10, bid: 5, priority: 1 }];
+  const run = resolveWaiverRun({
+    claims,
+    mode: "faab",
+    ownedBy: baseOwnedBy(),
+    budgets: new Map([[1, 100]]),
+    priorities: [],
+    players,
+  });
+  assert.equal(run.results[0].status, "rejected");
+  assert.equal(run.results[0].reason, "Cannot add and drop the same player");
+  assert.deepEqual(run.rosterChanges, []);
+  assert.deepEqual(run.wireAdds, []);
+});
+
+test("resolveWaiverRun rejects add-equals-drop the same way regardless of mode", () => {
+  const claims = [{ claimId: 1, userId: 1, addPlayerId: 10, dropPlayerId: 10, priority: 1 }];
+  const run = resolveWaiverRun({
+    claims,
+    mode: "rolling",
+    ownedBy: baseOwnedBy(),
+    budgets: new Map(),
+    priorities: [{ userId: 1, priority: 1 }],
+    players,
+  });
+  assert.equal(run.results[0].status, "rejected");
+  assert.equal(run.results[0].reason, "Cannot add and drop the same player");
+});
+
 // -- nextRollingPriorities ------------------------------------------------------
 
 test("nextRollingPriorities moves winners to the back, preserving relative order both sides", () => {

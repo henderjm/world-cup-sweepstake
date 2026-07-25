@@ -92,12 +92,24 @@ export function defaultLineup(roster) {
 // earlier one) can reference a player no longer on their roster: dropped via
 // free agency or a waiver claim since the lineup was last touched. Filters
 // those out and tops up from the remaining roster using the same
-// formation-fill order defaultLineup uses, so the resolved XI is always
-// exactly STARTING_SIZE and legal, never silently short or pointing at a
-// lost player. If the lost player was the captain, the first surviving or
+// formation-fill order defaultLineup uses, never silently pointing at a lost
+// player. If the lost player was the captain, the first surviving or
 // topped-up starter becomes captain instead of leaving the XI captain-less.
 // `starters` is { playerId, isCaptain }[]; `roster` is { id, position }[].
 // Returns the input unchanged (repaired: false) when nothing was lost.
+//
+// The result is exactly STARTING_SIZE and legal PROVIDED the roster can
+// still fill every position's STARTING_LIMITS minimum, which holds today
+// because every acquisition (instant free agency or a waiver claim) is a
+// same-position 1-for-1 swap: the roster's per-position counts, and
+// therefore SQUAD_SIZE itself, never shrink. Nothing in this codebase can
+// currently make a roster too small or too position-imbalanced to field a
+// legal XI, so that path is intentionally not built out. If the roster ever
+// were too small, fillLineup's own bounds (it only ever draws from
+// `preselected` plus `pool`) already return however many starters that
+// allows rather than crashing or padding in an invalid entry; that
+// roster-limited result is this function's deliberate fallback, not an
+// accident of the loop structure.
 export function repairLineup(starters, roster) {
   const players = roster ?? [];
   const list = starters ?? [];

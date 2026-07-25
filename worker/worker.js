@@ -2005,9 +2005,13 @@ async function handleFantasyFreeAgentAdd(request, env, leagueId, cors) {
 }
 
 // POST /fantasy/league/:id/waivers/settings: commissioner only. Rejects a
-// mode change while pending claims exist for the current gameweek: changing
-// the rules mid-run would be unfair to managers who already queued a claim
-// under the old rules.
+// settings change while ANY claim is pending anywhere for the league,
+// regardless of which gameweek it is tagged with: a claim is tagged with the
+// gameweek it was submitted during, and in the window after that gameweek
+// settles but before the cron's run actually fires, its claims are real and
+// pending but no longer under the now-current gameweek number. Scoping this
+// check to currentGameweek would miss exactly that window and let a mode
+// change slip through onto claims it exists to protect.
 async function handleFantasyWaiverSettings(request, env, leagueId, cors) {
   if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
   const user = await sessionUser(request, env);
@@ -2034,14 +2038,13 @@ async function handleFantasyWaiverSettings(request, env, leagueId, cors) {
     if (league.commissioner_user_id !== user.id) return json({ error: "commissioner only" }, 403, cors);
     if (league.draft_status !== "complete") return json({ error: "draft not complete" }, 400, cors);
 
-    const currentGameweek = await currentFantasyGameweek(env);
     const pending = await env.DB.prepare(
-      `SELECT COUNT(*) AS n FROM fantasy_waivers WHERE league_id = ?1 AND gameweek = ?2 AND status = 'pending'`,
+      `SELECT COUNT(*) AS n FROM fantasy_waivers WHERE league_id = ?1 AND status = 'pending'`,
     )
-      .bind(leagueId, currentGameweek)
+      .bind(leagueId)
       .first();
     if ((pending?.n ?? 0) > 0) {
-      return json({ error: "cannot change waiver settings while claims are pending this gameweek" }, 400, cors);
+      return json({ error: "cannot change waiver settings while any claims are pending" }, 400, cors);
     }
 
     await env.DB.prepare(
@@ -2084,28 +2087,38 @@ async function runScheduledWaiverRuns(env) {
   }
 }
 
+// Every write this run makes, the fantasy_waiver_runs marker included, is
+// issued as ONE env.DB.batch() call at the end of this function: D1 executes
+// a batch's statements inside a single transaction, so the marker and every
+// effect it implies (claim status, roster changes, the wire, budgets,
+// priorities) commit together or not at all. This is what makes the run
+// genuinely retryable: a failure partway through this function used to be
+// impossible because the marker write happened up front, before any other
+// write, as its own standalone statement; a crash between that insert and
+// the rest of the work would permanently mark the gameweek processed while
+// claims sat pending forever with zero state actually changed, and the next
+// tick never looks at an already-settled gameweek again, so the run was
+// silently lost. Folding the marker into the same atomic batch as
+// everything else means a mid-run failure (a genuine D1 error, or the
+// unique index rejecting a losing race against another overlapping tick)
+// rolls back the ENTIRE batch, marker included, leaving the run exactly as
+// unprocessed as before this function ran and free to be retried whole.
 async function runLeagueWaiverRun(env, leagueId, settledGameweek, newCurrentGameweek) {
-  // Idempotency gate: this INSERT either claims the run or, on the unique
-  // index's conflict, tells us it already happened. Nothing below runs on
-  // conflict, mirroring fantasy_draft_picks_league_overall's same pattern.
-  try {
-    await env.DB.prepare(`INSERT INTO fantasy_waiver_runs (league_id, gameweek) VALUES (?1, ?2)`)
-      .bind(leagueId, settledGameweek)
-      .run();
-  } catch {
-    return; // already processed (or a genuine D1 error; retried next tick either way)
-  }
+  // Cheap read-only pre-check, NOT the correctness guard: avoids redoing all
+  // the work below on every subsequent cron tick once a gameweek's run has
+  // already committed. Two overlapping ticks could both pass this (it is
+  // not exclusive), but that only means both build a batch; only one can
+  // actually commit the marker, and the unique index fails the other one's
+  // entire batch atomically, so nothing double-applies.
+  const already = await env.DB.prepare(
+    `SELECT 1 AS x FROM fantasy_waiver_runs WHERE league_id = ?1 AND gameweek = ?2`,
+  )
+    .bind(leagueId, settledGameweek)
+    .first();
+  if (already) return;
 
   const settings = await waiverSettings(env, leagueId);
   await ensureLeagueWaiverState(env, leagueId, settings.faabBudget);
-
-  // Clear the wire of everything that predates this run (an earlier instant
-  // drop during the settling gameweek, or a leftover the previous run
-  // somehow missed). This MUST happen before this run's own drops are added
-  // below, or a fresh drop would be cleared by the very run that created it.
-  await env.DB.prepare(`DELETE FROM fantasy_waiver_wire WHERE league_id = ?1 AND clears_after_gameweek <= ?2`)
-    .bind(leagueId, settledGameweek)
-    .run();
 
   const pendingClaims = await env.DB.prepare(
     `SELECT id, user_id, add_player_id, drop_player_id, bid, priority FROM fantasy_waivers
@@ -2121,133 +2134,153 @@ async function runLeagueWaiverRun(env, leagueId, settledGameweek, newCurrentGame
     bid: row.bid,
     priority: row.priority,
   }));
-  if (!claims.length) return; // wire clear above still matters even with nothing queued
 
-  const playerIds = [...new Set(claims.flatMap((claim) => [claim.addPlayerId, claim.dropPlayerId]))];
-  const [rosterRows, stateRows, playerRows] = await Promise.all([
-    env.DB.prepare(`SELECT user_id, player_id FROM fantasy_rosters WHERE league_id = ?1`).bind(leagueId).all(),
-    env.DB.prepare(`SELECT user_id, faab_remaining, priority FROM fantasy_waiver_state WHERE league_id = ?1`)
-      .bind(leagueId)
-      .all(),
-    env.DB.prepare(
-      `SELECT id, position FROM fantasy_players WHERE id IN (${playerIds.map((_, i) => `?${i + 1}`).join(",")})`,
-    )
-      .bind(...playerIds)
-      .all(),
-  ]);
+  // The marker insert is the FIRST statement in the batch built below (see
+  // this function's header comment): every other write in this run rides
+  // its transaction. The wire clear comes right after it and before any of
+  // this run's own drops are queued, or a fresh drop would be cleared by
+  // the very run that created it (batch() runs statements in array order).
+  const writes = [
+    env.DB.prepare(`INSERT INTO fantasy_waiver_runs (league_id, gameweek) VALUES (?1, ?2)`).bind(
+      leagueId,
+      settledGameweek,
+    ),
+    env.DB.prepare(`DELETE FROM fantasy_waiver_wire WHERE league_id = ?1 AND clears_after_gameweek <= ?2`).bind(
+      leagueId,
+      settledGameweek,
+    ),
+  ];
 
-  // Only the reverse index is needed: every check resolveWaiverRun performs
-  // is "who owns this player id", never "what does this manager's full
-  // roster look like".
-  const ownedBy = new Map((rosterRows.results ?? []).map((row) => [row.player_id, row.user_id]));
-  const budgets = new Map((stateRows.results ?? []).map((row) => [row.user_id, row.faab_remaining]));
-  const priorities = (stateRows.results ?? []).map((row) => ({ userId: row.user_id, priority: row.priority }));
-  const players = new Map((playerRows.results ?? []).map((row) => [row.id, { position: row.position }]));
-
-  // reverse_standings recomputes worst-record-first fresh every run rather
-  // than reading persisted state; the other two modes never touch this.
-  let standings = [];
-  if (settings.mode === "reverse_standings") {
-    const [membersRows, fixtureRows] = await Promise.all([
-      env.DB.prepare(
-        `SELECT m.user_id, u.name, u.email FROM fantasy_league_members m
-         JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
-      )
+  if (claims.length) {
+    const playerIds = [...new Set(claims.flatMap((claim) => [claim.addPlayerId, claim.dropPlayerId]))];
+    const [rosterRows, stateRows, playerRows] = await Promise.all([
+      env.DB.prepare(`SELECT user_id, player_id FROM fantasy_rosters WHERE league_id = ?1`).bind(leagueId).all(),
+      env.DB.prepare(`SELECT user_id, faab_remaining, priority FROM fantasy_waiver_state WHERE league_id = ?1`)
         .bind(leagueId)
         .all(),
       env.DB.prepare(
-        `SELECT gameweek, home_user_id, away_user_id, home_score, away_score
-         FROM fantasy_h2h_fixtures WHERE league_id = ?1 AND gameweek <= ?2`,
+        `SELECT id, position FROM fantasy_players WHERE id IN (${playerIds.map((_, i) => `?${i + 1}`).join(",")})`,
       )
-        .bind(leagueId, settledGameweek)
+        .bind(...playerIds)
         .all(),
     ]);
-    const members = (membersRows.results ?? []).map((row) => ({
-      userId: row.user_id,
-      name: row.name || String(row.email ?? "").split("@")[0] || "Someone",
-    }));
-    const fixtures = (fixtureRows.results ?? []).map((row) => ({
-      gameweek: row.gameweek,
-      homeUserId: row.home_user_id,
-      awayUserId: row.away_user_id,
-      homeScore: row.home_score,
-      awayScore: row.away_score,
-    }));
-    standings = standingsFromFixtures(fixtures, members);
-  }
 
-  const run = resolveWaiverRun({
-    claims,
-    mode: settings.mode,
-    ownedBy,
-    budgets,
-    priorities,
-    standings,
-    players,
-  });
+    // Only the reverse index is needed: every check resolveWaiverRun
+    // performs is "who owns this player id", never "what does this
+    // manager's full roster look like".
+    const ownedBy = new Map((rosterRows.results ?? []).map((row) => [row.player_id, row.user_id]));
+    const budgets = new Map((stateRows.results ?? []).map((row) => [row.user_id, row.faab_remaining]));
+    const priorities = (stateRows.results ?? []).map((row) => ({ userId: row.user_id, priority: row.priority }));
+    const players = new Map((playerRows.results ?? []).map((row) => [row.id, { position: row.position }]));
 
-  const writes = [];
-  for (const result of run.results) {
-    writes.push(
-      env.DB.prepare(
-        `UPDATE fantasy_waivers SET status = ?1, reason = ?2, processed_at = datetime('now') WHERE id = ?3`,
-      ).bind(result.status, result.reason, result.claimId),
-    );
-  }
-  for (const change of run.rosterChanges) {
-    writes.push(
-      env.DB.prepare(`DELETE FROM fantasy_rosters WHERE league_id = ?1 AND user_id = ?2 AND player_id = ?3`).bind(
-        leagueId,
-        change.userId,
-        change.dropPlayerId,
-      ),
-    );
-    writes.push(
-      env.DB.prepare(
-        `INSERT INTO fantasy_rosters (league_id, user_id, player_id, acquired_via) VALUES (?1, ?2, ?3, 'waiver')
-         ON CONFLICT(league_id, user_id, player_id) DO NOTHING`,
-      ).bind(leagueId, change.userId, change.addPlayerId),
-    );
-  }
-  // Tagged with newCurrentGameweek (the gameweek about to play out), so these
-  // fresh drops survive on the wire until the NEXT run clears them.
-  for (const playerId of run.wireAdds) {
-    writes.push(
-      env.DB.prepare(
-        `INSERT INTO fantasy_waiver_wire (league_id, player_id, clears_after_gameweek) VALUES (?1, ?2, ?3)
-         ON CONFLICT(league_id, player_id) DO UPDATE SET added_at = datetime('now'), clears_after_gameweek = ?3`,
-      ).bind(leagueId, playerId, newCurrentGameweek),
-    );
-  }
-  if (settings.mode === "faab") {
-    for (const entry of run.budgets) {
+    // reverse_standings recomputes worst-record-first fresh every run
+    // rather than reading persisted state; the other two modes never touch
+    // this.
+    let standings = [];
+    if (settings.mode === "reverse_standings") {
+      const [membersRows, fixtureRows] = await Promise.all([
+        env.DB.prepare(
+          `SELECT m.user_id, u.name, u.email FROM fantasy_league_members m
+           JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
+        )
+          .bind(leagueId)
+          .all(),
+        env.DB.prepare(
+          `SELECT gameweek, home_user_id, away_user_id, home_score, away_score
+           FROM fantasy_h2h_fixtures WHERE league_id = ?1 AND gameweek <= ?2`,
+        )
+          .bind(leagueId, settledGameweek)
+          .all(),
+      ]);
+      const members = (membersRows.results ?? []).map((row) => ({
+        userId: row.user_id,
+        name: row.name || String(row.email ?? "").split("@")[0] || "Someone",
+      }));
+      const fixtures = (fixtureRows.results ?? []).map((row) => ({
+        gameweek: row.gameweek,
+        homeUserId: row.home_user_id,
+        awayUserId: row.away_user_id,
+        homeScore: row.home_score,
+        awayScore: row.away_score,
+      }));
+      standings = standingsFromFixtures(fixtures, members);
+    }
+
+    const run = resolveWaiverRun({
+      claims,
+      mode: settings.mode,
+      ownedBy,
+      budgets,
+      priorities,
+      standings,
+      players,
+    });
+
+    for (const result of run.results) {
       writes.push(
-        env.DB.prepare(`UPDATE fantasy_waiver_state SET faab_remaining = ?1 WHERE league_id = ?2 AND user_id = ?3`).bind(
-          entry.remaining,
-          leagueId,
-          entry.userId,
-        ),
+        env.DB.prepare(
+          `UPDATE fantasy_waivers SET status = ?1, reason = ?2, processed_at = datetime('now') WHERE id = ?3`,
+        ).bind(result.status, result.reason, result.claimId),
       );
     }
-  }
-  if (settings.mode === "rolling") {
-    for (const entry of run.priorities) {
+    for (const change of run.rosterChanges) {
       writes.push(
-        env.DB.prepare(`UPDATE fantasy_waiver_state SET priority = ?1 WHERE league_id = ?2 AND user_id = ?3`).bind(
-          entry.priority,
+        env.DB.prepare(`DELETE FROM fantasy_rosters WHERE league_id = ?1 AND user_id = ?2 AND player_id = ?3`).bind(
           leagueId,
-          entry.userId,
+          change.userId,
+          change.dropPlayerId,
         ),
       );
+      writes.push(
+        env.DB.prepare(
+          `INSERT INTO fantasy_rosters (league_id, user_id, player_id, acquired_via) VALUES (?1, ?2, ?3, 'waiver')
+           ON CONFLICT(league_id, user_id, player_id) DO NOTHING`,
+        ).bind(leagueId, change.userId, change.addPlayerId),
+      );
+    }
+    // Tagged with newCurrentGameweek (the gameweek about to play out), so
+    // these fresh drops survive on the wire until the NEXT run clears them.
+    for (const playerId of run.wireAdds) {
+      writes.push(
+        env.DB.prepare(
+          `INSERT INTO fantasy_waiver_wire (league_id, player_id, clears_after_gameweek) VALUES (?1, ?2, ?3)
+           ON CONFLICT(league_id, player_id) DO UPDATE SET added_at = datetime('now'), clears_after_gameweek = ?3`,
+        ).bind(leagueId, playerId, newCurrentGameweek),
+      );
+    }
+    if (settings.mode === "faab") {
+      for (const entry of run.budgets) {
+        writes.push(
+          env.DB.prepare(
+            `UPDATE fantasy_waiver_state SET faab_remaining = ?1 WHERE league_id = ?2 AND user_id = ?3`,
+          ).bind(entry.remaining, leagueId, entry.userId),
+        );
+      }
+    }
+    if (settings.mode === "rolling") {
+      for (const entry of run.priorities) {
+        writes.push(
+          env.DB.prepare(`UPDATE fantasy_waiver_state SET priority = ?1 WHERE league_id = ?2 AND user_id = ?3`).bind(
+            entry.priority,
+            leagueId,
+            entry.userId,
+          ),
+        );
+      }
     }
   }
 
-  // D1 batches are practically bounded (see upsertFantasyPlayerPool); a
-  // handful of claims per league per gameweek is nowhere near that, but
-  // chunking defensively costs nothing.
-  const CHUNK = 100;
-  for (let i = 0; i < writes.length; i += CHUNK) {
-    await env.DB.batch(writes.slice(i, i + CHUNK));
+  try {
+    // One batch, not chunked: chunking would split this across multiple
+    // transactions and reopen exactly the bug this function exists to
+    // close. A league's claim volume (MAX_LEAGUE_SIZE managers, a handful
+    // of claims each) is nowhere near D1's practical batch limits.
+    await env.DB.batch(writes);
+  } catch {
+    // Marker conflict (another tick already committed this run) or a
+    // genuine D1 error: either way nothing in this batch was committed, so
+    // the run is left exactly as unprocessed as before and the next tick
+    // retries it from scratch.
   }
 }
 
