@@ -38,21 +38,21 @@ export function resolveEffectiveLineup(rows, gameweek) {
   return { gameweek: null, inherited: false, starters: [] };
 }
 
-// Deterministic legal starting XI from a full roster, for a manager who has
-// never set a lineup. Fills each position's STARTING_LIMITS minimum first (GK,
-// then DEF, MID, FWD, in roster order), then tops up to STARTING_SIZE with the
-// next eligible roster entries (again in roster order), respecting each
-// position's max. Captain defaults to the first starter chosen. `roster` is
-// { id, position, ... }[]; never writes anything, purely computed on read.
-export function defaultLineup(roster) {
-  const players = roster ?? [];
-  const used = new Set();
-  const starters = [];
+// Shared by defaultLineup (fills from nothing) and repairLineup (fills the
+// gap left by a lost player): fills each position's STARTING_LIMITS minimum
+// first (GK, then DEF, MID, FWD, in pool order), counting `preselected`
+// players already in that bucket, then tops up to STARTING_SIZE with the
+// next eligible pool entries, respecting each position's max. `preselected`
+// and `pool` must not overlap; the result always starts with `preselected`
+// in its original order followed by whatever was added.
+function fillLineup(preselected, pool) {
+  const used = new Set(preselected.map((player) => player.id));
+  const starters = [...preselected];
 
   for (const position of FILL_ORDER) {
     const min = STARTING_LIMITS[position]?.min ?? 0;
-    let filled = 0;
-    for (const player of players) {
+    let filled = starters.filter((entry) => entry.position === position).length;
+    for (const player of pool) {
       if (filled >= min) break;
       if (used.has(player.id) || player.position !== position) continue;
       used.add(player.id);
@@ -61,7 +61,7 @@ export function defaultLineup(roster) {
     }
   }
 
-  for (const player of players) {
+  for (const player of pool) {
     if (starters.length >= STARTING_SIZE) break;
     if (used.has(player.id)) continue;
     const max = STARTING_LIMITS[player.position]?.max;
@@ -71,11 +71,65 @@ export function defaultLineup(roster) {
     starters.push(player);
   }
 
+  return starters;
+}
+
+// Deterministic legal starting XI from a full roster, for a manager who has
+// never set a lineup. `roster` is { id, position, ... }[]; never writes
+// anything, purely computed on read. Captain defaults to the first starter
+// chosen.
+export function defaultLineup(roster) {
+  const starters = fillLineup([], roster ?? []);
   if (!starters.length) return { starters: [], captainId: null };
   const captainId = starters[0].id;
   return {
     starters: starters.map((player) => ({ playerId: player.id, isCaptain: player.id === captainId })),
     captainId,
+  };
+}
+
+// A manager's saved starters (set for this gameweek, or inherited from an
+// earlier one) can reference a player no longer on their roster: dropped via
+// free agency or a waiver claim since the lineup was last touched. Filters
+// those out and tops up from the remaining roster using the same
+// formation-fill order defaultLineup uses, never silently pointing at a lost
+// player. If the lost player was the captain, the first surviving or
+// topped-up starter becomes captain instead of leaving the XI captain-less.
+// `starters` is { playerId, isCaptain }[]; `roster` is { id, position }[].
+// Returns the input unchanged (repaired: false) when nothing was lost.
+//
+// The result is exactly STARTING_SIZE and legal PROVIDED the roster can
+// still fill every position's STARTING_LIMITS minimum, which holds today
+// because every acquisition (instant free agency or a waiver claim) is a
+// same-position 1-for-1 swap: the roster's per-position counts, and
+// therefore SQUAD_SIZE itself, never shrink. Nothing in this codebase can
+// currently make a roster too small or too position-imbalanced to field a
+// legal XI, so that path is intentionally not built out. If the roster ever
+// were too small, fillLineup's own bounds (it only ever draws from
+// `preselected` plus `pool`) already return however many starters that
+// allows rather than crashing or padding in an invalid entry; that
+// roster-limited result is this function's deliberate fallback, not an
+// accident of the loop structure.
+export function repairLineup(starters, roster) {
+  const players = roster ?? [];
+  const list = starters ?? [];
+  const byId = new Map(players.map((player) => [player.id, player]));
+  const ownedIds = new Set(players.map((player) => player.id));
+
+  const survivors = list.filter((entry) => ownedIds.has(entry.playerId));
+  if (survivors.length === list.length) return { starters: list, repaired: false };
+
+  const survivorPlayers = survivors.map((entry) => byId.get(entry.playerId));
+  const usedIds = new Set(survivorPlayers.map((player) => player.id));
+  const pool = players.filter((player) => !usedIds.has(player.id));
+  const filled = fillLineup(survivorPlayers, pool);
+
+  const survivingCaptain = survivors.find((entry) => entry.isCaptain);
+  const captainId = survivingCaptain ? survivingCaptain.playerId : filled[0]?.id ?? null;
+
+  return {
+    starters: filled.map((player) => ({ playerId: player.id, isCaptain: player.id === captainId })),
+    repaired: true,
   };
 }
 

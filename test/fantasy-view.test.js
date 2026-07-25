@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  renderFantasyClaimFlow,
   renderFantasyComplete,
   renderFantasyDraftRoom,
+  renderFantasyFreeAgentRows,
   renderFantasyLeagueHeader,
   renderFantasyLeagueList,
   renderFantasyLobby,
@@ -13,6 +15,8 @@ import {
   renderFantasyRosterPanel,
   renderFantasySessionExpired,
   renderFantasyStandingsPanel,
+  renderFantasyWaiversPanel,
+  renderFantasyWireRows,
 } from "../src/fantasyView.js";
 
 test("renderFantasyLeagueList escapes a league name containing HTML", () => {
@@ -357,6 +361,22 @@ test("renderFantasyLeagueHeader escapes the league name", () => {
   const html = renderFantasyLeagueHeader({ name: `<script>alert(1)</script>` }, members, "draftroom");
   assert.doesNotMatch(html, /<script>alert/);
   assert.match(html, /&lt;script&gt;/);
+});
+
+test("renderFantasyLeagueHeader disables the Waivers sub-tab until the draft is complete", () => {
+  const drafting = renderFantasyLeagueHeader({ name: "Test League", draftStatus: "drafting" }, members, "draftroom");
+  const waiversButton = drafting.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="waivers"[^>]*>/)[0];
+  assert.match(waiversButton, /disabled/);
+
+  const complete = renderFantasyLeagueHeader({ name: "Test League", draftStatus: "complete" }, members, "waivers");
+  const enabledButton = complete.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="waivers"[^>]*>/)[0];
+  assert.doesNotMatch(enabledButton, /disabled/);
+  assert.match(enabledButton, /is-active/);
+});
+
+test("renderFantasyLeagueHeader shows Waivers as the active tab's title", () => {
+  const html = renderFantasyLeagueHeader({ name: "Test League", draftStatus: "complete" }, members, "waivers");
+  assert.match(html, /<h1 class="hero__title">Waivers<\/h1>/);
 });
 
 // -- My team panel and the R.PP squad rows ---------------------------------------
@@ -780,4 +800,220 @@ test("renderFantasyStandingsPanel escapes manager names", () => {
   const html = renderFantasyStandingsPanel(standings, {});
   assert.doesNotMatch(html, /<script>alert/);
   assert.match(html, /&lt;script&gt;/);
+});
+
+// -- Waivers panel (Phase 4.4) -----------------------------------------------
+
+function waiverPlayer(id, position, name = `Player ${id}`, team = "Test FC") {
+  return { id, name, team, position };
+}
+
+function waiversFixture(overrides = {}) {
+  return {
+    mode: "faab",
+    faabBudget: 100,
+    myBudgetRemaining: 80,
+    myPriority: 3,
+    currentGameweek: 7,
+    priorities: [
+      { userId: 1, name: "Alice", priority: 1, budgetRemaining: 100 },
+      { userId: 2, name: "Bob", priority: 2, budgetRemaining: 90 },
+      { userId: 3, name: "Me", priority: 3, budgetRemaining: 80 },
+    ],
+    freeAgents: [waiverPlayer(10, "MID", "Free Mid")],
+    wire: [{ player: waiverPlayer(11, "DEF", "Wire Def"), clearsAfterGameweek: 8 }],
+    myClaims: [],
+    lastRun: null,
+    ...overrides,
+  };
+}
+
+test("renderFantasyWaiversPanel shows a loading note before waivers have loaded, or the error state with retry on failure", () => {
+  const loading = renderFantasyWaiversPanel(null, {});
+  assert.match(loading, /Loading waivers/);
+
+  const failed = renderFantasyWaiversPanel(null, { error: "Couldn't load waivers." });
+  assert.match(failed, /fantasy-form__error/);
+  assert.match(failed, /Couldn't load waivers\./);
+  assert.match(failed, /data-fantasy-waivers-retry/);
+});
+
+test("renderFantasyWaiversPanel shows a no-free-agents note for an empty free-agent list", () => {
+  const html = renderFantasyWaiversPanel(waiversFixture({ freeAgents: [] }), { myUserId: 3, roster: [] });
+  assert.match(html, /No free agents match/);
+});
+
+test("renderFantasyWaiversPanel lists wire players with a Claim action and their clear gameweek", () => {
+  const html = renderFantasyWaiversPanel(waiversFixture(), { myUserId: 3, roster: [] });
+  assert.match(html, /Wire Def/);
+  assert.match(html, /data-fantasy-wire-claim="11"/);
+  assert.match(html, /Clears after GW 8/);
+});
+
+test("renderFantasyWaiversPanel's status header explains faab mode and shows the caller's budget", () => {
+  const html = renderFantasyWaiversPanel(waiversFixture({ mode: "faab" }), { myUserId: 3, roster: [] });
+  assert.match(html, /Blind bidding \(FAAB\)/);
+  assert.match(html, /highest bid wins/i);
+  assert.match(html, /80/); // myBudgetRemaining
+  assert.match(html, /league budget 100/);
+  assert.doesNotMatch(html, /Your priority:/);
+});
+
+test("renderFantasyWaiversPanel's status header explains rolling mode and shows the caller's priority ordinal instead of a budget", () => {
+  const html = renderFantasyWaiversPanel(waiversFixture({ mode: "rolling", myPriority: 3 }), { myUserId: 3, roster: [] });
+  assert.match(html, /Rolling list/);
+  assert.match(html, /back of the queue/i);
+  assert.match(html, /Your priority:.*3rd of 3/s);
+  assert.doesNotMatch(html, /credits left/);
+});
+
+test("renderFantasyWaiversPanel shows commissioner settings only for the commissioner", () => {
+  const commissionerView = renderFantasyWaiversPanel(waiversFixture(), { myUserId: 3, roster: [], isCommissioner: true });
+  assert.match(commissionerView, /Commissioner settings/);
+  assert.match(commissionerView, /data-fantasy-settings-save/);
+
+  const memberView = renderFantasyWaiversPanel(waiversFixture(), { myUserId: 3, roster: [], isCommissioner: false });
+  assert.doesNotMatch(memberView, /Commissioner settings/);
+  assert.doesNotMatch(memberView, /data-fantasy-settings-save/);
+});
+
+test("renderFantasyWaiversPanel disables commissioner settings and explains why when the caller has a pending claim", () => {
+  const withPending = waiversFixture({ myClaims: [{ claimId: 1, addPlayerId: 11, dropPlayerId: 20, bid: 10, priority: 1, status: "pending", reason: null, gameweek: 7 }] });
+  const html = renderFantasyWaiversPanel(withPending, { myUserId: 3, roster: [], isCommissioner: true });
+  assert.match(html, /data-fantasy-settings-save[^>]*disabled/);
+  assert.match(html, /can't change until it resolves/);
+});
+
+test("renderFantasyWaiversPanel's my-claims section shows a pending claim with a Cancel action and a resolved one with its rejection reason", () => {
+  const html = renderFantasyWaiversPanel(
+    waiversFixture({
+      myClaims: [
+        { claimId: 1, addPlayerId: 11, dropPlayerId: 20, bid: 15, priority: 1, status: "pending", reason: null, gameweek: 7 },
+        { claimId: 2, addPlayerId: 12, dropPlayerId: 21, bid: 5, priority: 1, status: "rejected", reason: "Outbid", gameweek: 6 },
+      ],
+      roster: [
+        { id: 20, name: "My Def", team: "Test FC", position: "DEF" },
+        { id: 21, name: "My Fwd", team: "Test FC", position: "FWD" },
+      ],
+    }),
+    { myUserId: 3, roster: [{ id: 20, name: "My Def", team: "Test FC", position: "DEF" }, { id: 21, name: "My Fwd", team: "Test FC", position: "FWD" }] },
+  );
+  assert.match(html, /data-fantasy-waiver-cancel-claim="1"/);
+  assert.match(html, /Outbid/);
+  assert.doesNotMatch(html, /data-fantasy-waiver-cancel-claim="2"/);
+});
+
+test("renderFantasyWaiversPanel's last-run section shows a calm note when no run has resolved yet, or a compact summary otherwise", () => {
+  const noRun = renderFantasyWaiversPanel(waiversFixture({ lastRun: null }), { myUserId: 3, roster: [] });
+  assert.match(noRun, /No waiver run has resolved yet/);
+
+  const withRun = renderFantasyWaiversPanel(
+    waiversFixture({
+      lastRun: {
+        gameweek: 6,
+        processedAt: "2026-07-20T00:00:00Z",
+        results: [{ claimId: 5, userId: 1, status: "rejected", reason: "Outbid", addPlayerId: 11, dropPlayerId: 20, bid: 10 }],
+      },
+      wire: [{ player: waiverPlayer(11, "DEF", "Wire Def"), clearsAfterGameweek: 8 }],
+    }),
+    { myUserId: 3, roster: [], members: [{ userId: 1, name: "Alice" }] },
+  );
+  assert.match(withRun, /Last run · Gameweek 6/);
+  assert.match(withRun, /Alice/);
+  assert.match(withRun, /Wire Def/);
+  assert.match(withRun, /Outbid/);
+});
+
+test("renderFantasyWaiversPanel escapes manager and player names throughout", () => {
+  const html = renderFantasyWaiversPanel(
+    waiversFixture({
+      priorities: [{ userId: 1, name: `<script>alert(1)</script>`, priority: 1, budgetRemaining: 100 }],
+      freeAgents: [waiverPlayer(10, "MID", `<b>Bad</b>`)],
+    }),
+    { myUserId: 3, roster: [] },
+  );
+  assert.doesNotMatch(html, /<script>alert/);
+  assert.doesNotMatch(html, /<b>Bad<\/b>/);
+  assert.match(html, /&lt;script&gt;/);
+  assert.match(html, /&lt;b&gt;Bad&lt;\/b&gt;/);
+});
+
+// -- Free agent / wire row filtering ------------------------------------------
+
+test("renderFantasyFreeAgentRows filters by position, club and search text like the draft pool", () => {
+  const players = [waiverPlayer(1, "GK", "Alisson", "Liverpool"), waiverPlayer(2, "FWD", "Haaland", "Man City")];
+  const gkOnly = renderFantasyFreeAgentRows(players, { position: "GK", search: "" });
+  assert.match(gkOnly, /Alisson/);
+  assert.doesNotMatch(gkOnly, /Haaland/);
+});
+
+test("renderFantasyFreeAgentRows shows an Add action per row", () => {
+  const html = renderFantasyFreeAgentRows([waiverPlayer(1, "MID")], { position: "All", search: "" });
+  assert.match(html, /data-fantasy-fa-add="1"/);
+  assert.match(html, />Add</);
+});
+
+test("renderFantasyWireRows filters by position and shows a Claim action per row", () => {
+  const wire = [
+    { player: waiverPlayer(1, "GK", "Alisson", "Liverpool"), clearsAfterGameweek: 5 },
+    { player: waiverPlayer(2, "FWD", "Haaland", "Man City"), clearsAfterGameweek: 5 },
+  ];
+  const gkOnly = renderFantasyWireRows(wire, { position: "GK", search: "" });
+  assert.match(gkOnly, /Alisson/);
+  assert.doesNotMatch(gkOnly, /Haaland/);
+  assert.match(gkOnly, /data-fantasy-wire-claim="1"/);
+});
+
+// -- Claim flow (add/claim confirm step) --------------------------------------
+
+test("renderFantasyClaimFlow lists only same-position roster players as drop candidates and explains why", () => {
+  const roster = [
+    { id: 20, name: "My Def One", team: "Test FC", position: "DEF" },
+    { id: 21, name: "My Def Two", team: "Test FC", position: "DEF" },
+    { id: 22, name: "My Mid", team: "Test FC", position: "MID" },
+  ];
+  const flow = { addPlayer: waiverPlayer(10, "DEF", "New Def"), path: "free_agent", dropPlayerId: null };
+  const html = renderFantasyClaimFlow(flow, { roster, mode: "faab" });
+  assert.match(html, /My Def One/);
+  assert.match(html, /My Def Two/);
+  assert.doesNotMatch(html, /My Mid/);
+  assert.match(html, /dropping one of your own DEF/);
+  assert.doesNotMatch(html, /data-fantasy-claim-bid/); // free-agent path never bids
+});
+
+test("renderFantasyClaimFlow shows a bid field only for a waiver claim in faab mode", () => {
+  const roster = [{ id: 20, name: "My Def", team: "Test FC", position: "DEF" }];
+  const flow = { addPlayer: waiverPlayer(10, "DEF", "Wire Def"), path: "waiver", dropPlayerId: null };
+  const faab = renderFantasyClaimFlow(flow, { roster, mode: "faab" });
+  assert.match(faab, /data-fantasy-claim-bid/);
+
+  const rolling = renderFantasyClaimFlow(flow, { roster, mode: "rolling" });
+  assert.doesNotMatch(rolling, /data-fantasy-claim-bid/);
+});
+
+test("renderFantasyClaimFlow disables submit until a drop candidate is selected, and enables it once one is", () => {
+  const roster = [{ id: 20, name: "My Def", team: "Test FC", position: "DEF" }];
+  const flow = { addPlayer: waiverPlayer(10, "DEF"), path: "free_agent", dropPlayerId: null };
+  const noSelection = renderFantasyClaimFlow(flow, { roster, mode: "faab" });
+  assert.match(noSelection, /data-fantasy-claim-submit[^>]*disabled/);
+
+  const selected = renderFantasyClaimFlow({ ...flow, dropPlayerId: 20 }, { roster, mode: "faab" });
+  assert.doesNotMatch(selected, /data-fantasy-claim-submit[^>]*disabled/);
+  assert.match(selected, /is-selected/);
+});
+
+test("renderFantasyClaimFlow explains when the caller has no same-position player to drop", () => {
+  const roster = [{ id: 20, name: "My Mid", team: "Test FC", position: "MID" }];
+  const flow = { addPlayer: waiverPlayer(10, "FWD"), path: "free_agent", dropPlayerId: null };
+  const html = renderFantasyClaimFlow(flow, { roster, mode: "faab" });
+  assert.match(html, /You have no FWD to drop/);
+  assert.match(html, /data-fantasy-claim-submit[^>]*disabled/);
+});
+
+test("renderFantasyClaimFlow surfaces a submit error in the shared form-error style", () => {
+  const roster = [{ id: 20, name: "My Def", team: "Test FC", position: "DEF" }];
+  const flow = { addPlayer: waiverPlayer(10, "DEF"), path: "free_agent", dropPlayerId: 20, error: "Player is not a free agent" };
+  const html = renderFantasyClaimFlow(flow, { roster, mode: "faab" });
+  assert.match(html, /fantasy-form__error/);
+  assert.match(html, /Player is not a free agent/);
 });

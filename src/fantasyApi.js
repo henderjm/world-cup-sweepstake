@@ -107,6 +107,61 @@ export async function loadStandings(leagueId) {
   return api(`/fantasy/league/${leagueId}/standings`);
 }
 
+// GET the whole Waivers tab in one call: mode/budgets/priorities, the
+// free-agent pool, the wire, the caller's own claim history and the last
+// resolved run. Member-only (401/403), 400 while the league's draft is not
+// complete yet (waivers only exist once a season's rosters are fixed),
+// 404/501 if the league or the fantasy routes themselves don't exist -
+// same isFantasyNotDeployed handling as the rest of this module.
+export async function loadWaivers(leagueId) {
+  return api(`/fantasy/league/${leagueId}/waivers`);
+}
+
+// Queues a claim against an ON_WAIVERS player: { addPlayerId, dropPlayerId,
+// bid?, priority? }. bid only matters in faab mode; priority is the caller's
+// own try-first ordering among their own pending claims (defaults server-side
+// to "tried last" when omitted). Returns { claimId, gameweek, status:
+// "pending" }, or throws with error.status 400 and a plain-English
+// error.message on a validation failure (not actually on waivers, position
+// mismatch, not enough budget, etc - see src/fantasyWaivers.js).
+export async function submitWaiverClaim(leagueId, body) {
+  return api(`/fantasy/league/${leagueId}/waivers/claim`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+// Cancels one of the caller's own still-pending claims. Throws with
+// error.status 400 if the claim has already been resolved by a run (nothing
+// to cancel), 403 if it belongs to someone else.
+export async function cancelWaiverClaim(leagueId, claimId) {
+  return api(`/fantasy/league/${leagueId}/waivers/claim/${claimId}`, { method: "DELETE" });
+}
+
+// Instant free-agent add: { addPlayerId, dropPlayerId }, no bid (free agency
+// is first come first served, never a bid). Returns { ok: true, roster } with
+// the caller's full post-swap roster, or throws with error.status 400 and a
+// plain-English error.message - including "Player is not a free agent" when
+// another manager wins the same race, since two managers can both pass a
+// read-time check before only one write wins.
+export async function addFreeAgent(leagueId, body) {
+  return api(`/fantasy/league/${leagueId}/freeagents/add`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+// Commissioner-only: { mode, faabBudget }. Throws with error.status 403 for a
+// non-commissioner caller, 400 if claims are still pending for the current
+// gameweek (changing the rules mid-run would be unfair to whoever already
+// queued a claim under the old ones).
+export async function saveWaiverSettings(leagueId, body) {
+  return api(`/fantasy/league/${leagueId}/waivers/settings`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 // Browsers cannot set an Authorization header on a WebSocket handshake, so the
 // bearer token rides as a query parameter instead (the one exception to
 // Authorization-only auth in this codebase; see worker/worker.js

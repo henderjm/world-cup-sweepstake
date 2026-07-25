@@ -187,9 +187,15 @@ CREATE TABLE IF NOT EXISTS fantasy_h2h_fixtures (
 );
 CREATE INDEX IF NOT EXISTS fantasy_h2h_fixtures_away ON fantasy_h2h_fixtures(league_id, gameweek, away_user_id);
 
--- Free-agency waiver claims. Processed in worst-record-first priority order as
--- part of the weekly scoring pass; a successful claimant moves to the back of
--- priority for next time (standard fantasy-league waiver convention).
+-- Free-agency waiver claims (Phase 4.4). `priority` is the claimant's OWN
+-- ranking among their own claims (1 = try first), not the league-wide waiver
+-- order (that lives in fantasy_waiver_state). Resolved by src/fantasyWaivers.js
+-- as part of the gameweek-advance cron pass; a claim's `gameweek` is the
+-- gameweek it was submitted during, which is also the gameweek whose
+-- settlement triggers the run that resolves it (see fantasy_waiver_runs).
+-- `bid` and `reason` were added after this table shipped empty in production;
+-- see worker/migrations/001-waivers.sql for the one-time ALTER on existing
+-- databases (fresh databases get them straight from this CREATE TABLE).
 CREATE TABLE IF NOT EXISTS fantasy_waivers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
@@ -199,10 +205,63 @@ CREATE TABLE IF NOT EXISTS fantasy_waivers (
   priority INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending', -- pending | processed | rejected
   gameweek INTEGER NOT NULL,
+  bid INTEGER, -- FAAB blind bid; NULL for rolling/reverse_standings leagues, always >= 0
+  reason TEXT, -- rejection reason shown in the UI; NULL until resolved, NULL forever if processed
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   processed_at TEXT
 );
 CREATE INDEX IF NOT EXISTS fantasy_waivers_pending ON fantasy_waivers(league_id, status);
+
+-- Per-league waiver configuration. Absence of a row means the defaults (faab,
+-- DEFAULT_FAAB_BUDGET) apply, so a league never needs an explicit row until
+-- its commissioner actually changes something.
+CREATE TABLE IF NOT EXISTS fantasy_waiver_settings (
+  league_id INTEGER PRIMARY KEY REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  mode TEXT NOT NULL DEFAULT 'faab', -- faab | rolling | reverse_standings
+  faab_budget INTEGER NOT NULL DEFAULT 100,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Per-manager waiver state: FAAB budget remaining and league-wide waiver
+-- priority (1 = first call). Lazily initialized on first use (see
+-- ensureLeagueWaiverState in worker.js), seeded from reverse draft order (the
+-- standard "worst drafter gets first waiver call" convention) so a league
+-- that never touches waivers never needs a row either.
+CREATE TABLE IF NOT EXISTS fantasy_waiver_state (
+  league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  faab_remaining INTEGER NOT NULL DEFAULT 100,
+  priority INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (league_id, user_id)
+);
+
+-- The waiver wire: a player dropped via either acquisition path (instant free
+-- agency or a winning waiver claim) sits here, unavailable to instant free
+-- agency, until the next waiver run clears it (see fantasy_waiver_runs).
+-- This is what stops a drop-and-instantly-re-add cycle from dodging the
+-- queue: the dropped player is ON_WAIVERS, not immediately FREE_AGENT again.
+CREATE TABLE IF NOT EXISTS fantasy_waiver_wire (
+  league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES fantasy_players(id),
+  added_at TEXT NOT NULL DEFAULT (datetime('now')),
+  clears_after_gameweek INTEGER NOT NULL, -- the gameweek whose run clears this entry
+  PRIMARY KEY (league_id, player_id)
+);
+
+-- One row per league per gameweek a waiver run has processed. The unique
+-- index is the run's idempotency gate: the cron attempts this INSERT before
+-- doing any work, and a conflict means the run already happened, so it skips
+-- (the same "insert first, work only on success" pattern the draft picks'
+-- unique index and fantasy_scored_matches' dedup ledger already use).
+-- fantasy_waivers.gameweek is the natural link back to a run's claims: every
+-- claim submitted during gameweek N is resolved by the run for (league, N).
+CREATE TABLE IF NOT EXISTS fantasy_waiver_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  gameweek INTEGER NOT NULL,
+  processed_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS fantasy_waiver_runs_once ON fantasy_waiver_runs(league_id, gameweek);
 
 -- Defense in depth for the draft room's commit path: blockConcurrencyWhile in
 -- the FantasyDraftRoom Durable Object already serializes picks within one

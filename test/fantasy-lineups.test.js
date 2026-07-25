@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { defaultLineup, resolveEffectiveLineup, validateLineupSelection } from "../src/fantasyLineups.js";
+import { defaultLineup, repairLineup, resolveEffectiveLineup, validateLineupSelection } from "../src/fantasyLineups.js";
 import { STARTING_SIZE, validateFormation } from "../src/fantasy.js";
 
 // A standard 2 GK / 5 DEF / 5 MID / 3 FWD (15-player) roster, ids 1..15 in
@@ -174,4 +174,80 @@ test("validateLineupSelection rejects duplicate starter ids", () => {
   const result = validateLineupSelection({ starters: duplicated, captainId, roster });
   assert.equal(result.ok, false);
   assert.match(result.error, /duplicate/);
+});
+
+// -- repairLineup (Phase 4.4: lineup integrity after a drop) -------------------
+// A manager can lose a player who is in their saved starting XI, dropped via
+// free agency or a waiver claim since the lineup was last set or inherited.
+// repairLineup must filter the lost player out and top up from the current
+// roster so the resolved XI is always exactly STARTING_SIZE and legal.
+
+test("repairLineup is a no-op when every starter is still owned", () => {
+  const roster = standardRoster();
+  const { starters } = defaultLineup(roster);
+  const result = repairLineup(starters, roster);
+  assert.deepEqual(result, { starters, repaired: false });
+});
+
+test("repairLineup drops a lost non-captain starter and tops up a legal replacement", () => {
+  const roster = standardRoster();
+  const { starters } = defaultLineup(roster);
+  const lostId = starters.find((entry) => !entry.isCaptain).playerId;
+  const lostPlayer = roster.find((player) => player.id === lostId);
+  const rosterWithoutLost = roster.filter((player) => player.id !== lostId);
+  const staleStarters = starters; // still references the now-dropped player
+
+  const result = repairLineup(staleStarters, rosterWithoutLost);
+  assert.equal(result.repaired, true);
+  assert.equal(result.starters.length, STARTING_SIZE);
+
+  const ids = result.starters.map((entry) => entry.playerId);
+  assert.equal(new Set(ids).size, ids.length); // no duplicates
+  assert.equal(ids.includes(lostId), false); // the dropped player never reappears
+
+  const byId = new Map(rosterWithoutLost.map((player) => [player.id, player]));
+  const positions = ids.map((id) => byId.get(id).position);
+  assert.equal(validateFormation(positions).valid, true);
+  assert.equal(result.starters.filter((entry) => entry.isCaptain).length, 1); // still exactly one captain
+
+  // A same-position replacement must exist in the remaining roster (this
+  // standard roster has one spare per position), confirming the gap was
+  // actually filled rather than just silently shrinking the XI.
+  assert.ok(rosterWithoutLost.some((player) => player.position === lostPlayer.position));
+});
+
+test("repairLineup reassigns the captain when the lost starter was captain", () => {
+  const roster = standardRoster();
+  const { starters } = defaultLineup(roster);
+  const captainEntry = starters.find((entry) => entry.isCaptain);
+  const rosterWithoutCaptain = roster.filter((player) => player.id !== captainEntry.playerId);
+
+  const result = repairLineup(starters, rosterWithoutCaptain);
+  assert.equal(result.repaired, true);
+  assert.equal(result.starters.filter((entry) => entry.isCaptain).length, 1);
+  assert.equal(result.starters.some((entry) => entry.playerId === captainEntry.playerId), false);
+});
+
+test("repairLineup handles losing multiple starters at once", () => {
+  const roster = standardRoster();
+  const { starters } = defaultLineup(roster);
+  const lostIds = starters.slice(0, 3).map((entry) => entry.playerId);
+  const rosterWithoutLost = roster.filter((player) => !lostIds.includes(player.id));
+
+  const result = repairLineup(starters, rosterWithoutLost);
+  assert.equal(result.repaired, true);
+  assert.equal(result.starters.length, STARTING_SIZE);
+  lostIds.forEach((id) => assert.equal(result.starters.some((entry) => entry.playerId === id), false));
+
+  const byId = new Map(rosterWithoutLost.map((player) => [player.id, player]));
+  const positions = result.starters.map((entry) => byId.get(entry.playerId).position);
+  assert.equal(validateFormation(positions).valid, true);
+});
+
+test("repairLineup is deterministic across calls on the same input", () => {
+  const roster = standardRoster();
+  const { starters } = defaultLineup(roster);
+  const lostId = starters[0].playerId;
+  const rosterWithoutLost = roster.filter((player) => player.id !== lostId);
+  assert.deepEqual(repairLineup(starters, rosterWithoutLost), repairLineup(starters, rosterWithoutLost));
 });
