@@ -1,6 +1,7 @@
 import { abbrFor, badgeFor } from "./badges.js";
 import { dateLabel } from "./format.js";
 import { MAX_LEAGUE_SIZE } from "./fantasy.js";
+import { WAIVER_MODES } from "./fantasyWaivers.js";
 import {
   canDraftPlayer,
   currentSeasonLabel,
@@ -17,6 +18,15 @@ import {
   suggestedPick,
   suggestedPickReason,
 } from "./fantasyDraft.js";
+import {
+  buildWaiverPlayerLookup,
+  claimStatusLabel,
+  dropCandidates,
+  partitionWaiverClaims,
+  priorityOrdinalLabel,
+  waiverModeExplanation,
+  waiverModeLabel,
+} from "./fantasyWaiversView.js";
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"]/g, (char) => ({
@@ -176,16 +186,27 @@ export function renderFantasyLeagueList(leagues, formState = {}) {
 
 // -- Once inside a league: shared header (eyebrow, title, chips, sub-tabs) ------
 
-// All four sub-tabs are live as of Phase 4.3 (H2H scoring). The active tab's
-// label doubles as the view's display title (see renderFantasyLeagueHeader).
-const FANTASY_SUBTAB_LABELS = { matchup: "Matchup", myteam: "My team", draftroom: "Draft room", standings: "Standings" };
+// All five sub-tabs are live as of Phase 4.4, except Waivers: free agency and
+// waivers only exist once a season's 15-man squads are fixed (draftStatus
+// "complete"), so that one button alone stays disabled until then (existing
+// .fantasy-subtab[disabled] styling, no separate "Soon" copy needed). The
+// active tab's label doubles as the view's display title (see
+// renderFantasyLeagueHeader).
+const FANTASY_SUBTAB_LABELS = {
+  matchup: "Matchup",
+  myteam: "My team",
+  draftroom: "Draft room",
+  waivers: "Waivers",
+  standings: "Standings",
+};
 
-function renderFantasySubtabs(activeSubTab) {
+function renderFantasySubtabs(activeSubTab, waiversEnabled) {
   return `
     <div class="fantasy-subtabs">
       <button class="fantasy-subtab ${activeSubTab === "matchup" ? "is-active" : ""}" type="button" data-fantasy-subtab="matchup">Matchup</button>
       <button class="fantasy-subtab ${activeSubTab === "myteam" ? "is-active" : ""}" type="button" data-fantasy-subtab="myteam">My team</button>
       <button class="fantasy-subtab ${activeSubTab === "draftroom" ? "is-active" : ""}" type="button" data-fantasy-subtab="draftroom">Draft room</button>
+      <button class="fantasy-subtab ${activeSubTab === "waivers" ? "is-active" : ""}" type="button" data-fantasy-subtab="waivers" ${waiversEnabled ? "" : "disabled"}>Waivers</button>
       <button class="fantasy-subtab ${activeSubTab === "standings" ? "is-active" : ""}" type="button" data-fantasy-subtab="standings">Standings</button>
     </div>`;
 }
@@ -208,7 +229,7 @@ export function renderFantasyLeagueHeader(league, members, activeSubTab) {
         <span class="chip">Snake draft</span>
       </div>
     </div>
-    ${renderFantasySubtabs(activeSubTab)}`;
+    ${renderFantasySubtabs(activeSubTab, league.draftStatus === "complete")}`;
 }
 
 // Wraps a sub-tab's body with the shared header inside the standard .fantasy
@@ -1011,4 +1032,346 @@ export function renderFantasyComplete(members, picks) {
     .join("");
 
   return `<div class="fantasy-rosters">${groups}</div>`;
+}
+
+// -- Waivers tab (Phase 4.4) -------------------------------------------------------
+//
+// Free agency and waivers once a league's draft is complete. Every acquisition,
+// instant (free agent) or queued (waiver claim), is a same-position swap with
+// the caller's own roster (SQUAD_SLOTS is always exactly full: see CLAUDE.md
+// and src/fantasyWaivers.js), so both the free-agent and wire rows open the
+// same confirm step (renderFantasyClaimFlow) rather than acting immediately,
+// and that step only ever offers same-position drop candidates - and says so,
+// rather than silently hiding every other position.
+
+function renderFantasyWaiversStatus(waivers) {
+  const { mode, faabBudget, myBudgetRemaining, myPriority, priorities, currentGameweek } = waivers;
+  const total = (priorities ?? []).length;
+  const detail =
+    mode === "faab"
+      ? `<p class="fantasy-waivers-status__detail"><strong>${esc(myBudgetRemaining)}</strong> credits left <span class="note--dim">(league budget ${esc(faabBudget)})</span></p>`
+      : `<p class="fantasy-waivers-status__detail">Your priority: <strong>${esc(priorityOrdinalLabel(myPriority, total) || "-")}</strong></p>`;
+  return `
+    <section class="card fantasy-waivers-status">
+      <div class="fantasy-waivers-status__head">
+        <span class="chip fantasy-waivers-mode-chip fantasy-waivers-mode-chip--${esc(mode)}">${esc(waiverModeLabel(mode))}</span>
+        <p class="note">Next run resolves at gameweek ${esc(currentGameweek)}.</p>
+      </div>
+      <p class="note">${esc(waiverModeExplanation(mode))}</p>
+      ${detail}
+    </section>`;
+}
+
+// -- Free agents: instant add, first come first served ------------------------
+
+function renderFreeAgentRow(player) {
+  return `<div class="fantasy-fa-row">
+      ${badgeFor(player.team)}
+      <span class="fantasy-fa-row__id"><strong>${esc(player.name)}</strong><span class="note--dim">${esc(abbrFor(player.team))}</span></span>
+      <span class="fantasy-pos">${esc(player.position)}</span>
+      <span class="fantasy-fa-row__action"><button class="btn fantasy-draft-btn" type="button" data-fantasy-fa-add="${player.id}">Add</button></span>
+    </div>`;
+}
+
+// The rows only, exported so app.js can refresh just this list on every
+// filter keystroke/change (mirrors renderFantasyPlayerRows for the draft
+// pool) - the search input itself lives outside this container, so a
+// targeted refresh never has to fight for its own focus back.
+export function renderFantasyFreeAgentRows(players, filter) {
+  const filtered = filterPlayers(players, filter);
+  if (!filtered.length) return `<p class="note">No free agents match.</p>`;
+  return filtered.map(renderFreeAgentRow).join("");
+}
+
+function renderFantasyFreeAgents(freeAgents, filter) {
+  const activePosition = filter?.position ?? "All";
+  const positionPills = POSITION_FILTERS.map(
+    (position) =>
+      `<button class="seg ${position === activePosition ? "is-active" : ""}" type="button" data-fantasy-fa-position-filter="${position}">${position}</button>`,
+  ).join("");
+  return `
+    <section class="card fantasy-pool fantasy-fa-pool">
+      <div class="fantasy-pool__scroll">
+        <div class="fantasy-pool__sticky">
+          <h3 class="card__title">Free agents</h3>
+          <p class="note">Unowned and available now: add one instantly for a same-position drop from your squad.</p>
+          <div class="fantasy-pool__filters">
+            <div class="segrow fantasy-pool__positions">${positionPills}</div>
+            <select class="fantasy-select" data-fantasy-fa-club-filter>${renderClubOptions(freeAgents, filter?.club)}</select>
+            <input class="fantasy-input" type="text" placeholder="Search players or clubs" value="${esc(filter?.search ?? "")}" data-fantasy-fa-search autocomplete="off" />
+          </div>
+        </div>
+        <div class="fantasy-pool__table">
+          <div class="fantasy-fa-cols"><span></span><span>Player</span><span>Pos</span><span></span></div>
+          <div class="fantasy-fa-rows" data-fantasy-fa-list>${renderFantasyFreeAgentRows(freeAgents, filter)}</div>
+        </div>
+      </div>
+    </section>`;
+}
+
+// -- Waiver wire: locked until the next run, queued via a claim ---------------
+
+function renderWireRow(entry) {
+  const { player, clearsAfterGameweek } = entry;
+  return `<div class="fantasy-wire-row">
+      ${badgeFor(player.team)}
+      <span class="fantasy-wire-row__id"><strong>${esc(player.name)}</strong><span class="note--dim">${esc(abbrFor(player.team))}</span></span>
+      <span class="fantasy-pos">${esc(player.position)}</span>
+      <span class="fantasy-wire-row__clears">Clears after GW ${esc(clearsAfterGameweek)}</span>
+      <span class="fantasy-wire-row__action"><button class="btn fantasy-draft-btn" type="button" data-fantasy-wire-claim="${player.id}">Claim</button></span>
+    </div>`;
+}
+
+// The wire is a list of { player, clearsAfterGameweek } entries rather than
+// bare players (see src/fantasyApi.js's loadWaivers contract), so it needs its
+// own filter pass rather than reusing filterPlayers directly.
+function filterWireEntries(wire, filter) {
+  const search = (filter?.search ?? "").trim().toLowerCase();
+  const club = filter?.club ?? "All";
+  return (wire ?? []).filter(({ player }) => {
+    if (filter?.position && filter.position !== "All" && player.position !== filter.position) return false;
+    if (club !== "All" && player.team !== club) return false;
+    if (!search) return true;
+    return player.name.toLowerCase().includes(search) || player.team.toLowerCase().includes(search);
+  });
+}
+
+// Rows only, exported for the same targeted-refresh reason as
+// renderFantasyFreeAgentRows above.
+export function renderFantasyWireRows(wire, filter) {
+  const filtered = filterWireEntries(wire, filter);
+  if (!filtered.length) return `<p class="note">Nothing on the wire matches.</p>`;
+  return filtered.map(renderWireRow).join("");
+}
+
+function renderFantasyWire(wire, filter) {
+  const activePosition = filter?.position ?? "All";
+  const positionPills = POSITION_FILTERS.map(
+    (position) =>
+      `<button class="seg ${position === activePosition ? "is-active" : ""}" type="button" data-fantasy-wire-position-filter="${position}">${position}</button>`,
+  ).join("");
+  const clubSource = (wire ?? []).map((entry) => entry.player);
+  return `
+    <section class="card fantasy-pool fantasy-wire-pool">
+      <div class="fantasy-pool__scroll">
+        <div class="fantasy-pool__sticky">
+          <h3 class="card__title">Waiver wire</h3>
+          <p class="note">Recently dropped, locked until the next run resolves every claim in priority order.</p>
+          <div class="fantasy-pool__filters">
+            <div class="segrow fantasy-pool__positions">${positionPills}</div>
+            <select class="fantasy-select" data-fantasy-wire-club-filter>${renderClubOptions(clubSource, filter?.club)}</select>
+            <input class="fantasy-input" type="text" placeholder="Search players or clubs" value="${esc(filter?.search ?? "")}" data-fantasy-wire-search autocomplete="off" />
+          </div>
+        </div>
+        <div class="fantasy-pool__table">
+          <div class="fantasy-wire-cols"><span></span><span>Player</span><span>Pos</span><span>Clears</span><span></span></div>
+          <div class="fantasy-wire-rows" data-fantasy-wire-list>${renderFantasyWireRows(wire, filter)}</div>
+        </div>
+      </div>
+    </section>`;
+}
+
+// -- Add/claim confirm step ----------------------------------------------------
+//
+// `flow` is { addPlayer, path: "free_agent" | "waiver", dropPlayerId } while
+// a manager is mid-acquisition (state.fantasy.waiverFlow in app.js); `mode`
+// is the league's current waiver mode, only consulted to decide whether a bid
+// field belongs here (a free-agent add never bids, regardless of mode).
+export function renderFantasyClaimFlow(flow, { roster, mode } = {}) {
+  const { addPlayer, path, dropPlayerId, busy = false, error = "" } = flow;
+  const candidates = dropCandidates(roster, addPlayer.position);
+  const drops = candidates.length
+    ? candidates
+        .map(
+          (player) => `<button class="fantasy-claim-drop ${player.id === dropPlayerId ? "is-selected" : ""}" type="button" data-fantasy-claim-drop="${player.id}" ${busy ? "disabled" : ""}>
+              ${badgeFor(player.team)}
+              <span>${esc(player.name)}</span>
+            </button>`,
+        )
+        .join("")
+    : `<p class="note">You have no ${esc(addPlayer.position)} to drop, so this swap isn't possible right now.</p>`;
+  const bidField =
+    path === "waiver" && mode === "faab"
+      ? `<label class="fantasy-claim-flow__bid">Bid (credits)
+          <input class="fantasy-input" type="number" min="0" step="1" value="0" data-fantasy-claim-bid ${busy ? "disabled" : ""} />
+        </label>`
+      : "";
+  const actionLabel = path === "free_agent" ? "Add" : "Submit claim";
+  const canSubmit = dropPlayerId != null && candidates.length > 0 && !busy;
+  return `
+    <section class="card fantasy-claim-flow">
+      <div class="fantasy-claim-flow__head">
+        ${badgeFor(addPlayer.team)}
+        <div>
+          <strong>${esc(addPlayer.name)}</strong>
+          <p class="note--dim">${esc(addPlayer.position)} · ${esc(abbrFor(addPlayer.team))}</p>
+        </div>
+      </div>
+      <p class="note">Every squad slot is always full, so adding a ${esc(addPlayer.position)} means dropping one of your own ${esc(addPlayer.position)}s. Choose which one below.</p>
+      <div class="fantasy-claim-flow__drops">${drops}</div>
+      ${bidField}
+      ${error ? `<p class="fantasy-form__error">${esc(error)}</p>` : ""}
+      <div class="fantasy-claim-flow__actions">
+        <button class="seg" type="button" data-fantasy-claim-cancel ${busy ? "disabled" : ""}>Cancel</button>
+        <button class="btn btn--primary" type="button" data-fantasy-claim-submit ${canSubmit ? "" : "disabled"}>${busy ? "Submitting…" : actionLabel}</button>
+      </div>
+    </section>`;
+}
+
+// -- My claims: pending (cancellable) then resolved history --------------------
+
+function playerLabel(playerId, playersById) {
+  const player = playersById.get(playerId);
+  return player ? esc(player.name) : `Player #${esc(playerId)}`;
+}
+
+function renderClaimRow(claim, playersById, { pending }) {
+  const bidChip = claim.bid != null ? `<span class="chip fantasy-chip">${esc(claim.bid)} credits</span>` : "";
+  const rightSide = pending
+    ? `<button class="seg" type="button" data-fantasy-waiver-cancel-claim="${claim.claimId}">Cancel</button>`
+    : `<span class="fantasy-claim-row__status fantasy-claim-row__status--${esc(claim.status)}">${esc(claimStatusLabel(claim.status))}</span>`;
+  return `<div class="fantasy-claim-row">
+      <div class="fantasy-claim-row__body">
+        <p><strong>${playerLabel(claim.addPlayerId, playersById)}</strong> <span class="note--dim">for</span> ${playerLabel(claim.dropPlayerId, playersById)}</p>
+        <p class="note--dim">Gameweek ${esc(claim.gameweek)}${pending ? ` · try order ${esc(claim.priority)}` : ""}</p>
+        ${!pending && claim.reason ? `<p class="note fantasy-form__error">${esc(claim.reason)}</p>` : ""}
+      </div>
+      <div class="fantasy-claim-row__side">${bidChip}${rightSide}</div>
+    </div>`;
+}
+
+function renderFantasyMyClaims(myClaims, playersById) {
+  const { pending, resolved } = partitionWaiverClaims(myClaims);
+  return `
+    <section class="card fantasy-myclaims">
+      <h3 class="card__title">My claims</h3>
+      ${
+        pending.length
+          ? `<div class="fantasy-claim-rows">${pending.map((claim) => renderClaimRow(claim, playersById, { pending: true })).join("")}</div>`
+          : `<p class="note">No pending claims.</p>`
+      }
+      ${
+        resolved.length
+          ? `<h4 class="fantasy-myclaims__subhead">Recent results</h4><div class="fantasy-claim-rows">${resolved
+              .slice(0, 10)
+              .map((claim) => renderClaimRow(claim, playersById, { pending: false }))
+              .join("")}</div>`
+          : ""
+      }
+    </section>`;
+}
+
+// -- League priority table ------------------------------------------------------
+
+function renderFantasyPriorities(priorities, myUserId, mode) {
+  const showBudget = mode === "faab";
+  const rowModifier = showBudget ? "" : "fantasy-priority-row--no-budget";
+  const rows = (priorities ?? [])
+    .map((row) => {
+      const isMe = row.userId === myUserId;
+      return `<div class="fantasy-priority-row ${rowModifier} ${isMe ? "is-me" : ""}">
+          <span>${esc(row.priority)}</span>
+          <span>${esc(row.name)}${isMe ? ` <span class="note--dim">(you)</span>` : ""}</span>
+          ${showBudget ? `<span>${esc(row.budgetRemaining)}</span>` : ""}
+        </div>`;
+    })
+    .join("");
+  return `
+    <section class="card fantasy-priorities">
+      <h3 class="card__title">League priority</h3>
+      <div class="fantasy-priority-cols ${showBudget ? "" : "fantasy-priority-cols--no-budget"}"><span>Order</span><span>Manager</span>${showBudget ? "<span>Budget</span>" : ""}</div>
+      <div class="fantasy-priority-rows">${rows || `<p class="note">No managers yet.</p>`}</div>
+    </section>`;
+}
+
+// -- Commissioner settings ------------------------------------------------------
+//
+// The pending-claims restriction is surfaced proactively from the caller's
+// OWN pending claims (myClaims is the only pending-claims visibility this
+// view has - see CLAUDE.md/backend-contract notes: the waivers GET route
+// does not expose other managers' claims). A save can still be rejected
+// server-side by a pending claim belonging to someone else; that failure
+// falls through to the same form-error style as any other save failure below,
+// not a special second warning.
+function renderFantasyWaiverSettings(waivers, { busy = false, error = "" } = {}) {
+  const pendingOwnClaims = (waivers.myClaims ?? []).filter((claim) => claim.status === "pending").length;
+  const blocked = pendingOwnClaims > 0;
+  const disabledAttr = busy || blocked ? "disabled" : "";
+  const options = WAIVER_MODES.map(
+    (value) => `<option value="${esc(value)}"${value === waivers.mode ? " selected" : ""}>${esc(waiverModeLabel(value))}</option>`,
+  ).join("");
+  return `
+    <section class="card fantasy-waiver-settings">
+      <h3 class="card__title">Commissioner settings</h3>
+      <p class="note">${esc(waiverModeExplanation(waivers.mode))}</p>
+      <div class="fantasy-form__row">
+        <select class="fantasy-select" data-fantasy-settings-mode ${disabledAttr}>${options}</select>
+        <input class="fantasy-input" type="number" min="0" step="1" value="${esc(waivers.faabBudget)}" data-fantasy-settings-budget ${disabledAttr} />
+        <button class="btn btn--primary" type="button" data-fantasy-settings-save ${disabledAttr}>${busy ? "Saving…" : "Save"}</button>
+      </div>
+      ${blocked ? `<p class="note fantasy-form__error">You have a pending claim this gameweek: settings can't change until it resolves.</p>` : ""}
+      ${error ? `<p class="fantasy-form__error">${esc(error)}</p>` : ""}
+    </section>`;
+}
+
+// -- Last run summary -----------------------------------------------------------
+
+function renderFantasyLastRun(lastRun, playersById, members) {
+  if (!lastRun) {
+    return `
+      <section class="card fantasy-lastrun">
+        <h3 class="card__title">Last run</h3>
+        <p class="note">No waiver run has resolved yet.</p>
+      </section>`;
+  }
+  const rows = (lastRun.results ?? [])
+    .map(
+      (result) => `<div class="fantasy-lastrun-row fantasy-lastrun-row--${esc(result.status)}">
+          <span>${esc(nameForUser(result.userId, members))}</span>
+          <span>${playerLabel(result.addPlayerId, playersById)} <span class="note--dim">for ${playerLabel(result.dropPlayerId, playersById)}</span></span>
+          <span class="fantasy-lastrun-row__status">${esc(claimStatusLabel(result.status))}${result.reason ? ` · ${esc(result.reason)}` : ""}</span>
+        </div>`,
+    )
+    .join("");
+  return `
+    <section class="card fantasy-lastrun">
+      <h3 class="card__title">Last run · Gameweek ${esc(lastRun.gameweek)}</h3>
+      <div class="fantasy-lastrun-rows">${rows || `<p class="note">No claims were made that run.</p>`}</div>
+    </section>`;
+}
+
+// -- Top-level panel -------------------------------------------------------------
+
+export function renderFantasyWaiversPanel(
+  waivers,
+  {
+    error = "",
+    myUserId,
+    members = [],
+    isCommissioner = false,
+    roster = [],
+    freeAgentFilter = { position: "All", club: "All", search: "" },
+    wireFilter = { position: "All", club: "All", search: "" },
+    flow = null,
+    settingsBusy = false,
+    settingsError = "",
+  } = {},
+) {
+  if (!waivers) {
+    return error
+      ? `<div class="card"><p class="fantasy-form__error">${esc(error)}</p><button class="seg" type="button" data-fantasy-waivers-retry>Retry</button></div>`
+      : `<p class="note">Loading waivers…</p>`;
+  }
+
+  const playersById = buildWaiverPlayerLookup({ freeAgents: waivers.freeAgents, wire: waivers.wire, roster });
+
+  return `
+    ${flow ? renderFantasyClaimFlow(flow, { roster, mode: waivers.mode }) : ""}
+    ${renderFantasyWaiversStatus(waivers)}
+    ${renderFantasyFreeAgents(waivers.freeAgents, freeAgentFilter)}
+    ${renderFantasyWire(waivers.wire, wireFilter)}
+    ${renderFantasyMyClaims(waivers.myClaims, playersById)}
+    ${renderFantasyPriorities(waivers.priorities, myUserId, waivers.mode)}
+    ${isCommissioner ? renderFantasyWaiverSettings(waivers, { busy: settingsBusy, error: settingsError }) : ""}
+    ${renderFantasyLastRun(waivers.lastRun, playersById, members)}`;
 }

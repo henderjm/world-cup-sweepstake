@@ -1979,3 +1979,151 @@ button { font-family: inherit; cursor: pointer; }
 
 .fantasy-standings__footnote { margin-top: 10px; }
 .fantasy-standings-empty { text-align: left; }
+
+/* Waivers tab (Phase 4.4): status header, free agents / wire lists (leaner
+   variant of the draft pool's sticky-filter shell), claim flow, my claims,
+   league priority table, commissioner settings, last run summary. -------- */
+
+.fantasy-waivers-status__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.fantasy-waivers-mode-chip { color: var(--fantasy-accent); border-color: var(--fantasy-line); background: var(--fantasy-soft); }
+.fantasy-waivers-status__detail { margin: 10px 0 0; font-size: 13px; }
+.fantasy-waivers-status__detail strong { color: var(--fantasy-accent); }
+
+/* Free agents / wire rows: same sticky-filter pool shell as the draft pool
+   (.fantasy-pool / .fantasy-pool__scroll / .fantasy-pool__sticky /
+   .fantasy-pool__filters, reused as-is), but a leaner grid - no AVG/FORM/xP/
+   ADP columns, since neither list carries player-stats data. */
+.fantasy-fa-cols,
+.fantasy-fa-row {
+  display: grid;
+  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 76px;
+  min-width: 320px;
+  align-items: center;
+  gap: 10px;
+}
+.fantasy-fa-cols {
+  padding: 10px 26px 6px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.fantasy-fa-cols span:last-child { text-align: right; }
+.fantasy-fa-rows { display: flex; flex-direction: column; gap: 4px; padding: 0 16px 12px; }
+.fantasy-fa-row { padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.fantasy-fa-row__id { display: flex; flex-direction: column; min-width: 0; }
+.fantasy-fa-row__id strong { font-size: 13px; }
+.fantasy-fa-row__action { text-align: right; }
+
+.fantasy-wire-cols,
+.fantasy-wire-row {
+  display: grid;
+  grid-template-columns: 24px minmax(110px, 1.4fr) 44px minmax(120px, 1fr) 96px;
+  min-width: 460px;
+  align-items: center;
+  gap: 10px;
+}
+.fantasy-wire-cols {
+  padding: 10px 26px 6px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.fantasy-wire-cols span:last-child { text-align: right; }
+.fantasy-wire-rows { display: flex; flex-direction: column; gap: 4px; padding: 0 16px 12px; }
+.fantasy-wire-row { padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.fantasy-wire-row__id { display: flex; flex-direction: column; min-width: 0; }
+.fantasy-wire-row__id strong { font-size: 13px; }
+.fantasy-wire-row__clears { font-size: 11px; color: var(--muted); }
+.fantasy-wire-row__action { text-align: right; }
+
+/* Add/claim confirm step: same-position drop candidates as a row of pill
+   buttons, so the "why is this list filtered" explanation right above it
+   reads against something concrete rather than an abstract rule. */
+.fantasy-claim-flow { border-color: var(--fantasy-line); background: var(--fantasy-soft); }
+.fantasy-claim-flow__head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.fantasy-claim-flow__head strong { font-size: 14px; }
+.fantasy-claim-flow__drops { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.fantasy-claim-drop {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.fantasy-claim-drop.is-selected { border-color: var(--fantasy-line); background: var(--fantasy-accent); color: var(--fantasy-ink); }
+.fantasy-claim-flow__bid { display: flex; flex-direction: column; gap: 6px; max-width: 160px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 10px; }
+.fantasy-claim-flow__actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+
+/* My claims: pending (cancellable) then a resolved history, both sharing one
+   row layout. */
+.fantasy-claim-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.fantasy-claim-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.fantasy-claim-row__body p { margin: 0; font-size: 13px; }
+.fantasy-claim-row__body p + p { margin-top: 2px; }
+.fantasy-claim-row__side { display: flex; align-items: center; gap: 8px; flex: none; }
+.fantasy-claim-row__status { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.fantasy-claim-row__status--processed { color: var(--fantasy-accent); }
+.fantasy-claim-row__status--rejected { color: var(--clay); }
+.fantasy-myclaims__subhead { margin: 14px 0 0; font-size: 11px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
+
+/* League priority table: Order / Manager / Budget (budget column dropped
+   entirely outside faab mode, where it plays no part in resolution). */
+.fantasy-priority-cols,
+.fantasy-priority-row {
+  display: grid;
+  grid-template-columns: 50px minmax(120px, 1fr) 70px;
+  align-items: center;
+  gap: 8px;
+}
+.fantasy-priority-cols--no-budget,
+.fantasy-priority-row--no-budget {
+  grid-template-columns: 50px minmax(120px, 1fr);
+}
+.fantasy-priority-cols {
+  padding: 0 10px 8px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.fantasy-priority-rows { display: flex; flex-direction: column; gap: 4px; }
+.fantasy-priority-row { padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-2); font-size: 12px; }
+.fantasy-priority-row.is-me { background: var(--fantasy-soft); box-shadow: inset 0 0 0 1px var(--fantasy-line); }
+
+/* Commissioner settings + last run summary --------------------------------- */
+.fantasy-waiver-settings .fantasy-form__row { align-items: center; }
+.fantasy-waiver-settings select[data-fantasy-settings-mode] { flex: 1; max-width: 220px; }
+.fantasy-waiver-settings input[data-fantasy-settings-budget] { flex: none; width: 100px; }
+
+.fantasy-lastrun-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.fantasy-lastrun-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12px;
+}
+.fantasy-lastrun-row__status { flex: none; color: var(--muted); text-align: right; }
+.fantasy-lastrun-row--processed .fantasy-lastrun-row__status { color: var(--fantasy-accent); }
+.fantasy-lastrun-row--rejected .fantasy-lastrun-row__status { color: var(--clay); }

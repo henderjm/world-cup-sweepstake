@@ -44,6 +44,8 @@ import {
 import { renderPaperRunPanel, updatePaperRunHud } from "./paperRunView.js";
 import { mountPaperRunGame } from "./paperRunGame.js";
 import {
+  addFreeAgent as apiAddFreeAgent,
+  cancelWaiverClaim as apiCancelWaiverClaim,
   createLeague as apiCreateLeague,
   fantasyAvailable,
   getLineup as apiGetLineup,
@@ -54,8 +56,11 @@ import {
   loadMatchup as apiLoadMatchup,
   loadPlayerPool,
   loadStandings as apiLoadStandings,
+  loadWaivers as apiLoadWaivers,
+  saveWaiverSettings as apiSaveWaiverSettings,
   setLineup as apiSetLineup,
   startDraft as apiStartDraft,
+  submitWaiverClaim as apiSubmitWaiverClaim,
 } from "./fantasyApi.js";
 import { formatCountdown, openDraftRoom, reduceDraftMessage, suggestedPick, swapLineup } from "./fantasyDraft.js";
 import {
@@ -63,6 +68,7 @@ import {
   renderFantasyDraftRoom,
   renderFantasyEmptyState,
   renderFantasyError,
+  renderFantasyFreeAgentRows,
   renderFantasyLeagueList,
   renderFantasyLeagueShell,
   renderFantasyLobby,
@@ -74,6 +80,8 @@ import {
   renderFantasySessionExpired,
   renderFantasySignedOut,
   renderFantasyStandingsPanel,
+  renderFantasyWaiversPanel,
+  renderFantasyWireRows,
 } from "./fantasyView.js";
 
 const elements = {
@@ -134,6 +142,14 @@ function initialFantasyState() {
     standings: null, // { throughGameweek, standings } from GET .../standings
     standingsLoading: false,
     standingsError: "",
+    waivers: null, // GET .../waivers response (mode, budgets, priorities, free agents, wire, my claims, last run)
+    waiversLoading: false,
+    waiversError: "",
+    waiverFreeAgentFilter: { position: "All", club: "All", search: "" },
+    waiverWireFilter: { position: "All", club: "All", search: "" },
+    waiverFlow: null, // working copy while adding/claiming: { addPlayer, path, dropPlayerId, busy, error }
+    waiverSettingsBusy: false,
+    waiverSettingsError: "",
     createBusy: false,
     createError: "",
     joinBusy: false,
@@ -544,7 +560,9 @@ function renderFantasy() {
           ? renderFantasyMatchupBody()
           : subTab === "standings"
             ? renderFantasyStandingsBody()
-            : renderFantasyLobby(league, members, { playerPool: f.playerPool, filter: f.filter });
+            : subTab === "waivers"
+              ? renderFantasyWaiversBody(league)
+              : renderFantasyLobby(league, members, { playerPool: f.playerPool, filter: f.filter });
     elements.layout.innerHTML = renderFantasyLeagueShell(league, members, subTab, body);
     return;
   }
@@ -578,9 +596,11 @@ function renderFantasyDraftPanel() {
         ? renderFantasyMatchupBody()
         : subTab === "standings"
           ? renderFantasyStandingsBody()
-          : room.status === "complete"
-            ? renderFantasyComplete(members, room.picks)
-            : renderFantasyDraftRoom({
+          : subTab === "waivers"
+            ? renderFantasyWaiversBody(league)
+            : room.status === "complete"
+              ? renderFantasyComplete(members, room.picks)
+              : renderFantasyDraftRoom({
                 league,
                 members,
                 draft: { ...room, remainingMs: f.draftRoom.remainingMs },
@@ -697,6 +717,176 @@ async function loadFantasyStandings(leagueId) {
     if (f.activeLeagueId === leagueId) f.standingsLoading = false;
   }
   if (state.section === "fantasy") renderLayout();
+}
+
+// Waivers body: same lazy-load-once shape as Matchup/Standings above, but
+// only meaningful once the draft is complete (the Waivers sub-tab itself is
+// disabled until then - see renderFantasySubtabs - so this branch is really
+// only reachable through the tab button, not a stale deep link).
+function renderFantasyWaiversBody(league) {
+  const f = state.fantasy;
+  if (league.draftStatus !== "complete") {
+    return `<p class="note">Waivers open once the draft is complete.</p>`;
+  }
+  if (!f.waivers && !f.waiversLoading && !f.waiversError) loadFantasyWaivers(f.activeLeagueId);
+  return renderFantasyWaiversPanel(f.waivers, {
+    error: f.waiversError,
+    myUserId: f.myUserId,
+    members: f.league?.members,
+    isCommissioner: Boolean(league.isCommissioner),
+    roster: f.league?.roster ?? [],
+    freeAgentFilter: f.waiverFreeAgentFilter,
+    wireFilter: f.waiverWireFilter,
+    flow: f.waiverFlow,
+    settingsBusy: f.waiverSettingsBusy,
+    settingsError: f.waiverSettingsError,
+  });
+}
+
+async function loadFantasyWaivers(leagueId) {
+  const f = state.fantasy;
+  if (f.waiversLoading) return;
+  f.waiversLoading = true;
+  f.waiversError = "";
+  try {
+    const waivers = await apiLoadWaivers(leagueId);
+    if (f.activeLeagueId !== leagueId) return; // navigated elsewhere mid-flight
+    f.waivers = waivers;
+  } catch (error) {
+    if (f.activeLeagueId !== leagueId) return;
+    f.waiversError = error.message || "Couldn't load waivers.";
+  } finally {
+    if (f.activeLeagueId === leagueId) f.waiversLoading = false;
+  }
+  if (state.section === "fantasy") renderLayout();
+}
+
+// A silent refetch after a mutation (claim submitted/cancelled, free agent
+// added, settings saved) rather than nulling f.waivers first: the panel stays
+// on screen with its previous data until the fresh response lands, instead of
+// flashing back to the loading note.
+async function reloadFantasyWaivers() {
+  const f = state.fantasy;
+  const leagueId = f.activeLeagueId;
+  try {
+    const waivers = await apiLoadWaivers(leagueId);
+    if (f.activeLeagueId !== leagueId) return;
+    f.waivers = waivers;
+    f.waiversError = "";
+  } catch (error) {
+    if (f.activeLeagueId !== leagueId) return;
+    f.waiversError = error.message || "Couldn't load waivers.";
+  }
+  if (state.section === "fantasy") renderLayout();
+}
+
+// Refreshes just the rows container on a filter change, exactly like
+// refreshFantasyPool for the draft pool: the search input and select live
+// outside the container this replaces, so neither loses focus.
+function refreshFantasyFreeAgentRows() {
+  const list = elements.layout.querySelector("[data-fantasy-fa-list]");
+  if (!list) return;
+  list.innerHTML = renderFantasyFreeAgentRows(state.fantasy.waivers?.freeAgents ?? [], state.fantasy.waiverFreeAgentFilter);
+}
+
+function refreshFantasyWireRows() {
+  const list = elements.layout.querySelector("[data-fantasy-wire-list]");
+  if (!list) return;
+  list.innerHTML = renderFantasyWireRows(state.fantasy.waivers?.wire ?? [], state.fantasy.waiverWireFilter);
+}
+
+// Opens the add/claim confirm step for a free agent (path "free_agent") or a
+// wire player (path "waiver"). The player object comes straight from the
+// already-loaded waivers response rather than a fresh fetch, since both
+// lists are right there in state.fantasy.waivers.
+function openFantasyWaiverFlow(playerId, path) {
+  const f = state.fantasy;
+  if (!Number.isInteger(playerId) || !f.waivers) return;
+  const player =
+    path === "free_agent"
+      ? (f.waivers.freeAgents ?? []).find((candidate) => candidate.id === playerId)
+      : (f.waivers.wire ?? []).find((entry) => entry.player.id === playerId)?.player;
+  if (!player) return;
+  f.waiverFlow = { addPlayer: player, path, dropPlayerId: null, busy: false, error: "" };
+  renderLayout();
+}
+
+// Submits the pending add/claim flow: an instant free-agent add or a queued
+// waiver claim, reading the bid straight off the DOM (faab mode only, never
+// tracked in state per keystroke - the same "read at submit time" approach
+// the create/join league forms already use) rather than re-rendering the
+// whole panel on every digit typed.
+async function submitFantasyWaiverFlow() {
+  const f = state.fantasy;
+  const flow = f.waiverFlow;
+  if (!flow || flow.busy || flow.dropPlayerId == null) return;
+  // The bid must be read off the DOM before the busy re-render below replaces
+  // elements.layout.innerHTML wholesale: renderFantasyClaimFlow always renders
+  // the bid input with its hardcoded starting value (there is no per-keystroke
+  // state for it, by design), so reading it any later than this would silently
+  // submit that starting value instead of whatever the manager actually typed.
+  const bidInput = flow.path === "waiver" ? elements.layout.querySelector("[data-fantasy-claim-bid]") : null;
+  const bid = bidInput ? Number(bidInput.value) : undefined;
+  flow.busy = true;
+  flow.error = "";
+  renderLayout();
+  try {
+    if (flow.path === "free_agent") {
+      await apiAddFreeAgent(f.activeLeagueId, { addPlayerId: flow.addPlayer.id, dropPlayerId: flow.dropPlayerId });
+      // The roster changed instantly (unlike a queued claim): refresh the
+      // league's own cached roster too, so the My team pitch/bench and any
+      // later drop picker see the swap immediately rather than on next visit.
+      try {
+        f.league = await apiLoadLeague(f.activeLeagueId);
+      } catch {
+        // best-effort refresh; the waivers reload below still succeeds
+      }
+    } else {
+      await apiSubmitWaiverClaim(f.activeLeagueId, { addPlayerId: flow.addPlayer.id, dropPlayerId: flow.dropPlayerId, bid });
+    }
+    f.waiverFlow = null;
+    await reloadFantasyWaivers();
+  } catch (error) {
+    flow.busy = false;
+    flow.error = error.message || "Couldn't complete that.";
+    renderLayout();
+  }
+}
+
+async function cancelFantasyWaiverClaim(claimId) {
+  if (!Number.isInteger(claimId)) return;
+  try {
+    await apiCancelWaiverClaim(state.fantasy.activeLeagueId, claimId);
+    await reloadFantasyWaivers();
+  } catch (error) {
+    state.fantasy.waiversError = error.message || "Couldn't cancel that claim.";
+    renderLayout();
+  }
+}
+
+// Commissioner-only settings save: mode/budget are read straight off the DOM
+// at click time (same reasoning as the claim flow's bid field above) rather
+// than tracked per-keystroke in state.
+async function saveFantasyWaiverSettings() {
+  const f = state.fantasy;
+  if (f.waiverSettingsBusy) return;
+  const modeSelect = elements.layout.querySelector("[data-fantasy-settings-mode]");
+  const budgetInput = elements.layout.querySelector("[data-fantasy-settings-budget]");
+  const mode = modeSelect?.value;
+  const faabBudget = Number(budgetInput?.value);
+  if (!mode || !Number.isInteger(faabBudget) || faabBudget < 0) return;
+  f.waiverSettingsBusy = true;
+  f.waiverSettingsError = "";
+  renderLayout();
+  try {
+    await apiSaveWaiverSettings(f.activeLeagueId, { mode, faabBudget });
+    f.waiverSettingsBusy = false;
+    await reloadFantasyWaivers();
+  } catch (error) {
+    f.waiverSettingsBusy = false;
+    f.waiverSettingsError = error.message || "Couldn't save waiver settings.";
+    renderLayout();
+  }
 }
 
 function startFantasyLineupEdit() {
@@ -905,6 +1095,12 @@ async function openFantasyLeague(id) {
   f.standings = null;
   f.standingsLoading = false;
   f.standingsError = "";
+  f.waivers = null;
+  f.waiversLoading = false;
+  f.waiversError = "";
+  f.waiverFlow = null;
+  f.waiverSettingsBusy = false;
+  f.waiverSettingsError = "";
   renderLayout();
   try {
     const detail = await apiLoadLeague(id);
@@ -1053,6 +1249,12 @@ function closeFantasyLeague() {
   f.standings = null;
   f.standingsLoading = false;
   f.standingsError = "";
+  f.waivers = null;
+  f.waiversLoading = false;
+  f.waiversError = "";
+  f.waiverFlow = null;
+  f.waiverSettingsBusy = false;
+  f.waiverSettingsError = "";
   renderLayout();
 }
 
@@ -1279,6 +1481,7 @@ function wireLayoutControls() {
       state.fantasy.subTab = fantasySubtabButton.dataset.fantasySubtab;
       state.fantasy.lineupEdit = null;
       state.fantasy.playerDrawerId = null;
+      state.fantasy.waiverFlow = null;
       renderLayout();
       return;
     }
@@ -1355,6 +1558,70 @@ function wireLayoutControls() {
       loadFantasyStandings(state.fantasy.activeLeagueId);
       return;
     }
+    const waiversRetryButton = event.target.closest("[data-fantasy-waivers-retry]");
+    if (waiversRetryButton) {
+      state.fantasy.waiversError = "";
+      loadFantasyWaivers(state.fantasy.activeLeagueId);
+      return;
+    }
+    const faPositionButton = event.target.closest("[data-fantasy-fa-position-filter]");
+    if (faPositionButton) {
+      state.fantasy.waiverFreeAgentFilter.position = faPositionButton.dataset.fantasyFaPositionFilter;
+      elements.layout.querySelectorAll("[data-fantasy-fa-position-filter]").forEach((button) => {
+        button.classList.toggle("is-active", button === faPositionButton);
+      });
+      refreshFantasyFreeAgentRows();
+      return;
+    }
+    const wirePositionButton = event.target.closest("[data-fantasy-wire-position-filter]");
+    if (wirePositionButton) {
+      state.fantasy.waiverWireFilter.position = wirePositionButton.dataset.fantasyWirePositionFilter;
+      elements.layout.querySelectorAll("[data-fantasy-wire-position-filter]").forEach((button) => {
+        button.classList.toggle("is-active", button === wirePositionButton);
+      });
+      refreshFantasyWireRows();
+      return;
+    }
+    const faAddButton = event.target.closest("[data-fantasy-fa-add]");
+    if (faAddButton) {
+      openFantasyWaiverFlow(Number(faAddButton.dataset.fantasyFaAdd), "free_agent");
+      return;
+    }
+    const wireClaimButton = event.target.closest("[data-fantasy-wire-claim]");
+    if (wireClaimButton) {
+      openFantasyWaiverFlow(Number(wireClaimButton.dataset.fantasyWireClaim), "waiver");
+      return;
+    }
+    const claimDropButton = event.target.closest("[data-fantasy-claim-drop]");
+    if (claimDropButton && !claimDropButton.disabled) {
+      const flow = state.fantasy.waiverFlow;
+      if (flow) {
+        flow.dropPlayerId = Number(claimDropButton.dataset.fantasyClaimDrop);
+        flow.error = "";
+        renderLayout();
+      }
+      return;
+    }
+    if (event.target.closest("[data-fantasy-claim-cancel]")) {
+      state.fantasy.waiverFlow = null;
+      renderLayout();
+      return;
+    }
+    const claimSubmitButton = event.target.closest("[data-fantasy-claim-submit]");
+    if (claimSubmitButton && !claimSubmitButton.disabled) {
+      submitFantasyWaiverFlow();
+      return;
+    }
+    const cancelClaimButton = event.target.closest("[data-fantasy-waiver-cancel-claim]");
+    if (cancelClaimButton) {
+      cancelFantasyWaiverClaim(Number(cancelClaimButton.dataset.fantasyWaiverCancelClaim));
+      return;
+    }
+    const settingsSaveButton = event.target.closest("[data-fantasy-settings-save]");
+    if (settingsSaveButton && !settingsSaveButton.disabled) {
+      saveFantasyWaiverSettings();
+      return;
+    }
     const makeCaptainButton = event.target.closest("[data-fantasy-make-captain]");
     if (makeCaptainButton) {
       handleFantasyMakeCaptain(Number(makeCaptainButton.dataset.fantasyMakeCaptain));
@@ -1422,15 +1689,41 @@ function wireLayoutControls() {
   });
   elements.layout.addEventListener("input", (event) => {
     const search = event.target.closest("[data-fantasy-search]");
-    if (!search) return;
-    state.fantasy.filter.search = search.value;
-    refreshFantasyPool();
+    if (search) {
+      state.fantasy.filter.search = search.value;
+      refreshFantasyPool();
+      return;
+    }
+    const faSearch = event.target.closest("[data-fantasy-fa-search]");
+    if (faSearch) {
+      state.fantasy.waiverFreeAgentFilter.search = faSearch.value;
+      refreshFantasyFreeAgentRows();
+      return;
+    }
+    const wireSearch = event.target.closest("[data-fantasy-wire-search]");
+    if (wireSearch) {
+      state.fantasy.waiverWireFilter.search = wireSearch.value;
+      refreshFantasyWireRows();
+    }
   });
   elements.layout.addEventListener("change", (event) => {
     const clubSelect = event.target.closest("[data-fantasy-club-filter]");
-    if (!clubSelect) return;
-    state.fantasy.filter.club = clubSelect.value;
-    refreshFantasyPool();
+    if (clubSelect) {
+      state.fantasy.filter.club = clubSelect.value;
+      refreshFantasyPool();
+      return;
+    }
+    const faClub = event.target.closest("[data-fantasy-fa-club-filter]");
+    if (faClub) {
+      state.fantasy.waiverFreeAgentFilter.club = faClub.value;
+      refreshFantasyFreeAgentRows();
+      return;
+    }
+    const wireClub = event.target.closest("[data-fantasy-wire-club-filter]");
+    if (wireClub) {
+      state.fantasy.waiverWireFilter.club = wireClub.value;
+      refreshFantasyWireRows();
+    }
   });
 }
 

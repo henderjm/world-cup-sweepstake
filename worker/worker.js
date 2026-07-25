@@ -2795,7 +2795,10 @@ function corsHeaders(request) {
   return {
     "Access-Control-Allow-Origin": allow,
     Vary: "Origin",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    // DELETE covers cancelling a pending waiver claim, the only route using it.
+    // Without it the browser's preflight rejects the call before it ever reaches
+    // the Worker, even though the route itself works.
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
   };
 }
