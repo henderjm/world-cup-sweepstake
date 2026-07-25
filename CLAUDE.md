@@ -58,7 +58,7 @@ Upstream polling is a state machine, not the browser cadence. The season schedul
 
 ## Module map (`src/`)
 
-- `app.js` orchestration: sections (Scores/Play) + scores tabs, hash routing (`#live/#tables/#knockout/#fixtures/#stats/#play`, legacy aliases kept), polling, desktop/mobile re-render on the 760px matchMedia crossing, event delegation on `#layout`, PostHog telemetry helpers.
+- `app.js` orchestration: sections (Scores/Play) + scores tabs, hash routing (`#live/#tables/#knockout/#fixtures/#stats/#play`, legacy aliases kept, plus `#learn` and `#learn/<slug>` for the tutorials index and deep links), polling, desktop/mobile re-render on the 760px matchMedia crossing, event delegation on `#layout`, PostHog telemetry helpers.
 - `data.js` data loading (`loadModel(comp)` fetches the live feed and scorers in parallel), `buildModel(raw, scorerData)` (league tables with form, standings, team registration).
 - `domain.js` pure mapping/standings logic, team-name normalization, per-team performance/form.
 - `competitions.js` per-competition config (name, table zone bands) and `zoneFor`.
@@ -77,11 +77,14 @@ Upstream polling is a state machine, not the browser cadence. The season schedul
 - `fantasyDraft.js` draft-room countdown formatting, legal-pick/squad-bucket derivation (built on `draftLogic.js`), and the stateful WebSocket loop (`openDraftRoom`) that keeps local draft state in sync with `FantasyDraftRoom`, with reconnect backoff and a locally-driven 1-second clock.
 - `fantasyView.js` HTML-string renderers for the Fantasy section: signed-out/not-configured/error states, create/join forms, league list, lobby, the live draft room (clock banner, snake order strip, pick feed, filterable player pool, my-squad panel), and the post-draft roster board.
 - `locations.js` venue → city/map-link fallback; `mapApiFootball.js` provider mapping.
+- `tutorials.js` the Learn section's content registry: pure data, no DOM. An exported `TUTORIALS` array of `{ slug, title, summary, minutes, sections }`, each section a tagged block (`prose`, `callout`, `states`, `list`, `table`, `timeline`, or the interactive `resolver`); `tutorialBySlug(slug)` looks one up. The waivers tutorial's `resolver` block is cross-checked against the real engine (`resolveWaiverRun` in `fantasyWaivers.js`) in `test/tutorials.test.js`, so its numbers can never quietly drift from the deployed rules.
+- `tutorialsView.js` HTML-string renderers for the Learn section: `renderTutorialIndex` (one card per tutorial) and `renderTutorial` (walks a tutorial's `sections`, dispatching on each block's `type`), including the three-mode resolver for the waivers tutorial.
 
 ## Adding a tab or panel control
 
 - **New scores tab:** add it to `SCORES_TABS` in `src/views.js` (label + key) and to `SCORES_TABS` in `src/app.js`, add a `case` to `renderPanel` in `app.js`, and write the renderer in `views.js`. Tabs route via the URL hash; the Knockout tab demonstrates conditional presence (cups only).
 - **New in-panel control** (sort toggle, filter): give it a unique `data-*` attribute (not a shared one), keep its state in the `state` object in `app.js`, read it in the renderer, and handle it in `wireLayoutControls` (click delegation with an early `return` per handler). Reuse the `.segrow`/`.seg` pill markup; see `data-fixture-view` (fixtures), `data-gb-sort` (player stats).
+- **New tutorial:** add one entry to the `TUTORIALS` array in `src/tutorials.js` with its own `slug` and `sections`, reusing the existing block types; `src/tutorialsView.js`'s index and reader renderers need no change to pick it up, since both just map over whatever is in `TUTORIALS`/a tutorial's `sections`. Link to it from wherever the confusion actually happens (see the Waivers panel's "How do waivers work?" in `fantasyView.js`, a `data-tutorial-open="<slug>"` control handled by the same click delegation as everything else) with `data-tutorial-open="<slug>"`.
 
 ## Telemetry (PostHog)
 

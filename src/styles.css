@@ -706,7 +706,7 @@ button { font-family: inherit; cursor: pointer; }
   bottom: 0;
   z-index: 45;
   display: none;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   background: rgb(10 14 20 / 0.95);
   backdrop-filter: blur(12px);
   border-top: 1px solid rgb(255 255 255 / 0.08);
@@ -2127,3 +2127,170 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-lastrun-row__status { flex: none; color: var(--muted); text-align: right; }
 .fantasy-lastrun-row--processed .fantasy-lastrun-row__status { color: var(--fantasy-accent); }
 .fantasy-lastrun-row--rejected .fantasy-lastrun-row__status { color: var(--clay); }
+
+/* Waivers status card: contextual link to the tutorial explaining this tab. */
+.fantasy-waivers-status__help {
+  display: inline-block;
+  margin-top: 10px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--fantasy-accent);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.fantasy-waivers-status__help:hover { color: var(--fantasy-accent-2); }
+
+/* Learn section (tutorials) -------------------------------------------------------
+   Top-level chrome (index, headings, back link) stays lime like every other
+   top-level section (Scores, You). Content specifically walking through a
+   Fantasy feature - today just the waivers tutorial - borrows the fantasy
+   purple accent for its illustrative bits (the states grid, the timeline, the
+   resolver), the same accent the actual Waivers tab already uses, so the
+   tutorial reads as an extension of that feature rather than a mismatched
+   lime explainer bolted on top of it. Semantic colors (won/rejected/wire)
+   reuse the exact tokens the real Fantasy views already use for the same
+   meaning (fantasy-accent for processed/won, clay for rejected, gold for a
+   pending/holding state) rather than inventing new ones. */
+
+.tutorial-index__lede { margin: 10px 0 18px; }
+
+.tutorial-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.tutorial-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  color: inherit;
+  width: 100%;
+}
+.tutorial-card:hover, .tutorial-card:focus-visible { border-color: var(--accent-line); }
+
+.tutorial-card__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tutorial-card__minutes { flex: none; font-size: 10.5px; padding: 3px 9px; }
+
+.tutorial {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.tutorial-back { margin-bottom: 16px; }
+
+.tutorial-section { margin-top: 26px; }
+.tutorial-section:first-of-type { margin-top: 22px; }
+
+.tutorial-heading {
+  font-size: 17px;
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  margin: 0 0 10px;
+}
+
+.tutorial-p { font-size: 13.5px; line-height: 1.65; color: #c6cdd4; margin: 0 0 10px; }
+.tutorial-p:last-child { margin-bottom: 0; }
+
+.tutorial-callout {
+  border-left: 3px solid var(--fantasy-accent);
+  padding: 2px 0 2px 16px;
+  margin: 18px 0;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: #c6cdd4;
+}
+.tutorial-callout p { margin: 0 0 8px; }
+.tutorial-callout p:last-child { margin-bottom: 0; }
+
+.tutorial-states {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 4px;
+}
+@media (max-width: 640px) {
+  .tutorial-states { grid-template-columns: 1fr; }
+}
+
+.tutorial-state { border-radius: var(--radius-sm); padding: 13px 14px; border: 1px solid var(--line-2); background: var(--surface-2); }
+.tutorial-state__title { font-size: 10.5px; font-weight: 900; letter-spacing: 0.09em; text-transform: uppercase; margin: 0 0 6px; }
+.tutorial-state__body { font-size: 12.5px; line-height: 1.55; color: var(--muted); margin: 0; }
+
+.tutorial-state--wire { border-color: rgb(245 197 66 / 0.4); background: rgb(245 197 66 / 0.07); }
+.tutorial-state--wire .tutorial-state__title { color: var(--gold); }
+.tutorial-state--free { border-color: var(--fantasy-line); background: var(--fantasy-soft); }
+.tutorial-state--free .tutorial-state__title { color: var(--fantasy-accent); }
+
+.tutorial-list { margin: 4px 0 0; padding-left: 20px; font-size: 13.5px; line-height: 1.65; color: #c6cdd4; }
+.tutorial-list li + li { margin-top: 6px; }
+
+.tutorial-table-card { padding: 14px 16px; }
+.tutorial-table-scroll { overflow-x: auto; }
+
+.tutorial-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tutorial-table caption { text-align: left; font-size: 10px; font-weight: 900; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); padding-bottom: 8px; }
+.tutorial-table th, .tutorial-table td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.tutorial-table th { font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+.tutorial-table tbody tr:last-child td { border-bottom: none; }
+.tutorial-table--num, .tutorial-table td.tutorial-table--num { text-align: right; font-variant-numeric: tabular-nums; }
+.tutorial-table-note { margin-top: 10px; }
+
+.tutorial-timeline {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0 0 0 22px;
+  border-left: 2px solid var(--line-2);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.tutorial-timeline__step { position: relative; }
+.tutorial-timeline__step::before {
+  content: "";
+  position: absolute;
+  left: -27px;
+  top: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--fantasy-accent);
+}
+.tutorial-timeline__step.is-emphasis::before { background: var(--fantasy-accent); box-shadow: 0 0 0 4px var(--fantasy-soft); }
+.tutorial-timeline__when { display: block; font-size: 10.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fantasy-accent); margin-bottom: 4px; }
+.tutorial-timeline__body { margin: 0; font-size: 13.5px; line-height: 1.6; color: #c6cdd4; }
+
+/* The interactive resolver: the same three claims re-resolved by mode. */
+.tutorial-resolver { margin-top: 12px; }
+.tutorial-resolver__modes { margin: 16px 0 4px; }
+.tutorial-resolver__modebtn.is-active { border-color: var(--fantasy-line); background: var(--fantasy-soft); color: var(--fantasy-accent); }
+.tutorial-resolver__desc { margin: 10px 0 14px; }
+
+.tutorial-resolver__winner {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--fantasy-soft);
+  border: 1px solid var(--fantasy-line);
+  margin-bottom: 14px;
+}
+.tutorial-resolver__winnertag { font-size: 10px; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase; color: var(--fantasy-accent); }
+.tutorial-resolver__winnername { font-size: 16px; font-weight: 800; }
+
+.tutorial-pill { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+.tutorial-pill--won { color: var(--fantasy-accent); border-color: var(--fantasy-line); background: var(--fantasy-soft); }
+.tutorial-pill--rejected { color: var(--clay); border-color: rgb(255 77 94 / 0.4); background: rgb(255 77 94 / 0.1); }
+
+.tutorial-resolver__aftermath { margin: 16px 0 0; font-size: 12.5px; }
+.tutorial-resolver__aftermath dt { font-size: 10px; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase; color: var(--fantasy-accent); margin-bottom: 5px; }
+.tutorial-resolver__aftermath dd { margin: 0; color: var(--muted); line-height: 1.6; }

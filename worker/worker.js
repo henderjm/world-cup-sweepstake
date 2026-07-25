@@ -2181,11 +2181,11 @@ async function runLeagueWaiverRun(env, leagueId, settledGameweek, newCurrentGame
     const priorities = (stateRows.results ?? []).map((row) => ({ userId: row.user_id, priority: row.priority }));
     const players = new Map((playerRows.results ?? []).map((row) => [row.id, { position: row.position }]));
 
-    // reverse_standings recomputes worst-record-first fresh every run
-    // rather than reading persisted state; the other two modes never touch
-    // this.
+    // reverse_standings orders the whole run worst-record-first, and faab uses
+    // the same table purely to break ties between equal bids, so both need it
+    // computed fresh. Only rolling ignores it, running off the stored queue.
     let standings = [];
-    if (settings.mode === "reverse_standings") {
+    if (settings.mode === "reverse_standings" || settings.mode === "faab") {
       const [membersRows, fixtureRows] = await Promise.all([
         env.DB.prepare(
           `SELECT m.user_id, u.name, u.email FROM fantasy_league_members m

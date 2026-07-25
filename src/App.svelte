@@ -21,6 +21,7 @@
       <button class="navbtn is-active" type="button" data-section-nav="scores">Scores</button>
       <button class="navbtn" type="button" data-section-nav="fantasy">Fantasy</button>
       <button class="navbtn" type="button" data-section-nav="play">Paper Run</button>
+      <button class="navbtn" type="button" data-section-nav="learn">Learn</button>
     </nav>
     <span class="topnav__spacer"></span>
     <span class="updated">Updated <time id="updated">…</time></span>
@@ -43,6 +44,10 @@
     <button class="bnav__btn" type="button" data-section-nav="play">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"></path><path d="M18 14h-8"></path><path d="M15 18h-5"></path><path d="M10 6h8v4h-8V6Z"></path></svg>
       Play
+    </button>
+    <button class="bnav__btn" type="button" data-section-nav="learn">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"></path><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"></path></svg>
+      Learn
     </button>
     <button class="bnav__btn" type="button" data-section-nav="you">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>

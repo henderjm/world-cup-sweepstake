@@ -84,14 +84,35 @@ export function validateAcquisition({
 // `priorities` is [{ userId, priority }]; `standings` is the array
 // standingsFromFixtures already produces, best record first.
 function leaguePriorityMap(mode, priorities, standings) {
-  const map = new Map();
-  if (mode === "reverse_standings") {
-    const worstFirst = [...(standings ?? [])].reverse();
-    worstFirst.forEach((row, index) => map.set(row.userId, index + 1));
-    return map;
+  const storedOrder = () => {
+    const stored = new Map();
+    (priorities ?? []).forEach((entry) => stored.set(entry.userId, entry.priority));
+    return stored;
+  };
+
+  // Worst record first, the same fairness direction reverse_standings uses.
+  // standingsFromFixtures returns best first, so reversing it puts whoever is
+  // having the worst season at the front.
+  const worstFirst = () => {
+    const table = new Map();
+    [...(standings ?? [])].reverse().forEach((row, index) => table.set(row.userId, index + 1));
+    return table;
+  };
+
+  if (mode === "reverse_standings") return worstFirst();
+
+  if (mode === "faab") {
+    // FAAB ties break on league table position rather than the rolling queue:
+    // two managers who valued a player identically should be separated by who
+    // needs him more, and the rolling queue is meaningless in a mode that never
+    // reorders it. Before any gameweek has completed there is no table to read,
+    // so fall back to the stored order rather than letting every early-season
+    // tie collapse onto submission time.
+    const table = worstFirst();
+    return table.size ? table : storedOrder();
   }
-  (priorities ?? []).forEach((entry) => map.set(entry.userId, entry.priority));
-  return map;
+
+  return storedOrder();
 }
 
 // Sorts claims into resolution order. Pure and stable: identical input always

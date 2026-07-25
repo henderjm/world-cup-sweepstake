@@ -1059,6 +1059,7 @@ function renderFantasyWaiversStatus(waivers) {
       </div>
       <p class="note">${esc(waiverModeExplanation(mode))}</p>
       ${detail}
+      <button class="fantasy-waivers-status__help" type="button" data-tutorial-open="waivers">How do waivers work?</button>
     </section>`;
 }
 

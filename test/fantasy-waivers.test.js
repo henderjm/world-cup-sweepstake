@@ -177,7 +177,23 @@ test("orderClaims sorts faab claims by highest bid first", () => {
   assert.deepEqual(ordered.map((c) => c.claimId), [2, 3, 1]);
 });
 
-test("orderClaims breaks a faab bid tie by better (lower) league waiver priority", () => {
+test("orderClaims breaks a faab bid tie by league table position, worst record first", () => {
+  const claims = [
+    { claimId: 1, userId: 1, addPlayerId: 100, dropPlayerId: 10, bid: 10, priority: 1 },
+    { claimId: 2, userId: 2, addPlayerId: 101, dropPlayerId: 11, bid: 10, priority: 1 },
+  ];
+  // standingsFromFixtures returns best first, so userId 2 is bottom of the table.
+  const standings = [{ userId: 1 }, { userId: 2 }];
+  // The stored queue deliberately favours userId 1, to prove the table wins.
+  const priorities = [
+    { userId: 1, priority: 1 },
+    { userId: 2, priority: 3 },
+  ];
+  const ordered = orderClaims(claims, { mode: "faab", priorities, standings });
+  assert.deepEqual(ordered.map((c) => c.claimId), [2, 1]); // bottom of the table takes the tie
+});
+
+test("orderClaims falls back to the stored queue for a faab tie before any gameweek has completed", () => {
   const claims = [
     { claimId: 1, userId: 1, addPlayerId: 100, dropPlayerId: 10, bid: 10, priority: 1 },
     { claimId: 2, userId: 2, addPlayerId: 101, dropPlayerId: 11, bid: 10, priority: 1 },
@@ -186,8 +202,8 @@ test("orderClaims breaks a faab bid tie by better (lower) league waiver priority
     { userId: 1, priority: 3 },
     { userId: 2, priority: 1 },
   ];
-  const ordered = orderClaims(claims, { mode: "faab", priorities });
-  assert.deepEqual(ordered.map((c) => c.claimId), [2, 1]); // userId 2 has better (lower) priority
+  const ordered = orderClaims(claims, { mode: "faab", priorities, standings: [] });
+  assert.deepEqual(ordered.map((c) => c.claimId), [2, 1]); // no table yet, so the queue decides
 });
 
 test("orderClaims falls back to the claimant's own claim order after bid and league priority ties", () => {

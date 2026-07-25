@@ -83,6 +83,8 @@ import {
   renderFantasyWaiversPanel,
   renderFantasyWireRows,
 } from "./fantasyView.js";
+import { tutorialBySlug, TUTORIALS } from "./tutorials.js";
+import { renderTutorial, renderTutorialIndex } from "./tutorialsView.js";
 
 const elements = {
   ticker: document.querySelector("#ticker"),
@@ -98,9 +100,22 @@ const SCORES_TABS = ["live", "tables", "knockout", "fixtures", "stats"];
 const HASH_ALIASES = { goldenboot: "stats", paperrun: "play" };
 const COMPETITION_STORAGE_KEY = "gs-competition";
 
-const NON_SCORES_SECTIONS = ["play", "you", "fantasy"];
+const NON_SCORES_SECTIONS = ["play", "you", "fantasy", "learn"];
 
-const initialHash = HASH_ALIASES[window.location.hash.replace("#", "")] ?? window.location.hash.replace("#", "");
+// "#learn" alone opens the tutorials index; "#learn/<slug>" deep-links straight
+// into one. Parsed up front (mirroring how every other section reads its
+// initial hash) so a direct link works on first paint, not just after a click;
+// an unknown slug falls back to null (the index) rather than a blank Learn
+// section - resolveInitialLearnHash never trusts the hash to name a real tutorial.
+function resolveInitialLearnHash(rawHash) {
+  const match = /^learn\/(.+)$/.exec(rawHash);
+  if (!match) return { section: rawHash, slug: null };
+  return { section: "learn", slug: tutorialBySlug(match[1]) ? match[1] : null };
+}
+
+const rawInitialHash = window.location.hash.replace("#", "");
+const initialLearn = resolveInitialLearnHash(rawInitialHash);
+const initialHash = initialLearn.section === "learn" ? "learn" : (HASH_ALIASES[rawInitialHash] ?? rawInitialHash);
 const state = {
   section: NON_SCORES_SECTIONS.includes(initialHash) ? initialHash : "scores",
   tab: SCORES_TABS.includes(initialHash) ? initialHash : "live",
@@ -115,6 +130,10 @@ const state = {
     mount: null,
   },
   fantasy: initialFantasyState(),
+  learn: {
+    slug: initialHash === "learn" ? initialLearn.slug : null,
+    resolverMode: "faab",
+  },
 };
 
 // Fresh fantasy state: used on boot and whenever a signed-out transition (or a
@@ -345,6 +364,12 @@ function renderLayout() {
     return;
   }
   teardownFantasyDraftRoom();
+
+  if (state.section === "learn") {
+    elements.layout.className = "layout";
+    renderLearn();
+    return;
+  }
 
   if (state.section === "you") {
     elements.layout.className = "layout";
@@ -1263,6 +1288,39 @@ function teardownFantasyDraftRoom() {
   state.fantasy.draftRoom = null;
 }
 
+// -- Learn section -----------------------------------------------------------
+
+// state.learn.slug null renders the index; a real slug renders that tutorial.
+// tutorialBySlug returning null (a stale/bad slug, e.g. someone editing the
+// hash by hand) falls back to the index rather than a blank panel.
+function renderLearn() {
+  const tutorial = state.learn.slug ? tutorialBySlug(state.learn.slug) : null;
+  elements.layout.innerHTML = tutorial
+    ? renderTutorial(tutorial, { resolverMode: state.learn.resolverMode })
+    : renderTutorialIndex(TUTORIALS);
+}
+
+// Opens a tutorial by slug, from anywhere in the app (the index card itself,
+// or a contextual link like the Waivers panel's "How do waivers work?").
+// Unknown slugs are ignored rather than navigating to a blank tutorial.
+function openTutorial(slug) {
+  if (!tutorialBySlug(slug)) return;
+  const changingSection = state.section !== "learn";
+  state.section = "learn";
+  state.learn.slug = slug;
+  state.learn.resolverMode = "faab";
+  window.history.replaceState(null, "", `#learn/${slug}`);
+  posthog.capture("tutorial_opened", { slug });
+  if (changingSection) renderAll();
+  else renderLayout();
+}
+
+function closeTutorial() {
+  state.learn.slug = null;
+  window.history.replaceState(null, "", "#learn");
+  renderLayout();
+}
+
 // -- Device push controls ---------------------------------------------------------
 
 // Fills the "This device" slot in the Notifications card based on real browser
@@ -1296,6 +1354,9 @@ function syncNav() {
 function setSection(section) {
   if (state.section === section) return;
   state.section = section;
+  // A nav click always lands on that section's own default view: Learn's is
+  // the tutorials index, not wherever a previous visit left off.
+  if (section === "learn") state.learn.slug = null;
   window.history.replaceState(null, "", `#${section === "scores" ? state.tab : section}`);
   metric("count", "section_view", 1, { tags: { section } });
   posthog.capture("section_viewed", { section });
@@ -1648,6 +1709,21 @@ function wireLayoutControls() {
     if (event.target.closest("[data-fantasy-dismiss-error]")) {
       const room = state.fantasy.draftRoom;
       if (room?.state) room.state.lastError = null;
+      renderLayout();
+      return;
+    }
+    const tutorialOpenTarget = event.target.closest("[data-tutorial-open]");
+    if (tutorialOpenTarget) {
+      openTutorial(tutorialOpenTarget.dataset.tutorialOpen);
+      return;
+    }
+    if (event.target.closest("[data-tutorial-back]")) {
+      closeTutorial();
+      return;
+    }
+    const resolverModeButton = event.target.closest("[data-tutorial-resolver-mode]");
+    if (resolverModeButton) {
+      state.learn.resolverMode = resolverModeButton.dataset.tutorialResolverMode;
       renderLayout();
       return;
     }
