@@ -49,7 +49,7 @@ import {
   validateClientResult,
 } from "../src/paperRunModel.js";
 import { MAX_LEAGUE_SIZE, bucketPosition } from "../src/fantasy.js";
-import { defaultLineup, resolveEffectiveLineup, validateLineupSelection } from "../src/fantasyLineups.js";
+import { defaultLineup, repairLineup, resolveEffectiveLineup, validateLineupSelection } from "../src/fantasyLineups.js";
 import { scoreMatchForPlayers } from "../src/fantasyScoring.js";
 import {
   currentGameweekFromMatches,
@@ -57,6 +57,13 @@ import {
   rosterGameweekPoints,
   standingsFromFixtures,
 } from "../src/fantasyGameweek.js";
+import {
+  DEFAULT_FAAB_BUDGET,
+  WAIVER_MODES,
+  playerAvailability,
+  resolveWaiverRun,
+  validateAcquisition,
+} from "../src/fantasyWaivers.js";
 
 export { FantasyDraftRoom } from "./draftRoom.js";
 
@@ -202,6 +209,32 @@ export default {
     if (fantasyStandingsRoute && request.method === "GET") {
       return handleFantasyStandings(request, env, Number(fantasyStandingsRoute[1]), cors);
     }
+    const fantasyWaiversRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/waivers$/);
+    if (fantasyWaiversRoute && request.method === "GET") {
+      return handleFantasyWaiversView(request, env, Number(fantasyWaiversRoute[1]), cors);
+    }
+    const fantasyWaiverClaimRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/waivers\/claim$/);
+    if (fantasyWaiverClaimRoute && request.method === "POST") {
+      return handleFantasyWaiverClaimCreate(request, env, Number(fantasyWaiverClaimRoute[1]), cors);
+    }
+    const fantasyWaiverClaimCancelRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/waivers\/claim\/(\d+)$/);
+    if (fantasyWaiverClaimCancelRoute && request.method === "DELETE") {
+      return handleFantasyWaiverClaimCancel(
+        request,
+        env,
+        Number(fantasyWaiverClaimCancelRoute[1]),
+        Number(fantasyWaiverClaimCancelRoute[2]),
+        cors,
+      );
+    }
+    const fantasyFreeAgentAddRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/freeagents\/add$/);
+    if (fantasyFreeAgentAddRoute && request.method === "POST") {
+      return handleFantasyFreeAgentAdd(request, env, Number(fantasyFreeAgentAddRoute[1]), cors);
+    }
+    const fantasyWaiverSettingsRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/waivers\/settings$/);
+    if (fantasyWaiverSettingsRoute && request.method === "POST") {
+      return handleFantasyWaiverSettings(request, env, Number(fantasyWaiverSettingsRoute[1]), cors);
+    }
     const fantasyLeagueDetailRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)$/);
     if (fantasyLeagueDetailRoute && request.method === "GET") {
       return handleFantasyLeagueDetail(request, env, Number(fantasyLeagueDetailRoute[1]), cors);
@@ -272,6 +305,7 @@ export default {
         await runScheduledAnalysis(env);
         await runScheduledNotifications(env);
         await runScheduledFantasyScoring(env);
+        await runScheduledWaiverRuns(env);
       })(),
     );
   },
@@ -1122,6 +1156,15 @@ async function fantasyRosterFor(env, leagueId, userId) {
 // (fantasy_lineups exact-match, else inherited from the latest earlier
 // gameweek, else defaultLineup's computed-on-read fill), so the two callers
 // can never disagree about "what were they playing that week".
+//
+// A set-or-inherited lineup can reference a player the manager no longer
+// owns (dropped since via free agency or a waiver claim, Phase 4.4);
+// repairLineup filters those out and tops up from the current roster so the
+// XI is always exactly STARTING_SIZE and legal, never silently short or
+// scoring a lost player as a permanent dead slot. Never written back to
+// fantasy_lineups: the repair is recomputed on every read, same discipline
+// as defaultLineup, so a manager who later re-sets their lineup themselves
+// simply overwrites it as normal.
 async function resolveManagerLineup(env, leagueId, userId, gameweek) {
   const [roster, lineupRows] = await Promise.all([
     fantasyRosterFor(env, leagueId, userId),
@@ -1138,6 +1181,12 @@ async function resolveManagerLineup(env, leagueId, userId, gameweek) {
     source = "default";
   } else if (resolved.inherited) {
     source = "inherited";
+  }
+
+  const repair = repairLineup(starters, roster);
+  if (repair.repaired) {
+    starters = repair.starters;
+    source = "repaired";
   }
   return { roster, starters, source };
 }
@@ -1555,6 +1604,650 @@ async function handleFantasyStandings(request, env, leagueId, cors) {
     return json({ throughGameweek, standings: standingsFromFixtures(fixtures, members) }, 200, cors);
   } catch {
     return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// -- Fantasy free agency and waivers (Phase 4.4) ------------------------------
+// Player state per league is exactly one of OWNED (a fantasy_rosters row),
+// ON_WAIVERS (a fantasy_waiver_wire row) or FREE_AGENT (neither); the pure
+// classification, validation and run-resolution rules live in
+// src/fantasyWaivers.js, mirroring draftLogic.js and fantasyLineups.js. Every
+// acquisition, instant or via a claim, pairs with a same-position-bucket drop
+// (the roster invariant SQUAD_SLOTS enforces: every bucket is always exactly
+// full), and the dropped player always lands on the wire rather than being
+// instantly re-addable, which is what stops a drop-and-re-add cycle from
+// dodging the waiver queue.
+
+async function waiverSettings(env, leagueId) {
+  const row = await env.DB.prepare(`SELECT mode, faab_budget FROM fantasy_waiver_settings WHERE league_id = ?1`)
+    .bind(leagueId)
+    .first();
+  return { mode: row?.mode ?? "faab", faabBudget: row?.faab_budget ?? DEFAULT_FAAB_BUDGET };
+}
+
+// Lazily seeds fantasy_waiver_state for every current member: initial
+// priority is reverse draft order (the last drafter gets first waiver call,
+// the standard fantasy-league convention), computed once per call and
+// inserted OR IGNORE so a repeat call (every waivers-view request, every
+// claim submission) is a no-op for members that already have a row.
+async function ensureLeagueWaiverState(env, leagueId, faabBudget) {
+  const members = await env.DB.prepare(
+    `SELECT user_id, draft_position FROM fantasy_league_members WHERE league_id = ?1 ORDER BY draft_position DESC`,
+  )
+    .bind(leagueId)
+    .all();
+  const rows = members.results ?? [];
+  if (!rows.length) return;
+  // draft_position DESC already puts the last drafter first; anyone somehow
+  // missing a draft_position (should not happen post-draft) is appended last.
+  const withPosition = rows.filter((row) => row.draft_position != null);
+  const withoutPosition = rows.filter((row) => row.draft_position == null);
+  const sequence = [...withPosition, ...withoutPosition];
+  await env.DB.batch(
+    sequence.map((row, index) =>
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO fantasy_waiver_state (league_id, user_id, faab_remaining, priority) VALUES (?1, ?2, ?3, ?4)`,
+      ).bind(leagueId, row.user_id, faabBudget, index + 1),
+    ),
+  );
+}
+
+async function fantasyPlayerLookup(env, playerId) {
+  return env.DB.prepare(`SELECT id, name, team, position FROM fantasy_players WHERE id = ?1`).bind(playerId).first();
+}
+
+async function fantasyPlayerAvailability(env, leagueId, playerId) {
+  const [ownedRow, wireRow] = await Promise.all([
+    env.DB.prepare(`SELECT 1 AS x FROM fantasy_rosters WHERE league_id = ?1 AND player_id = ?2`)
+      .bind(leagueId, playerId)
+      .first(),
+    env.DB.prepare(`SELECT 1 AS x FROM fantasy_waiver_wire WHERE league_id = ?1 AND player_id = ?2`)
+      .bind(leagueId, playerId)
+      .first(),
+  ]);
+  return playerAvailability({
+    playerId,
+    ownedIds: ownedRow ? [playerId] : [],
+    wireIds: wireRow ? [playerId] : [],
+  });
+}
+
+// GET /fantasy/league/:id/waivers: the whole waivers view in one call. The
+// free-agent list is returned in full (like the draft pool already does) and
+// filtered client-side rather than paginated server-side; ~500-600 players
+// is not large enough to justify the complexity.
+async function handleFantasyWaiversView(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const league = await env.DB.prepare(`SELECT draft_status FROM fantasy_leagues WHERE id = ?1`)
+      .bind(leagueId)
+      .first();
+    if (!league) return json({ error: "unknown league" }, 404, cors);
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+    if (league.draft_status !== "complete") return json({ error: "draft not complete" }, 400, cors);
+
+    const settings = await waiverSettings(env, leagueId);
+    await ensureLeagueWaiverState(env, leagueId, settings.faabBudget);
+
+    const [currentGameweek, stateRows, ownedRows, wireRows, allPlayers, myClaimRows, lastRunRow] = await Promise.all([
+      currentFantasyGameweek(env),
+      env.DB.prepare(
+        `SELECT s.user_id, s.faab_remaining, s.priority, u.name, u.email FROM fantasy_waiver_state s
+         JOIN users u ON u.id = s.user_id WHERE s.league_id = ?1 ORDER BY s.priority`,
+      )
+        .bind(leagueId)
+        .all(),
+      env.DB.prepare(`SELECT player_id FROM fantasy_rosters WHERE league_id = ?1`).bind(leagueId).all(),
+      env.DB.prepare(
+        `SELECT w.player_id, w.clears_after_gameweek, pl.name, pl.team, pl.position FROM fantasy_waiver_wire w
+         JOIN fantasy_players pl ON pl.id = w.player_id WHERE w.league_id = ?1 ORDER BY w.added_at`,
+      )
+        .bind(leagueId)
+        .all(),
+      env.DB.prepare(`SELECT id, name, team, position FROM fantasy_players WHERE active = 1`).all(),
+      env.DB.prepare(
+        `SELECT id, add_player_id, drop_player_id, bid, priority, status, reason, gameweek FROM fantasy_waivers
+         WHERE league_id = ?1 AND user_id = ?2 ORDER BY id DESC LIMIT 50`,
+      )
+        .bind(leagueId, user.id)
+        .all(),
+      env.DB.prepare(
+        `SELECT gameweek, processed_at FROM fantasy_waiver_runs WHERE league_id = ?1 ORDER BY gameweek DESC LIMIT 1`,
+      )
+        .bind(leagueId)
+        .first(),
+    ]);
+
+    const ownedIds = new Set((ownedRows.results ?? []).map((row) => row.player_id));
+    const wireIds = new Set((wireRows.results ?? []).map((row) => row.player_id));
+    const freeAgents = (allPlayers.results ?? []).filter(
+      (player) => !ownedIds.has(player.id) && !wireIds.has(player.id),
+    );
+
+    const mine = (stateRows.results ?? []).find((row) => row.user_id === user.id);
+
+    let lastRun = null;
+    if (lastRunRow) {
+      const resultRows = await env.DB.prepare(
+        `SELECT id, user_id, add_player_id, drop_player_id, bid, status, reason FROM fantasy_waivers
+         WHERE league_id = ?1 AND gameweek = ?2 AND status != 'pending' ORDER BY id`,
+      )
+        .bind(leagueId, lastRunRow.gameweek)
+        .all();
+      lastRun = {
+        gameweek: lastRunRow.gameweek,
+        processedAt: lastRunRow.processed_at,
+        results: (resultRows.results ?? []).map((row) => ({
+          claimId: row.id,
+          userId: row.user_id,
+          status: row.status,
+          reason: row.reason,
+          addPlayerId: row.add_player_id,
+          dropPlayerId: row.drop_player_id,
+          bid: row.bid,
+        })),
+      };
+    }
+
+    return json(
+      {
+        mode: settings.mode,
+        faabBudget: settings.faabBudget,
+        myBudgetRemaining: mine?.faab_remaining ?? settings.faabBudget,
+        myPriority: mine?.priority ?? null,
+        currentGameweek,
+        priorities: (stateRows.results ?? []).map((row) => ({
+          userId: row.user_id,
+          name: row.name || String(row.email ?? "").split("@")[0] || "Someone",
+          priority: row.priority,
+          budgetRemaining: row.faab_remaining,
+        })),
+        freeAgents,
+        wire: (wireRows.results ?? []).map((row) => ({
+          player: { id: row.player_id, name: row.name, team: row.team, position: row.position },
+          clearsAfterGameweek: row.clears_after_gameweek,
+        })),
+        myClaims: (myClaimRows.results ?? []).map((row) => ({
+          claimId: row.id,
+          addPlayerId: row.add_player_id,
+          dropPlayerId: row.drop_player_id,
+          bid: row.bid,
+          priority: row.priority,
+          status: row.status,
+          reason: row.reason,
+          gameweek: row.gameweek,
+        })),
+        lastRun,
+      },
+      200,
+      cors,
+    );
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// POST /fantasy/league/:id/waivers/claim: queues a claim against an
+// ON_WAIVERS player. A free agent must use the instant /freeagents/add route
+// instead; this route rejects an add target that isn't actually on the wire
+// so the two acquisition paths can never be confused for each other.
+async function handleFantasyWaiverClaimCreate(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "bad body" }, 400, cors);
+  }
+  const addPlayerId = Number(body?.addPlayerId);
+  const dropPlayerId = Number(body?.dropPlayerId);
+  const bid = body?.bid == null ? null : Number(body.bid);
+  const requestedPriority = Number(body?.priority);
+  if (!Number.isInteger(addPlayerId) || !Number.isInteger(dropPlayerId)) {
+    return json({ error: "bad selection" }, 400, cors);
+  }
+
+  try {
+    const league = await env.DB.prepare(`SELECT draft_status FROM fantasy_leagues WHERE id = ?1`)
+      .bind(leagueId)
+      .first();
+    if (!league) return json({ error: "unknown league" }, 404, cors);
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+    if (league.draft_status !== "complete") return json({ error: "draft not complete" }, 400, cors);
+
+    const settings = await waiverSettings(env, leagueId);
+    await ensureLeagueWaiverState(env, leagueId, settings.faabBudget);
+
+    const [roster, addPlayer, dropPlayer, availability, stateRow] = await Promise.all([
+      fantasyRosterFor(env, leagueId, user.id),
+      fantasyPlayerLookup(env, addPlayerId),
+      fantasyPlayerLookup(env, dropPlayerId),
+      fantasyPlayerAvailability(env, leagueId, addPlayerId),
+      env.DB.prepare(`SELECT faab_remaining FROM fantasy_waiver_state WHERE league_id = ?1 AND user_id = ?2`)
+        .bind(leagueId, user.id)
+        .first(),
+    ]);
+    if (!addPlayer) return json({ error: "unknown player" }, 404, cors);
+
+    const validation = validateAcquisition({
+      addPlayer,
+      dropPlayer,
+      roster,
+      availability,
+      path: "waiver",
+      mode: settings.mode,
+      bid,
+      budgetRemaining: stateRow?.faab_remaining ?? settings.faabBudget,
+    });
+    if (!validation.ok) return json({ error: validation.error }, 400, cors);
+
+    const gameweek = await currentFantasyGameweek(env);
+    // priority here is the claimant's OWN ranking among their own pending
+    // claims (fantasy_waivers.priority, repurposed for exactly this, distinct
+    // from the league-wide waiver order in fantasy_waiver_state). A caller
+    // that doesn't send one is appended after every existing pending claim of
+    // theirs, so it is tried last by default rather than colliding on 1.
+    let ownClaimPriority = Number.isInteger(requestedPriority) ? requestedPriority : null;
+    if (ownClaimPriority == null) {
+      const pendingCount = await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM fantasy_waivers WHERE league_id = ?1 AND user_id = ?2 AND status = 'pending'`,
+      )
+        .bind(leagueId, user.id)
+        .first();
+      ownClaimPriority = (pendingCount?.n ?? 0) + 1;
+    }
+
+    const result = await env.DB.prepare(
+      `INSERT INTO fantasy_waivers (league_id, user_id, add_player_id, drop_player_id, priority, gameweek, bid)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
+    )
+      .bind(
+        leagueId,
+        user.id,
+        addPlayerId,
+        dropPlayerId,
+        ownClaimPriority,
+        gameweek,
+        settings.mode === "faab" ? bid ?? 0 : null,
+      )
+      .run();
+
+    return json({ claimId: result.meta.last_row_id, gameweek, status: "pending" }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// DELETE /fantasy/league/:id/waivers/claim/:claimId: cancel one's own
+// still-pending claim. A claim already resolved by a run cannot be undone.
+async function handleFantasyWaiverClaimCancel(request, env, leagueId, claimId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const league = await env.DB.prepare(`SELECT draft_status FROM fantasy_leagues WHERE id = ?1`)
+      .bind(leagueId)
+      .first();
+    if (!league) return json({ error: "unknown league" }, 404, cors);
+    if (league.draft_status !== "complete") return json({ error: "draft not complete" }, 400, cors);
+
+    const claim = await env.DB.prepare(
+      `SELECT id, user_id, status FROM fantasy_waivers WHERE id = ?1 AND league_id = ?2`,
+    )
+      .bind(claimId, leagueId)
+      .first();
+    if (!claim) return json({ error: "unknown claim" }, 404, cors);
+    if (claim.user_id !== user.id) return json({ error: "not your claim" }, 403, cors);
+    if (claim.status !== "pending") return json({ error: "claim already resolved" }, 400, cors);
+
+    await env.DB.prepare(`DELETE FROM fantasy_waivers WHERE id = ?1`).bind(claimId).run();
+    return json({ ok: true }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// POST /fantasy/league/:id/freeagents/add: the instant path. Validates and
+// atomically swaps a FREE_AGENT onto the caller's roster for a same-position
+// drop, and puts the dropped player on the wire (never instantly re-addable,
+// which is what stops a drop-and-instantly-re-add cycle from dodging the
+// waiver queue). Rejects an add target that is owned or already on the wire;
+// those go through a waiver claim instead.
+async function handleFantasyFreeAgentAdd(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "bad body" }, 400, cors);
+  }
+  const addPlayerId = Number(body?.addPlayerId);
+  const dropPlayerId = Number(body?.dropPlayerId);
+  if (!Number.isInteger(addPlayerId) || !Number.isInteger(dropPlayerId)) {
+    return json({ error: "bad selection" }, 400, cors);
+  }
+
+  try {
+    const league = await env.DB.prepare(`SELECT draft_status FROM fantasy_leagues WHERE id = ?1`)
+      .bind(leagueId)
+      .first();
+    if (!league) return json({ error: "unknown league" }, 404, cors);
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+    if (league.draft_status !== "complete") return json({ error: "draft not complete" }, 400, cors);
+
+    const [roster, addPlayer, dropPlayer, availability] = await Promise.all([
+      fantasyRosterFor(env, leagueId, user.id),
+      fantasyPlayerLookup(env, addPlayerId),
+      fantasyPlayerLookup(env, dropPlayerId),
+      fantasyPlayerAvailability(env, leagueId, addPlayerId),
+    ]);
+    if (!addPlayer) return json({ error: "unknown player" }, 404, cors);
+
+    const validation = validateAcquisition({ addPlayer, dropPlayer, roster, availability, path: "free_agent" });
+    if (!validation.ok) return json({ error: validation.error }, 400, cors);
+
+    const gameweek = await currentFantasyGameweek(env);
+    // Guarded on the add player still being unowned/unwired at write time:
+    // two managers racing the same free agent can both pass the read-time
+    // check above, but only one INSERT...SELECT...WHERE can win the roster
+    // slot, the same defense-in-depth pattern the league-join route uses.
+    const insert = await env.DB.prepare(
+      `INSERT INTO fantasy_rosters (league_id, user_id, player_id, acquired_via)
+       SELECT ?1, ?2, ?3, 'free_agent'
+       WHERE NOT EXISTS (SELECT 1 FROM fantasy_rosters WHERE league_id = ?1 AND player_id = ?3)
+         AND NOT EXISTS (SELECT 1 FROM fantasy_waiver_wire WHERE league_id = ?1 AND player_id = ?3)`,
+    )
+      .bind(leagueId, user.id, addPlayerId)
+      .run();
+    if ((insert.meta?.changes ?? 0) === 0) return json({ error: "Player is not a free agent" }, 400, cors);
+
+    await env.DB.batch([
+      env.DB.prepare(`DELETE FROM fantasy_rosters WHERE league_id = ?1 AND user_id = ?2 AND player_id = ?3`).bind(
+        leagueId,
+        user.id,
+        dropPlayerId,
+      ),
+      env.DB.prepare(
+        `INSERT INTO fantasy_waiver_wire (league_id, player_id, clears_after_gameweek) VALUES (?1, ?2, ?3)
+         ON CONFLICT(league_id, player_id) DO UPDATE SET added_at = datetime('now'), clears_after_gameweek = ?3`,
+      ).bind(leagueId, dropPlayerId, gameweek),
+    ]);
+
+    return json({ ok: true, roster: await fantasyRosterFor(env, leagueId, user.id) }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// POST /fantasy/league/:id/waivers/settings: commissioner only. Rejects a
+// mode change while pending claims exist for the current gameweek: changing
+// the rules mid-run would be unfair to managers who already queued a claim
+// under the old rules.
+async function handleFantasyWaiverSettings(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "bad body" }, 400, cors);
+  }
+  const mode = String(body?.mode ?? "");
+  const faabBudget = Number(body?.faabBudget);
+  if (!WAIVER_MODES.includes(mode)) return json({ error: "bad mode" }, 400, cors);
+  if (!Number.isInteger(faabBudget) || faabBudget < 0) return json({ error: "bad faab budget" }, 400, cors);
+
+  try {
+    const league = await env.DB.prepare(
+      `SELECT draft_status, commissioner_user_id FROM fantasy_leagues WHERE id = ?1`,
+    )
+      .bind(leagueId)
+      .first();
+    if (!league) return json({ error: "unknown league" }, 404, cors);
+    if (league.commissioner_user_id !== user.id) return json({ error: "commissioner only" }, 403, cors);
+    if (league.draft_status !== "complete") return json({ error: "draft not complete" }, 400, cors);
+
+    const currentGameweek = await currentFantasyGameweek(env);
+    const pending = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM fantasy_waivers WHERE league_id = ?1 AND gameweek = ?2 AND status = 'pending'`,
+    )
+      .bind(leagueId, currentGameweek)
+      .first();
+    if ((pending?.n ?? 0) > 0) {
+      return json({ error: "cannot change waiver settings while claims are pending this gameweek" }, 400, cors);
+    }
+
+    await env.DB.prepare(
+      `INSERT INTO fantasy_waiver_settings (league_id, mode, faab_budget, updated_at) VALUES (?1, ?2, ?3, datetime('now'))
+       ON CONFLICT(league_id) DO UPDATE SET mode = ?2, faab_budget = ?3, updated_at = datetime('now')`,
+    )
+      .bind(leagueId, mode, faabBudget)
+      .run();
+
+    return json({ mode, faabBudget }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// Runs once per league per gameweek boundary, a separate pass from gameweek
+// scoring rather than folded into it: this operates per LEAGUE (not per PL
+// match), needs a completely different working state (rosters/budgets/
+// priorities rather than player scores), and has its own idempotency gate
+// (fantasy_waiver_runs' unique index) rather than the scoring pass' match
+// dedup ledger. A distinct top-level function mirrors how analysis and
+// notifications are already separate passes despite all three sharing
+// getLive(); folding this into runScheduledFantasyScoring would tangle two
+// unrelated failure/retry stories together.
+async function runScheduledWaiverRuns(env) {
+  if (!env.DB || !env.API_FOOTBALL_KEY) return;
+  const currentGameweek = await currentFantasyGameweek(env);
+  const settledGameweek = currentGameweek - 1;
+  if (settledGameweek < 1) return; // nothing has settled yet this season
+
+  const leagues = await env.DB.prepare(`SELECT id FROM fantasy_leagues WHERE draft_status = 'complete'`).all();
+  for (const league of leagues.results ?? []) {
+    try {
+      await runLeagueWaiverRun(env, league.id, settledGameweek, currentGameweek);
+    } catch {
+      // one league's run failing must not block the others; the unique index
+      // below means a partially-failed attempt is simply retried whole on
+      // the next tick rather than half-applied
+    }
+  }
+}
+
+async function runLeagueWaiverRun(env, leagueId, settledGameweek, newCurrentGameweek) {
+  // Idempotency gate: this INSERT either claims the run or, on the unique
+  // index's conflict, tells us it already happened. Nothing below runs on
+  // conflict, mirroring fantasy_draft_picks_league_overall's same pattern.
+  try {
+    await env.DB.prepare(`INSERT INTO fantasy_waiver_runs (league_id, gameweek) VALUES (?1, ?2)`)
+      .bind(leagueId, settledGameweek)
+      .run();
+  } catch {
+    return; // already processed (or a genuine D1 error; retried next tick either way)
+  }
+
+  const settings = await waiverSettings(env, leagueId);
+  await ensureLeagueWaiverState(env, leagueId, settings.faabBudget);
+
+  // Clear the wire of everything that predates this run (an earlier instant
+  // drop during the settling gameweek, or a leftover the previous run
+  // somehow missed). This MUST happen before this run's own drops are added
+  // below, or a fresh drop would be cleared by the very run that created it.
+  await env.DB.prepare(`DELETE FROM fantasy_waiver_wire WHERE league_id = ?1 AND clears_after_gameweek <= ?2`)
+    .bind(leagueId, settledGameweek)
+    .run();
+
+  const pendingClaims = await env.DB.prepare(
+    `SELECT id, user_id, add_player_id, drop_player_id, bid, priority FROM fantasy_waivers
+     WHERE league_id = ?1 AND gameweek = ?2 AND status = 'pending'`,
+  )
+    .bind(leagueId, settledGameweek)
+    .all();
+  const claims = (pendingClaims.results ?? []).map((row) => ({
+    claimId: row.id,
+    userId: row.user_id,
+    addPlayerId: row.add_player_id,
+    dropPlayerId: row.drop_player_id,
+    bid: row.bid,
+    priority: row.priority,
+  }));
+  if (!claims.length) return; // wire clear above still matters even with nothing queued
+
+  const playerIds = [...new Set(claims.flatMap((claim) => [claim.addPlayerId, claim.dropPlayerId]))];
+  const [rosterRows, stateRows, playerRows] = await Promise.all([
+    env.DB.prepare(`SELECT user_id, player_id FROM fantasy_rosters WHERE league_id = ?1`).bind(leagueId).all(),
+    env.DB.prepare(`SELECT user_id, faab_remaining, priority FROM fantasy_waiver_state WHERE league_id = ?1`)
+      .bind(leagueId)
+      .all(),
+    env.DB.prepare(
+      `SELECT id, position FROM fantasy_players WHERE id IN (${playerIds.map((_, i) => `?${i + 1}`).join(",")})`,
+    )
+      .bind(...playerIds)
+      .all(),
+  ]);
+
+  // Only the reverse index is needed: every check resolveWaiverRun performs
+  // is "who owns this player id", never "what does this manager's full
+  // roster look like".
+  const ownedBy = new Map((rosterRows.results ?? []).map((row) => [row.player_id, row.user_id]));
+  const budgets = new Map((stateRows.results ?? []).map((row) => [row.user_id, row.faab_remaining]));
+  const priorities = (stateRows.results ?? []).map((row) => ({ userId: row.user_id, priority: row.priority }));
+  const players = new Map((playerRows.results ?? []).map((row) => [row.id, { position: row.position }]));
+
+  // reverse_standings recomputes worst-record-first fresh every run rather
+  // than reading persisted state; the other two modes never touch this.
+  let standings = [];
+  if (settings.mode === "reverse_standings") {
+    const [membersRows, fixtureRows] = await Promise.all([
+      env.DB.prepare(
+        `SELECT m.user_id, u.name, u.email FROM fantasy_league_members m
+         JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
+      )
+        .bind(leagueId)
+        .all(),
+      env.DB.prepare(
+        `SELECT gameweek, home_user_id, away_user_id, home_score, away_score
+         FROM fantasy_h2h_fixtures WHERE league_id = ?1 AND gameweek <= ?2`,
+      )
+        .bind(leagueId, settledGameweek)
+        .all(),
+    ]);
+    const members = (membersRows.results ?? []).map((row) => ({
+      userId: row.user_id,
+      name: row.name || String(row.email ?? "").split("@")[0] || "Someone",
+    }));
+    const fixtures = (fixtureRows.results ?? []).map((row) => ({
+      gameweek: row.gameweek,
+      homeUserId: row.home_user_id,
+      awayUserId: row.away_user_id,
+      homeScore: row.home_score,
+      awayScore: row.away_score,
+    }));
+    standings = standingsFromFixtures(fixtures, members);
+  }
+
+  const run = resolveWaiverRun({
+    claims,
+    mode: settings.mode,
+    ownedBy,
+    budgets,
+    priorities,
+    standings,
+    players,
+  });
+
+  const writes = [];
+  for (const result of run.results) {
+    writes.push(
+      env.DB.prepare(
+        `UPDATE fantasy_waivers SET status = ?1, reason = ?2, processed_at = datetime('now') WHERE id = ?3`,
+      ).bind(result.status, result.reason, result.claimId),
+    );
+  }
+  for (const change of run.rosterChanges) {
+    writes.push(
+      env.DB.prepare(`DELETE FROM fantasy_rosters WHERE league_id = ?1 AND user_id = ?2 AND player_id = ?3`).bind(
+        leagueId,
+        change.userId,
+        change.dropPlayerId,
+      ),
+    );
+    writes.push(
+      env.DB.prepare(
+        `INSERT INTO fantasy_rosters (league_id, user_id, player_id, acquired_via) VALUES (?1, ?2, ?3, 'waiver')
+         ON CONFLICT(league_id, user_id, player_id) DO NOTHING`,
+      ).bind(leagueId, change.userId, change.addPlayerId),
+    );
+  }
+  // Tagged with newCurrentGameweek (the gameweek about to play out), so these
+  // fresh drops survive on the wire until the NEXT run clears them.
+  for (const playerId of run.wireAdds) {
+    writes.push(
+      env.DB.prepare(
+        `INSERT INTO fantasy_waiver_wire (league_id, player_id, clears_after_gameweek) VALUES (?1, ?2, ?3)
+         ON CONFLICT(league_id, player_id) DO UPDATE SET added_at = datetime('now'), clears_after_gameweek = ?3`,
+      ).bind(leagueId, playerId, newCurrentGameweek),
+    );
+  }
+  if (settings.mode === "faab") {
+    for (const entry of run.budgets) {
+      writes.push(
+        env.DB.prepare(`UPDATE fantasy_waiver_state SET faab_remaining = ?1 WHERE league_id = ?2 AND user_id = ?3`).bind(
+          entry.remaining,
+          leagueId,
+          entry.userId,
+        ),
+      );
+    }
+  }
+  if (settings.mode === "rolling") {
+    for (const entry of run.priorities) {
+      writes.push(
+        env.DB.prepare(`UPDATE fantasy_waiver_state SET priority = ?1 WHERE league_id = ?2 AND user_id = ?3`).bind(
+          entry.priority,
+          leagueId,
+          entry.userId,
+        ),
+      );
+    }
+  }
+
+  // D1 batches are practically bounded (see upsertFantasyPlayerPool); a
+  // handful of claims per league per gameweek is nowhere near that, but
+  // chunking defensively costs nothing.
+  const CHUNK = 100;
+  for (let i = 0; i < writes.length; i += CHUNK) {
+    await env.DB.batch(writes.slice(i, i + CHUNK));
   }
 }
 
