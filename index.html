@@ -12,5 +12,22 @@
   <body>
     <div id="app"></div>
     <script type="module" src="/src/main.js"></script>
+    <!-- Buy Me a Coffee floating button. Loaded async and last so a slow or
+         blocked CDN never delays the app itself. It parks bottom right, which
+         is where the mobile bottom nav lives, so styles.css lifts it clear of
+         the nav below 760px. -->
+    <script
+      data-name="BMC-Widget"
+      data-cfasync="false"
+      src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js"
+      data-id="henderjm"
+      data-description="Support me on Buy me a coffee!"
+      data-message=""
+      data-color="#40DCA5"
+      data-position="Right"
+      data-x_margin="18"
+      data-y_margin="18"
+      async
+    ></script>
   </body>
 </html>

@@ -736,6 +736,20 @@ button { font-family: inherit; cursor: pointer; }
   .main { padding-bottom: 90px; }
 }
 
+/* Buy Me a Coffee floating button -------------------------------------------------------------------- */
+/* The widget hardcodes its own bottom offset inline, so it lands on top of the
+   mobile bottom nav and covers the You button. Lift it clear of the nav on
+   small screens. The selectors are the widget's own ids, which means they are
+   outside our control: if the button ever reappears over the nav after a
+   widget update, this block is what needs revisiting. !important is required
+   because the widget sets bottom inline. */
+@media (max-width: 760px) {
+  #bmc-wbtn,
+  #bmc-wbtn + div {
+    bottom: 84px !important;
+  }
+}
+
 /* Match drawer -------------------------------------------------------------------------------------- */
 
 .dz { position: fixed; inset: 0; z-index: 60; }
