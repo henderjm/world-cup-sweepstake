@@ -1131,6 +1131,14 @@ async function upsertFantasyPlayerPool(env) {
 // dummy API key) falls back to gameweek 1 rather than erroring the route.
 async function currentFantasyGameweek(env) {
   try {
+    // Local development only: the gameweek is normally derived from live match
+    // data, which a dev machine has no API key for, so it would be pinned at 1
+    // forever and standings (which only count gameweeks before the current one)
+    // could never show anything. Set FANTASY_GAMEWEEK_OVERRIDE in worker/.dev.vars
+    // to walk a simulated season. Unset in production, so no behavior changes there.
+    const override = Number(env.FANTASY_GAMEWEEK_OVERRIDE);
+    if (Number.isInteger(override) && override > 0) return override;
+
     const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
     if (!comp || !env.API_FOOTBALL_KEY) return 1;
     const live = await getLive(comp, env.API_FOOTBALL_KEY);
