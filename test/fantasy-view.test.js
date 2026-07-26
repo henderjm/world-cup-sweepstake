@@ -113,30 +113,42 @@ test("renderFantasyPlayerRows badges only the suggested player with a PICK chip 
   assert.doesNotMatch(otherRow, /is-suggested/);
 });
 
-test("renderFantasyPlayerRows renders a dim placeholder bullet for missing AVG/FORM/xP/ADP rather than a fake number", () => {
+test("renderFantasyPlayerRows renders no Tier/Apps cells at all when the pool carries no prior-season enrichment (a failed bake, not per-player nulls)", () => {
   const html = renderFantasyPlayerRows([pooledPlayer(1, "MID")], { position: "All", search: "" }, {
     isMyTurn: false,
     myRoster: [],
     draftedIds: new Set(),
   });
-  // No avg/form/xp/adp fields on this synthetic player: every stat cell is the
-  // dim placeholder, never a fabricated number.
-  const placeholderCount = (html.match(/fantasy-stat--empty/g) ?? []).length;
-  assert.equal(placeholderCount, 4);
+  // No `tier` field anywhere in this pool: the whole columns are dropped
+  // rather than shown full of placeholder dots pretending to hold data.
+  assert.doesNotMatch(html, /fantasy-tier-chip/);
+  assert.doesNotMatch(html, /fantasy-player-row__tier/);
+  assert.doesNotMatch(html, /fantasy-player-row__stat/);
+  assert.doesNotMatch(html, /fantasy-stat--empty/);
 });
 
-test("renderFantasyPlayerRows renders real AVG/xP/ADP numbers and a sparkline when the pool file has them", () => {
-  const withStats = { id: 1, name: "Player 1", team: "Test FC", position: "MID", avg: 5.9, xp: 7.8, adp: 19, form: [4, 7, 3, 9, 6] };
+test("renderFantasyPlayerRows shows a Starter tier chip and the real appearances count when the pool has prior-season enrichment", () => {
+  const withStats = { id: 1, name: "Player 1", team: "Test FC", position: "MID", tier: "starter", appearances: 37, minutes: 3330 };
   const html = renderFantasyPlayerRows([withStats], { position: "All", search: "" }, {
     isMyTurn: false,
     myRoster: [],
     draftedIds: new Set(),
   });
-  assert.match(html, />5\.9</);
-  assert.match(html, />7\.8</);
-  assert.match(html, />19</);
-  assert.match(html, /fantasy-sparkline__bar/);
+  assert.match(html, /fantasy-tier-chip--starter">Starter</);
+  assert.match(html, />37</);
   assert.doesNotMatch(html, /fantasy-stat--empty/);
+});
+
+test("renderFantasyPlayerRows reads a player with no prior-season record as New, never zero or a blank cell", () => {
+  const noRecord = { id: 1, name: "Academy Kid", team: "Test FC", position: "MID", tier: "unknown", appearances: null, minutes: null };
+  const html = renderFantasyPlayerRows([noRecord], { position: "All", search: "" }, {
+    isMyTurn: false,
+    myRoster: [],
+    draftedIds: new Set(),
+  });
+  assert.match(html, /fantasy-tier-chip--unknown">New</);
+  // Appearances genuinely unknown: a dim placeholder, not a fabricated "0".
+  assert.match(html, /fantasy-stat--empty/);
 });
 
 test("renderFantasyPlayerRows escapes player name and team", () => {
@@ -282,6 +294,35 @@ test("On the clock card tells a waiting manager which upcoming pick in this roun
   });
   const onClockCard = html.match(/<section class="card fantasy-onclock[\s\S]*?<\/section>/)[0];
   assert.match(onClockCard, /First is picking\. You pick 2nd in this round\./);
+});
+
+test("renderFantasyDraftRoom's pool shows a Tier/Apps header and a season note when the pool has prior-season enrichment", () => {
+  const html = renderFantasyDraftRoom({
+    league,
+    members,
+    draft: draftRoomFixture(),
+    playerPool: [{ id: 1, name: "Player 1", team: "Test FC", position: "MID", tier: "starter", appearances: 20, minutes: 1500 }],
+    filter: { position: "All", search: "" },
+    myUserId: 2,
+    priorSeasonStats: { available: true, season: "2025", playersWithoutRecord: 3 },
+  });
+  assert.match(html, /<span>Tier<\/span><span>Apps<\/span>/);
+  assert.match(html, /last season \(2025\/26\)/);
+});
+
+test("renderFantasyDraftRoom's pool hides the Tier/Apps header entirely when the pool has no prior-season enrichment", () => {
+  const html = renderFantasyDraftRoom({
+    league,
+    members,
+    draft: draftRoomFixture(),
+    playerPool: [pooledPlayer(1, "MID")],
+    filter: { position: "All", search: "" },
+    myUserId: 2,
+  });
+  assert.doesNotMatch(html, /<span>Tier<\/span>/);
+  assert.doesNotMatch(html, /<span>Apps<\/span>/);
+  assert.doesNotMatch(html, /last season/);
+  assert.match(html, /fantasy-pool__table--degraded/);
 });
 
 // -- renderFantasyLobby: pre-draft scouting -------------------------------------
@@ -718,6 +759,40 @@ test("renderFantasyRosterPanel's player drawer shows the draft pick and real sta
   assert.match(html, /Pick 1\.01/);
   assert.match(html, /Forward One/);
   assert.doesNotMatch(html, /data-fantasy-player-drawer hidden/);
+});
+
+test("renderFantasyRosterPanel's player drawer shows Tier/Apps/Minutes and the season note when the pool has prior-season enrichment", () => {
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup(),
+    playerPool: [{ id: 10, name: "Forward One", team: "Test FC", position: "FWD", tier: "starter", appearances: 37, minutes: 3330 }],
+    picks: [],
+    editState: null,
+    drawerPlayerId: 10,
+    lineupError: "",
+    priorSeasonStats: { available: true, season: "2025", playersWithoutRecord: 3 },
+  });
+  assert.match(html, /fantasy-tier-chip--starter">Starter</);
+  assert.match(html, />37</);
+  assert.match(html, />3330</);
+  assert.match(html, /last season \(2025\/26\)/);
+});
+
+test("renderFantasyRosterPanel's player drawer reads a no-record player as New rather than zero or blank", () => {
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup(),
+    playerPool: [{ id: 10, name: "Forward One", team: "Test FC", position: "FWD", tier: "unknown", appearances: null, minutes: null }],
+    picks: [],
+    editState: null,
+    drawerPlayerId: 10,
+    lineupError: "",
+    priorSeasonStats: { available: true, season: "2025", playersWithoutRecord: 3 },
+  });
+  assert.match(html, /fantasy-tier-chip--unknown">New</);
+  assert.match(html, /fantasy-stat--empty/);
 });
 
 test("renderFantasyRosterPanel's player drawer shows a calm note when a player has no stats yet", () => {

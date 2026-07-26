@@ -86,6 +86,22 @@ import {
   renderFantasyWaiversPanel,
   renderFantasyWireRows,
 } from "./fantasyView.js";
+import {
+  applyDemoPick,
+  autoPickForRoom,
+  buildDemoReportCard,
+  composeDemoShareText,
+  createDemoMembers,
+  DEFAULT_DEMO_LEAGUE_SIZE,
+  DEMO_BOT_PICK_DELAY_MS,
+  DEMO_HUMAN_CLOCK_MS,
+  DEMO_SEASON_GAMEWEEKS,
+  initDemoDraftRoom,
+  isDemoDraftComplete,
+  simulateDemoSeason,
+  standingsThroughGameweek,
+} from "./fantasyDemo.js";
+import { renderDemoReportCard, renderDemoRoll, renderDemoSetup } from "./fantasyDemoView.js";
 import { tutorialBySlug, TUTORIALS } from "./tutorials.js";
 import { renderTutorial, renderTutorialIndex } from "./tutorialsView.js";
 
@@ -103,7 +119,7 @@ const SCORES_TABS = ["live", "tables", "knockout", "fixtures", "stats"];
 const HASH_ALIASES = { goldenboot: "stats", paperrun: "play" };
 const COMPETITION_STORAGE_KEY = "gs-competition";
 
-const NON_SCORES_SECTIONS = ["play", "you", "fantasy", "learn"];
+const NON_SCORES_SECTIONS = ["play", "you", "fantasy", "learn", "demo"];
 
 // "#learn" alone opens the tutorials index; "#learn/<slug>" deep-links straight
 // into one. Parsed up front (mirroring how every other section reads its
@@ -133,11 +149,39 @@ const state = {
     mount: null,
   },
   fantasy: initialFantasyState(),
+  demo: initialDemoState(),
   learn: {
     slug: initialHash === "learn" ? initialLearn.slug : null,
     resolverMode: "faab",
   },
 };
+
+// Fresh signed-out demo state: used on boot and whenever "Draft again" resets
+// the trial (name/size are kept across a reset - everything else is thrown
+// away, including any timers, which teardownDemo() has already cleared).
+function initialDemoState() {
+  return {
+    stage: "setup", // "setup" | "drafting" | "rolling" | "report"
+    name: "",
+    size: DEFAULT_DEMO_LEAGUE_SIZE,
+    busy: false,
+    pool: null,
+    members: null,
+    humanId: null,
+    seed: null,
+    room: null, // draft room state, same shape as the real draft room's (see fantasyDemo.js)
+    remainingMs: 0,
+    filter: { position: "All", club: "All", search: "" },
+    botTimer: null,
+    clockTimer: null,
+    season: null, // simulateDemoSeason's result, once the draft completes
+    reportCard: null,
+    rollGameweek: 0,
+    rollTimer: null,
+    rollDone: false,
+    shareStatus: "",
+  };
+}
 
 // Fresh fantasy state: used on boot and whenever a signed-out transition (or a
 // fully-closed league) needs to forget everything the previous session loaded.
@@ -369,6 +413,13 @@ function renderLayout() {
     return;
   }
   teardownFantasyDraftRoom();
+
+  if (state.section === "demo") {
+    elements.layout.className = "layout";
+    renderDemo();
+    return;
+  }
+  teardownDemo();
 
   if (state.section === "learn") {
     elements.layout.className = "layout";
@@ -649,6 +700,7 @@ function renderFantasyDraftPanel() {
                 playerPool: f.playerPool?.players ?? [],
                 filter: f.filter,
                 myUserId: f.myUserId,
+                priorSeasonStats: f.playerPool?.priorSeasonStats,
               });
   elements.layout.innerHTML = renderFantasyLeagueShell(league, members, subTab, body);
 
@@ -687,6 +739,7 @@ function renderFantasyMyTeamBody(league, room) {
     editState: f.lineupEdit,
     drawerPlayerId: f.playerDrawerId,
     lineupError: f.lineupError,
+    priorSeasonStats: f.playerPool?.priorSeasonStats,
   });
 }
 
@@ -1385,6 +1438,276 @@ function teardownFantasyDraftRoom() {
   state.fantasy.draftRoom = null;
 }
 
+// -- Signed-out demo: draft, compressed season, report card ---------------------
+//
+// Client-side only, no Worker route, no D1, nothing here ever touches a real
+// league. The draft itself reuses the exact same reducer/renderer the live
+// draft room uses (see fantasyDemo.js's header comment for the full list of
+// reused modules): rather than a second WebSocket-shaped state machine, a
+// local pick is fed through the same reduceDraftMessage a real socket message
+// would produce, so this can never drift from the real draft rules.
+
+function renderDemo() {
+  const d = state.demo;
+
+  if (d.stage === "setup") {
+    elements.layout.innerHTML = renderDemoSetup({ name: d.name, size: d.size, busy: d.busy });
+    return;
+  }
+
+  if (d.stage === "drafting") {
+    if (!d.room) {
+      elements.layout.innerHTML = `<p class="note">Setting up your draft…</p>`;
+      return;
+    }
+    const wasSearchFocused = document.activeElement?.matches?.("[data-fantasy-search]");
+    const caret = wasSearchFocused ? document.activeElement.selectionStart : null;
+    elements.layout.innerHTML = renderFantasyDraftRoom({
+      members: d.members,
+      draft: { ...d.room, remainingMs: d.remainingMs },
+      playerPool: d.pool?.players ?? [],
+      filter: d.filter,
+      myUserId: d.humanId,
+      priorSeasonStats: d.pool?.priorSeasonStats,
+    });
+    if (wasSearchFocused) {
+      const input = elements.layout.querySelector("[data-fantasy-search]");
+      if (input) {
+        input.focus();
+        input.setSelectionRange(caret, caret);
+      }
+    }
+    return;
+  }
+
+  if (d.stage === "rolling") {
+    elements.layout.innerHTML = renderDemoRoll({
+      gameweek: d.rollGameweek,
+      totalGameweeks: DEMO_SEASON_GAMEWEEKS,
+      standings: standingsThroughGameweek(d.season, d.members, d.rollGameweek),
+      humanId: d.humanId,
+      done: d.rollDone,
+    });
+    // A navigation away and back mid-roll (via the section nav) loses the
+    // in-flight timer (teardownDemo below clears it); restart it here rather
+    // than leaving the roll stuck part-way with no way to finish.
+    if (!d.rollDone && !d.rollTimer) scheduleNextDemoRollStep();
+    return;
+  }
+
+  if (d.stage === "report") {
+    elements.layout.innerHTML = renderDemoReportCard({
+      reportCard: d.reportCard,
+      isSignedIn: isSignedIn(),
+      shareStatus: d.shareStatus,
+    });
+  }
+}
+
+function teardownDemo() {
+  clearDemoDraftTimers();
+  if (state.demo.rollTimer) window.clearTimeout(state.demo.rollTimer);
+  state.demo.rollTimer = null;
+}
+
+function clearDemoDraftTimers() {
+  const d = state.demo;
+  if (d.botTimer) window.clearTimeout(d.botTimer);
+  if (d.clockTimer) window.clearInterval(d.clockTimer);
+  d.botTimer = null;
+  d.clockTimer = null;
+}
+
+// Kicks off a fresh trial: loads the same static player pool the real product
+// bakes (data/PL/players.json, no auth needed), builds the manager list, and
+// opens the draft room. `startBusy` toggles the setup screen's own button
+// state while the pool fetch is in flight (usually instant - the file is
+// tiny and same-origin - but never assumed to be).
+async function startDemoDraft() {
+  const d = state.demo;
+  const nameInput = elements.layout.querySelector("[data-demo-name]");
+  if (nameInput) d.name = nameInput.value;
+  d.busy = true;
+  renderLayout();
+
+  if (!d.pool) {
+    try {
+      d.pool = await loadPlayerPool();
+    } catch (error) {
+      if (error?.status !== 404) window.Sentry?.captureException?.(error);
+      d.pool = { players: [], unavailable: true };
+    }
+  }
+  if (state.section !== "demo") return; // navigated away mid-fetch
+
+  const { members, humanId } = createDemoMembers(d.size, d.name);
+  d.members = members;
+  d.humanId = humanId;
+  d.seed = `demo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  d.room = initDemoDraftRoom(members.map((member) => member.userId));
+  d.filter = { position: "All", club: "All", search: "" };
+  d.busy = false;
+  d.stage = "drafting";
+  posthog.capture("demo_draft_started", { league_size: d.size });
+  renderLayout();
+  scheduleDemoTurn();
+}
+
+// Decides what happens next for whoever is on the clock: a bot autopicks
+// after a short, deliberately visible delay (DEMO_BOT_PICK_DELAY_MS); the
+// human gets their own short clock (DEMO_HUMAN_CLOCK_MS) with the same
+// autopick fallback on expiry, exactly mirroring the real draft room's
+// server-side timeout behaviour.
+function scheduleDemoTurn() {
+  const d = state.demo;
+  if (!d.room || isDemoDraftComplete(d.room)) return;
+  clearDemoDraftTimers();
+  const manager = d.members.find((member) => member.userId === d.room.onClockUserId);
+  if (!manager) return;
+  if (manager.isBot) {
+    d.botTimer = window.setTimeout(() => {
+      const pick = autoPickForRoom(d.room, d.pool?.players ?? []);
+      if (pick) applyDemoPickAndAdvance(pick);
+    }, DEMO_BOT_PICK_DELAY_MS);
+  } else {
+    startDemoHumanClock();
+  }
+}
+
+function startDemoHumanClock() {
+  const d = state.demo;
+  d.remainingMs = DEMO_HUMAN_CLOCK_MS;
+  updateDemoClockDisplay(d.remainingMs);
+  d.clockTimer = window.setInterval(() => {
+    d.remainingMs = Math.max(0, d.remainingMs - 1000);
+    updateDemoClockDisplay(d.remainingMs);
+    if (d.remainingMs <= 0) {
+      window.clearInterval(d.clockTimer);
+      d.clockTimer = null;
+      const pick = autoPickForRoom(d.room, d.pool?.players ?? []);
+      if (pick) applyDemoPickAndAdvance(pick);
+    }
+  }, 1000);
+}
+
+function updateDemoClockDisplay(remainingMs) {
+  const el = elements.layout.querySelector("[data-fantasy-clock]");
+  if (el) el.textContent = formatCountdown(remainingMs);
+}
+
+// Applies one pick (a manual human click or an autopick) and advances the
+// room exactly like a real "pick" -> "clock"/"complete" message pair (see
+// applyDemoPick in fantasyDemo.js). Once the draft is complete this hands off
+// to the season simulation rather than rendering a separate "draft complete"
+// pause screen - the whole point of the demo is momentum, not another click.
+function applyDemoPickAndAdvance(player) {
+  const d = state.demo;
+  clearDemoDraftTimers();
+  d.room = applyDemoPick(d.room, player);
+  if (isDemoDraftComplete(d.room)) {
+    beginDemoSeason();
+    return;
+  }
+  renderLayout();
+  scheduleDemoTurn();
+}
+
+function refreshDemoPool() {
+  const list = elements.layout.querySelector("[data-fantasy-pool-list]");
+  if (!list) return;
+  list.innerHTML = renderFantasyPlayerRows(state.demo.pool?.players ?? [], state.demo.filter, demoPoolContext());
+}
+
+function demoPoolContext() {
+  const d = state.demo;
+  const room = d.room;
+  if (!room) return { isMyTurn: false, myRoster: [], draftedIds: new Set(), suggestedId: null };
+  const myRoster = room.rosters?.[d.humanId] ?? [];
+  const draftedIds = new Set(
+    Object.values(room.rosters ?? {})
+      .flat()
+      .map((player) => player.id),
+  );
+  const isMyTurn = room.onClockUserId != null && room.onClockUserId === d.humanId;
+  const suggested = suggestedPick(d.pool?.players ?? [], myRoster, draftedIds);
+  return { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null };
+}
+
+const DEMO_ROLL_STEP_MS = 50; // 38 steps ~= 1.9s: "a second or two total"
+
+// Simulates the whole 38-gameweek season the instant the draft completes
+// (simulateDemoSeason is synchronous and cheap - a handful of managers times
+// 15 players times 38 gameweeks), then animates revealing it gameweek by
+// gameweek. prefers-reduced-motion skips straight to the final table, same as
+// clicking "Skip to result" would.
+function beginDemoSeason() {
+  const d = state.demo;
+  const rosters = new Map(d.members.map((member) => [member.userId, d.room.rosters[member.userId] ?? []]));
+  d.season = simulateDemoSeason({ seed: d.seed, members: d.members, rosters });
+  d.stage = "rolling";
+  d.rollGameweek = 0;
+  d.rollDone = false;
+  renderLayout();
+
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (reducedMotion) finishDemoRoll();
+  else scheduleNextDemoRollStep();
+}
+
+function scheduleNextDemoRollStep() {
+  const d = state.demo;
+  d.rollTimer = window.setTimeout(() => {
+    d.rollTimer = null;
+    d.rollGameweek += 1;
+    if (d.rollGameweek >= DEMO_SEASON_GAMEWEEKS) {
+      finishDemoRoll();
+    } else {
+      renderLayout();
+      scheduleNextDemoRollStep();
+    }
+  }, DEMO_ROLL_STEP_MS);
+}
+
+function finishDemoRoll() {
+  const d = state.demo;
+  if (d.rollTimer) window.clearTimeout(d.rollTimer);
+  d.rollTimer = null;
+  d.rollGameweek = DEMO_SEASON_GAMEWEEKS;
+  d.rollDone = true;
+  d.reportCard = buildDemoReportCard({ humanId: d.humanId, members: d.members, season: d.season });
+  d.stage = "report";
+  posthog.capture("demo_report_viewed", { position: d.reportCard.position, league_size: d.reportCard.leagueSize });
+  renderLayout();
+}
+
+function shareDemoResult(button) {
+  const d = state.demo;
+  if (!d.reportCard) return;
+  const link = `${window.location.origin}${window.location.pathname}#demo`;
+  const text = composeDemoShareText(d.reportCard, link);
+  sharePaperRun(text).then((status) => {
+    d.shareStatus =
+      status === "shared"
+        ? "Shared"
+        : status === "copied"
+          ? "Copied to clipboard"
+          : status === "cancelled"
+            ? "Share your result"
+            : "Copy unavailable";
+    if (button) button.textContent = d.shareStatus;
+  });
+}
+
+function restartDemo() {
+  teardownDemo();
+  const name = state.demo.name;
+  const size = state.demo.size;
+  state.demo = initialDemoState();
+  state.demo.name = name;
+  state.demo.size = size;
+  renderLayout();
+}
+
 // -- Learn section -----------------------------------------------------------
 
 // state.learn.slug null renders the index; a real slug renders that tutorial.
@@ -1520,6 +1843,61 @@ async function switchCompetition(code) {
 
 function wireLayoutControls() {
   elements.layout.addEventListener("click", (event) => {
+    // The demo screen reuses several of the real Fantasy section's data
+    // attributes (data-fantasy-draft-player, data-fantasy-position-filter) so
+    // it can reuse renderFantasyDraftRoom verbatim; intercept them here first
+    // so a demo click never falls through into the real fantasy handlers
+    // further down (which would act on state.fantasy, not state.demo).
+    if (state.section === "demo") {
+      const demoDraftButton = event.target.closest("[data-fantasy-draft-player]");
+      if (demoDraftButton) {
+        demoDraftButton.disabled = true;
+        const id = Number(demoDraftButton.dataset.fantasyDraftPlayer);
+        const player = (state.demo.pool?.players ?? []).find((candidate) => candidate.id === id);
+        if (player) applyDemoPickAndAdvance(player);
+        return;
+      }
+      const demoPositionButton = event.target.closest("[data-fantasy-position-filter]");
+      if (demoPositionButton) {
+        state.demo.filter.position = demoPositionButton.dataset.fantasyPositionFilter;
+        elements.layout.querySelectorAll("[data-fantasy-position-filter]").forEach((button) => {
+          button.classList.toggle("is-active", button === demoPositionButton);
+        });
+        refreshDemoPool();
+        return;
+      }
+      if (event.target.closest("[data-demo-start]")) {
+        startDemoDraft();
+        return;
+      }
+      const demoSizeButton = event.target.closest("[data-demo-size]");
+      if (demoSizeButton) {
+        // Picking a league size re-renders the whole setup card (simplest way
+        // to move the "is-active" pill); capture whatever the manager has
+        // already typed first, or that re-render would wipe it back to blank.
+        const nameInput = elements.layout.querySelector("[data-demo-name]");
+        if (nameInput) state.demo.name = nameInput.value;
+        state.demo.size = Number(demoSizeButton.dataset.demoSize);
+        renderLayout();
+        return;
+      }
+      if (event.target.closest("[data-demo-skip]")) {
+        finishDemoRoll();
+        return;
+      }
+      const demoShareButton = event.target.closest("[data-demo-share]");
+      if (demoShareButton) {
+        metric("count", "demo_share_clicked", 1);
+        shareDemoResult(demoShareButton);
+        return;
+      }
+      if (event.target.closest("[data-demo-restart]")) {
+        restartDemo();
+        return;
+      }
+      // data-section-nav ("Create a real league") is handled by wireNav's own
+      // document-level listener, which runs regardless of section.
+    }
     const comp = event.target.closest("[data-competition]");
     if (comp && !comp.disabled) {
       switchCompetition(comp.dataset.competition);
@@ -1838,6 +2216,11 @@ function wireLayoutControls() {
     if (row) openMatchRow(row);
   });
   elements.layout.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && event.target.closest("[data-demo-name]")) {
+      event.preventDefault();
+      startDemoDraft();
+      return;
+    }
     if (event.key === "Enter" && event.target.closest("[data-fantasy-create-name]")) {
       event.preventDefault();
       createFantasyLeague(event.target.value);
@@ -1871,6 +2254,14 @@ function wireLayoutControls() {
     }
   });
   elements.layout.addEventListener("input", (event) => {
+    if (state.section === "demo") {
+      const demoSearch = event.target.closest("[data-fantasy-search]");
+      if (demoSearch) {
+        state.demo.filter.search = demoSearch.value;
+        refreshDemoPool();
+      }
+      return;
+    }
     const search = event.target.closest("[data-fantasy-search]");
     if (search) {
       state.fantasy.filter.search = search.value;
@@ -1890,6 +2281,14 @@ function wireLayoutControls() {
     }
   });
   elements.layout.addEventListener("change", (event) => {
+    if (state.section === "demo") {
+      const demoClub = event.target.closest("[data-fantasy-club-filter]");
+      if (demoClub) {
+        state.demo.filter.club = demoClub.value;
+        refreshDemoPool();
+      }
+      return;
+    }
     const clubSelect = event.target.closest("[data-fantasy-club-filter]");
     if (clubSelect) {
       state.fantasy.filter.club = clubSelect.value;

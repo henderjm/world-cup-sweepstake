@@ -9,14 +9,16 @@ import {
   formatCountdown,
   formatOrdinal,
   formatPickNumber,
-  formSparklineBars,
+  hasPriorSeasonData,
   legalSwapTargets,
   matchupBarWidths,
   matchupLeadSide,
   normalizePlayerStats,
+  priorSeasonRangeLabel,
   squadBucketCounts,
   suggestedPick,
   suggestedPickReason,
+  tierLabel,
 } from "./fantasyDraft.js";
 import {
   buildWaiverPlayerLookup,
@@ -51,24 +53,23 @@ function nameForUser(userId, members) {
 // eyebrow. currentColor so it always matches the purple eyebrow text around it.
 const SPARKLE_ICON = `<svg class="fantasy-sparkle" viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M8 0c.4 2.9 1.1 4.6 2.2 5.8C11.4 6.9 13.1 7.6 16 8c-2.9.4-4.6 1.1-5.8 2.2C9.1 11.4 8.4 13.1 8 16c-.4-2.9-1.1-4.6-2.2-5.8C4.6 9.1 2.9 8.4 0 8c2.9-.4 4.6-1.1 5.8-2.2C7 4.6 7.6 2.9 8 0z"/></svg>`;
 
-// One decimal for AVG/XP, whole number for ADP; a dim placeholder bullet (never
-// a fabricated number) when the pool file doesn't carry that field yet (see
-// normalizePlayerStats in fantasyDraft.js for the field contract).
+// Whole number for Apps/Minutes, one decimal for xP; a dim placeholder bullet
+// (never a fabricated number) when the value is null - a player with no
+// prior-season record, or a pool file that doesn't carry xp yet.
 function renderStatCell(value, digits) {
   if (value == null) return `<span class="fantasy-stat fantasy-stat--empty">•</span>`;
   return `<span class="fantasy-stat">${digits == null ? value : value.toFixed(digits)}</span>`;
 }
 
-// FORM mini-sparkline: up to 5 bars scaled to this player's own max (see
-// formSparklineBars), lime for the stronger recent games, purple-tint otherwise.
-// A single dim placeholder bullet when there is no form data at all, matching
-// the other stat cells rather than drawing a fake flat line.
-function renderFormSparkline(form) {
-  const bars = formSparklineBars(form);
-  if (!bars.length) return `<span class="fantasy-stat fantasy-stat--empty">•</span>`;
-  return `<span class="fantasy-sparkline">${bars
-    .map(({ height, strong }) => `<span class="fantasy-sparkline__bar ${strong ? "is-strong" : ""}" style="height:${Math.round(3 + height * 15)}px"></span>`)
-    .join("")}</span>`;
+// Small chip for a player's prior-season tier: Starter/Squad/Fringe read as
+// plain fact, "New" for a player with no prior-season record at all (a new
+// signing or a promoted club's player - genuinely unknown, never zero).
+// Empty string when there's nothing to show (see hasPriorSeasonData), so a
+// caller can drop it into a row without an extra presence check.
+function renderTierChip(tier) {
+  const label = tierLabel(tier);
+  if (!label) return "";
+  return `<span class="chip fantasy-tier-chip fantasy-tier-chip--${esc(tier)}">${esc(label)}</span>`;
 }
 
 // -- Signed-out / not-configured / error states --------------------------------
@@ -83,6 +84,8 @@ export function renderFantasySignedOut() {
       <p class="note">Create or join a head-to-head draft league with your mates: sign in to get started.</p>
       <button class="seg" type="button" data-section-nav="you">Go to sign in →</button>
       <p class="note--dim">We only use Google to sign you in. No posts, no contacts.</p>
+      <button class="btn btn--primary fantasy-signedout__demo" type="button" data-section-nav="demo">Try a draft first, no sign-in needed →</button>
+      <p class="note--dim">Draft against bots and see a full season play out in about 5 minutes.</p>
     </div>`;
 }
 
@@ -402,7 +405,7 @@ function renderScoutingSection(playerPool, filter) {
   }
   return `
     ${renderPoolMeta(playerPool)}
-    ${renderFantasyPlayerPool(playerPool.players, filter, { isMyTurn: false, myRoster: [], draftedIds: new Set() })}`;
+    ${renderFantasyPlayerPool(playerPool.players, filter, { isMyTurn: false, myRoster: [], draftedIds: new Set() }, playerPool.priorSeasonStats)}`;
 }
 
 export function renderFantasyLobby(
@@ -861,25 +864,34 @@ function renderSquadXp({ roster, starterIds, statsById }) {
 // Player stats drawer: a simplified match-drawer-style right slide-in (same .dz
 // shell as matchDetail.js) with crest, name, club, position, draft pick (from
 // the picks log, when this manager's own pick - other members' picks are also
-// in `picks` but a player is only ever on one roster) and whichever of
-// avg/form/xp/adp exist. Always rendered (hidden when no player is open) so
-// app.js can toggle it by re-rendering the panel rather than managing a second
-// piece of imperative DOM state.
-function renderPlayerDrawer(player, { picks, statsById }) {
+// in `picks` but a player is only ever on one roster), the prior-season Tier/
+// Apps/Minutes when the pool has that enrichment, and xP when a future stats
+// bake supplies it. Always rendered (hidden when no player is open) so app.js
+// can toggle it by re-rendering the panel rather than managing a second piece
+// of imperative DOM state.
+function renderPlayerDrawer(player, { picks, statsById, priorSeasonStats }) {
   if (!player) return `<div class="dz fantasy-player-drawer" data-fantasy-player-drawer hidden></div>`;
 
   const pick = (picks ?? []).find((entry) => entry.player?.id === player.id);
   const pickLabel = pick ? formatPickNumber(pick.round, pick.pickInRound) : null;
-  const stats = normalizePlayerStats(statsById.get(player.id) ?? {});
-  const hasStats = stats.avg != null || stats.form != null || stats.xp != null || stats.adp != null;
+  const source = statsById.get(player.id) ?? {};
+  const stats = normalizePlayerStats(source);
+  const enriched = hasPriorSeasonData([source]);
+  const hasStats = enriched || stats.xp != null;
+
+  const seasonNote =
+    enriched && priorSeasonStats?.season
+      ? `<p class="note--dim">Appearances and minutes are from last season (${esc(priorSeasonRangeLabel(priorSeasonStats.season))}).</p>`
+      : "";
 
   const statRows = hasStats
     ? `<div class="fantasy-drawer__stats">
-        <div class="fantasy-drawer__stat"><span class="note--dim">Avg</span>${renderStatCell(stats.avg, 1)}</div>
-        <div class="fantasy-drawer__stat"><span class="note--dim">Form</span>${renderFormSparkline(stats.form)}</div>
+        ${enriched ? `<div class="fantasy-drawer__stat"><span class="note--dim">Tier</span>${renderTierChip(source.tier)}</div>` : ""}
+        ${enriched ? `<div class="fantasy-drawer__stat"><span class="note--dim">Apps</span>${renderStatCell(source.appearances, 0)}</div>` : ""}
+        ${enriched ? `<div class="fantasy-drawer__stat"><span class="note--dim">Minutes</span>${renderStatCell(source.minutes, 0)}</div>` : ""}
         <div class="fantasy-drawer__stat"><span class="note--dim">xP</span>${renderStatCell(stats.xp, 1)}</div>
-        <div class="fantasy-drawer__stat"><span class="note--dim">ADP</span>${renderStatCell(stats.adp, 0)}</div>
-      </div>`
+      </div>
+      ${seasonNote}`
     : `<p class="note">More stats coming with live player data.</p>`;
 
   return `
@@ -912,7 +924,17 @@ function renderPlayerDrawer(player, { picks, statsById }) {
 // editing - every id array/captainId this function reads comes from editState
 // when present, else straight off `lineup`, so there is exactly one source of
 // truth for "what the pitch currently shows" at any given moment.
-export function renderFantasyRosterPanel({ currentGameweek, roster, lineup, playerPool, picks, editState, drawerPlayerId, lineupError }) {
+export function renderFantasyRosterPanel({
+  currentGameweek,
+  roster,
+  lineup,
+  playerPool,
+  picks,
+  editState,
+  drawerPlayerId,
+  lineupError,
+  priorSeasonStats,
+}) {
   if (!lineup) {
     return lineupError
       ? `<div class="card"><p class="fantasy-form__error">${esc(lineupError)}</p><button class="seg" type="button" data-fantasy-lineup-retry>Retry</button></div>`
@@ -942,7 +964,7 @@ export function renderFantasyRosterPanel({ currentGameweek, roster, lineup, play
         ${renderSquadXp({ roster, starterIds, statsById })}
       </div>
     </div>
-    ${renderPlayerDrawer(drawerPlayer, { picks, statsById })}`;
+    ${renderPlayerDrawer(drawerPlayer, { picks, statsById, priorSeasonStats })}`;
 }
 
 const POSITION_FILTERS = ["All", "GK", "DEF", "MID", "FWD"];
@@ -960,11 +982,17 @@ function filterPlayers(players, filter) {
 
 // The available-player rows only: exported separately so app.js can re-render
 // just this list on every keystroke/filter change without rebuilding (and
-// stealing focus from) the search input above it.
+// stealing focus from) the search input above it. Whether the Tier/Apps cells
+// render at all is decided once from the full (unfiltered) pool passed in, so
+// a search that happens to match zero enriched players never flips columns
+// on and off under the header sitting above this list (see
+// renderFantasyPlayerPool, which must make the identical decision from the
+// same `players` argument for the two to stay column-aligned).
 export function renderFantasyPlayerRows(players, filter, context) {
   const filtered = filterPlayers(players, filter);
   if (!filtered.length) return `<p class="note">No players match.</p>`;
   const { isMyTurn, myRoster, draftedIds, suggestedId } = context ?? {};
+  const enriched = hasPriorSeasonData(players);
   return filtered
     .map((player) => {
       const drafted = draftedIds?.has?.(player.id);
@@ -976,15 +1004,14 @@ export function renderFantasyPlayerRows(players, filter, context) {
           ? `<span class="note--dim">Drafted</span>`
           : "";
       const suggestedBadge = isSuggested ? `<span class="chip fantasy-chip--suggested">Pick</span>` : "";
-      const stats = normalizePlayerStats(player);
+      const tierCell = enriched ? `<span class="fantasy-player-row__tier">${renderTierChip(player.tier)}</span>` : "";
+      const appsCell = enriched ? `<span class="fantasy-player-row__stat">${renderStatCell(player.appearances, 0)}</span>` : "";
       return `<div class="fantasy-player-row ${drafted ? "is-drafted" : ""} ${isSuggested ? "is-suggested" : ""}">
           ${badgeFor(player.team)}
           <span class="fantasy-player-row__id"><strong>${esc(player.name)}${suggestedBadge}</strong><span class="note--dim">${esc(abbrFor(player.team))}</span></span>
           <span class="fantasy-pos">${esc(player.position)}</span>
-          <span class="fantasy-player-row__stat">${renderStatCell(stats.avg, 1)}</span>
-          <span class="fantasy-player-row__stat">${renderFormSparkline(stats.form)}</span>
-          <span class="fantasy-player-row__stat">${renderStatCell(stats.xp, 1)}</span>
-          <span class="fantasy-player-row__stat">${renderStatCell(stats.adp, 0)}</span>
+          ${tierCell}
+          ${appsCell}
           <span class="fantasy-player-row__action">${action}</span>
         </div>`;
     })
@@ -1007,29 +1034,39 @@ function renderClubOptions(players, selectedClub) {
 // Player pool as a data-table card: PLAYER POOL label, position pills, club
 // filter and search all live in a sticky header inside the single scrolling
 // region, so they stay reachable no matter how far down a 500-row pool you've
-// scrolled. Column header row (Player / Pos / action) sits in the same sticky
-// block, directly above the rows it labels.
-export function renderFantasyPlayerPool(players, filter, context) {
+// scrolled. Column header row (Player / Pos / Tier / Apps / action) sits in
+// the same sticky block, directly above the rows it labels - present only
+// when the pool actually carries prior-season enrichment (hasPriorSeasonData),
+// so a failed bake never shows two empty-looking columns (see
+// renderFantasyPlayerRows, which makes the identical decision so header and
+// rows always agree on the column count). `priorSeasonStats` is the pool
+// file's own header ({ available, season, playersWithoutRecord }), used only
+// for the season note under the filters - a bare "37 appearances" is
+// meaningless without knowing which season it's from.
+export function renderFantasyPlayerPool(players, filter, context, priorSeasonStats) {
   const activePosition = filter?.position ?? "All";
   const positionPills = POSITION_FILTERS.map(
     (position) =>
       `<button class="seg ${position === activePosition ? "is-active" : ""}" type="button" data-fantasy-position-filter="${position}">${position}</button>`,
   ).join("");
+  const enriched = hasPriorSeasonData(players);
+  const seasonLabel = enriched && priorSeasonStats?.season ? priorSeasonRangeLabel(priorSeasonStats.season) : "";
 
   return `
     <section class="card fantasy-pool">
       <div class="fantasy-pool__scroll">
         <div class="fantasy-pool__sticky">
           <h3 class="card__title">Player pool</h3>
+          ${seasonLabel ? `<p class="note--dim">Tier and appearances are from last season (${esc(seasonLabel)})</p>` : ""}
           <div class="fantasy-pool__filters">
             <div class="segrow fantasy-pool__positions">${positionPills}</div>
             <select class="fantasy-select" data-fantasy-club-filter>${renderClubOptions(players, filter?.club)}</select>
             <input class="fantasy-input" type="text" placeholder="Search players or clubs" value="${esc(filter?.search ?? "")}" data-fantasy-search autocomplete="off" />
           </div>
         </div>
-        <div class="fantasy-pool__table">
+        <div class="fantasy-pool__table ${enriched ? "" : "fantasy-pool__table--degraded"}">
           <div class="fantasy-pool__cols">
-            <span></span><span>Player</span><span>Pos</span><span>Avg</span><span>Form</span><span>xP</span><span>ADP</span><span></span>
+            <span></span><span>Player</span><span>Pos</span>${enriched ? `<span>Tier</span><span>Apps</span>` : ""}<span></span>
           </div>
           <div class="fantasy-pool__rows" data-fantasy-pool-list>${renderFantasyPlayerRows(players, filter, context)}</div>
         </div>
@@ -1037,7 +1074,7 @@ export function renderFantasyPlayerPool(players, filter, context) {
     </section>`;
 }
 
-export function renderFantasyDraftRoom({ members, draft, playerPool, filter, myUserId, season = currentSeasonLabel() }) {
+export function renderFantasyDraftRoom({ members, draft, playerPool, filter, myUserId, season = currentSeasonLabel(), priorSeasonStats }) {
   const myRoster = draft.rosters?.[myUserId] ?? [];
   const draftedIds = new Set(
     Object.values(draft.rosters ?? {})
@@ -1053,7 +1090,7 @@ export function renderFantasyDraftRoom({ members, draft, playerPool, filter, myU
     ${draft.lastError ? renderDraftErrorNotice(draft.lastError) : ""}
     ${renderDraftStatusCard({ members, draft, myUserId, season, entries })}
     <div class="fantasy-draftgrid">
-      <div class="fantasy-draftgrid__main">${renderFantasyPlayerPool(playerPool, filter, context)}</div>
+      <div class="fantasy-draftgrid__main">${renderFantasyPlayerPool(playerPool, filter, context, priorSeasonStats)}</div>
       <div class="fantasy-draftgrid__side">
         ${renderSuggestedPickCard(suggested, context)}
         ${renderOnClockCard({ members, draft, myUserId, entries, isMyTurn })}

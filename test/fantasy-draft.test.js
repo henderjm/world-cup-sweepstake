@@ -8,16 +8,18 @@ import {
   formatCountdown,
   formatOrdinal,
   formatPickNumber,
-  formSparklineBars,
+  hasPriorSeasonData,
   legalSwapTargets,
   matchupBarWidths,
   matchupLeadSide,
   normalizePlayerStats,
+  priorSeasonRangeLabel,
   reduceDraftMessage,
   squadBucketCounts,
   suggestedPick,
   suggestedPickReason,
   swapLineup,
+  tierLabel,
 } from "../src/fantasyDraft.js";
 
 test("formatCountdown renders mm:ss and rounds up to the next full second", () => {
@@ -294,50 +296,63 @@ test("formatOrdinal treats 11-13 as th regardless of the last digit", () => {
 
 // -- normalizePlayerStats -----------------------------------------------------------
 
-test("normalizePlayerStats passes through finite numeric fields", () => {
-  const stats = normalizePlayerStats({ avg: 5.9, xp: 7.8, adp: 19, form: [4, 7, 3, 9, 6] });
-  assert.deepEqual(stats, { avg: 5.9, form: [4, 7, 3, 9, 6], xp: 7.8, adp: 19 });
+test("normalizePlayerStats passes through a finite xp field", () => {
+  const stats = normalizePlayerStats({ xp: 7.8 });
+  assert.deepEqual(stats, { xp: 7.8 });
 });
 
-test("normalizePlayerStats treats missing or non-numeric fields as null, never a fabricated number", () => {
-  const stats = normalizePlayerStats({ name: "No stats yet" });
-  assert.deepEqual(stats, { avg: null, form: null, xp: null, adp: null });
+test("normalizePlayerStats treats a missing or non-numeric xp as null, never a fabricated number", () => {
+  assert.deepEqual(normalizePlayerStats({ name: "No stats yet" }), { xp: null });
+  assert.deepEqual(normalizePlayerStats({ xp: Infinity }), { xp: null });
+  assert.deepEqual(normalizePlayerStats({ xp: NaN }), { xp: null });
+  assert.deepEqual(normalizePlayerStats({ xp: "7.8" }), { xp: null });
 });
 
-test("normalizePlayerStats rejects NaN/Infinity and non-array form", () => {
-  const stats = normalizePlayerStats({ avg: NaN, xp: Infinity, adp: "19", form: "WWDLW" });
-  assert.deepEqual(stats, { avg: null, form: null, xp: null, adp: null });
+// -- hasPriorSeasonData -------------------------------------------------------------
+
+test("hasPriorSeasonData is true once any player carries a tier field", () => {
+  assert.equal(hasPriorSeasonData([{ id: 1, tier: "starter" }, { id: 2 }]), true);
 });
 
-test("normalizePlayerStats drops non-numeric entries out of a form array rather than failing the whole field", () => {
-  const stats = normalizePlayerStats({ form: [4, "x", 6, null, 9] });
-  assert.deepEqual(stats.form, [4, 6, 9]);
+test("hasPriorSeasonData is true for a player whose tier is explicitly unknown (no prior record, not a failed bake)", () => {
+  assert.equal(hasPriorSeasonData([{ id: 1, tier: "unknown", appearances: null }]), true);
 });
 
-// -- formSparklineBars ---------------------------------------------------------------
-
-test("formSparklineBars scales bar heights relative to this player's own max", () => {
-  const bars = formSparklineBars([2, 4, 8, 4, 2]);
-  assert.equal(bars.length, 5);
-  assert.equal(bars[2].height, 1); // the max value is always a full bar
-  assert.equal(bars[0].height, 0.25);
+test("hasPriorSeasonData is false for an empty pool or one where no player carries a tier field at all", () => {
+  assert.equal(hasPriorSeasonData([]), false);
+  assert.equal(hasPriorSeasonData(null), false);
+  assert.equal(hasPriorSeasonData([{ id: 1, name: "Pre-enrichment player" }]), false);
 });
 
-test("formSparklineBars marks bars at or above 60% of the max as strong", () => {
-  const bars = formSparklineBars([10, 5, 6, 3, 1]);
-  assert.deepEqual(bars.map((b) => b.strong), [true, false, true, false, false]);
+// -- tierLabel ----------------------------------------------------------------------
+
+test("tierLabel renders the known tiers as plain fact", () => {
+  assert.equal(tierLabel("starter"), "Starter");
+  assert.equal(tierLabel("squad"), "Squad");
+  assert.equal(tierLabel("fringe"), "Fringe");
 });
 
-test("formSparklineBars keeps only the 5 most recent values", () => {
-  const bars = formSparklineBars([1, 2, 3, 4, 5, 6, 7]);
-  assert.equal(bars.length, 5);
-  assert.equal(bars[4].height, 1); // 7 is the most recent and the max of the kept slice
+test("tierLabel renders an explicit 'unknown' (no prior-season record) as New, not zero or blank", () => {
+  assert.equal(tierLabel("unknown"), "New");
 });
 
-test("formSparklineBars returns an empty array for missing form data (the view renders a placeholder)", () => {
-  assert.deepEqual(formSparklineBars(null), []);
-  assert.deepEqual(formSparklineBars(undefined), []);
-  assert.deepEqual(formSparklineBars([]), []);
+test("tierLabel returns null for a missing or unrecognised tier so the caller renders nothing", () => {
+  assert.equal(tierLabel(undefined), null);
+  assert.equal(tierLabel(null), null);
+  assert.equal(tierLabel("legend"), null);
+});
+
+// -- priorSeasonRangeLabel -----------------------------------------------------------
+
+test("priorSeasonRangeLabel formats a starting year as a season range", () => {
+  assert.equal(priorSeasonRangeLabel("2025"), "2025/26");
+  assert.equal(priorSeasonRangeLabel(2019), "2019/20");
+});
+
+test("priorSeasonRangeLabel returns an empty string for a missing or invalid season", () => {
+  assert.equal(priorSeasonRangeLabel(null), "");
+  assert.equal(priorSeasonRangeLabel(undefined), "");
+  assert.equal(priorSeasonRangeLabel("not-a-year"), "");
 });
 
 // -- suggestedPickReason -------------------------------------------------------------

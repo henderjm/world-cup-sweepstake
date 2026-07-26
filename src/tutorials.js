@@ -26,6 +26,124 @@
 
 export const TUTORIALS = [
   {
+    slug: "first-league",
+    title: "Running your first league",
+    summary: "Get seven mates through a snake draft without it falling apart, and know what to do when it nearly does.",
+    minutes: 9,
+    sections: [
+      {
+        type: "prose",
+        heading: "This is not the official game",
+        body: [
+          "In the official Fantasy Premier League game, everyone can own Erling Haaland at once. Every manager picks from the same full pool every week, so a great player being popular costs you nothing.",
+          "Kickoff Draft does not work that way. Each player in the game belongs to exactly one manager in your league, the same as an NFL fantasy league. Once Haaland is drafted, he is off the board for everybody else all season.",
+          "That single difference is why the draft matters so much more here than a normal FPL squad pick ever did. There is no undo. Whoever ends up with the strongest squad after the draft has a real, lasting advantage, and a bad draft is not something you quietly fix next gameweek by swapping a player in from the full pool, because there usually isn't one left worth having.",
+        ],
+      },
+      {
+        type: "prose",
+        heading: "Before draft night",
+        body: [
+          "Create the league and you become its commissioner. That gives you an invite code to share with your mates: anyone with the code can join right up until you start the draft.",
+          "The one decision that shapes the whole season is league size. A league can hold up to 10 managers. More managers means every squad is thinner, since the same 15-a-side player pool gets carved into more pieces, and free agency after the draft is leaner too, since fewer decent players are ever left unowned. Fewer managers means bigger, stronger squads for everyone, but a smaller, quieter league. There is no right answer, only a tradeoff to make on purpose rather than by accident.",
+          "Whatever size you land on, the draft itself needs at least 2 managers in the league before it can start, manual or scheduled.",
+        ],
+      },
+      {
+        type: "prose",
+        heading: "Pick a waiver mode",
+        body: [
+          "Before the draft, decide how your league will handle players nobody drafted once the season is underway. There are three modes, and the choice is yours as commissioner.",
+          "FAAB bidding is the default: every manager has a season-long budget of fake credits and the highest blind bid wins a claim. It rewards judgement about how much a player is really worth to you, and overspending early genuinely costs you later.",
+          "Rolling order ignores bids entirely. Whoever is highest in a rotating queue wins any claim they make, then goes to the back of the queue. It is the simplest to explain and it self-balances, since everyone gets a turn.",
+          "Reverse standings flips the league table upside down every week: the bottom side gets first call on any player they want. It is the strongest catch-up mechanic, at the cost of letting a struggling manager keep taking the best player left, week after week.",
+          "The full mechanics, including exactly how a same-week three-way claim gets resolved differently under each mode, are covered in the separate \"How waivers work\" tutorial in Learn. Read it before the draft so you can explain your choice when someone asks why they lost a claim.",
+        ],
+      },
+      {
+        type: "prose",
+        heading: "Schedule the draft",
+        body: [
+          "\"Everyone be online at 8\" is not a plan, it is a hope. People forget, time zones slip, and the one manager who is late is the one whose squad an algorithm ends up building. Scheduling the draft turns that into something the app enforces instead of something you have to nag people about.",
+          "As commissioner, pick a date and time and the app takes it from there. Every manager in the league gets reminded a day before, again an hour before, and the draft starts itself the moment the clock hits zero. Nobody has to be the one who says \"right, is everyone ready?\"",
+        ],
+      },
+      {
+        type: "timeline",
+        heading: "What happens automatically once you schedule it",
+        steps: [
+          { when: "When you schedule it", body: "You pick a date and time. Every league member can see the countdown from then on." },
+          { when: "24 hours before", body: "Everyone gets a reminder that the draft is tomorrow." },
+          { when: "1 hour before", body: "Everyone gets a second reminder that the draft room is about to open." },
+          {
+            when: "At the scheduled time",
+            body: "The draft starts on its own: managers are assigned a random snake draft order and the first pick clock begins. Nobody has to click start.",
+            emphasis: true,
+          },
+        ],
+      },
+      {
+        type: "callout",
+        body: [
+          "Be plain with your league about what a no-show costs. Every pick has a 60-second clock, and if it runs out the app auto-picks for that manager from whoever is left, filling whichever position they are shortest on. Missing one pick like that is a minor annoyance. Missing the whole draft because you never showed up means all 15 of your players were chosen by an algorithm with no idea which forward you actually wanted.",
+        ],
+      },
+      {
+        type: "prose",
+        heading: "Draft night itself",
+        body: [
+          "The draft room shows the snake order across the top, with whoever is currently picking highlighted; the order reverses at the end of every round, so the manager who picks last in round 1 picks first in round 2, and so on.",
+          "Below that is the pick clock, the pool of undrafted players, a running feed of recent picks, and your own squad building up as you go. The pool is ranked with likely first-teamers at the top, based on how many minutes each player played last season, so the players most worth knowing about are not buried under third-choice goalkeepers. The app also suggests a pick for you when it is your turn, with a one-line reason, though you are never required to take it.",
+          "The one rule that catches everybody out the first time: every squad slot is always full. Your 15-man squad has an exact shape, and a position with no room left simply is not offered to you.",
+        ],
+      },
+      {
+        type: "states",
+        heading: "Your squad's fixed shape",
+        items: [
+          { title: "Goalkeepers", tone: "neutral", body: "2 slots." },
+          { title: "Defenders", tone: "neutral", body: "5 slots." },
+          { title: "Midfielders", tone: "neutral", body: "5 slots." },
+          { title: "Forwards", tone: "neutral", body: "3 slots, 15 total." },
+        ],
+      },
+      {
+        type: "callout",
+        body: [
+          "Tell your league to show up five minutes early. A draft with eight managers moves fast once it starts, and a slow first pick sets the tone for a long, irritable evening.",
+        ],
+      },
+      {
+        type: "prose",
+        heading: "The first week after",
+        body: [
+          "Once the draft ends, every manager's squad is set for the season, but nobody's starting XI is chosen automatically. Head into your team and set your starting eleven before the first gameweek's matches kick off.",
+          "If you forget, you are not left with nobody playing: a gameweek with no lineup set simply inherits whatever lineup you last set, going back as far as it needs to. The very first gameweek of all, before you have ever set one, falls back to a sensible default XI built from your squad. It is still worth setting your own, since the default has no idea who you'd actually start.",
+          "Free agency opens the moment the draft ends: an unowned player can be added instantly, first come first served. Waivers are different: nobody's claim is resolved until the first gameweek's fixtures are all finished, which is also the earliest point a waiver run can happen at all.",
+        ],
+      },
+      {
+        type: "table",
+        heading: "When things go wrong",
+        columns: ["What happens", "What you can do"],
+        rows: [
+          [
+            "Someone can't get into the draft room",
+            "The 60-second clock keeps the draft moving regardless, so it will not stall waiting for them. Once they are in, they can pick normally from wherever the draft has reached; there is no way to go back and redo a pick that already autopicked for them.",
+          ],
+          [
+            "Someone drafts badly and loses interest",
+            "There is no reset partway through a season. The best you can do is make sure they know free agency and waivers exist, since a bad draft is recoverable in small steps even if it is not fixable all at once.",
+          ],
+          [
+            "Someone stops setting a lineup",
+            "Nothing breaks: their last lineup just keeps carrying forward gameweek to gameweek. It quietly becomes stale as their squad changes underneath it, so a friendly nudge is worth more than any tool the app gives you here.",
+          ],
+        ],
+      },
+    ],
+  },
+  {
     slug: "waivers",
     title: "How waivers work",
     summary: "One player three managers all want, and the same week resolved three different ways.",

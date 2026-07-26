@@ -252,6 +252,80 @@ test("the waivers tutorial's resolver shows the correct winner and rejection rea
 // data through the real engine (src/fantasyWaivers.js) so the tutorial can
 // never silently drift from the deployed rules: if resolveWaiverRun's
 // behaviour ever changes, this test breaks before the tutorial goes stale.
+// -- The "first-league" commissioner tutorial ------------------------------------
+
+test("TUTORIALS includes the first-league tutorial, with the required shape", () => {
+  const firstLeague = TUTORIALS.find((tutorial) => tutorial.slug === "first-league");
+  assert.ok(firstLeague);
+  assert.equal(typeof firstLeague.title, "string");
+  assert.equal(typeof firstLeague.summary, "string");
+  assert.equal(typeof firstLeague.minutes, "number");
+  assert.ok(Array.isArray(firstLeague.sections) && firstLeague.sections.length > 0);
+});
+
+test("tutorialBySlug finds first-league", () => {
+  const firstLeague = tutorialBySlug("first-league");
+  assert.ok(firstLeague);
+  assert.equal(firstLeague.slug, "first-league");
+});
+
+test("renderTutorialIndex includes a card for first-league alongside waivers", () => {
+  const html = renderTutorialIndex(TUTORIALS);
+  assert.match(html, /data-tutorial-open="first-league"/);
+  assert.match(html, /Running your first league/);
+});
+
+// Every section's `type` must be one of the block types tutorialsView.js's
+// SECTION_RENDERERS actually implements; an unsupported type would silently
+// render as nothing (renderTutorial skips unrecognised types), so a typo here
+// would ship a tutorial with a gap in it that no test would otherwise catch.
+const SUPPORTED_BLOCK_TYPES = new Set(["prose", "callout", "states", "list", "table", "timeline", "resolver"]);
+
+test("every section in the first-league tutorial uses a block type the renderer supports", () => {
+  const firstLeague = tutorialBySlug("first-league");
+  for (const section of firstLeague.sections) {
+    assert.ok(
+      SUPPORTED_BLOCK_TYPES.has(section.type),
+      `unsupported section type: ${section.type}`,
+    );
+  }
+});
+
+test("the first-league tutorial mentions the league size cap and minimum manager count", () => {
+  const firstLeague = tutorialBySlug("first-league");
+  const html = renderTutorial(firstLeague);
+  assert.match(html, /10 managers/);
+  assert.match(html, /at least 2 managers/);
+});
+
+test("the first-league tutorial's squad-shape states block sums to a 15-man squad", () => {
+  const firstLeague = tutorialBySlug("first-league");
+  const states = firstLeague.sections.find(
+    (section) => section.type === "states" && section.heading === "Your squad's fixed shape",
+  );
+  assert.ok(states);
+  assert.equal(states.items.length, 4);
+  const numbers = states.items.map((item) => Number(item.body.match(/\d+/)[0]));
+  assert.deepEqual(numbers, [2, 5, 5, 3]);
+});
+
+test("the first-league tutorial points to the waivers tutorial by name rather than repeating its content", () => {
+  const firstLeague = tutorialBySlug("first-league");
+  const html = renderTutorial(firstLeague);
+  assert.match(html, /How waivers work/);
+  // It should not duplicate the waivers tutorial's own resolver walkthrough.
+  assert.doesNotMatch(html, /tutorial-resolver/);
+});
+
+test("renderTutorial renders the first-league tutorial end to end without throwing, escaping its content", () => {
+  const firstLeague = tutorialBySlug("first-league");
+  const html = renderTutorial(firstLeague);
+  assert.match(html, /Running your first league/);
+  assert.match(html, /data-tutorial-back/);
+  assert.doesNotMatch(html, /undefined/);
+  assert.doesNotMatch(html, /\[object Object\]/);
+});
+
 test("the waivers tutorial's claims resolve identically through the real waiver engine", () => {
   const players = new Map([
     [100, { position: "FWD" }], // Haaland (the add)

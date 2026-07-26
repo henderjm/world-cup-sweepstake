@@ -1690,25 +1690,32 @@ button { font-family: inherit; cursor: pointer; }
   }
 }
 
-/* The data table itself (column header + rows): eight columns (badge, name,
-   pos, four stat cells, action) are too dense to fit a 320-375px phone at
-   readable sizes, so this wrapper scrolls horizontally rather than collapsing
-   or hiding any column - the mockup's PLAYER/POS/AVG/FORM/xP/ADP structure
-   stays intact at every width, just panned into view with a swipe on mobile.
-   On viewports wide enough (any real desktop/tablet) the content already fits
-   and this scroll never engages. */
+/* The data table itself (column header + rows): six columns (badge, name,
+   pos, tier, apps, action) are too dense to fit a 320-375px phone at readable
+   sizes, so this wrapper scrolls horizontally rather than collapsing or
+   hiding any column - the PLAYER/POS/TIER/APPS structure stays intact at
+   every width, just panned into view with a swipe on mobile. On viewports
+   wide enough (any real desktop/tablet) the content already fits and this
+   scroll never engages. The --degraded modifier (no prior-season enrichment
+   at all - see hasPriorSeasonData) drops to four columns rather than showing
+   Tier/Apps full of empty placeholders. */
 .fantasy-pool__table { overflow-x: auto; }
 
 /* Column header row and each data row share one grid template so PLAYER / POS /
-   AVG / FORM / xP / ADP / action line up exactly: badge, name, pos, four stat
-   cells, action. The header's first and last cells are empty (badge/action). */
+   TIER / APPS / action line up exactly: badge, name, pos, tier chip, apps
+   count, action. The header's first and last cells are empty (badge/action). */
 .fantasy-pool__cols,
 .fantasy-player-row {
   display: grid;
-  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 40px 70px 36px 36px 76px;
-  min-width: 500px;
+  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 70px 48px 76px;
+  min-width: 460px;
   align-items: center;
   gap: 10px;
+}
+.fantasy-pool__table--degraded .fantasy-pool__cols,
+.fantasy-pool__table--degraded .fantasy-player-row {
+  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 76px;
+  min-width: 320px;
 }
 .fantasy-pool__cols {
   /* 26px = the rows wrapper's 16px padding + a row's own 10px padding, so the
@@ -1721,9 +1728,7 @@ button { font-family: inherit; cursor: pointer; }
   color: var(--faint);
 }
 .fantasy-pool__cols span:nth-child(4),
-.fantasy-pool__cols span:nth-child(5),
-.fantasy-pool__cols span:nth-child(6),
-.fantasy-pool__cols span:nth-child(7) {
+.fantasy-pool__cols span:nth-child(5) {
   text-align: center;
 }
 .fantasy-pool__cols span:last-child { text-align: right; }
@@ -1741,6 +1746,7 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-player-row__id strong { font-size: 13px; }
 .fantasy-player-row__action { text-align: right; }
 .fantasy-player-row__stat { text-align: center; }
+.fantasy-player-row__tier { display: flex; justify-content: center; }
 .fantasy-draft-btn {
   padding: 6px 12px;
   font-size: 12px;
@@ -1750,17 +1756,23 @@ button { font-family: inherit; cursor: pointer; }
 }
 .fantasy-draft-btn:hover { background: var(--fantasy-accent-2); }
 
-/* Stat cells: AVG / xP / ADP as plain numbers, a dim placeholder bullet when the
-   pool file doesn't carry that field yet (see normalizePlayerStats). ---------- */
+/* Stat cells: Apps/Minutes/xP as plain numbers, a dim placeholder bullet when
+   the value is null - a player with no prior-season record, or a pool file
+   that doesn't carry xp yet (see renderStatCell in src/fantasyView.js). ---- */
 
 .fantasy-stat { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text); }
 .fantasy-stat--empty { color: var(--faint); }
 
-/* FORM mini-sparkline: up to 5 bars, lime for the stronger recent games, a
-   purple tint otherwise; a single dim bullet placeholder with no data at all. */
-.fantasy-sparkline { display: flex; align-items: flex-end; justify-content: center; gap: 2px; height: 18px; }
-.fantasy-sparkline__bar { display: block; width: 6px; min-height: 3px; border-radius: 2px; background: var(--fantasy-line); }
-.fantasy-sparkline__bar.is-strong { background: var(--accent); }
+/* Tier chip: Starter/Squad/Fringe read as plain fact (lime for a likely
+   first-teamer, neutral/dim as playing time drops off); "New" (an unrecognised
+   prior-season record - a new signing or a promoted club's player) gets the
+   fantasy section's own purple accent so it reads as "fresh", never as a
+   downgrade. See tierLabel in src/fantasyDraft.js. */
+.fantasy-tier-chip { padding: 3px 9px; font-size: 10px; font-weight: 800; letter-spacing: 0.02em; text-transform: uppercase; }
+.fantasy-tier-chip--starter { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
+.fantasy-tier-chip--squad { color: var(--muted); border-color: rgb(255 255 255 / 0.14); }
+.fantasy-tier-chip--fringe { color: var(--faint); }
+.fantasy-tier-chip--unknown { color: var(--fantasy-accent); border-color: var(--fantasy-line); background: var(--fantasy-soft); }
 
 /* POS chip: fantasy-accent tint pill, shared by pool rows / squad rows / feed -- */
 
@@ -2030,8 +2042,9 @@ button { font-family: inherit; cursor: pointer; }
 
 /* Free agents / wire rows: same sticky-filter pool shell as the draft pool
    (.fantasy-pool / .fantasy-pool__scroll / .fantasy-pool__sticky /
-   .fantasy-pool__filters, reused as-is), but a leaner grid - no AVG/FORM/xP/
-   ADP columns, since neither list carries player-stats data. */
+   .fantasy-pool__filters, reused as-is), but the same leaner grid as the
+   draft pool's degraded state (.fantasy-pool__table--degraded) - no Tier/Apps
+   columns, since neither list surfaces prior-season enrichment. */
 .fantasy-fa-cols,
 .fantasy-fa-row {
   display: grid;
@@ -2332,4 +2345,85 @@ button { font-family: inherit; cursor: pointer; }
 
 .tutorial-resolver__aftermath { margin: 16px 0 0; font-size: 12.5px; }
 .tutorial-resolver__aftermath dt { font-size: 10px; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase; color: var(--fantasy-accent); margin-bottom: 5px; }
+
+/* Signed-out "try a draft" demo (Phase 4.5) -------------------------------------
+   Lives inside the Fantasy purple accent (--fantasy-*), same as the real draft
+   room whose renderer this reuses, so the two never look like different
+   products mid-session. ------------------------------------------------------ */
+
+.fantasy-signedout__demo { margin-top: 18px; width: 100%; }
+
+.tutorial-card--demo { border-color: var(--fantasy-line); background: var(--fantasy-soft); margin-bottom: 14px; }
+.tutorial-card--demo .card__title { color: var(--fantasy-accent); }
+
+.demo-setup { max-width: 480px; margin: 0 auto; }
+.demo-setup__lede { margin: 10px 0 18px; line-height: 1.55; }
+.demo-setup__card { display: flex; flex-direction: column; gap: 8px; }
+.demo-setup__name { width: 100%; }
+.demo-setup__sizelabel { margin-top: 10px; }
+.demo-setup__start { margin-top: 14px; width: 100%; }
+
+/* width: 100% is required alongside max-width/margin:auto here (unlike
+   .demo-setup/.demo-report, which only hold flexible-width content): the
+   demo-roll__table's grid columns are fixed pixel widths, and without an
+   explicit width the auto margins stop this grid item from stretching to
+   its track, so it shrink-wraps to that fixed-width content instead and
+   overflows a narrow viewport (silently, since the shell clips overflow-x
+   rather than scrolling it). width: 100% forces it to the track width,
+   letting demo-roll__table's own overflow-x: auto scroll internally. */
+.demo-roll { max-width: 560px; width: 100%; margin: 0 auto; }
+.demo-roll__card { display: flex; flex-direction: column; gap: 10px; }
+.demo-roll__meter {
+  height: 6px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.08);
+  overflow: hidden;
+}
+.demo-roll__meter-fill {
+  display: block;
+  height: 100%;
+  background: var(--fantasy-accent);
+  transition: width 0.12s linear;
+}
+.demo-roll__label { margin: 0; }
+.demo-roll__table { margin-top: 4px; }
+/* min-width: 0 overrides the shared .fantasy-standings__cols/.fantasy-standings-row
+   base rule's own min-width: 480px (that width is deliberate there, guarding
+   the full nine-column Standings tab's own horizontal scroll) - the compact
+   four-column roll table shares those base classes for the row styling but
+   must not inherit a minimum built for a much wider table, or it overflows a
+   375px viewport instead of fitting compactly. */
+.demo-roll__cols, .demo-roll-row { grid-template-columns: 34px 1fr 40px 56px; min-width: 0; }
+.demo-roll__cols span:nth-child(n + 3), .demo-roll-row span:nth-child(n + 3) { text-align: center; }
+.demo-roll__footnote { margin: 2px 0 0; font-size: 11px; line-height: 1.4; }
+.demo-roll__skip { align-self: center; margin-top: 6px; }
+
+.demo-report { max-width: 640px; margin: 0 auto; }
+.demo-report__headline-row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.demo-report__headline-value { font-size: 22px; font-weight: 900; margin-top: 2px; }
+.demo-report__headline-value--accent { color: var(--fantasy-accent); }
+.demo-report__grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.demo-report__fact {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.demo-report__fact-label { font-size: 11px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.demo-report__fact-value { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 800; }
+.demo-report__fact-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.demo-report__fact-detail { margin-top: 4px; }
+.demo-report__honesty { margin-top: 14px; line-height: 1.5; }
+.demo-report__actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+
+@media (max-width: 480px) {
+  .demo-report__grid { grid-template-columns: 1fr; }
+  .demo-report__actions { flex-direction: column; }
+  .demo-report__actions .btn, .demo-report__actions .seg { width: 100%; text-align: center; }
+}
 .tutorial-resolver__aftermath dd { margin: 0; color: var(--muted); line-height: 1.6; }

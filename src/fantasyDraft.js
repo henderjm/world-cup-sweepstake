@@ -101,48 +101,61 @@ export function suggestedPickReason(player, myRoster, squadSlots = SQUAD_SLOTS) 
   return `Fills your scarcest open slot: ${player.position} (${remaining} of ${total} remaining). ${basis}`;
 }
 
-// -- Optional pool-file stat fields (contract) ------------------------------------
+// -- Optional pool-file stat field (contract) --------------------------------
 //
-// The player pool file (data/PL/players.json, and any future per-competition
-// equivalent) MAY carry these fields per player, all optional, populated by a
-// future stats bake that does not exist yet:
-//   avg    number    average fantasy points per gameweek so far, e.g. 5.9
-//   form   number[]  recent gameweek points, oldest to newest, e.g. [4, 7, 3, 9, 6];
-//                     any finite numbers work - the sparkline scales relative to
-//                     this player's own max, so raw point totals or 0-1 fractions
-//                     both render correctly
-//   xp     number    the scoring model's expected points for the next gameweek
-//   adp    number    average draft position across leagues (lower = picked earlier)
+// avg/form/adp used to live here too: speculative columns designed against a
+// future stats bake that never happened. data/PL/players.json's real
+// enrichment (appearances/minutes/tier from last season - see
+// src/fantasyPlayerTier.js and hasPriorSeasonData/tierLabel below) replaced
+// them in the pool table, the player drawer and the lobby scouting list, so
+// those three fields and the form sparkline that rendered them are gone
+// rather than kept around as dead code.
 //
-// None of these exist in the current synthetic pool or the first real bake, so
-// every reader (the pool table, the suggested-pick rationale) must go through
-// this normalizer and treat a missing field as `null`, rendered as a dim
-// placeholder - never a fabricated number.
+// xp is the one field from that original contract still worth carrying: the
+// My Team pitch/bench/Squad xP panels read it (a season-scoring feature,
+// unrelated to the prior-season appearance data above), and it stays a
+// genuinely optional, future field until a real expected-points bake exists.
+// A missing xp is `null`, rendered as a dim placeholder - never a fabricated
+// number.
 export function normalizePlayerStats(player) {
   const num = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
-  const form = Array.isArray(player?.form) ? player.form.filter((value) => typeof value === "number" && Number.isFinite(value)) : [];
-  return {
-    avg: num(player?.avg),
-    form: form.length ? form : null,
-    xp: num(player?.xp),
-    adp: num(player?.adp),
-  };
+  return { xp: num(player?.xp) };
 }
 
-// Normalizes a `form` array (see normalizePlayerStats) into up to 5 most-recent
-// sparkline bars, each { height, strong }: height is 0-1 relative to this
-// player's own max (so the tallest recent game is always a full bar regardless
-// of whether the underlying numbers are 0-1 fractions or raw points), and
-// strong marks a bar at or above 60% of that max for the lime accent - a direct
-// reading of the real number, never a fabricated "good form" flag.
-export function formSparklineBars(form) {
-  const values = (form ?? []).slice(-5);
-  if (!values.length) return [];
-  const max = Math.max(...values, 0.0001);
-  return values.map((value) => {
-    const height = Math.max(0, Math.min(1, value / max));
-    return { height, strong: height >= 0.6 };
-  });
+// -- Prior-season enrichment (appearances/minutes/tier) -----------------------
+//
+// scripts/fetch-fantasy-players.mjs adds appearances/minutes/tier/likelyStarter
+// to every player when the prior-season stats fetch succeeds, and adds none of
+// them at all when it fails outright (see enrichWithPriorSeasonStats) - never
+// partial nulls standing in for a failed bake. hasPriorSeasonData checks the
+// pool itself for that signal, so the pool table/drawer/scouting list degrade
+// correctly (hide the columns rather than show them full of placeholders)
+// even if a caller forgets to also check the file's priorSeasonStats header.
+export function hasPriorSeasonData(players) {
+  return (players ?? []).some((player) => player?.tier !== undefined);
+}
+
+// Display label for a player's prior-season tier chip, or null when there is
+// nothing to show (no enrichment attempted, or a stray unrecognised value).
+// "unknown" reads as "New" rather than "Unknown": a missing prior-season
+// record means a new signing or a promoted club's player, not a judgement
+// about them, and "New" says that plainly (see src/fantasyPlayerTier.js's
+// deriveTier for why "unknown" outranks "fringe" in the pool's own sort).
+const TIER_LABELS = { starter: "Starter", squad: "Squad", fringe: "Fringe", unknown: "New" };
+export function tierLabel(tier) {
+  return TIER_LABELS[tier] ?? null;
+}
+
+// "2025/26" style range label for the prior season a pool's appearances/
+// minutes figures are drawn from (data/PL/players.json's
+// priorSeasonStats.season, the year that season started), so a bare "37
+// appearances" always has a season attached somewhere in the UI. Empty
+// string for a missing/invalid season rather than a malformed label.
+export function priorSeasonRangeLabel(season) {
+  if (season == null || season === "") return "";
+  const year = Number(season);
+  if (!Number.isInteger(year)) return "";
+  return `${year}/${String((year + 1) % 100).padStart(2, "0")}`;
 }
 
 // "1st"/"2nd"/"3rd"/"4th"... for the on-the-clock card's "you pick Nth in this

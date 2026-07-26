@@ -44,6 +44,13 @@ export function renderTutorialIndex(tutorials) {
         </div>
       </div>
       <p class="note tutorial-index__lede">Short walkthroughs of how Kickoff Draft features actually work.</p>
+      <button class="card tutorial-card tutorial-card--demo" type="button" data-section-nav="demo">
+        <div class="tutorial-card__head">
+          <h3 class="card__title">Try a 5-minute draft</h3>
+          <span class="chip tutorial-card__minutes">No sign-in</span>
+        </div>
+        <p class="note">The fastest way to learn the format: draft a squad against bots and watch a season play out.</p>
+      </button>
       <div class="tutorial-grid">${cards || `<p class="note">No tutorials yet.</p>`}</div>
     </div>`;
 }
