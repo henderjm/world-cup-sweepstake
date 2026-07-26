@@ -27,7 +27,7 @@ GOOGLE_CLIENT_ID = "68606512741-6un71mt70pt688bkpcd7r86pjqjmt07l.apps.googleuser
 VAPID_PUBLIC_KEY = "BOJgZCuRFEipYuiJncqnpx199Ncr570h8IeIHAoxEbFYakhhmGz8PpXbMDshAiY9o0HK8HNzW3dh_wAJvk7h-eM"
 PUSH_CONTACT = "mailto:mark.hender@zellor.com"
 # The site origin notifications link back to.
-SITE_ORIGIN = "https://henderjm.github.io/world-cup-sweepstake"
+SITE_ORIGIN = "https://kickoffdraft.com"
 # AI analysis model. Any override must support adaptive thinking + structured outputs.
 ANTHROPIC_MODEL = "claude-sonnet-5"
 

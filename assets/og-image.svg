@@ -19,25 +19,25 @@
     <circle cx="60" cy="610" r="260"/>
   </g>
 
-  <!-- SG brand mark -->
+  <!-- KD brand mark -->
   <rect x="80" y="96" width="76" height="76" rx="20" fill="#c8f542"/>
   <text x="118" y="149" font-family="Helvetica Neue, Arial, sans-serif" font-weight="800" font-style="italic"
-        font-size="34" fill="#0a0e14" text-anchor="middle">SG</text>
+        font-size="32" fill="#0a0e14" text-anchor="middle">KD</text>
 
   <!-- Wordmark -->
   <text x="76" y="330" font-family="Helvetica Neue, Arial, sans-serif" font-weight="800" font-style="italic"
-        font-size="128" letter-spacing="-1" fill="#c8f542">SQUAD GOALS</text>
+        font-size="118" letter-spacing="-1" fill="#c8f542">KICKOFF DRAFT</text>
 
   <!-- Accent rule -->
   <rect x="80" y="366" width="120" height="8" rx="4" fill="#c8f542"/>
 
   <!-- Supporting line -->
   <text x="80" y="432" font-family="Helvetica Neue, Arial, sans-serif" font-weight="500"
-        font-size="34" fill="#edf2ee">Live Premier League &amp; Champions League scores,</text>
+        font-size="34" fill="#edf2ee">Head-to-head fantasy Premier League:</text>
   <text x="80" y="478" font-family="Helvetica Neue, Arial, sans-serif" font-weight="500"
-        font-size="34" fill="#edf2ee">tables, fixtures and top scorers</text>
+        font-size="34" fill="#edf2ee">snake draft, waivers, weekly matchups</text>
 
   <!-- Secondary line -->
   <text x="80" y="530" font-family="Helvetica Neue, Arial, sans-serif" font-weight="500"
-        font-size="28" fill="#8b95a0">Plus a head-to-head fantasy draft league</text>
+        font-size="28" fill="#8b95a0">Plus live Premier League &amp; Champions League scores</text>
 </svg>

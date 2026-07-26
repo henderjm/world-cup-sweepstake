@@ -1,20 +1,20 @@
 {
-  "name": "Squad Goals",
-  "short_name": "Squad Goals",
-  "description": "Live Premier League and Champions League scores, tables, fixtures and top scorers, plus a head-to-head fantasy draft league.",
-  "start_url": "/world-cup-sweepstake/",
-  "scope": "/world-cup-sweepstake/",
+  "name": "Kickoff Draft",
+  "short_name": "Kickoff Draft",
+  "description": "A head-to-head fantasy draft league for the Premier League: snake draft, waivers and weekly matchups, plus live scores, tables and fixtures.",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0a0e14",
   "theme_color": "#0a0e14",
   "icons": [
     {
-      "src": "https://henderjm.github.io/world-cup-sweepstake/assets/icon-192.png",
+      "src": "https://kickoffdraft.com/assets/icon-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "https://henderjm.github.io/world-cup-sweepstake/assets/icon-512.png",
+      "src": "https://kickoffdraft.com/assets/icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
     }

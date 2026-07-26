@@ -1,13 +1,10 @@
-# This file only takes effect if it is served from the root of the domain
-# that hosts the site, e.g. https://example.com/robots.txt. This app is
-# currently hosted on GitHub Pages at a project subpath
-# (https://henderjm.github.io/world-cup-sweepstake/), so crawlers actually
-# read https://henderjm.github.io/robots.txt, which belongs to a different
-# (nonexistent) user-site repo and 404s. This file is shipped anyway because
-# it costs nothing and becomes correct automatically if a custom domain, or a
-# github.io user/organization site, is ever put in front of this app.
+# This app now moves to a custom domain (kickoffdraft.com), served from the
+# domain root, so this file actually takes effect for crawlers. It previously
+# lived on GitHub Pages at a project subpath (henderjm.github.io/world-cup-
+# sweepstake/), where crawlers instead read the (nonexistent) root robots.txt
+# and this file was inert; that no longer applies.
 
 User-agent: *
 Allow: /
 
-Sitemap: https://henderjm.github.io/world-cup-sweepstake/sitemap.xml
+Sitemap: https://kickoffdraft.com/sitemap.xml

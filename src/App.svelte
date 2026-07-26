@@ -11,10 +11,10 @@
 <div class="shell">
   <header class="topnav">
     <button class="brand" type="button" data-section-nav="scores">
-      <span class="brand__mark">SG</span>
+      <span class="brand__mark">KD</span>
       <span class="brand__stack">
-        <strong class="brand__name">Squad Goals</strong>
-        <span class="brand__sub">Scores · Tables · Fantasy</span>
+        <strong class="brand__name">Kickoff Draft</strong>
+        <span class="brand__sub">Draft · Waivers · Head-to-Head</span>
       </span>
     </button>
     <nav class="topnav__sections" id="sectionNav" aria-label="Sections">

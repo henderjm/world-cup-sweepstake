@@ -11,6 +11,9 @@ import { posthog } from "./telemetry.js";
 // `wrangler dev` Worker (http://localhost:8787) so accounts, banter and the fantasy
 // draft room can be exercised end to end without touching production. Vite strips
 // the whole branch from production builds via import.meta.env.DEV.
+// Deliberately still the workers.dev origin, not an api.kickoffdraft.com custom
+// domain: that custom domain does not exist yet. Switch this once it does, not
+// before, or the kickoffdraft.com deploy loses its backend the moment it goes live.
 export const DATA_API = (import.meta.env?.DEV && devApiOverride()) || "https://goon-squad-data.gs-wc.workers.dev";
 
 function devApiOverride() {

@@ -1,15 +1,17 @@
-# Squad Goals
+# Kickoff Draft
 
-Squad Goals: a static GitHub Pages app for following the Premier League and the Champions League:
-FotMob-style live scores, tables with qualification and relegation zones, full
-fixtures and results, and a Golden Boot scorer board, with a competition switcher.
-The other European cups are on the roadmap, along with sign-up, push notifications
-and a fantasy draft.
+Kickoff Draft: a head-to-head fantasy draft league for the Premier League. Snake
+draft, waivers and weekly matchups, the format American fantasy players know from
+the NFL, which the official Fantasy Premier League game does not offer. Alongside
+it, a static GitHub Pages tracker for following the Premier League and the
+Champions League: FotMob-style live scores, tables with qualification and
+relegation zones, full fixtures and results, and a Golden Boot scorer board, with
+a competition switcher. The other European cups are on the roadmap.
 
-Sections (single page, tabbed): Live & today, Table, Knockout (cups only), Fixtures,
-Golden Boot, and the Paper Run daily mini-game. Extras: a live score ticker, a match
-drawer with lineups, goals, cards and substitutions, shared match banter, and an
-optional AI-written match read.
+Sections (single page, tabbed): Fantasy (create or join a draft league), Live &
+today, Table, Knockout (cups only), Fixtures, Golden Boot, and the Paper Run daily
+mini-game. Extras: a live score ticker, a match drawer with lineups, goals, cards
+and substitutions, shared match banter, and an optional AI-written match read.
 
 ## Host On GitHub Pages
 

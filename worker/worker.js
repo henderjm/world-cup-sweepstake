@@ -71,7 +71,13 @@ export { FantasyDraftRoom } from "./draftRoom.js";
 const API = "https://v3.football.api-sports.io";
 
 const ALLOWED_ORIGINS = new Set([
+  // The site is moving from GitHub Pages to the kickoffdraft.com custom domain.
+  // Keep the github.io entry until DNS has propagated and the domain move is
+  // confirmed live; drop it only once henderjm.github.io is no longer serving
+  // the site, so nobody's mid-transition browser tab loses the backend.
   "https://henderjm.github.io",
+  "https://kickoffdraft.com",
+  "https://www.kickoffdraft.com",
   "http://localhost:8731",
   "http://127.0.0.1:8731",
 ]);
@@ -2437,7 +2443,7 @@ async function handlePushTest(request, env, cors) {
     const results = await Promise.all(
       (subs.results ?? []).map((sub) =>
         sendPush(env, sub, {
-          title: "Squad Goals test",
+          title: "Kickoff Draft test",
           body: "Push notifications are working on this device.",
           url: env.SITE_ORIGIN ?? "",
           tag: "sg-test",

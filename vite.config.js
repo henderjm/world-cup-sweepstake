@@ -18,6 +18,9 @@ export default defineConfig({
           cp("site.webmanifest", "dist/site.webmanifest"),
           cp("robots.txt", "dist/robots.txt"),
           cp("sitemap.xml", "dist/sitemap.xml"),
+          // GitHub Pages custom domain: this file must ship in every deploy or
+          // the custom domain setting unsets itself on the next Pages publish.
+          cp("CNAME", "dist/CNAME"),
         ]);
       },
     },

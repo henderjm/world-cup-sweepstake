@@ -43,7 +43,7 @@ export function renderTutorialIndex(tutorials) {
           <h1 class="hero__title">Tutorials</h1>
         </div>
       </div>
-      <p class="note tutorial-index__lede">Short walkthroughs of how Squad Goals features actually work.</p>
+      <p class="note tutorial-index__lede">Short walkthroughs of how Kickoff Draft features actually work.</p>
       <div class="tutorial-grid">${cards || `<p class="note">No tutorials yet.</p>`}</div>
     </div>`;
 }

@@ -549,8 +549,8 @@ export function renderSignedOut({ available, configured }) {
       : `<div class="you__gis" id="gisButton"></div>`;
   return `
     <div class="you you--signin">
-      <span class="brand__mark you__mark">SG</span>
-      <h2 class="you__title">Sign in to Squad Goals</h2>
+      <span class="brand__mark you__mark">KD</span>
+      <h2 class="you__title">Sign in to Kickoff Draft</h2>
       <p class="note">Follow your clubs, get goal alerts on this device, and run your fantasy squad. One tap with Google.</p>
       ${cta}
       <p class="note--dim">We only use Google to sign you in. No posts, no contacts.</p>
@@ -615,5 +615,5 @@ export function renderSignedIn(model, account, isFollowed) {
 
 export function renderFooter(model) {
   return `
-    <p>Data: ${esc(model.source)}${model.lastUpdated ? ` · updated ${dateLabel(model.lastUpdated)}` : ""} · Squad Goals is a Goon Squad production · Not affiliated with the Premier League or UEFA.</p>`;
+    <p>Data: ${esc(model.source)}${model.lastUpdated ? ` · updated ${dateLabel(model.lastUpdated)}` : ""} · Kickoff Draft is a Goon Squad production · Not affiliated with the Premier League or UEFA.</p>`;
 }

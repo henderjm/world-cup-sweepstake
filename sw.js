@@ -15,10 +15,10 @@ self.addEventListener("push", (event) => {
   try {
     payload = event.data?.json() ?? {};
   } catch {
-    payload = { title: "Squad Goals", body: event.data?.text() ?? "" };
+    payload = { title: "Kickoff Draft", body: event.data?.text() ?? "" };
   }
   event.waitUntil(
-    self.registration.showNotification(payload.title || "Squad Goals", {
+    self.registration.showNotification(payload.title || "Kickoff Draft", {
       body: payload.body || "",
       tag: payload.tag || undefined,
       data: { url: payload.url || "" },

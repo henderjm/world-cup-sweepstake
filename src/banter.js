@@ -168,7 +168,7 @@ function renderSkeleton() {
         <input class="bn__text" data-banter-text maxlength="140" placeholder="say something…" autocomplete="off" aria-label="Your banter" />
         <button class="btn bn__send" type="submit">Send</button>
       </form>
-      <p class="bn__note">Posting as your Squad Goals account, shared with everyone.</p>`
+      <p class="bn__note">Posting as your Kickoff Draft account, shared with everyone.</p>`
     : `<p class="bn__note bn__note--signin">Reading is open to all; joining in needs an account.
         <button class="seg" type="button" data-section-nav="you" data-md-close>Sign in</button>
       </p>`;

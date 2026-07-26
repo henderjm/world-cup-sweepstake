@@ -346,7 +346,7 @@ function renderAll() {
     : `<div class="ticker__track" style="animation:none;"><span class="ticker__item ticker__item--idle">Live feed not available yet.</span></div>`;
   elements.footer.innerHTML = model.hasData
     ? renderFooter(model)
-    : `<p>Data source: ${model.source ?? "pending"} · Squad Goals is a Goon Squad production.</p>`;
+    : `<p>Data source: ${model.source ?? "pending"} · Kickoff Draft is a Goon Squad production.</p>`;
   renderLayout();
 }
 
