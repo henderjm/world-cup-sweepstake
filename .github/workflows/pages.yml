@@ -10,6 +10,11 @@ on:
     # value. GitHub schedules are UTC and best effort.
     - cron: "0 11-22 * * *"
   workflow_dispatch:
+    inputs:
+      force_player_refresh:
+        description: "Re-fetch the fantasy player pool even if it is still fresh"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -71,6 +76,11 @@ jobs:
         env:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           API_FOOTBALL_CLI: /tmp/squad-goals-api
+          # The pool is cached across runs and guarded to one upstream refresh a
+          # day, which is right for a squad list that barely changes. That guard
+          # also blocks re-baking after a change to how the pool is built, so a
+          # manual run can override it.
+          FANTASY_REFRESH_HOURS: ${{ inputs.force_player_refresh && '0' || '' }}
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Build Svelte app
