@@ -18,6 +18,7 @@ import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { COMPETITIONS } from "../src/competitions.js";
 import { bucketPosition } from "../src/fantasy.js";
 import { normalizeTeamName } from "../src/domain.js";
+import { decodeEntities } from "../src/mapApiFootball.js";
 import { fetchApiFootball, isUnexpectedApiFootballFailure } from "./lib/apiFootball.mjs";
 
 const token = process.env.API_FOOTBALL_KEY;
@@ -99,7 +100,7 @@ async function fetchViaSquads(clubs) {
         if (member?.id == null) continue;
         list.push({
           id: member.id,
-          name: member.name ?? "",
+          name: decodeEntities(member.name ?? ""),
           team: normalizeTeamName(squad.team.name ?? club.name),
           position: bucketPosition(member.position),
           crest: squad.team.logo ?? club.logo ?? null,
@@ -131,7 +132,7 @@ async function fetchViaLineups() {
         if (member?.id == null || byId.has(member.id)) continue;
         byId.set(member.id, {
           id: member.id,
-          name: member.name ?? "",
+          name: decodeEntities(member.name ?? ""),
           team: team.name ?? "",
           position: bucketPosition(member.pos),
           crest: team.crest ?? null,

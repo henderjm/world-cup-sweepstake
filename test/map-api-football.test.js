@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { COMPETITIONS } from "../src/competitions.js";
 import {
+  decodeEntities,
   mapApiFootballMatchDetail,
   mapApiFootballMatchDetailFromSummary,
   mapApiFootballMatches,
@@ -352,4 +353,62 @@ test("stops polling a fixture as soon as its final state is known", () => {
     Date.parse("2026-08-15T14:45:00Z"),
   );
   assert.deepEqual(plan, { mode: "idle", requests: [] });
+});
+
+// -- HTML entity decoding at the ingestion boundary ----------------------------
+// Regression cover for a real bug found against live API-Football data: the feed
+// returns some names already HTML-escaped, so storing them verbatim made the
+// renderers escape a second time and users saw the literal "M. O&apos;Riley".
+
+test("decodeEntities turns feed-escaped names back into real characters", () => {
+  assert.equal(decodeEntities("M. O&apos;Riley"), "M. O'Riley");
+  assert.equal(decodeEntities("J. O&apos;Brien"), "J. O'Brien");
+  assert.equal(decodeEntities("Nott&apos;m Forest"), "Nott'm Forest");
+});
+
+test("decodeEntities handles numeric and hex entities", () => {
+  assert.equal(decodeEntities("O&#39;Shea"), "O'Shea");
+  assert.equal(decodeEntities("O&#x27;Nien"), "O'Nien");
+});
+
+test("decodeEntities decodes an ampersand last so a double-escaped entity survives one level", () => {
+  // "&amp;lt;" means the literal text "&lt;", not "<". Decoding the ampersand
+  // first would wrongly collapse both levels in a single pass.
+  assert.equal(decodeEntities("&amp;lt;"), "&lt;");
+  assert.equal(decodeEntities("Tom &amp; Jerry"), "Tom & Jerry");
+});
+
+test("decodeEntities leaves clean text and non-strings untouched", () => {
+  assert.equal(decodeEntities("Bukayo Saka"), "Bukayo Saka");
+  assert.equal(decodeEntities("Gabriel Magalhães"), "Gabriel Magalhães");
+  assert.equal(decodeEntities(null), null);
+  assert.equal(decodeEntities(undefined), undefined);
+});
+
+test("mapped match detail decodes escaped player names from the feed", () => {
+  const detail = mapApiFootballMatchDetailFromSummary(
+    {
+      id: 1, status: "FINISHED", utcDate: "2026-08-21T19:00:00+00:00", stage: "REGULAR_SEASON",
+      group: null, matchday: 1, venue: null, city: null, mapUrl: null, minute: 90,
+      score: { home: 1, away: 0 }, penalties: null,
+      homeTeam: "Brighton Hove", awayTeam: "Everton", homeCrest: null, awayCrest: null,
+    },
+    { response: [] },
+    {
+      response: [
+        {
+          time: { elapsed: 20, extra: null },
+          team: { id: 1, name: "Brighton Hove" },
+          player: { id: 10, name: "M. O&apos;Riley" },
+          assist: { id: 11, name: "J. O&apos;Brien" },
+          type: "Goal",
+          detail: "Normal Goal",
+        },
+      ],
+    },
+    { response: [] },
+  );
+
+  assert.equal(detail.goals[0].scorer, "M. O'Riley");
+  assert.equal(detail.goals[0].assist, "J. O'Brien");
 });

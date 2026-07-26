@@ -1,5 +1,30 @@
 import { normalizeTeamName } from "./domain.js";
 
+// API-Football returns some free text already HTML-escaped: "M. O&apos;Riley"
+// arrives with the entity baked into the string, not the apostrophe. Storing
+// that verbatim means the renderers escape it a second time and the reader ends
+// up looking at "M. O&amp;apos;Riley", which the browser then paints as the
+// literal "M. O&apos;Riley". Five current Premier League players hit this.
+//
+// The fix belongs here at the ingestion boundary rather than in the renderers:
+// the internal shape should hold real characters, so escaping stays the view
+// layer's single job and happens exactly once. Decoding "&amp;" last matters,
+// otherwise "&amp;lt;" would collapse two steps into "<" instead of "&lt;".
+const NAMED_ENTITIES = { "&apos;": "'", "&quot;": '"', "&lt;": "<", "&gt;": ">", "&nbsp;": " " };
+
+export function decodeEntities(value) {
+  if (typeof value !== "string" || !value.includes("&")) return value;
+  let out = value;
+  for (const [entity, char] of Object.entries(NAMED_ENTITIES)) out = out.split(entity).join(char);
+  out = out.replace(/&#(\d+);/g, (_, code) => safeCodePoint(Number(code)));
+  out = out.replace(/&#x([0-9a-f]+);/gi, (_, hex) => safeCodePoint(parseInt(hex, 16)));
+  return out.split("&amp;").join("&");
+}
+
+function safeCodePoint(code) {
+  return Number.isInteger(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "";
+}
+
 const STATUS = {
   TBD: "TIMED",
   NS: "TIMED",
@@ -44,7 +69,7 @@ export function mapApiFootballMatches(payload) {
     const penHome = numberOrNull(entry.score?.penalty?.home);
     const penAway = numberOrNull(entry.score?.penalty?.away);
     const hasPenalties = penHome !== null && penAway !== null;
-    const venue = entry.fixture?.venue?.name ?? null;
+    const venue = decodeEntities(entry.fixture?.venue?.name ?? null);
     const city = entry.fixture?.venue?.city ?? null;
 
     return {
@@ -201,9 +226,9 @@ function buildMatchDetail(summary, fixture, lineupsPayload, eventsPayload, playe
         type: goalType(event.detail),
         team,
         scorerId: event.player?.id ?? null,
-        scorer: event.player?.name ?? "",
+        scorer: decodeEntities(event.player?.name ?? ""),
         assistId: event.assist?.id ?? null,
-        assist: event.assist?.name ?? null,
+        assist: decodeEntities(event.assist?.name ?? null),
         home: homeGoals,
         away: awayGoals,
       });
@@ -224,7 +249,7 @@ function buildMatchDetail(summary, fixture, lineupsPayload, eventsPayload, playe
         minute: event.time?.elapsed ?? null,
         team,
         playerId,
-        player: event.player?.name ?? "",
+        player: decodeEntities(event.player?.name ?? ""),
         card,
       });
     } else if (eventType === "subst") {
@@ -232,9 +257,9 @@ function buildMatchDetail(summary, fixture, lineupsPayload, eventsPayload, playe
         minute: event.time?.elapsed ?? null,
         team,
         inId: event.assist?.id ?? null,
-        in: event.assist?.name ?? "",
+        in: decodeEntities(event.assist?.name ?? ""),
         outId: event.player?.id ?? null,
-        out: event.player?.name ?? "",
+        out: decodeEntities(event.player?.name ?? ""),
       });
     }
   }
@@ -245,7 +270,7 @@ function buildMatchDetail(summary, fixture, lineupsPayload, eventsPayload, playe
       name: normalizeTeamName(team?.name),
       crest: team?.logo ?? null,
       formation: lineup?.formation ?? null,
-      coach: lineup?.coach?.name ?? null,
+      coach: decodeEntities(lineup?.coach?.name ?? null),
       lineup: (lineup?.startXI ?? []).map((entry) => mapLineupPlayer(entry.player)),
       bench: (lineup?.substitutes ?? []).map((entry) => mapLineupPlayer(entry.player)),
     };
@@ -276,7 +301,7 @@ function buildMatchDetail(summary, fixture, lineupsPayload, eventsPayload, playe
     goals,
     cards,
     subs,
-    referee: fixture.fixture?.referee ?? null,
+    referee: decodeEntities(fixture.fixture?.referee ?? null),
     playerStats: mapPlayerStats(playersPayload, teamNames),
   };
 }
@@ -284,7 +309,7 @@ function buildMatchDetail(summary, fixture, lineupsPayload, eventsPayload, playe
 function mapLineupPlayer(player) {
   return {
     id: player?.id ?? null,
-    name: player?.name ?? "",
+    name: decodeEntities(player?.name ?? ""),
     pos: player?.pos ?? null,
     num: player?.number ?? null,
   };
@@ -296,7 +321,7 @@ function mapPlayerStats(payload, teamNames) {
       const stats = entry.statistics?.[0] ?? {};
       return {
         playerId: entry.player?.id ?? null,
-        player: entry.player?.name ?? "",
+        player: decodeEntities(entry.player?.name ?? ""),
         team: teamNames.get(team.team?.id) ?? normalizeTeamName(team.team?.name),
         minutes: stats.games?.minutes ?? 0,
         position: stats.games?.position ?? null,
