@@ -537,6 +537,7 @@ const PREF_LABELS = [
   ["fulltime", "Full-time"],
   ["red", "Red cards"],
   ["analysis", "Match analysis ready"],
+  ["draft", "Draft reminders"],
 ];
 
 // Signed-out: the design's sign-in card. GIS renders the real Google button into

@@ -65,6 +65,7 @@ import {
   validateAcquisition,
 } from "../src/fantasyWaivers.js";
 import { lockedPlayerIds, playerLockState } from "../src/fantasyLocks.js";
+import { dueDraftReminder, validateDraftSchedule } from "../src/fantasyScheduling.js";
 
 export { FantasyDraftRoom } from "./draftRoom.js";
 
@@ -201,6 +202,13 @@ export default {
     if (fantasyDraftStartRoute && request.method === "POST") {
       return handleFantasyDraftStart(request, env, Number(fantasyDraftStartRoute[1]), cors);
     }
+    const fantasyDraftScheduleRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/draft\/schedule$/);
+    if (fantasyDraftScheduleRoute && request.method === "POST") {
+      return handleFantasyDraftScheduleSet(request, env, Number(fantasyDraftScheduleRoute[1]), cors);
+    }
+    if (fantasyDraftScheduleRoute && request.method === "DELETE") {
+      return handleFantasyDraftScheduleClear(request, env, Number(fantasyDraftScheduleRoute[1]), cors);
+    }
     const fantasyLineupRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/lineup$/);
     if (fantasyLineupRoute && request.method === "GET") {
       return handleFantasyLineupGet(request, env, Number(fantasyLineupRoute[1]), cors);
@@ -313,6 +321,7 @@ export default {
         await runScheduledNotifications(env);
         await runScheduledFantasyScoring(env);
         await runScheduledWaiverRuns(env);
+        await runScheduledDraftReminders(env);
       })(),
     );
   },
@@ -666,7 +675,10 @@ async function handleFollowToggle(request, env, cors) {
 }
 
 // Notification preferences, stored now so Phase 3 (push) is pure delivery.
-const PREF_KEYS = new Set(["goals", "kickoff", "fulltime", "red", "analysis"]);
+// "draft" (draft-day reminders, Phase 4.5) defaults true - see DEFAULT_PREFS
+// and publicUser's merge below for why an account created before this key
+// existed still reads it as on rather than off.
+const PREF_KEYS = new Set(["goals", "kickoff", "fulltime", "red", "analysis", "draft"]);
 
 async function handlePrefs(request, env, cors) {
   if (!env.DB) return json({ error: "accounts not configured" }, 501, cors);
@@ -738,7 +750,14 @@ async function userFollows(env, userId) {
 }
 
 function publicUser(user) {
-  return { email: user.email, name: user.name, avatar: user.avatar, prefs: safePrefs(user.prefs) };
+  // DEFAULT_PREFS underneath whatever is actually stored: an account created
+  // before a given pref key existed (e.g. "draft", added after every other
+  // key) has no entry for it in its stored JSON at all, and the client-facing
+  // toggle (renderSignedIn in views.js) reads user.prefs[key] directly with
+  // no fallback of its own, so a missing key must resolve to the DEFAULT_PREFS
+  // value here rather than reading as off. Computed at read time, same
+  // discipline as the rest of fantasy's inheritance rules - never backfilled.
+  return { email: user.email, name: user.name, avatar: user.avatar, prefs: { ...DEFAULT_PREFS, ...safePrefs(user.prefs) } };
 }
 
 function safePrefs(raw) {
@@ -910,7 +929,7 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
       .first();
     if (!membership) return json({ error: "not a member" }, 403, cors);
 
-    const [members, picks, roster, currentGameweek] = await Promise.all([
+    const [members, picks, roster, currentGameweek, scheduleRow] = await Promise.all([
       env.DB.prepare(
         `SELECT m.user_id, m.draft_position, u.name, u.email FROM fantasy_league_members m
          JOIN users u ON u.id = m.user_id
@@ -927,6 +946,9 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
         .all(),
       fantasyRosterFor(env, leagueId, user.id),
       currentFantasyGameweek(env),
+      env.DB.prepare(`SELECT scheduled_at, created_by FROM fantasy_draft_schedule WHERE league_id = ?1`)
+        .bind(leagueId)
+        .first(),
     ]);
 
     return json(
@@ -956,12 +978,48 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
           player: { id: row.player_id, name: row.name, team: row.team, position: row.position },
         })),
         roster,
+        // null means "not scheduled yet" (renderFantasyLobby's pre-existing
+        // manual-start-only state), never an empty object.
+        schedule: scheduleRow ? { scheduledAt: scheduleRow.scheduled_at, createdBy: scheduleRow.created_by } : null,
       },
       200,
       cors,
     );
   } catch {
     return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// Shared by the manual route below and the scheduled cron auto-start
+// (runScheduledDraftReminders/autoStartOrNotifyLeague further down): assigns
+// the snake draft position order, flips the league to "drafting", and wakes
+// the FantasyDraftRoom Durable Object so the first pick clock starts
+// immediately rather than waiting for whichever manager opens the draft room
+// first. Factored out so the manual "start early/start unscheduled" path and
+// the scheduled auto-start path can never drift apart - callers are
+// responsible for their own authorization/status/member-count checks first,
+// this function only does the actual starting.
+async function startFantasyDraft(env, leagueId, memberIds) {
+  await upsertFantasyPlayerPool(env);
+
+  const order = shuffle(memberIds);
+  await env.DB.batch([
+    ...order.map((userId, index) =>
+      env.DB.prepare(
+        `UPDATE fantasy_league_members SET draft_position = ?1 WHERE league_id = ?2 AND user_id = ?3`,
+      ).bind(index + 1, leagueId, userId),
+    ),
+    env.DB.prepare(`UPDATE fantasy_leagues SET draft_status = 'drafting' WHERE id = ?1`).bind(leagueId),
+  ]);
+
+  try {
+    const id = env.DRAFT_ROOM.idFromName(String(leagueId));
+    await env.DRAFT_ROOM.get(id).fetch("https://draft-room/start", {
+      method: "POST",
+      headers: { "X-Draft-League-Id": String(leagueId) },
+    });
+  } catch {
+    // the DO self-hydrates on the first WebSocket join even if this wake fails
   }
 }
 
@@ -987,31 +1045,79 @@ async function handleFantasyDraftStart(request, env, leagueId, cors) {
     const memberIds = (members.results ?? []).map((row) => row.user_id);
     if (memberIds.length < 2) return json({ error: "need at least 2 members" }, 400, cors);
 
-    await upsertFantasyPlayerPool(env);
-
-    const order = shuffle(memberIds);
-    await env.DB.batch([
-      ...order.map((userId, index) =>
-        env.DB.prepare(
-          `UPDATE fantasy_league_members SET draft_position = ?1 WHERE league_id = ?2 AND user_id = ?3`,
-        ).bind(index + 1, leagueId, userId),
-      ),
-      env.DB.prepare(`UPDATE fantasy_leagues SET draft_status = 'drafting' WHERE id = ?1`).bind(leagueId),
-    ]);
-
-    // Wake the DO immediately so the first pick clock starts now, rather than
-    // waiting for whichever manager opens the draft room first.
-    try {
-      const id = env.DRAFT_ROOM.idFromName(String(leagueId));
-      await env.DRAFT_ROOM.get(id).fetch("https://draft-room/start", {
-        method: "POST",
-        headers: { "X-Draft-League-Id": String(leagueId) },
-      });
-    } catch {
-      // the DO self-hydrates on the first WebSocket join even if this wake fails
-    }
+    await startFantasyDraft(env, leagueId, memberIds);
 
     return json({ league: await fantasyLeagueSummary(env, leagueId) }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// POST /fantasy/league/:id/draft/schedule: commissioner-only, league must
+// still be pending (a started/complete draft has nothing left to schedule).
+// Upserts fantasy_draft_schedule and wipes any reminder ledger rows for this
+// league (see fantasy_draft_reminders' own comment in schema.sql): reminders
+// already sent for an OLD scheduled time must never suppress the same kind
+// firing again for a rescheduled one.
+async function handleFantasyDraftScheduleSet(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "bad body" }, 400, cors);
+  }
+
+  try {
+    const league = await env.DB.prepare(`SELECT commissioner_user_id, draft_status FROM fantasy_leagues WHERE id = ?1`)
+      .bind(leagueId)
+      .first();
+    if (!league) return json({ error: "unknown league" }, 404, cors);
+    if (league.commissioner_user_id !== user.id) return json({ error: "commissioner only" }, 403, cors);
+    if (league.draft_status !== "pending") return json({ error: "draft already started" }, 400, cors);
+
+    const validation = validateDraftSchedule(body?.scheduledAt);
+    if (!validation.ok) return json({ error: validation.error }, 400, cors);
+
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO fantasy_draft_schedule (league_id, scheduled_at, created_by, updated_at) VALUES (?1, ?2, ?3, datetime('now'))
+         ON CONFLICT(league_id) DO UPDATE SET scheduled_at = ?2, created_by = ?3, updated_at = datetime('now')`,
+      ).bind(leagueId, validation.scheduledAtIso, user.id),
+      env.DB.prepare(`DELETE FROM fantasy_draft_reminders WHERE league_id = ?1`).bind(leagueId),
+    ]);
+
+    return json({ schedule: { scheduledAt: validation.scheduledAtIso } }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// DELETE /fantasy/league/:id/draft/schedule: commissioner-only, league must
+// still be pending. Clears both the schedule and its reminder ledger, so a
+// later fresh schedule for this league starts with a clean slate.
+async function handleFantasyDraftScheduleClear(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const league = await env.DB.prepare(`SELECT commissioner_user_id, draft_status FROM fantasy_leagues WHERE id = ?1`)
+      .bind(leagueId)
+      .first();
+    if (!league) return json({ error: "unknown league" }, 404, cors);
+    if (league.commissioner_user_id !== user.id) return json({ error: "commissioner only" }, 403, cors);
+    if (league.draft_status !== "pending") return json({ error: "draft already started" }, 400, cors);
+
+    await env.DB.batch([
+      env.DB.prepare(`DELETE FROM fantasy_draft_schedule WHERE league_id = ?1`).bind(leagueId),
+      env.DB.prepare(`DELETE FROM fantasy_draft_reminders WHERE league_id = ?1`).bind(leagueId),
+    ]);
+
+    return json({ schedule: null }, 200, cors);
   } catch {
     return json({ error: "fantasy unavailable" }, 502, cors);
   }
@@ -2362,6 +2468,157 @@ async function runLeagueWaiverRun(env, leagueId, settledGameweek, newCurrentGame
   }
 }
 
+// -- Fantasy draft scheduling and reminders -----------------------------------
+// A commissioner can schedule a still-pending league's draft for a future UTC
+// instant (fantasy_draft_schedule; see schema.sql). This pass fires three
+// one-time pushes per league (24h before, 1h before, at the instant itself)
+// and auto-starts the draft at that instant through startFantasyDraft, the
+// exact same helper the manual /draft/start route uses above, so the two
+// paths can never drift apart. dueDraftReminder (src/fantasyScheduling.js) is
+// the pure decision of which reminder (if any) is due right now; this
+// function is just the D1/push wiring around it, mirroring how
+// runScheduledWaiverRuns is a thin shell around resolveWaiverRun.
+//
+// Sequential with the other cron passes and per-league try/catch, same
+// convention as runScheduledFantasyScoring/runScheduledWaiverRuns: one bad
+// league's schedule must never block the rest, and this pass shares no
+// working state with the others (it does not even need the live feed).
+async function runScheduledDraftReminders(env) {
+  if (!env.DB) return;
+  const schedules = await env.DB.prepare(
+    `SELECT s.league_id, s.scheduled_at, l.commissioner_user_id FROM fantasy_draft_schedule s
+     JOIN fantasy_leagues l ON l.id = s.league_id
+     WHERE l.draft_status = 'pending'`,
+  ).all();
+  const now = Date.now();
+  for (const row of schedules.results ?? []) {
+    try {
+      await processLeagueDraftSchedule(env, row, now);
+    } catch {
+      // one league's schedule failing must not block the others; the next
+      // tick retries it (dueDraftReminder is re-evaluated fresh every time,
+      // nothing here is left half-applied)
+    }
+  }
+}
+
+async function processLeagueDraftSchedule(env, row, now) {
+  const sentRows = await env.DB.prepare(`SELECT kind FROM fantasy_draft_reminders WHERE league_id = ?1`)
+    .bind(row.league_id)
+    .all();
+  const sentKinds = new Set((sentRows.results ?? []).map((r) => r.kind));
+
+  const due = dueDraftReminder({ scheduledAt: row.scheduled_at, now, sentKinds });
+  if (!due) return;
+
+  if (due === "start") {
+    await autoStartOrNotifyLeague(env, row);
+  } else {
+    await sendDraftReminderPush(env, row.league_id, due);
+  }
+
+  // Marked sent AFTER the work above, the same "check, act, then mark"
+  // discipline the analysis pass uses for its own one-time "analysis ready"
+  // push (see analyseCompetition's analysis:notified key): an overlapping
+  // cron tick racing this one to the same row is a duplicate push at worst,
+  // never a crash, and nothing here touches roster/money state the way the
+  // waiver run's stricter insert-first transaction has to protect.
+  await env.DB.prepare(`INSERT OR IGNORE INTO fantasy_draft_reminders (league_id, kind) VALUES (?1, ?2)`)
+    .bind(row.league_id, due)
+    .run();
+}
+
+// "start" is due: either actually start the draft, or - if it safely cannot -
+// tell the commissioner why instead of silently doing nothing. Guarded on
+// BOTH the league still being pending (a manual early start between this
+// pass's read and this point would otherwise double-start it) and at least 2
+// members (an empty or single-manager league cannot snake-draft at all).
+async function autoStartOrNotifyLeague(env, row) {
+  const leagueId = row.league_id;
+
+  const league = await env.DB.prepare(`SELECT draft_status FROM fantasy_leagues WHERE id = ?1`).bind(leagueId).first();
+  if (!league || league.draft_status !== "pending") return; // already started manually; nothing to do
+
+  if (!env.DRAFT_ROOM) {
+    await sendDraftPush(env, [row.commissioner_user_id], {
+      leagueId,
+      tag: "cannot-start",
+      title: "Draft could not start automatically",
+      body: "The draft room isn't available on this deployment yet. Start the draft manually once it is.",
+    });
+    return;
+  }
+
+  const members = await env.DB.prepare(`SELECT user_id FROM fantasy_league_members WHERE league_id = ?1`)
+    .bind(leagueId)
+    .all();
+  const memberIds = (members.results ?? []).map((r) => r.user_id);
+
+  if (memberIds.length < 2) {
+    await sendDraftPush(env, [row.commissioner_user_id], {
+      leagueId,
+      tag: "cannot-start",
+      title: "Draft could not start automatically",
+      body: "Your league needs at least 2 managers before the draft can start. Invite more, then start it manually.",
+    });
+    return;
+  }
+
+  await startFantasyDraft(env, leagueId, memberIds);
+  await sendDraftPush(env, memberIds, {
+    leagueId,
+    tag: "start",
+    title: "Your draft is starting now",
+    body: "Head to the draft room, picks are on the clock.",
+  });
+}
+
+async function sendDraftReminderPush(env, leagueId, kind) {
+  const members = await env.DB.prepare(`SELECT user_id FROM fantasy_league_members WHERE league_id = ?1`)
+    .bind(leagueId)
+    .all();
+  const memberIds = (members.results ?? []).map((r) => r.user_id);
+  const copy =
+    kind === "24h"
+      ? { title: "Your draft is tomorrow", body: "Your fantasy draft kicks off in about 24 hours. Get your shortlist ready." }
+      : { title: "Your draft starts in an hour", body: "The draft room opens in about an hour. Don't miss your picks." };
+  await sendDraftPush(env, memberIds, { ...copy, leagueId, tag: kind });
+}
+
+// Draft-specific push send: targets league members directly by user id
+// (unlike sendMatchEvents, which targets the follows table), gated on each
+// recipient's own "draft" preference the same way sendMatchEvents gates on
+// its own pref keys - defaulting to true (DEFAULT_PREFS.draft) since joining
+// a league is itself an active opt-in, unlike a followed club's optional
+// match alerts.
+async function sendDraftPush(env, memberIds, { title, body, leagueId, tag }) {
+  if (!pushConfigured(env) || !memberIds?.length) return;
+  const placeholders = memberIds.map((_, i) => `?${i + 1}`).join(",");
+  const subs = await env.DB.prepare(
+    `SELECT s.endpoint, s.p256dh, s.auth, u.prefs FROM push_subscriptions s
+     JOIN users u ON u.id = s.user_id
+     WHERE s.user_id IN (${placeholders})`,
+  )
+    .bind(...memberIds)
+    .all();
+  const recipients = (subs.results ?? []).filter((sub) => {
+    const prefs = safePrefs(sub.prefs);
+    return prefs.draft ?? DEFAULT_PREFS.draft;
+  });
+  if (!recipients.length) return;
+  const payload = {
+    title,
+    body,
+    // No per-league deep link exists yet (the Fantasy section has no
+    // league-id route parameter to land on); the section itself is still a
+    // useful landing spot, since a signed-in manager only has their own
+    // leagues to open from there.
+    url: `${env.SITE_ORIGIN ?? ""}/#fantasy`,
+    tag: `draft-${leagueId}-${tag}`,
+  };
+  await Promise.all(recipients.map((sub) => sendPush(env, sub, payload)));
+}
+
 // -- Web Push (Phase 3) --------------------------------------------------------
 // Subscriptions live in D1, one row per browser. The minute cron diffs each
 // followed-relevant match against notify_state and fans out encrypted pushes
@@ -2370,7 +2627,10 @@ async function runLeagueWaiverRun(env, leagueId, settledGameweek, newCurrentGame
 // endpoint (404/410 from the push service) is pruned on send.
 
 const NOTIFY_WINDOW_MS = 3 * 60 * 60 * 1000; // matches within this window of kickoff/full-time get diffed
-const DEFAULT_PREFS = { goals: true, kickoff: true, fulltime: true, red: false, analysis: false };
+// "draft" defaults true, unlike every match-alert key here: joining a league
+// is itself an active opt-in (see PREF_KEYS' comment and schema.sql), so a
+// manager should hear about their own draft unless they turn it off.
+const DEFAULT_PREFS = { goals: true, kickoff: true, fulltime: true, red: false, analysis: false, draft: true };
 
 function pushConfigured(env) {
   return Boolean(env.DB && env.VAPID_PRIVATE_JWK && env.VAPID_PUBLIC_KEY);

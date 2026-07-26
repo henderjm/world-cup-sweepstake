@@ -9,7 +9,13 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT,
   avatar TEXT,
   -- Notification preferences, stored now so Phase 3 (push) is pure delivery.
-  prefs TEXT NOT NULL DEFAULT '{"goals":true,"kickoff":true,"fulltime":true,"red":false,"analysis":false}',
+  -- "draft" defaults true (unlike the optional match alerts): joining a
+  -- league is itself an active opt-in, so a manager should hear about their
+  -- own draft unless they turn it off. An account created before this key
+  -- existed has no "draft" entry in its stored JSON at all; publicUser()
+  -- (worker.js) merges DEFAULT_PREFS underneath whatever is stored so a
+  -- missing key still reads as true rather than requiring a backfill.
+  prefs TEXT NOT NULL DEFAULT '{"goals":true,"kickoff":true,"fulltime":true,"red":false,"analysis":false,"draft":true}',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -186,6 +192,33 @@ CREATE TABLE IF NOT EXISTS fantasy_h2h_fixtures (
   PRIMARY KEY (league_id, gameweek, home_user_id)
 );
 CREATE INDEX IF NOT EXISTS fantasy_h2h_fixtures_away ON fantasy_h2h_fixtures(league_id, gameweek, away_user_id);
+
+-- Draft scheduling: a commissioner picks a future UTC instant for a still-
+-- pending league's draft to start. Absence of a row means "not scheduled
+-- yet", the pre-existing behaviour (click Start Draft, it begins now), which
+-- must keep working - scheduling is additive, never a replacement. One row
+-- per league (PRIMARY KEY league_id), upserted on reschedule; deleted when
+-- the commissioner clears it or once the draft actually starts.
+CREATE TABLE IF NOT EXISTS fantasy_draft_schedule (
+  league_id INTEGER PRIMARY KEY REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  scheduled_at TEXT NOT NULL, -- ISO 8601 UTC
+  created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Dedup ledger for the three one-time draft reminders ("24h", "1h", "start"),
+-- the same "insert once, check before sending" discipline as notify_state
+-- and fantasy_scored_matches: a minute-by-minute cron must fire each kind
+-- exactly once per scheduled instant, never on every tick. A reschedule (see
+-- worker.js's schedule route) clears every row for that league, since
+-- reminders already sent for the OLD time must not suppress the same kind
+-- firing again for the new one.
+CREATE TABLE IF NOT EXISTS fantasy_draft_reminders (
+  league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL, -- 24h | 1h | start
+  sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (league_id, kind)
+);
 
 -- Free-agency waiver claims (Phase 4.4). `priority` is the claimant's OWN
 -- ranking among their own claims (1 = try first), not the league-wide waiver

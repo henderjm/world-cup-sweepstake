@@ -326,6 +326,85 @@ test("renderFantasyLobby also treats a genuinely empty (non-unavailable) pool as
   assert.match(html, /Player pool not available yet/);
 });
 
+// -- renderFantasyLobby: draft scheduling ----------------------------------------
+
+test("renderFantasyLobby offers a commissioner a schedule picker when nothing is scheduled yet", () => {
+  const html = renderFantasyLobby(lobbyLeague({ isCommissioner: true }), lobbyMembers, {
+    playerPool: null,
+    filter: { position: "All", search: "" },
+  });
+  assert.match(html, /Schedule the draft/);
+  assert.match(html, /data-fantasy-schedule-input/);
+  assert.match(html, /data-fantasy-schedule-save/);
+});
+
+test("renderFantasyLobby tells a non-commissioner nothing is scheduled yet, with no picker", () => {
+  const html = renderFantasyLobby(lobbyLeague({ isCommissioner: false }), lobbyMembers, {
+    playerPool: null,
+    filter: { position: "All", search: "" },
+  });
+  assert.match(html, /hasn't scheduled the draft yet/);
+  assert.doesNotMatch(html, /data-fantasy-schedule-input/);
+});
+
+test("renderFantasyLobby shows the scheduled time, a countdown and reschedule/clear controls for the commissioner", () => {
+  const scheduledAt = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
+  const html = renderFantasyLobby(lobbyLeague({ isCommissioner: true }), lobbyMembers, {
+    playerPool: null,
+    filter: { position: "All", search: "" },
+    schedule: { scheduledAt },
+  });
+  assert.match(html, /Draft scheduled/);
+  assert.match(html, new RegExp(`data-scheduled-at="${scheduledAt}"`));
+  assert.match(html, /data-fantasy-schedule-save/);
+  assert.match(html, /Reschedule/);
+  assert.match(html, /data-fantasy-schedule-clear/);
+});
+
+test("renderFantasyLobby shows a non-commissioner the scheduled time read-only, plus the auto-pick warning, no controls", () => {
+  const scheduledAt = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
+  const html = renderFantasyLobby(lobbyLeague({ isCommissioner: false }), lobbyMembers, {
+    playerPool: null,
+    filter: { position: "All", search: "" },
+    schedule: { scheduledAt },
+  });
+  assert.match(html, /Draft scheduled/);
+  assert.match(html, /auto-picked from the players still available/);
+  assert.doesNotMatch(html, /data-fantasy-schedule-save/);
+  assert.doesNotMatch(html, /data-fantasy-schedule-clear/);
+});
+
+test("renderFantasyLobby marks a schedule within the hour as soon", () => {
+  const scheduledAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const html = renderFantasyLobby(lobbyLeague({ isCommissioner: true }), lobbyMembers, {
+    playerPool: null,
+    filter: { position: "All", search: "" },
+    schedule: { scheduledAt },
+  });
+  assert.match(html, /class="card fantasy-schedule is-soon"/);
+});
+
+test("renderFantasyLobby surfaces a schedule error message, escaped", () => {
+  const html = renderFantasyLobby(lobbyLeague({ isCommissioner: true }), lobbyMembers, {
+    playerPool: null,
+    filter: { position: "All", search: "" },
+    scheduleError: `bad "date" <here>`,
+  });
+  assert.match(html, /bad &quot;date&quot; &lt;here&gt;/);
+});
+
+test("renderFantasyLobby disables schedule controls while a save/clear is in flight", () => {
+  const scheduledAt = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
+  const html = renderFantasyLobby(lobbyLeague({ isCommissioner: true }), lobbyMembers, {
+    playerPool: null,
+    filter: { position: "All", search: "" },
+    schedule: { scheduledAt },
+    scheduleBusy: true,
+  });
+  assert.match(html, /data-fantasy-schedule-save disabled/);
+  assert.match(html, /data-fantasy-schedule-clear disabled/);
+});
+
 // -- League header + sub-tabs ----------------------------------------------------
 
 test("renderFantasyLeagueHeader shows the purple eyebrow, the active sub-tab's title, and the chip row", () => {

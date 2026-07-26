@@ -58,11 +58,14 @@ import {
   loadStandings as apiLoadStandings,
   loadWaivers as apiLoadWaivers,
   saveWaiverSettings as apiSaveWaiverSettings,
+  scheduleDraft as apiScheduleDraft,
   setLineup as apiSetLineup,
   startDraft as apiStartDraft,
   submitWaiverClaim as apiSubmitWaiverClaim,
+  unscheduleDraft as apiUnscheduleDraft,
 } from "./fantasyApi.js";
 import { formatCountdown, openDraftRoom, reduceDraftMessage, suggestedPick, swapLineup } from "./fantasyDraft.js";
+import { formatScheduleCountdown, localInputValueToUtcIso } from "./fantasyScheduling.js";
 import {
   renderFantasyComplete,
   renderFantasyDraftRoom,
@@ -169,6 +172,8 @@ function initialFantasyState() {
     waiverFlow: null, // working copy while adding/claiming: { addPlayer, path, dropPlayerId, busy, error }
     waiverSettingsBusy: false,
     waiverSettingsError: "",
+    scheduleBusy: false, // draft-schedule save/clear in flight
+    scheduleError: "",
     createBusy: false,
     createError: "",
     joinBusy: false,
@@ -527,6 +532,11 @@ function destroyPaperRunMount() {
 
 function renderFantasy() {
   const f = state.fantasy;
+  // Stopped unconditionally on every render and only restarted from the
+  // pending-lobby branch below, so navigating away from a league with a
+  // schedule (closing it, switching sub-tabs once the draft starts, signing
+  // out) can never leave a stray interval ticking against a detached DOM node.
+  stopFantasyScheduleCountdownTimer();
 
   if (!isSignedIn()) {
     elements.layout.innerHTML = renderFantasySignedOut();
@@ -569,7 +579,7 @@ function renderFantasy() {
     return; // openFantasyLeague already has the fetch in flight
   }
 
-  const { league, members } = f.league;
+  const { league, members, schedule } = f.league;
   const subTab = f.subTab ?? "draftroom";
 
   if (league.draftStatus === "pending") {
@@ -587,8 +597,15 @@ function renderFantasy() {
             ? renderFantasyStandingsBody()
             : subTab === "waivers"
               ? renderFantasyWaiversBody(league)
-              : renderFantasyLobby(league, members, { playerPool: f.playerPool, filter: f.filter });
+              : renderFantasyLobby(league, members, {
+                  playerPool: f.playerPool,
+                  filter: f.filter,
+                  schedule,
+                  scheduleBusy: f.scheduleBusy,
+                  scheduleError: f.scheduleError,
+                });
     elements.layout.innerHTML = renderFantasyLeagueShell(league, members, subTab, body);
+    if (schedule?.scheduledAt) startFantasyScheduleCountdownTimer();
     return;
   }
 
@@ -1127,6 +1144,8 @@ async function openFantasyLeague(id) {
   f.waiverFlow = null;
   f.waiverSettingsBusy = false;
   f.waiverSettingsError = "";
+  f.scheduleBusy = false;
+  f.scheduleError = "";
   renderLayout();
   try {
     const detail = await apiLoadLeague(id);
@@ -1221,6 +1240,36 @@ function updateFantasyClockDisplay(remainingMs) {
   if (el) el.textContent = formatCountdown(remainingMs);
 }
 
+// A scheduled draft's countdown ticks in place (like the pick clock above)
+// rather than forcing a full renderLayout every 30 seconds: the schedule can
+// be days away, so a full re-render on a fast cadence would be pure waste,
+// but the number on screen should still visibly count down while a manager
+// sits on the lobby. data-scheduled-at carries the raw ISO instant so this
+// timer never needs its own copy of state.
+let fantasyScheduleCountdownTimer = null;
+
+function startFantasyScheduleCountdownTimer() {
+  stopFantasyScheduleCountdownTimer();
+  updateFantasyScheduleCountdownDisplay();
+  fantasyScheduleCountdownTimer = window.setInterval(updateFantasyScheduleCountdownDisplay, 30000);
+}
+
+function stopFantasyScheduleCountdownTimer() {
+  if (fantasyScheduleCountdownTimer) window.clearInterval(fantasyScheduleCountdownTimer);
+  fantasyScheduleCountdownTimer = null;
+}
+
+function updateFantasyScheduleCountdownDisplay() {
+  const el = elements.layout.querySelector("[data-fantasy-schedule-countdown]");
+  if (!el) {
+    stopFantasyScheduleCountdownTimer(); // the card left the DOM; nothing left to tick
+    return;
+  }
+  const iso = el.dataset.scheduledAt;
+  if (!iso) return;
+  el.textContent = formatScheduleCountdown(new Date(iso).getTime() - Date.now());
+}
+
 // Legal-pick context for the player pool list: the live turn/roster state
 // while a draft room socket is open, or an inert read-only context (no turn,
 // nobody drafted) for the lobby's pre-draft scouting list, which reuses the
@@ -1254,6 +1303,51 @@ async function startFantasyDraft(id) {
   await openFantasyLeague(id);
 }
 
+// Reads the lobby's datetime-local input (local time), converts it to the
+// UTC ISO the schedule route stores, and reloads the league detail so the
+// lobby immediately shows the confirmed schedule (or a plain-English error
+// if the Worker rejected it, e.g. a past date or one too far out - see
+// src/fantasyScheduling.js's validateDraftSchedule).
+async function saveFantasyLeagueSchedule() {
+  const f = state.fantasy;
+  const input = elements.layout.querySelector("[data-fantasy-schedule-input]");
+  const localValue = input?.value ?? "";
+  const scheduledAtIso = localInputValueToUtcIso(localValue);
+  if (!scheduledAtIso) {
+    f.scheduleError = "Pick a date and time first.";
+    renderLayout();
+    return;
+  }
+  f.scheduleBusy = true;
+  f.scheduleError = "";
+  renderLayout();
+  try {
+    await apiScheduleDraft(f.activeLeagueId, scheduledAtIso);
+    f.scheduleBusy = false;
+    await openFantasyLeague(f.activeLeagueId);
+  } catch (error) {
+    f.scheduleBusy = false;
+    f.scheduleError = error.message || "Couldn't schedule the draft.";
+    renderLayout();
+  }
+}
+
+async function clearFantasyLeagueSchedule() {
+  const f = state.fantasy;
+  f.scheduleBusy = true;
+  f.scheduleError = "";
+  renderLayout();
+  try {
+    await apiUnscheduleDraft(f.activeLeagueId);
+    f.scheduleBusy = false;
+    await openFantasyLeague(f.activeLeagueId);
+  } catch (error) {
+    f.scheduleBusy = false;
+    f.scheduleError = error.message || "Couldn't clear the schedule.";
+    renderLayout();
+  }
+}
+
 function closeFantasyLeague() {
   teardownFantasyDraftRoom();
   const f = state.fantasy;
@@ -1281,6 +1375,8 @@ function closeFantasyLeague() {
   f.waiverFlow = null;
   f.waiverSettingsBusy = false;
   f.waiverSettingsError = "";
+  f.scheduleBusy = false;
+  f.scheduleError = "";
   renderLayout();
 }
 
@@ -1569,6 +1665,16 @@ function wireLayoutControls() {
         state.fantasy.loadError = error.message || "Couldn't start the draft.";
         renderLayout();
       });
+      return;
+    }
+    const fantasyScheduleSaveButton = event.target.closest("[data-fantasy-schedule-save]");
+    if (fantasyScheduleSaveButton && !fantasyScheduleSaveButton.disabled) {
+      saveFantasyLeagueSchedule();
+      return;
+    }
+    const fantasyScheduleClearButton = event.target.closest("[data-fantasy-schedule-clear]");
+    if (fantasyScheduleClearButton && !fantasyScheduleClearButton.disabled) {
+      clearFantasyLeagueSchedule();
       return;
     }
     const fantasyPositionButton = event.target.closest("[data-fantasy-position-filter]");

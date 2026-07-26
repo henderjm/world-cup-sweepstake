@@ -27,6 +27,12 @@ import {
   waiverModeExplanation,
   waiverModeLabel,
 } from "./fantasyWaiversView.js";
+import {
+  formatLocalSchedule,
+  formatScheduleCountdown,
+  isDraftSoon,
+  isoToLocalInputValue,
+} from "./fantasyScheduling.js";
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"]/g, (char) => ({
@@ -399,7 +405,11 @@ function renderScoutingSection(playerPool, filter) {
     ${renderFantasyPlayerPool(playerPool.players, filter, { isMyTurn: false, myRoster: [], draftedIds: new Set() })}`;
 }
 
-export function renderFantasyLobby(league, members, { playerPool, filter } = {}) {
+export function renderFantasyLobby(
+  league,
+  members,
+  { playerPool, filter, schedule, scheduleBusy = false, scheduleError = "" } = {},
+) {
   const sorted = [...members].sort(
     (a, b) => (a.draftPosition ?? 999) - (b.draftPosition ?? 999) || a.name.localeCompare(b.name),
   );
@@ -431,8 +441,59 @@ export function renderFantasyLobby(league, members, { playerPool, filter } = {})
       </div>
       <p class="note">Share this code so friends can join before the draft starts.</p>
     </section>
+    ${renderFantasyScheduleCard(league, schedule, { scheduleBusy, scheduleError })}
     <section class="card fantasy-start">${startControl}</section>
     ${renderScoutingSection(playerPool, filter ?? { position: "All", club: "All", search: "" })}`;
+}
+
+// Draft scheduling card: a commissioner can pick/reschedule/clear a start
+// time while the draft is still pending; everyone else sees the same time
+// read-only, converted to their own local timezone (the stored value is
+// always UTC - see src/fantasyScheduling.js), plus a countdown that
+// app.js's updateFantasyScheduleCountdownDisplay keeps ticking without a
+// full re-render (data-fantasy-schedule-countdown carries the raw ISO value
+// for that timer to recompute from).
+function renderFantasyScheduleCard(league, schedule, { scheduleBusy, scheduleError }) {
+  const errorLine = scheduleError ? `<p class="fantasy-form__error">${esc(scheduleError)}</p>` : "";
+
+  if (schedule?.scheduledAt) {
+    const remainingMs = new Date(schedule.scheduledAt).getTime() - Date.now();
+    const soon = isDraftSoon(remainingMs);
+    const commissionerControls = league.isCommissioner
+      ? `<div class="fantasy-schedule__form">
+          <input type="datetime-local" class="fantasy-schedule__input" data-fantasy-schedule-input value="${esc(isoToLocalInputValue(schedule.scheduledAt))}" />
+          <button class="btn" type="button" data-fantasy-schedule-save ${scheduleBusy ? "disabled" : ""}>Reschedule</button>
+          <button class="seg" type="button" data-fantasy-schedule-clear ${scheduleBusy ? "disabled" : ""}>Clear</button>
+        </div>`
+      : `<p class="note">If you miss it, your squad will be auto-picked from the players still available.</p>`;
+    return `
+    <section class="card fantasy-schedule ${soon ? "is-soon" : ""}">
+      <h3 class="card__title">Draft scheduled</h3>
+      <p class="fantasy-schedule__when">${esc(formatLocalSchedule(schedule.scheduledAt))} <span class="note--dim">(your local time)</span></p>
+      <p class="fantasy-schedule__countdown" data-fantasy-schedule-countdown data-scheduled-at="${esc(schedule.scheduledAt)}">${esc(formatScheduleCountdown(remainingMs))}</p>
+      ${commissionerControls}
+      ${errorLine}
+    </section>`;
+  }
+
+  if (!league.isCommissioner) {
+    return `
+    <section class="card fantasy-schedule">
+      <h3 class="card__title">Draft schedule</h3>
+      <p class="note">The commissioner hasn't scheduled the draft yet.</p>
+    </section>`;
+  }
+
+  return `
+    <section class="card fantasy-schedule">
+      <h3 class="card__title">Schedule the draft</h3>
+      <p class="note">Pick a date and time so everyone shows up, instead of drafting the moment you click Start.</p>
+      <div class="fantasy-schedule__form">
+        <input type="datetime-local" class="fantasy-schedule__input" data-fantasy-schedule-input />
+        <button class="btn btn--primary" type="button" data-fantasy-schedule-save ${scheduleBusy ? "disabled" : ""}>Schedule draft</button>
+      </div>
+      ${errorLine}
+    </section>`;
 }
 
 // -- Live draft room (draftStatus: drafting) ------------------------------------

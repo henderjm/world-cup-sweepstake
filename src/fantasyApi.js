@@ -66,6 +66,28 @@ export async function startDraft(id) {
   return (await api(`/fantasy/league/${id}/draft/start`, { method: "POST" })).league;
 }
 
+// Commissioner-only: schedules a still-pending league's draft for a future
+// UTC instant. `scheduledAtIso` must already be a UTC ISO 8601 string (see
+// src/fantasyScheduling.js's localInputValueToUtcIso for converting a
+// datetime-local input's value before calling this). Returns { scheduledAt }.
+// Throws with error.status 400 for a bad/past/too-far-out date, 403 for a
+// non-commissioner caller, 400 if the draft has already started.
+export async function scheduleDraft(leagueId, scheduledAtIso) {
+  return (
+    await api(`/fantasy/league/${leagueId}/draft/schedule`, {
+      method: "POST",
+      body: JSON.stringify({ scheduledAt: scheduledAtIso }),
+    })
+  ).schedule;
+}
+
+// Commissioner-only: clears a still-pending league's schedule, reverting to
+// the pre-existing manual-start-only behaviour. Returns null (the same shape
+// the lobby already reads for "not scheduled").
+export async function unscheduleDraft(leagueId) {
+  return (await api(`/fantasy/league/${leagueId}/draft/schedule`, { method: "DELETE" })).schedule;
+}
+
 // GET the effective starting XI for the current gameweek: { gameweek, source:
 // "set" | "inherited" | "default", starters: [{ playerId, isCaptain }], bench:
 // [playerId] }. Member-only (401/403), 404/501 if the league or the fantasy

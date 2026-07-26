@@ -19,6 +19,12 @@ import { COMPETITIONS } from "../src/competitions.js";
 import { bucketPosition } from "../src/fantasy.js";
 import { normalizeTeamName } from "../src/domain.js";
 import { decodeEntities } from "../src/mapApiFootball.js";
+import {
+  buildPriorSeasonStatsIndex,
+  deriveTier,
+  previousSeasonFor,
+  sortPlayerPool,
+} from "../src/fantasyPlayerTier.js";
 import { fetchApiFootball, isUnexpectedApiFootballFailure } from "./lib/apiFootball.mjs";
 
 const token = process.env.API_FOOTBALL_KEY;
@@ -68,11 +74,15 @@ if (!clubs.length) {
 const players = await fetchViaSquads(clubs);
 const { list, complete } = players ?? (await fetchViaLineups());
 
+const priorSeasonStats = await fetchPriorSeasonStats(leagueId, season);
+const priorSeasonStatsHeader = enrichWithPriorSeasonStats(list, priorSeasonStats);
+
 const body = {
   source: complete ? "API-Football (squads)" : "API-Football (accumulated from lineups)",
   lastUpdated: new Date().toISOString(),
   complete,
-  players: list,
+  priorSeasonStats: priorSeasonStatsHeader,
+  players: priorSeasonStats ? sortPlayerPool(list) : list,
 };
 await writeFile(playersFile, `${JSON.stringify(body, null, 2)}\n`);
 console.log(`Wrote ${competition}/players.json (${list.length} players, complete=${complete}).`);
@@ -141,4 +151,62 @@ async function fetchViaLineups() {
     }
   }
   return { list: [...byId.values()], complete: false };
+}
+
+// Enrichment path: pulls the previous completed season's per-player
+// appearance/minutes totals from the paginated /players endpoint, as a proxy
+// for "does this player actually play" (the season in `season`/`leagueId`
+// hasn't kicked off yet, so its own appearance data is all zeros and useless
+// for this purpose; see src/fantasyPlayerTier.js for the reasoning).
+//
+// This is best-effort and never a new single point of failure for the pool:
+// any failure (rate limit, plan restriction, upstream outage) is caught and
+// logged, and the caller falls back to shipping the pool exactly as it does
+// today, just without the tier/ordering enrichment.
+async function fetchPriorSeasonStats(currentLeagueId, currentSeason) {
+  const previousSeason = previousSeasonFor(currentSeason);
+  try {
+    const first = await fetchApiFootball(`/players?league=${currentLeagueId}&season=${previousSeason}&page=1`);
+    const totalPages = Number(first?.paging?.total) || 1;
+    const remainingPaths = Array.from(
+      { length: Math.max(totalPages - 1, 0) },
+      (_, index) => `/players?league=${currentLeagueId}&season=${previousSeason}&page=${index + 2}`,
+    );
+    const remaining = remainingPaths.length ? await fetchApiFootball(remainingPaths) : [];
+    const pages = [first, ...remaining];
+    console.log(`Fetched ${pages.length}/${totalPages} page(s) of ${previousSeason} player statistics.`);
+    return {
+      season: previousSeason,
+      requestCount: pages.length,
+      index: buildPriorSeasonStatsIndex(pages, currentLeagueId),
+    };
+  } catch (error) {
+    if (isUnexpectedApiFootballFailure(error)) throw error;
+    console.warn(
+      `prior-season (${previousSeason}) player stats unavailable (${error.message}); ` +
+        "pool will ship without the likely-starter enrichment.",
+    );
+    return null;
+  }
+}
+
+// Mutates `list` in place, adding `appearances`/`minutes`/`tier`/`likelyStarter`
+// to every player when prior-season stats were fetched successfully. Returns
+// the header object to record in the baked file (or an "unavailable" header
+// when the fetch failed entirely, so the frontend can be honest about it
+// rather than the enrichment silently disappearing).
+function enrichWithPriorSeasonStats(list, priorSeasonStats) {
+  if (!priorSeasonStats) {
+    return { available: false, season: null, playersWithoutRecord: null };
+  }
+  let playersWithoutRecord = 0;
+  for (const player of list) {
+    const stat = priorSeasonStats.index.get(player.id) ?? null;
+    if (!stat) playersWithoutRecord += 1;
+    player.appearances = stat ? stat.appearances : null;
+    player.minutes = stat ? stat.minutes : null;
+    player.tier = deriveTier(stat);
+    player.likelyStarter = player.tier === "starter";
+  }
+  return { available: true, season: priorSeasonStats.season, playersWithoutRecord };
 }
