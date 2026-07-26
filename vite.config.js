@@ -15,6 +15,9 @@ export default defineConfig({
           cp("assets", "dist/assets", { recursive: true }),
           cp("data", "dist/data", { recursive: true }),
           cp("sw.js", "dist/sw.js"),
+          cp("site.webmanifest", "dist/site.webmanifest"),
+          cp("robots.txt", "dist/robots.txt"),
+          cp("sitemap.xml", "dist/sitemap.xml"),
         ]);
       },
     },

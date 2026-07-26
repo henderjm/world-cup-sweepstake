@@ -94,6 +94,12 @@ Upstream polling is a state machine, not the browser cadence. The season schedul
 
 When changing the deployed origins, keep `ALLOWED_ORIGINS` (worker CORS) and the GitHub Pages URL aligned.
 
+## SEO and social-sharing assets
+
+Head metadata (title, description, canonical, Open Graph, Twitter card, theme-color, the `WebSite` JSON-LD block) lives directly in `index.html`; the `<noscript>` block right after `#app` is genuine crawlable content for clients that do not execute JavaScript, not a pre-mount placeholder, so it must never flash for real users. Share/app-icon images live in `assets/` (`og-image.svg`/`.png` at 1200x630, `favicon.svg`, `favicon-32.png`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`); `site.webmanifest`, `robots.txt` and `sitemap.xml` sit at the repo root. All of these are static files, not processed by app code, so **any new one must be added to `vite.config.js`'s `copy-runtime-assets` `closeBundle` list or it will not ship**; verify with a real `npm run build` and inspect `dist/`. Note that Vite's own HTML asset pipeline independently hashes and re-copies whatever `index.html` references by a relative `href` (favicon links, the manifest link), so `dist/` ends up with both the plain copies from the copy list and Vite's hashed duplicates; harmless, but `site.webmanifest`'s icon `src` values are absolute production URLs specifically so the manifest keeps resolving correctly even after Vite relocates its hashed copy into `dist/assets/`.
+
+The site is hash-routed (`#live`, `#tables`, etc.) and client-rendered, so there is exactly one crawlable URL; `sitemap.xml` lists only that URL, never hash fragments. `robots.txt` is shipped for correctness but is currently inert: GitHub Pages serves this project at a subpath (`https://henderjm.github.io/world-cup-sweepstake/`), and crawlers only ever read `robots.txt` from the domain root (`https://henderjm.github.io/robots.txt`), which 404s. It starts working automatically if a custom domain, or a `henderjm.github.io` user/organization site, is ever put in front of this app.
+
 ## Roadmap (agreed phases)
 
 1. ~~Phase 0: strip the sweepstake, single-competition PL tracker~~ (done)

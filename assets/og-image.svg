@@ -1,0 +1,43 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="glow" cx="78%" cy="22%" r="60%">
+      <stop offset="0%" stop-color="#c8f542" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#c8f542" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="#0a0e14"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+
+  <!-- Faint pitch markings, decorative only -->
+  <g stroke="#ffffff" stroke-opacity="0.07" fill="none" stroke-width="2">
+    <circle cx="1120" cy="80" r="220"/>
+    <circle cx="1120" cy="80" r="70"/>
+    <line x1="900" y1="0" x2="900" y2="630"/>
+  </g>
+  <g stroke="#ffffff" stroke-opacity="0.05" fill="none" stroke-width="2">
+    <circle cx="60" cy="610" r="260"/>
+  </g>
+
+  <!-- SG brand mark -->
+  <rect x="80" y="96" width="76" height="76" rx="20" fill="#c8f542"/>
+  <text x="118" y="149" font-family="Helvetica Neue, Arial, sans-serif" font-weight="800" font-style="italic"
+        font-size="34" fill="#0a0e14" text-anchor="middle">SG</text>
+
+  <!-- Wordmark -->
+  <text x="76" y="330" font-family="Helvetica Neue, Arial, sans-serif" font-weight="800" font-style="italic"
+        font-size="128" letter-spacing="-1" fill="#c8f542">SQUAD GOALS</text>
+
+  <!-- Accent rule -->
+  <rect x="80" y="366" width="120" height="8" rx="4" fill="#c8f542"/>
+
+  <!-- Supporting line -->
+  <text x="80" y="432" font-family="Helvetica Neue, Arial, sans-serif" font-weight="500"
+        font-size="34" fill="#edf2ee">Live Premier League &amp; Champions League scores,</text>
+  <text x="80" y="478" font-family="Helvetica Neue, Arial, sans-serif" font-weight="500"
+        font-size="34" fill="#edf2ee">tables, fixtures and top scorers</text>
+
+  <!-- Secondary line -->
+  <text x="80" y="530" font-family="Helvetica Neue, Arial, sans-serif" font-weight="500"
+        font-size="28" fill="#8b95a0">Plus a head-to-head fantasy draft league</text>
+</svg>

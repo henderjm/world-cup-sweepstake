@@ -3,14 +3,87 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Squad Goals</title>
-    <meta name="description" content="Squad Goals: Premier League and Champions League live scores, tables, fixtures and top scorers, updated match by match." />
+    <title>Squad Goals: Premier League &amp; Champions League Live Scores and Fantasy Draft</title>
+    <meta name="description" content="Live Premier League and Champions League scores, tables, fixtures and top scorers, updated match by match, plus a head-to-head fantasy draft league." />
+    <link rel="canonical" href="https://henderjm.github.io/world-cup-sweepstake/" />
+    <meta name="theme-color" content="#0A0E14" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Squad Goals" />
+    <meta property="og:title" content="Squad Goals: Premier League &amp; Champions League Live Scores and Fantasy Draft" />
+    <meta property="og:description" content="Live Premier League and Champions League scores, tables, fixtures and top scorers, updated match by match, plus a head-to-head fantasy draft league." />
+    <meta property="og:url" content="https://henderjm.github.io/world-cup-sweepstake/" />
+    <meta property="og:image" content="https://henderjm.github.io/world-cup-sweepstake/assets/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Squad Goals wordmark on a navy background, with a lime accent line." />
+    <meta property="og:locale" content="en_GB" />
+
+    <!-- Twitter card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Squad Goals: Premier League &amp; Champions League Live Scores and Fantasy Draft" />
+    <meta name="twitter:description" content="Live Premier League and Champions League scores, tables, fixtures and top scorers, updated match by match, plus a head-to-head fantasy draft league." />
+    <meta name="twitter:image" content="https://henderjm.github.io/world-cup-sweepstake/assets/og-image.png" />
+    <meta name="twitter:image:alt" content="Squad Goals wordmark on a navy background, with a lime accent line." />
+
+    <!-- Icons and web app manifest -->
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="assets/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" sizes="180x180" />
+    <link rel="manifest" href="site.webmanifest" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "Squad Goals",
+        "url": "https://henderjm.github.io/world-cup-sweepstake/",
+        "description": "Live Premier League and Champions League scores, tables, fixtures and top scorers, updated match by match, plus a head-to-head fantasy draft league.",
+        "inLanguage": "en-GB"
+      }
+    </script>
   </head>
   <body>
     <div id="app"></div>
+    <noscript>
+      <style>
+        .noscript-fallback {
+          font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          background: #0a0e14;
+          color: #edf2ee;
+          min-height: 100vh;
+          padding: 32px 20px;
+          box-sizing: border-box;
+        }
+        .noscript-fallback__inner { max-width: 640px; margin: 0 auto; }
+        .noscript-fallback h1 { color: #c8f542; font-size: 28px; margin: 0 0 16px; }
+        .noscript-fallback p { line-height: 1.5; color: #8b95a0; }
+        .noscript-fallback ul { line-height: 1.7; padding-left: 20px; }
+      </style>
+      <div class="noscript-fallback">
+        <div class="noscript-fallback__inner">
+          <h1>Squad Goals</h1>
+          <p>
+            Squad Goals is a live football tracker for the Premier League and the
+            Champions League. This app needs JavaScript enabled to run; here is
+            what it offers:
+          </p>
+          <ul>
+            <li>Live scores and match minute-by-minute status</li>
+            <li>League tables with form and European/relegation zones</li>
+            <li>Fixtures and results by matchday</li>
+            <li>Top scorer and assist charts</li>
+            <li>A head-to-head fantasy draft league you can create or join with friends</li>
+          </ul>
+          <p>Please enable JavaScript in your browser to use the app.</p>
+        </div>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.js"></script>
     <!-- Buy Me a Coffee floating button. Loaded async and last so a slow or
          blocked CDN never delays the app itself. It parks bottom right, which
