@@ -55,6 +55,7 @@ import {
   loadLeague as apiLoadLeague,
   loadMatchup as apiLoadMatchup,
   loadPlayerPool,
+  loadPlFixtureData,
   loadStandings as apiLoadStandings,
   loadWaivers as apiLoadWaivers,
   saveWaiverSettings as apiSaveWaiverSettings,
@@ -64,11 +65,27 @@ import {
   submitWaiverClaim as apiSubmitWaiverClaim,
   unscheduleDraft as apiUnscheduleDraft,
 } from "./fantasyApi.js";
-import { formatCountdown, openDraftRoom, reduceDraftMessage, suggestedPick, swapLineup } from "./fantasyDraft.js";
+import {
+  currentSeasonLabel,
+  draftOrderEntries,
+  formatCountdown,
+  moveQueueItem,
+  openDraftRoom,
+  pruneQueue,
+  reduceDraftMessage,
+  removeFromQueue,
+  suggestedPick,
+  swapLineup,
+  toggleQueue,
+  topQueuedPick,
+} from "./fantasyDraft.js";
 import { formatScheduleCountdown, localInputValueToUtcIso } from "./fantasyScheduling.js";
 import {
+  renderDraftErrorNotice,
+  renderDraftStatusCard,
   renderFantasyComplete,
   renderFantasyDraftRoom,
+  renderFantasyDraftSide,
   renderFantasyEmptyState,
   renderFantasyError,
   renderFantasyFreeAgentRows,
@@ -88,20 +105,32 @@ import {
 } from "./fantasyView.js";
 import {
   applyDemoPick,
+  autoBenchInjured,
   autoPickForRoom,
+  availableWaiverPlayers,
   buildDemoReportCard,
   composeDemoShareText,
   createDemoMembers,
+  DEFAULT_DEMO_CLOCK_SECONDS,
   DEFAULT_DEMO_LEAGUE_SIZE,
   DEMO_BOT_PICK_DELAY_MS,
-  DEMO_HUMAN_CLOCK_MS,
   DEMO_SEASON_GAMEWEEKS,
+  demoClockDurationMs,
+  demoManagerForm,
+  draftedPlayerIds,
   initDemoDraftRoom,
+  initDemoSeason,
   isDemoDraftComplete,
-  simulateDemoSeason,
+  isDemoSeasonComplete,
+  isFinalChunk,
+  advanceDemoSeasonChunk,
+  saveDemoLineup,
+  simulateDemoSeasonToEnd,
   standingsThroughGameweek,
+  submitDemoWaiverClaims,
 } from "./fantasyDemo.js";
-import { renderDemoReportCard, renderDemoRoll, renderDemoSetup } from "./fantasyDemoView.js";
+import { renderDemoDesk, renderDemoReportCard, renderDemoRoll, renderDemoSetup } from "./fantasyDemoView.js";
+import { standingsMapFromRawPayload } from "./fantasyDemoFixtures.js";
 import { tutorialBySlug, TUTORIALS } from "./tutorials.js";
 import { renderTutorial, renderTutorialIndex } from "./tutorialsView.js";
 
@@ -161,24 +190,32 @@ const state = {
 // away, including any timers, which teardownDemo() has already cleared).
 function initialDemoState() {
   return {
-    stage: "setup", // "setup" | "drafting" | "rolling" | "report"
+    stage: "setup", // "setup" | "drafting" | "rolling" | "desk" | "report"
     name: "",
     size: DEFAULT_DEMO_LEAGUE_SIZE,
+    clock: DEFAULT_DEMO_CLOCK_SECONDS, // seconds per pick, or DEMO_CLOCK_UNTIMED
     busy: false,
     pool: null,
+    fixtureData: null, // { matches, standingsMap } from data/PL/live.json, or null if unavailable (see loadDemoFixtureData)
     members: null,
     humanId: null,
     seed: null,
     room: null, // draft room state, same shape as the real draft room's (see fantasyDemo.js)
     remainingMs: 0,
-    filter: { position: "All", club: "All", search: "" },
+    filter: { position: "All", club: "All", search: "", hideTaken: true },
+    queue: [], // ordered array of queued player ids (see fantasyDraft.js's toggleQueue/moveQueueItem)
     botTimer: null,
     clockTimer: null,
-    season: null, // simulateDemoSeason's result, once the draft completes
+    season: null, // the stepwise season state from initDemoSeason/advanceDemoSeasonChunk
     reportCard: null,
-    rollGameweek: 0,
+    rollGameweek: 0, // the absolute gameweek number currently revealed by the roll
+    rollFromGw: 0, // the gameweek this roll segment started revealing from
+    rollToGw: 0, // the gameweek this roll segment stops at (a chunk boundary, or the season's last gameweek when sim-to-end is playing out the rest continuously)
     rollTimer: null,
     rollDone: false,
+    pendingWaiverResult: null, // this desk's own claim outcome, shown at the TOP of the NEXT desk (see continueDemoDesk/openDemoDesk)
+    pendingWaiverPlayerName: null,
+    desk: null, // { fromGw, toGw, waiverTarget, pendingDropId, waiverPick, lastWaiverResult, lastWaiverPlayerName, lineupEdit, drawerPlayerId }
     shareStatus: "",
   };
 }
@@ -195,7 +232,8 @@ function initialFantasyState() {
     playerPool: null,
     playerPoolLoading: false,
     draftRoom: null, // { controller, state, remainingMs } once a socket is open
-    filter: { position: "All", club: "All", search: "" },
+    filter: { position: "All", club: "All", search: "", hideTaken: true },
+    queue: [], // ordered array of queued player ids, personal shortlist (see fantasyDraft.js)
     subTab: "draftroom", // "draftroom" | "myteam" | "matchup" | "standings"
     lineup: null, // { gameweek, source, starters: [{playerId,isCaptain}], bench } from GET .../lineup
     lineupLoading: false,
@@ -654,6 +692,7 @@ function renderFantasy() {
                   schedule,
                   scheduleBusy: f.scheduleBusy,
                   scheduleError: f.scheduleError,
+                  queuedIds: new Set(f.queue ?? []),
                 });
     elements.layout.innerHTML = renderFantasyLeagueShell(league, members, subTab, body);
     if (schedule?.scheduledAt) startFantasyScheduleCountdownTimer();
@@ -701,6 +740,7 @@ function renderFantasyDraftPanel() {
                 filter: f.filter,
                 myUserId: f.myUserId,
                 priorSeasonStats: f.playerPool?.priorSeasonStats,
+                queue: f.queue,
               });
   elements.layout.innerHTML = renderFantasyLeagueShell(league, members, subTab, body);
 
@@ -1199,6 +1239,7 @@ async function openFantasyLeague(id) {
   f.waiverSettingsError = "";
   f.scheduleBusy = false;
   f.scheduleError = "";
+  f.queue = []; // a fresh league starts with an empty shortlist, not the last one's
   renderLayout();
   try {
     const detail = await apiLoadLeague(id);
@@ -1255,7 +1296,17 @@ function mountFantasyDraftRoom(leagueId) {
     onMessage: (message) => {
       if (state.fantasy.activeLeagueId !== leagueId) return;
       applyFantasyDraftMessage(message);
-      if (state.section === "fantasy") renderLayout();
+      if (state.section !== "fantasy") return;
+      // A pick/clock/error message only ever changes the draft-status header,
+      // the side column and the pool rows - never which body the shell shows
+      // (that only changes on "state"/"complete", or a subTab switch, both of
+      // which fall through to the full render below). Patching those pieces
+      // in place, rather than nuking and rebuilding elements.layout on every
+      // message, is what keeps a manager's pool scroll position/filters/focus
+      // intact through a turn change (see patchDraftRoomDom) - no additional
+      // save/restore dance needed for this path.
+      const canPatch = message.type === "pick" || message.type === "clock" || message.type === "error";
+      if (!canPatch || !refreshFantasyDraftRoomLive()) renderLayout();
     },
     onTick: (remainingMs) => {
       if (state.fantasy.activeLeagueId !== leagueId || !state.fantasy.draftRoom) return;
@@ -1326,19 +1377,35 @@ function updateFantasyScheduleCountdownDisplay() {
 // Legal-pick context for the player pool list: the live turn/roster state
 // while a draft room socket is open, or an inert read-only context (no turn,
 // nobody drafted) for the lobby's pre-draft scouting list, which reuses the
-// exact same renderer with no Draft buttons.
+// exact same renderer with no Draft buttons. The queue's own top still-
+// available legal pick outranks the generic heuristic for the "Pick" badge,
+// matching renderFantasyDraftSide's identical rule for the suggested-pick
+// card, so the two never disagree about which player is "the" suggestion.
 function fantasyPoolContext() {
   const room = state.fantasy.draftRoom?.state;
-  if (!room) return { isMyTurn: false, myRoster: [], draftedIds: new Set(), suggestedId: null };
+  if (!room) {
+    return {
+      isMyTurn: false,
+      myRoster: [],
+      draftedIds: new Set(),
+      suggestedId: null,
+      queuedIds: new Set(state.fantasy.queue ?? []),
+    };
+  }
   const myRoster = room.rosters?.[state.fantasy.myUserId] ?? [];
+  // Prune before deriving queuedIds, so a player drafted this tick loses its
+  // pool-row star on the same render rather than one behind.
+  state.fantasy.queue = pruneQueue(state.fantasy.queue, myRoster);
+  const queuedIds = new Set(state.fantasy.queue);
   const draftedIds = new Set(
     Object.values(room.rosters ?? {})
       .flat()
       .map((player) => player.id),
   );
   const isMyTurn = room.onClockUserId != null && room.onClockUserId === state.fantasy.myUserId;
-  const suggested = suggestedPick(state.fantasy.playerPool?.players ?? [], myRoster, draftedIds);
-  return { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null };
+  const pool = state.fantasy.playerPool?.players ?? [];
+  const suggested = topQueuedPick(state.fantasy.queue, pool, myRoster, draftedIds) ?? suggestedPick(pool, myRoster, draftedIds);
+  return { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null, queuedIds };
 }
 
 function refreshFantasyPool() {
@@ -1349,6 +1416,49 @@ function refreshFantasyPool() {
     state.fantasy.filter,
     fantasyPoolContext(),
   );
+}
+
+// Targeted, scroll/focus-preserving refresh of everything in a live draft
+// room that a pick or clock update can change: the "Round R · Pick N"
+// header, the whole side column (suggested pick/on-the-clock/recent picks/
+// queue/squad) and the pool rows - all patched via existing DOM anchors
+// rather than recreating elements.layout, so the pool's own scrolling
+// container (.fantasy-pool__scroll) is never torn down and its scrollTop
+// never needs saving/restoring around the update in the first place. Returns
+// false (the caller should fall back to a full renderLayout()) when the
+// draft room isn't actually what's on screen right now - a different subTab,
+// the very first "state" message before anything has been rendered, a
+// completed draft (a different body entirely takes over) - since there is
+// nothing to patch yet.
+function patchDraftRoomDom({ members, draft, playerPool, myUserId, queue, refreshPoolRows }) {
+  if (!draft || draft.status === "complete") return false;
+  const statusEl = elements.layout.querySelector("[data-fantasy-draftstatus]");
+  const sideEl = elements.layout.querySelector("[data-fantasy-draft-side]");
+  const errorEl = elements.layout.querySelector("[data-fantasy-error-slot]");
+  const poolListEl = elements.layout.querySelector("[data-fantasy-pool-list]");
+  if (!statusEl || !sideEl || !errorEl || !poolListEl) return false;
+
+  const entries = draftOrderEntries(draft.memberIds, draft.round, draft.onClockUserId, draft.overallPick);
+  errorEl.innerHTML = draft.lastError ? renderDraftErrorNotice(draft.lastError) : "";
+  statusEl.innerHTML = renderDraftStatusCard({ members, draft, myUserId, season: currentSeasonLabel(), entries });
+  sideEl.innerHTML = renderFantasyDraftSide({ members, draft, playerPool, myUserId, entries, queue });
+  refreshPoolRows();
+  return true;
+}
+
+function refreshFantasyDraftRoomLive() {
+  const f = state.fantasy;
+  const room = f.draftRoom?.state;
+  if (!room) return false;
+  if ((f.subTab ?? "draftroom") !== "draftroom") return false;
+  return patchDraftRoomDom({
+    members: f.league?.members,
+    draft: { ...room, remainingMs: f.draftRoom.remainingMs },
+    playerPool: f.playerPool?.players ?? [],
+    myUserId: f.myUserId,
+    queue: f.queue,
+    refreshPoolRows: refreshFantasyPool,
+  });
 }
 
 async function startFantasyDraft(id) {
@@ -1451,7 +1561,7 @@ function renderDemo() {
   const d = state.demo;
 
   if (d.stage === "setup") {
-    elements.layout.innerHTML = renderDemoSetup({ name: d.name, size: d.size, busy: d.busy });
+    elements.layout.innerHTML = renderDemoSetup({ name: d.name, size: d.size, clock: d.clock, busy: d.busy });
     return;
   }
 
@@ -1469,6 +1579,7 @@ function renderDemo() {
       filter: d.filter,
       myUserId: d.humanId,
       priorSeasonStats: d.pool?.priorSeasonStats,
+      queue: d.queue,
     });
     if (wasSearchFocused) {
       const input = elements.layout.querySelector("[data-fantasy-search]");
@@ -1488,10 +1599,29 @@ function renderDemo() {
       humanId: d.humanId,
       done: d.rollDone,
     });
-    // A navigation away and back mid-roll (via the section nav) loses the
-    // in-flight timer (teardownDemo below clears it); restart it here rather
-    // than leaving the roll stuck part-way with no way to finish.
-    if (!d.rollDone && !d.rollTimer) scheduleNextDemoRollStep();
+    // The ONLY place a roll's timer (or its reduced-motion equivalent) is
+    // ever started - both the initial kick-off (startDemoRollFrom, which
+    // sets rollDone/rollTimer to their "just started" values and calls
+    // renderLayout, landing straight here) and "navigated away and back
+    // mid-roll" (via the section nav; teardownDemo clears the in-flight
+    // timer) route through this exact check. A second call site used to
+    // ALSO call scheduleNextDemoRollStep explicitly right after
+    // renderLayout(), which raced with this same check firing on that same
+    // render and started two concurrent timer chains - harmless for the old
+    // one-shot 38-gameweek roll, but it meant finishDemoChunkRoll (and so
+    // openDemoDesk) could fire twice for one chunk, silently discarding the
+    // waiver result the desk was about to show. One call site removes the
+    // race entirely.
+    if (!d.rollDone && !d.rollTimer) {
+      const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      if (reducedMotion) finishDemoChunkRoll();
+      else scheduleNextDemoRollStep();
+    }
+    return;
+  }
+
+  if (d.stage === "desk") {
+    renderDemoDeskStage();
     return;
   }
 
@@ -1501,6 +1631,59 @@ function renderDemo() {
       isSignedIn: isSignedIn(),
       shareStatus: d.shareStatus,
     });
+  }
+}
+
+// The desk's own render, split out of renderDemo purely because it needs a
+// handful of derived view-model pieces (standings/form/wire/panel html) that
+// would otherwise clutter the simple stage dispatch above.
+function renderDemoDeskStage() {
+  const d = state.demo;
+  const season = d.season;
+  const desk = d.desk;
+  if (!season || !desk) return;
+
+  const standings = standingsThroughGameweek(season, d.members, season.simulatedThrough);
+  const form = demoManagerForm(season.fixtures, d.humanId, season.simulatedThrough);
+  const news = season.history[season.history.length - 1] ?? null;
+  const waiverWire = availableWaiverPlayers(season).map((player) => ({
+    player,
+    points: season.seasonPointsByPlayer.get(player.id) ?? 0,
+  }));
+  const roster = season.rosters.get(d.humanId) ?? [];
+
+  const wasSearchFocused = document.activeElement?.matches?.("[data-fantasy-search]");
+  elements.layout.innerHTML = renderDemoDesk({
+    season,
+    humanId: d.humanId,
+    fromGw: desk.fromGw,
+    toGw: desk.toGw,
+    standings,
+    form,
+    news,
+    waiverWire,
+    roster,
+    waiverTarget: desk.waiverTarget,
+    pendingDropId: desk.pendingDropId,
+    waiverPick: desk.waiverPick,
+    lastWaiverResult: desk.lastWaiverResult,
+    lastWaiverPlayerName: desk.lastWaiverPlayerName,
+    rosterPanelHtml: renderFantasyRosterPanel({
+      currentGameweek: desk.fromGw,
+      roster,
+      lineup: demoLineupForPanel(season, d.humanId),
+      playerPool: d.pool?.players ?? [],
+      picks: [],
+      editState: desk.lineupEdit,
+      drawerPlayerId: desk.drawerPlayerId,
+      lineupError: "",
+      priorSeasonStats: d.pool?.priorSeasonStats,
+    }),
+    isFinal: isFinalChunk(season),
+  });
+  if (wasSearchFocused) {
+    const input = elements.layout.querySelector("[data-fantasy-search]");
+    if (input) input.focus();
   }
 }
 
@@ -1519,10 +1702,11 @@ function clearDemoDraftTimers() {
 }
 
 // Kicks off a fresh trial: loads the same static player pool the real product
-// bakes (data/PL/players.json, no auth needed), builds the manager list, and
-// opens the draft room. `startBusy` toggles the setup screen's own button
-// state while the pool fetch is in flight (usually instant - the file is
-// tiny and same-origin - but never assumed to be).
+// bakes (data/PL/players.json, no auth needed) plus the real PL fixture list
+// (data/PL/live.json, for fixture-aware scoring - see fantasyDemoFixtures.js),
+// builds the manager list, and opens the draft room. `startBusy` toggles the
+// setup screen's own button state while both fetches are in flight (usually
+// instant - both files are tiny and same-origin - but never assumed to be).
 async function startDemoDraft() {
   const d = state.demo;
   const nameInput = elements.layout.querySelector("[data-demo-name]");
@@ -1538,6 +1722,18 @@ async function startDemoDraft() {
       d.pool = { players: [], unavailable: true };
     }
   }
+  if (!d.fixtureData) {
+    // A missing/unreachable feed degrades the season to its pre-fixture flat
+    // scoring (see initDemoSeason's hasFixtureData branch) rather than
+    // blocking the trial on a feed that may never have been deployed.
+    try {
+      const raw = await loadPlFixtureData();
+      d.fixtureData = { matches: raw.matches ?? [], standingsMap: standingsMapFromRawPayload(raw) };
+    } catch (error) {
+      if (error?.status !== 404) posthog.captureException(error);
+      d.fixtureData = null;
+    }
+  }
   if (state.section !== "demo") return; // navigated away mid-fetch
 
   const { members, humanId } = createDemoMembers(d.size, d.name);
@@ -1545,19 +1741,25 @@ async function startDemoDraft() {
   d.humanId = humanId;
   d.seed = `demo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   d.room = initDemoDraftRoom(members.map((member) => member.userId));
-  d.filter = { position: "All", club: "All", search: "" };
+  d.filter = { position: "All", club: "All", search: "", hideTaken: true };
+  d.queue = [];
   d.busy = false;
   d.stage = "drafting";
-  posthog.capture("demo_draft_started", { league_size: d.size });
-  renderLayout();
+  posthog.capture("demo_draft_started", { league_size: d.size, clock: d.clock });
+  // scheduleDemoTurn first, same reasoning as applyDemoPickAndAdvance: it
+  // sets d.remainingMs (a real duration, or null for untimed) before the
+  // first paint, so round 1 pick 1's on-clock card never flashes the
+  // pre-draft default of "0:00" for a manager who chose an untimed clock.
   scheduleDemoTurn();
+  renderLayout();
 }
 
 // Decides what happens next for whoever is on the clock: a bot autopicks
-// after a short, deliberately visible delay (DEMO_BOT_PICK_DELAY_MS); the
-// human gets their own short clock (DEMO_HUMAN_CLOCK_MS) with the same
-// autopick fallback on expiry, exactly mirroring the real draft room's
-// server-side timeout behaviour.
+// after a short, deliberately visible delay (DEMO_BOT_PICK_DELAY_MS),
+// unaffected by the human's own clock choice. The human gets the pick clock
+// chosen on the setup screen (d.clock - seconds, or DEMO_CLOCK_UNTIMED); an
+// untimed clock never starts a timer at all, so nothing autopicks on the
+// human's own turn - they draft manually whenever they're ready.
 function scheduleDemoTurn() {
   const d = state.demo;
   if (!d.room || isDemoDraftComplete(d.room)) return;
@@ -1570,13 +1772,18 @@ function scheduleDemoTurn() {
       if (pick) applyDemoPickAndAdvance(pick);
     }, DEMO_BOT_PICK_DELAY_MS);
   } else {
-    startDemoHumanClock();
+    const durationMs = demoClockDurationMs(d.clock);
+    if (durationMs == null) {
+      d.remainingMs = null; // untimed: renderOnClockCard shows "No clock" for this
+      return;
+    }
+    startDemoHumanClock(durationMs);
   }
 }
 
-function startDemoHumanClock() {
+function startDemoHumanClock(durationMs) {
   const d = state.demo;
-  d.remainingMs = DEMO_HUMAN_CLOCK_MS;
+  d.remainingMs = durationMs;
   updateDemoClockDisplay(d.remainingMs);
   d.clockTimer = window.setInterval(() => {
     d.remainingMs = Math.max(0, d.remainingMs - 1000);
@@ -1584,7 +1791,14 @@ function startDemoHumanClock() {
     if (d.remainingMs <= 0) {
       window.clearInterval(d.clockTimer);
       d.clockTimer = null;
-      const pick = autoPickForRoom(d.room, d.pool?.players ?? []);
+      // The clock expiring falls back to the manager's own queue first - the
+      // top still-available, still-legal queued player - before the generic
+      // scarcest-bucket heuristic, exactly what makes a short or untimed
+      // clock survivable rather than a coin flip on what gets autodrafted.
+      const myRoster = d.room.rosters?.[d.humanId] ?? [];
+      const draftedIds = draftedPlayerIds(d.room);
+      const queuedPick = topQueuedPick(d.queue, d.pool?.players ?? [], myRoster, draftedIds);
+      const pick = queuedPick ?? autoPickForRoom(d.room, d.pool?.players ?? []);
       if (pick) applyDemoPickAndAdvance(pick);
     }
   }, 1000);
@@ -1600,6 +1814,10 @@ function updateDemoClockDisplay(remainingMs) {
 // applyDemoPick in fantasyDemo.js). Once the draft is complete this hands off
 // to the season simulation rather than rendering a separate "draft complete"
 // pause screen - the whole point of the demo is momentum, not another click.
+// scheduleDemoTurn runs before the repaint (not after, as it used to) so the
+// on-clock card's countdown/"No clock" already reflects the new picker by
+// the time refreshDemoDraftRoomLive/renderLayout actually paints it, rather
+// than showing the previous picker's stale number for one frame.
 function applyDemoPickAndAdvance(player) {
   const d = state.demo;
   clearDemoDraftTimers();
@@ -1608,8 +1826,8 @@ function applyDemoPickAndAdvance(player) {
     beginDemoSeason();
     return;
   }
-  renderLayout();
   scheduleDemoTurn();
+  if (!refreshDemoDraftRoomLive()) renderLayout();
 }
 
 function refreshDemoPool() {
@@ -1621,37 +1839,93 @@ function refreshDemoPool() {
 function demoPoolContext() {
   const d = state.demo;
   const room = d.room;
-  if (!room) return { isMyTurn: false, myRoster: [], draftedIds: new Set(), suggestedId: null };
+  if (!room) {
+    return {
+      isMyTurn: false,
+      myRoster: [],
+      draftedIds: new Set(),
+      suggestedId: null,
+      queuedIds: new Set(d.queue ?? []),
+    };
+  }
   const myRoster = room.rosters?.[d.humanId] ?? [];
+  d.queue = pruneQueue(d.queue, myRoster);
+  const queuedIds = new Set(d.queue);
   const draftedIds = new Set(
     Object.values(room.rosters ?? {})
       .flat()
       .map((player) => player.id),
   );
   const isMyTurn = room.onClockUserId != null && room.onClockUserId === d.humanId;
-  const suggested = suggestedPick(d.pool?.players ?? [], myRoster, draftedIds);
-  return { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null };
+  const pool = d.pool?.players ?? [];
+  const suggested = topQueuedPick(d.queue, pool, myRoster, draftedIds) ?? suggestedPick(pool, myRoster, draftedIds);
+  return { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null, queuedIds };
 }
 
-const DEMO_ROLL_STEP_MS = 50; // 38 steps ~= 1.9s: "a second or two total"
+// The demo's own equivalent of refreshFantasyDraftRoomLive: same targeted
+// patch (status header, side column, pool rows), same reason (never
+// recreate the pool's scrolling container on a bot pick or a clock tick's
+// pick). Shared via patchDraftRoomDom rather than duplicated, since both
+// callers render from the exact same renderFantasyDraftRoom/
+// renderFantasyDraftSide output.
+function refreshDemoDraftRoomLive() {
+  const d = state.demo;
+  if (!d.room) return false;
+  return patchDraftRoomDom({
+    members: d.members,
+    draft: { ...d.room, remainingMs: d.remainingMs },
+    playerPool: d.pool?.players ?? [],
+    myUserId: d.humanId,
+    queue: d.queue,
+    refreshPoolRows: refreshDemoPool,
+  });
+}
 
-// Simulates the whole 38-gameweek season the instant the draft completes
-// (simulateDemoSeason is synchronous and cheap - a handful of managers times
-// 15 players times 38 gameweeks), then animates revealing it gameweek by
-// gameweek. prefers-reduced-motion skips straight to the final table, same as
-// clicking "Skip to result" would.
+const DEMO_ROLL_STEP_MS = 50; // ~2s to reveal a 7-gameweek chunk: "a second or two total" per pause
+
+// Builds the season's starting state the instant the draft completes
+// (initDemoSeason is synchronous and cheap), then plays the first chunk. Every
+// later chunk is kicked off the same way from continueDemoDesk/beginDemoSimToEnd.
 function beginDemoSeason() {
   const d = state.demo;
   const rosters = new Map(d.members.map((member) => [member.userId, d.room.rosters[member.userId] ?? []]));
-  d.season = simulateDemoSeason({ seed: d.seed, members: d.members, rosters });
+  d.season = initDemoSeason({
+    seed: d.seed,
+    members: d.members,
+    rosters,
+    pool: d.pool?.players ?? [],
+    matches: d.fixtureData?.matches ?? [],
+    standingsMap: d.fixtureData?.standingsMap,
+  });
+  startDemoChunkRoll();
+}
+
+// Simulates the NEXT chunk (advanceDemoSeasonChunk is synchronous and cheap -
+// a handful of managers times 15-ish scoreable players times up to 7
+// gameweeks) then animates revealing it gameweek by gameweek, exactly the
+// old whole-season roll's own pacing, just scoped to one chunk.
+// prefers-reduced-motion skips straight past the reveal, same as "Skip to
+// result" would. See beginDemoSimToEnd for the "watch" escape hatch's own
+// roll bootstrap, which reveals a much longer stretch in one go and so does
+// not call this.
+function startDemoChunkRoll() {
+  const d = state.demo;
+  const fromGw = d.season.simulatedThrough + 1;
+  d.season = advanceDemoSeasonChunk(d.season);
+  startDemoRollFrom(fromGw, d.season.simulatedThrough);
+}
+
+// Sets up the roll's state and paints it once - renderDemo's own rolling-
+// stage branch is the single place that then starts the timer (or, under
+// reduced motion, finishes immediately), see the comment there.
+function startDemoRollFrom(fromGw, toGw) {
+  const d = state.demo;
   d.stage = "rolling";
-  d.rollGameweek = 0;
+  d.rollFromGw = fromGw;
+  d.rollToGw = toGw;
+  d.rollGameweek = fromGw - 1;
   d.rollDone = false;
   renderLayout();
-
-  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  if (reducedMotion) finishDemoRoll();
-  else scheduleNextDemoRollStep();
 }
 
 function scheduleNextDemoRollStep() {
@@ -1659,25 +1933,258 @@ function scheduleNextDemoRollStep() {
   d.rollTimer = window.setTimeout(() => {
     d.rollTimer = null;
     d.rollGameweek += 1;
-    if (d.rollGameweek >= DEMO_SEASON_GAMEWEEKS) {
-      finishDemoRoll();
+    if (d.rollGameweek >= d.rollToGw) {
+      finishDemoChunkRoll();
     } else {
-      renderLayout();
+      // Reschedule BEFORE rendering: renderLayout -> renderDemo's rolling-stage
+      // self-healing check (see renderDemo) fires whenever it sees
+      // !d.rollTimer, and d.rollTimer is null for this one tick (just cleared
+      // above). Rendering first used to let that check start a SECOND
+      // concurrent timer chain on every single intermediate step, which
+      // compounded across a 7-gameweek chunk into openDemoDesk (and so the
+      // waiver-result note) firing many times, the last of which always saw
+      // an already-cleared pendingWaiverResult. Setting rollTimer again
+      // first closes that window.
       scheduleNextDemoRollStep();
+      renderLayout();
     }
   }, DEMO_ROLL_STEP_MS);
 }
 
-function finishDemoRoll() {
+// Once a chunk's reveal finishes: either the season is over (report card), or
+// there is a desk to show - UNLESS "sim to the end" is playing, in which case
+// the whole rest of the season was already resolved before this roll started
+// (see beginDemoSimToEnd), so isDemoSeasonComplete is already true and this
+// always lands on the report.
+function finishDemoChunkRoll() {
   const d = state.demo;
   if (d.rollTimer) window.clearTimeout(d.rollTimer);
   d.rollTimer = null;
-  d.rollGameweek = DEMO_SEASON_GAMEWEEKS;
+  d.rollGameweek = d.rollToGw;
   d.rollDone = true;
-  d.reportCard = buildDemoReportCard({ humanId: d.humanId, members: d.members, season: d.season });
+  if (isDemoSeasonComplete(d.season)) {
+    finishDemoSeason();
+  } else {
+    openDemoDesk();
+  }
+}
+
+function finishDemoSeason() {
+  const d = state.demo;
+  // buildDemoReportCard reads season.standings directly (see its own header
+  // comment: callers hand it the final table); the stepwise engine never
+  // computes one itself mid-season (standingsThroughGameweek is how the roll
+  // and the desk get an intermediate one on demand), so it is computed once,
+  // here, for the whole season now that it is actually over.
+  const finalStandings = standingsThroughGameweek(d.season, d.members, d.season.gameweeks);
+  const season = { ...d.season, standings: finalStandings };
+  d.reportCard = buildDemoReportCard({ humanId: d.humanId, members: d.members, season });
   d.stage = "report";
   posthog.capture("demo_report_viewed", { position: d.reportCard.position, league_size: d.reportCard.leagueSize });
   renderLayout();
+}
+
+// -- Manager desk (between chunks) -----------------------------------------------
+
+// The desk's lineup panel wants the real product's own { starters, bench,
+// source } shape (renderFantasyRosterPanel/fantasyLineups.js), not
+// season.lineups' bare { starters }, so bench is derived here rather than
+// carried in the season state (nothing about "who's on the bench" needs to
+// survive a chunk boundary; it's always just "roster minus starters").
+function demoLineupForPanel(season, userId) {
+  const roster = season.rosters.get(userId) ?? [];
+  const lineup = season.lineups.get(userId);
+  const starterIds = new Set((lineup?.starters ?? []).map((entry) => entry.playerId));
+  const bench = roster.filter((player) => !starterIds.has(player.id)).map((player) => player.id);
+  return { starters: lineup?.starters ?? [], bench, source: "current" };
+}
+
+function openDemoDesk() {
+  const d = state.demo;
+  d.stage = "desk";
+  d.desk = {
+    fromGw: d.rollFromGw,
+    toGw: d.rollToGw,
+    waiverTarget: null,
+    pendingDropId: null,
+    waiverPick: null,
+    lastWaiverResult: d.pendingWaiverResult ?? null,
+    lastWaiverPlayerName: d.pendingWaiverPlayerName ?? null,
+    lineupEdit: null,
+    drawerPlayerId: null,
+  };
+  d.pendingWaiverResult = null;
+  d.pendingWaiverPlayerName = null;
+  renderLayout();
+}
+
+function startDemoLineupEdit() {
+  const d = state.demo;
+  if (!d.desk) return;
+  const lineup = demoLineupForPanel(d.season, d.humanId);
+  const captainEntry = lineup.starters.find((entry) => entry.isCaptain);
+  d.desk.lineupEdit = {
+    starters: lineup.starters.map((entry) => entry.playerId),
+    captainId: captainEntry?.playerId ?? lineup.starters[0]?.playerId ?? null,
+    bench: [...lineup.bench],
+    pendingId: null,
+    saving: false,
+    error: "",
+  };
+  renderLayout();
+}
+
+// Mirrors handleFantasyPlayerTileClick/handleFantasyLineupTileClick exactly
+// (see the real fantasy lineup edit above), just against state.demo.desk
+// instead of state.fantasy, and swapLineup/validateLineupSelection stay the
+// same real pure functions either way.
+function handleDemoPlayerTileClick(playerId) {
+  const d = state.demo;
+  if (!d.desk || !Number.isInteger(playerId)) return;
+  if (d.desk.lineupEdit) {
+    handleDemoLineupSwap(playerId);
+    return;
+  }
+  d.desk.drawerPlayerId = d.desk.drawerPlayerId === playerId ? null : playerId;
+  renderLayout();
+}
+
+function handleDemoLineupSwap(playerId) {
+  const d = state.demo;
+  const edit = d.desk?.lineupEdit;
+  if (!edit) return;
+  edit.error = "";
+
+  if (edit.pendingId == null) {
+    edit.pendingId = playerId;
+    renderLayout();
+    return;
+  }
+  if (edit.pendingId === playerId) {
+    edit.pendingId = null;
+    renderLayout();
+    return;
+  }
+  const pendingIsStarter = edit.starters.includes(edit.pendingId);
+  const targetIsStarter = edit.starters.includes(playerId);
+  if (pendingIsStarter === targetIsStarter) {
+    edit.pendingId = playerId;
+    renderLayout();
+    return;
+  }
+
+  const roster = d.season.rosters.get(d.humanId) ?? [];
+  const result = swapLineup({ starters: edit.starters, captainId: edit.captainId, bench: edit.bench, roster }, edit.pendingId, playerId);
+  if (!result.ok) {
+    edit.error = result.error;
+    edit.pendingId = null;
+    renderLayout();
+    return;
+  }
+  edit.starters = result.starters;
+  edit.bench = result.bench;
+  edit.captainId = result.captainId;
+  edit.pendingId = null;
+  renderLayout();
+}
+
+function handleDemoMakeCaptain(playerId) {
+  const edit = state.demo.desk?.lineupEdit;
+  if (!edit || !Number.isInteger(playerId) || !edit.starters.includes(playerId)) return;
+  edit.captainId = playerId;
+  edit.pendingId = null;
+  renderLayout();
+}
+
+// Validates via the REAL validateLineupSelection (fantasyLineups.js, inside
+// saveDemoLineup) before ever touching the season state, exactly like the
+// real product's saveFantasyLineup never trusts the pitch UI alone.
+function saveDemoLineupEdit() {
+  const d = state.demo;
+  const edit = d.desk?.lineupEdit;
+  if (!edit) return;
+  const result = saveDemoLineup(d.season, d.humanId, { starters: edit.starters, captainId: edit.captainId });
+  if (!result.ok) {
+    edit.error = result.error;
+    renderLayout();
+    return;
+  }
+  d.season = result.season;
+  d.desk.lineupEdit = null;
+  renderLayout();
+}
+
+// -- Manager desk: waiver claim flow ----------------------------------------------
+
+function openDemoWaiverClaim(playerId) {
+  const d = state.demo;
+  if (!d.desk) return;
+  const player = d.season.rosterById.get(playerId);
+  if (!player) return;
+  d.desk.waiverTarget = player;
+  d.desk.pendingDropId = null;
+  renderLayout();
+}
+
+function chooseDemoClaimDrop(playerId) {
+  const d = state.demo;
+  if (!d.desk?.waiverTarget) return;
+  d.desk.pendingDropId = playerId;
+  renderLayout();
+}
+
+function cancelDemoWaiverClaim() {
+  const d = state.demo;
+  if (!d.desk) return;
+  d.desk.waiverTarget = null;
+  d.desk.pendingDropId = null;
+  renderLayout();
+}
+
+// Queues the human's own claim locally - it does not touch the season yet.
+// Resolution (against bots' own deterministic claims, via the real
+// resolveWaiverRun) happens once, all together, when the desk is continued
+// (continueDemoDesk), the same "everyone's claims from this window are
+// judged in one contested run" shape the real waiver system uses.
+function confirmDemoWaiverClaim() {
+  const d = state.demo;
+  const target = d.desk?.waiverTarget;
+  if (!target || d.desk.pendingDropId == null) return;
+  d.desk.waiverPick = { addPlayerId: target.id, dropPlayerId: d.desk.pendingDropId };
+  d.desk.waiverTarget = null;
+  d.desk.pendingDropId = null;
+  renderLayout();
+}
+
+// Resolves this desk's waiver window (the human's queued claim, if any, plus
+// every bot's own deterministic claim - see submitDemoWaiverClaims), stashes
+// the human's own result to show at the TOP of the next desk (real waiver
+// claims resolve after the fact, not instantly - see fantasyWaivers.js's
+// header comment), discards any unsaved lineup edit, and starts the next
+// chunk's roll.
+function continueDemoDesk() {
+  const d = state.demo;
+  const humanClaim = d.desk.waiverPick;
+  const { season, humanResult } = submitDemoWaiverClaims(d.season, { humanId: d.humanId, humanClaim });
+  d.season = season;
+  d.pendingWaiverResult = humanResult;
+  d.pendingWaiverPlayerName = humanClaim ? season.rosterById.get(humanClaim.addPlayerId)?.name ?? null : null;
+  d.desk = null;
+  posthog.capture("demo_desk_continued", { made_waiver_claim: Boolean(humanClaim) });
+  startDemoChunkRoll();
+}
+
+// The "watch" escape hatch: resolves every remaining chunk's waivers/injury
+// management for the human exactly like a bot (simulateDemoSeasonToEnd),
+// then lets the roll animate continuously from wherever the human left off
+// straight through to gameweek 38 - no further desks, no further decisions.
+function beginDemoSimToEnd() {
+  const d = state.demo;
+  const fromGw = d.season.simulatedThrough + 1;
+  d.desk = null;
+  posthog.capture("demo_sim_to_end", { at_gameweek: d.season.simulatedThrough });
+  d.season = simulateDemoSeasonToEnd(d.season, { humanId: d.humanId });
+  startDemoRollFrom(fromGw, d.season.gameweeks);
 }
 
 function shareDemoResult(button) {
@@ -1702,9 +2209,11 @@ function restartDemo() {
   teardownDemo();
   const name = state.demo.name;
   const size = state.demo.size;
+  const clock = state.demo.clock;
   state.demo = initialDemoState();
   state.demo.name = name;
   state.demo.size = size;
+  state.demo.clock = clock;
   renderLayout();
 }
 
@@ -1881,8 +2390,60 @@ function wireLayoutControls() {
         renderLayout();
         return;
       }
+      const demoClockButton = event.target.closest("[data-demo-clock]");
+      if (demoClockButton) {
+        // Same "re-render the whole setup card" shape as league size above,
+        // and the same reason: capture the name field first or the re-render
+        // (needed to move the is-active pill) would wipe it.
+        const nameInput = elements.layout.querySelector("[data-demo-name]");
+        if (nameInput) state.demo.name = nameInput.value;
+        state.demo.clock = demoClockButton.dataset.demoClock;
+        renderLayout();
+        return;
+      }
+      const demoHideTakenButton = event.target.closest("[data-fantasy-hide-taken]");
+      if (demoHideTakenButton) {
+        state.demo.filter.hideTaken = state.demo.filter.hideTaken === false;
+        demoHideTakenButton.classList.toggle("is-active", state.demo.filter.hideTaken);
+        demoHideTakenButton.setAttribute("aria-pressed", String(state.demo.filter.hideTaken));
+        refreshDemoPool();
+        return;
+      }
+      const demoQueueToggle = event.target.closest("[data-fantasy-queue-toggle]");
+      if (demoQueueToggle) {
+        const id = Number(demoQueueToggle.dataset.fantasyQueueToggle);
+        state.demo.queue = toggleQueue(state.demo.queue, id);
+        refreshDemoPool();
+        if (!refreshDemoDraftRoomLive()) renderLayout();
+        return;
+      }
+      const demoQueueUp = event.target.closest("[data-fantasy-queue-up]");
+      if (demoQueueUp) {
+        state.demo.queue = moveQueueItem(state.demo.queue, Number(demoQueueUp.dataset.fantasyQueueUp), "up");
+        if (!refreshDemoDraftRoomLive()) renderLayout();
+        return;
+      }
+      const demoQueueDown = event.target.closest("[data-fantasy-queue-down]");
+      if (demoQueueDown) {
+        state.demo.queue = moveQueueItem(state.demo.queue, Number(demoQueueDown.dataset.fantasyQueueDown), "down");
+        if (!refreshDemoDraftRoomLive()) renderLayout();
+        return;
+      }
+      const demoQueueRemove = event.target.closest("[data-fantasy-queue-remove]");
+      if (demoQueueRemove) {
+        state.demo.queue = removeFromQueue(state.demo.queue, Number(demoQueueRemove.dataset.fantasyQueueRemove));
+        refreshDemoPool();
+        if (!refreshDemoDraftRoomLive()) renderLayout();
+        return;
+      }
+      if (event.target.closest("[data-fantasy-queue-clear]")) {
+        state.demo.queue = [];
+        refreshDemoPool();
+        if (!refreshDemoDraftRoomLive()) renderLayout();
+        return;
+      }
       if (event.target.closest("[data-demo-skip]")) {
-        finishDemoRoll();
+        finishDemoChunkRoll();
         return;
       }
       const demoShareButton = event.target.closest("[data-demo-share]");
@@ -1893,6 +2454,70 @@ function wireLayoutControls() {
       }
       if (event.target.closest("[data-demo-restart]")) {
         restartDemo();
+        return;
+      }
+
+      // -- Manager desk: lineup editor. Reuses the exact same data-fantasy-*
+      // attributes renderFantasyRosterPanel already emits for the real My
+      // team pitch view (see fantasyView.js) - the demo never renders both
+      // panels at once, so there is no ambiguity about which handler a click
+      // here means.
+      if (event.target.closest("[data-fantasy-lineup-edit]")) {
+        startDemoLineupEdit();
+        return;
+      }
+      if (event.target.closest("[data-fantasy-lineup-cancel]")) {
+        if (state.demo.desk) state.demo.desk.lineupEdit = null;
+        renderLayout();
+        return;
+      }
+      const demoLineupSaveButton = event.target.closest("[data-fantasy-lineup-save]");
+      if (demoLineupSaveButton && !demoLineupSaveButton.disabled) {
+        saveDemoLineupEdit();
+        return;
+      }
+      const demoMakeCaptainButton = event.target.closest("[data-fantasy-make-captain]");
+      if (demoMakeCaptainButton) {
+        handleDemoMakeCaptain(Number(demoMakeCaptainButton.dataset.fantasyMakeCaptain));
+        return;
+      }
+      if (event.target.closest("[data-fantasy-player-drawer-close]")) {
+        if (state.demo.desk) state.demo.desk.drawerPlayerId = null;
+        renderLayout();
+        return;
+      }
+      const demoPitchTile = event.target.closest("[data-fantasy-player-id]");
+      if (demoPitchTile) {
+        handleDemoPlayerTileClick(Number(demoPitchTile.dataset.fantasyPlayerId));
+        return;
+      }
+
+      // -- Manager desk: waiver wire.
+      const demoWaiverClaimButton = event.target.closest("[data-demo-waiver-claim]");
+      if (demoWaiverClaimButton) {
+        openDemoWaiverClaim(Number(demoWaiverClaimButton.dataset.demoWaiverClaim));
+        return;
+      }
+      const demoClaimDropButton = event.target.closest("[data-demo-claim-drop]");
+      if (demoClaimDropButton) {
+        chooseDemoClaimDrop(Number(demoClaimDropButton.dataset.demoClaimDrop));
+        return;
+      }
+      if (event.target.closest("[data-demo-claim-cancel]")) {
+        cancelDemoWaiverClaim();
+        return;
+      }
+      const demoClaimConfirmButton = event.target.closest("[data-demo-claim-confirm]");
+      if (demoClaimConfirmButton && !demoClaimConfirmButton.disabled) {
+        confirmDemoWaiverClaim();
+        return;
+      }
+      if (event.target.closest("[data-demo-desk-continue]")) {
+        continueDemoDesk();
+        return;
+      }
+      if (event.target.closest("[data-demo-sim-to-end]")) {
+        beginDemoSimToEnd();
         return;
       }
       // data-section-nav ("Create a real league") is handled by wireNav's own
@@ -2062,6 +2687,47 @@ function wireLayoutControls() {
         button.classList.toggle("is-active", button === fantasyPositionButton);
       });
       refreshFantasyPool();
+      return;
+    }
+    const fantasyHideTakenButton = event.target.closest("[data-fantasy-hide-taken]");
+    if (fantasyHideTakenButton) {
+      state.fantasy.filter.hideTaken = state.fantasy.filter.hideTaken === false;
+      fantasyHideTakenButton.classList.toggle("is-active", state.fantasy.filter.hideTaken);
+      fantasyHideTakenButton.setAttribute("aria-pressed", String(state.fantasy.filter.hideTaken));
+      refreshFantasyPool();
+      return;
+    }
+    const fantasyQueueToggle = event.target.closest("[data-fantasy-queue-toggle]");
+    if (fantasyQueueToggle) {
+      const id = Number(fantasyQueueToggle.dataset.fantasyQueueToggle);
+      state.fantasy.queue = toggleQueue(state.fantasy.queue, id);
+      refreshFantasyPool();
+      if (!refreshFantasyDraftRoomLive()) renderLayout();
+      return;
+    }
+    const fantasyQueueUp = event.target.closest("[data-fantasy-queue-up]");
+    if (fantasyQueueUp) {
+      state.fantasy.queue = moveQueueItem(state.fantasy.queue, Number(fantasyQueueUp.dataset.fantasyQueueUp), "up");
+      if (!refreshFantasyDraftRoomLive()) renderLayout();
+      return;
+    }
+    const fantasyQueueDown = event.target.closest("[data-fantasy-queue-down]");
+    if (fantasyQueueDown) {
+      state.fantasy.queue = moveQueueItem(state.fantasy.queue, Number(fantasyQueueDown.dataset.fantasyQueueDown), "down");
+      if (!refreshFantasyDraftRoomLive()) renderLayout();
+      return;
+    }
+    const fantasyQueueRemove = event.target.closest("[data-fantasy-queue-remove]");
+    if (fantasyQueueRemove) {
+      state.fantasy.queue = removeFromQueue(state.fantasy.queue, Number(fantasyQueueRemove.dataset.fantasyQueueRemove));
+      refreshFantasyPool();
+      if (!refreshFantasyDraftRoomLive()) renderLayout();
+      return;
+    }
+    if (event.target.closest("[data-fantasy-queue-clear]")) {
+      state.fantasy.queue = [];
+      refreshFantasyPool();
+      if (!refreshFantasyDraftRoomLive()) renderLayout();
       return;
     }
     const fantasyDraftButton = event.target.closest("[data-fantasy-draft-player]");

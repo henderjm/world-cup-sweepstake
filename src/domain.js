@@ -27,6 +27,17 @@ const TEAM_ALIASES = new Map(
     "nottingham forest": "Nottingham",
     "tottenham hotspur": "Tottenham",
     "west ham united": "West Ham",
+    // The three promoted 2026/27 clubs: scripts/fetch-fantasy-players.mjs's
+    // /players/squads call gets the short form back from API-Football
+    // ("Coventry") while the fixtures endpoint gets the long form
+    // ("Coventry City", matching badges.js's LOCAL_CRESTS key). Without these,
+    // data/PL/players.json's player.team never joins against a live.json
+    // fixture's homeTeam/awayTeam for these three clubs, which silently
+    // starves the fantasy fixture-scoring join (src/fantasyDemoFixtures.js)
+    // and the real-league playerLockState join (src/fantasyLocks.js) alike.
+    "coventry": "Coventry City",
+    "ipswich": "Ipswich Town",
+    "leeds": "Leeds United",
   }),
 );
 

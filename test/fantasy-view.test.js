@@ -62,15 +62,66 @@ test("renderFantasyPlayerRows hides the Draft button when it is not my turn", ()
   assert.doesNotMatch(html, /data-fantasy-draft-player/);
 });
 
-test("renderFantasyPlayerRows marks an already-drafted player instead of offering a Draft button", () => {
+test("renderFantasyPlayerRows marks an already-drafted player instead of offering a Draft button, with hideTaken off", () => {
   const players = [pooledPlayer(1, "MID")];
-  const html = renderFantasyPlayerRows(players, { position: "All", search: "" }, {
+  const html = renderFantasyPlayerRows(players, { position: "All", search: "", hideTaken: false }, {
     isMyTurn: true,
     myRoster: [],
     draftedIds: new Set([1]),
   });
   assert.doesNotMatch(html, /data-fantasy-draft-player/);
   assert.match(html, /Drafted/);
+});
+
+// -- Hide-taken filter (defaults to on) ------------------------------------------
+
+test("renderFantasyPlayerRows hides an already-drafted player by default (hideTaken defaults to on)", () => {
+  const players = [pooledPlayer(1, "MID"), pooledPlayer(2, "MID")];
+  const html = renderFantasyPlayerRows(players, { position: "All", search: "" }, {
+    isMyTurn: true,
+    myRoster: [],
+    draftedIds: new Set([1]),
+  });
+  assert.doesNotMatch(html, /Player 1/);
+  assert.match(html, /Player 2/);
+});
+
+test("renderFantasyPlayerRows shows every drafted player when hideTaken is explicitly false", () => {
+  const players = [pooledPlayer(1, "MID"), pooledPlayer(2, "MID")];
+  const html = renderFantasyPlayerRows(players, { position: "All", search: "", hideTaken: false }, {
+    isMyTurn: true,
+    myRoster: [],
+    draftedIds: new Set([1]),
+  });
+  assert.match(html, /Player 1/);
+  assert.match(html, /Player 2/);
+});
+
+test("renderFantasyPlayerRows says no players match once hideTaken filters everything out", () => {
+  const players = [pooledPlayer(1, "MID")];
+  const html = renderFantasyPlayerRows(players, { position: "All", search: "" }, {
+    isMyTurn: true,
+    myRoster: [],
+    draftedIds: new Set([1]),
+  });
+  assert.match(html, /No players match/);
+});
+
+// -- Pick queue star toggle -------------------------------------------------------
+
+test("renderFantasyPlayerRows marks a queued player's star as active and an unqueued one as not", () => {
+  const players = [pooledPlayer(1, "MID"), pooledPlayer(2, "MID")];
+  const context = { isMyTurn: true, myRoster: [], draftedIds: new Set(), queuedIds: new Set([1]) };
+  const html = renderFantasyPlayerRows(players, { position: "All", search: "", hideTaken: false }, context);
+  assert.match(html, /data-fantasy-queue-toggle="1" aria-pressed="true"/);
+  assert.match(html, /data-fantasy-queue-toggle="2" aria-pressed="false"/);
+});
+
+test("renderFantasyPlayerRows omits the queue star for an already-drafted player", () => {
+  const players = [pooledPlayer(1, "MID")];
+  const context = { isMyTurn: true, myRoster: [], draftedIds: new Set([1]), queuedIds: new Set([1]) };
+  const html = renderFantasyPlayerRows(players, { position: "All", search: "", hideTaken: false }, context);
+  assert.doesNotMatch(html, /data-fantasy-queue-toggle/);
 });
 
 test("renderFantasyPlayerRows filters by position and search text", () => {

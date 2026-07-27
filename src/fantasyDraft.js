@@ -101,6 +101,102 @@ export function suggestedPickReason(player, myRoster, squadSlots = SQUAD_SLOTS) 
   return `Fills your scarcest open slot: ${player.position} (${remaining} of ${total} remaining). ${basis}`;
 }
 
+// -- Pick queue (personal shortlist) -----------------------------------------
+//
+// A manager's own ordered shortlist, built before and during the draft by
+// starring players in the pool. Purely client-side: an ordered array of
+// player ids, never sent to the server and never affecting anyone else's
+// draft (that's exactly why it lives in app.js's state.fantasy.queue /
+// state.demo.queue rather than anywhere near draftRoom.js's D1-backed pick
+// log). Every function here is a plain array-in, array-out transform so the
+// queue's ordering/legality rules are unit-testable without any DOM or state.
+
+// Appends a player if not already queued; re-adding an already-queued player
+// is a no-op (returns the same array reference) rather than moving it to the
+// back, since "toggle" (see toggleQueue below) is how a manager removes one.
+export function addToQueue(queue, playerId) {
+  const list = queue ?? [];
+  if (playerId == null || list.includes(playerId)) return list;
+  return [...list, playerId];
+}
+
+export function removeFromQueue(queue, playerId) {
+  return (queue ?? []).filter((id) => id !== playerId);
+}
+
+// Adds if absent, removes if present - the single action a pool row's queue
+// star (or the queue card's own remove button) drives.
+export function toggleQueue(queue, playerId) {
+  const list = queue ?? [];
+  return list.includes(playerId) ? removeFromQueue(list, playerId) : addToQueue(list, playerId);
+}
+
+// Moves one entry one slot toward the front ("up") or back ("down") the
+// queue order. Moving past either end, or an id no longer in the queue, is a
+// no-op (returns the same array reference) rather than wrapping or throwing,
+// so a caller can safely disable the button at the edges without a special
+// case, and a stale click after the entry was already removed does nothing.
+export function moveQueueItem(queue, playerId, direction) {
+  const list = queue ?? [];
+  const index = list.indexOf(playerId);
+  if (index === -1) return list;
+  const swapWith = direction === "up" ? index - 1 : index + 1;
+  if (swapWith < 0 || swapWith >= list.length) return list;
+  const next = [...list];
+  [next[index], next[swapWith]] = [next[swapWith], next[index]];
+  return next;
+}
+
+// The queue in display order, each id resolved to its player object (or null
+// if it's no longer in the pool - shouldn't happen, but never crash a
+// renderer over it) plus whether it's still available (not drafted by
+// anyone in the league). Lets the queue card show a taken player struck
+// through/marked "Gone" rather than silently vanishing, so a manager can see
+// what they lost and clear it deliberately rather than wonder where it went.
+export function queueEntries(queue, playerPool, draftedIds) {
+  const byId = new Map((playerPool ?? []).map((player) => [player.id, player]));
+  const drafted = draftedIds ?? new Set();
+  return (queue ?? []).map((playerId) => ({
+    playerId,
+    player: byId.get(playerId) ?? null,
+    available: !drafted.has(playerId),
+  }));
+}
+
+// Drops from the queue any player the manager now owns. A queued player who
+// was sniped by a rival deliberately stays (marked unavailable, see
+// queueEntries above) so the manager can see what they lost, but one they
+// actually drafted is just noise - the shortlist is "who I still want", and
+// leaving a signing sitting there tagged as gone reads like a loss.
+// Idempotent, and returns the same array reference when nothing changed so a
+// caller can assign the result back unconditionally without churning renders.
+export function pruneQueue(queue, myRoster) {
+  const list = queue ?? [];
+  const mine = new Set((myRoster ?? []).map((player) => player.id));
+  if (!list.some((playerId) => mine.has(playerId))) return list;
+  return list.filter((playerId) => !mine.has(playerId));
+}
+
+// The best pick from the queue right now: the first entry (in queue order)
+// that is both still available AND still a legal pick for `myRoster` (its
+// position bucket not already full) - a taken player, or one whose bucket
+// has since filled up from other picks, is skipped rather than offered.
+// Returns null once nothing in the queue clears both bars, so the caller
+// (the suggested-pick card, and the demo's clock-expiry autopick) can fall
+// back to the generic suggestedPick/autoPick heuristic.
+export function topQueuedPick(queue, playerPool, myRoster, draftedIds, squadSlots = SQUAD_SLOTS) {
+  const byId = new Map((playerPool ?? []).map((player) => [player.id, player]));
+  const drafted = draftedIds ?? new Set();
+  for (const playerId of queue ?? []) {
+    if (drafted.has(playerId)) continue;
+    const player = byId.get(playerId);
+    if (!player) continue;
+    const validation = validatePick({ roster: myRoster, draftedIds: drafted, player, squadSlots });
+    if (validation.valid) return player;
+  }
+  return null;
+}
+
 // -- Optional pool-file stat field (contract) --------------------------------
 //
 // avg/form/adp used to live here too: speculative columns designed against a

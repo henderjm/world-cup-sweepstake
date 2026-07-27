@@ -214,3 +214,21 @@ export async function loadPlayerPool() {
   }
   return response.json();
 }
+
+// The same static PL live feed data.js's loadModel("PL") reads, fetched
+// directly rather than through loadModel: the demo only needs raw
+// matches/standings for a fixture join and a club-strength derivation (see
+// src/fantasyDemoFixtures.js), not the scorer merge or zone/competition
+// wiring loadModel's buildModel also does. Failure (offline, 404, feed not
+// baked yet) is swallowed by the caller, not here (see startDemoDraft in
+// app.js), so the demo degrades to its pre-fixture flat scoring instead of
+// blocking the trial season on a feed that may never have been deployed.
+export async function loadPlFixtureData() {
+  const response = await fetch(`./data/PL/live.json?cache=${Date.now()}`, { cache: "no-store" });
+  if (!response.ok) {
+    const error = new Error(`PL fixture data ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  return response.json();
+}

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  addToQueue,
   canDraftPlayer,
   currentSeasonLabel,
   draftOrderEntries,
@@ -12,14 +13,20 @@ import {
   legalSwapTargets,
   matchupBarWidths,
   matchupLeadSide,
+  moveQueueItem,
   normalizePlayerStats,
   priorSeasonRangeLabel,
+  pruneQueue,
+  queueEntries,
   reduceDraftMessage,
+  removeFromQueue,
   squadBucketCounts,
   suggestedPick,
   suggestedPickReason,
   swapLineup,
   tierLabel,
+  toggleQueue,
+  topQueuedPick,
 } from "../src/fantasyDraft.js";
 
 test("formatCountdown renders mm:ss and rounds up to the next full second", () => {
@@ -521,4 +528,129 @@ test("matchupBarWidths ignores negative input rather than producing an out-of-ra
   const widths = matchupBarWidths(-5, 10);
   assert.equal(widths.me, 0);
   assert.equal(widths.opponent, 100);
+});
+
+// -- Pick queue (personal shortlist) ---------------------------------------------
+
+test("addToQueue appends a new id and is a no-op for one already queued", () => {
+  const once = addToQueue([], 1);
+  assert.deepEqual(once, [1]);
+  const twice = addToQueue(once, 2);
+  assert.deepEqual(twice, [1, 2]);
+  assert.equal(addToQueue(twice, 1), twice, "re-adding an already-queued id returns the same reference");
+});
+
+test("addToQueue ignores a null/undefined id", () => {
+  assert.deepEqual(addToQueue([1], null), [1]);
+  assert.deepEqual(addToQueue([1], undefined), [1]);
+});
+
+test("removeFromQueue drops just the named id, keeping order for the rest", () => {
+  assert.deepEqual(removeFromQueue([1, 2, 3], 2), [1, 3]);
+  assert.deepEqual(removeFromQueue([1, 2, 3], 99), [1, 2, 3]);
+});
+
+test("toggleQueue adds an unqueued id and removes an already-queued one", () => {
+  const added = toggleQueue([1], 2);
+  assert.deepEqual(added, [1, 2]);
+  const removed = toggleQueue(added, 1);
+  assert.deepEqual(removed, [2]);
+});
+
+// -- moveQueueItem: reordering the queue ------------------------------------------
+
+test("moveQueueItem swaps an entry one slot up or down", () => {
+  assert.deepEqual(moveQueueItem([1, 2, 3], 2, "up"), [2, 1, 3]);
+  assert.deepEqual(moveQueueItem([1, 2, 3], 2, "down"), [1, 3, 2]);
+});
+
+test("moveQueueItem is a no-op past either end of the queue", () => {
+  const queue = [1, 2, 3];
+  assert.equal(moveQueueItem(queue, 1, "up"), queue, "moving the first entry up is a no-op");
+  assert.equal(moveQueueItem(queue, 3, "down"), queue, "moving the last entry down is a no-op");
+});
+
+test("moveQueueItem is a no-op for an id no longer in the queue", () => {
+  const queue = [1, 2, 3];
+  assert.equal(moveQueueItem(queue, 99, "up"), queue);
+});
+
+// -- queueEntries: display order with staleness -----------------------------------
+
+test("queueEntries resolves each id to its player and preserves queue order", () => {
+  const pool = [player(1, "GK"), player(2, "DEF"), player(3, "MID")];
+  const entries = queueEntries([3, 1], pool, new Set());
+  assert.deepEqual(
+    entries.map((entry) => entry.playerId),
+    [3, 1],
+  );
+  assert.equal(entries[0].player.id, 3);
+  assert.equal(entries[0].available, true);
+});
+
+test("queueEntries marks a queued player taken by someone else as no longer available, rather than dropping it", () => {
+  const pool = [player(1, "GK"), player(2, "DEF")];
+  const entries = queueEntries([1, 2], pool, new Set([1]));
+  assert.equal(entries.length, 2, "a taken entry stays in the list rather than disappearing");
+  assert.equal(entries.find((entry) => entry.playerId === 1).available, false);
+  assert.equal(entries.find((entry) => entry.playerId === 2).available, true);
+});
+
+test("queueEntries resolves a stale id no longer in the pool to a null player rather than throwing", () => {
+  const entries = queueEntries([999], [], new Set());
+  assert.equal(entries[0].player, null);
+});
+
+// -- pruneQueue: drop what I now own, keep what a rival took -----------------------
+
+test("pruneQueue drops a queued player the manager drafted themselves", () => {
+  assert.deepEqual(pruneQueue([1, 2, 3], [player(2, "DEF")]), [1, 3]);
+});
+
+test("pruneQueue keeps a queued player a rival drafted, so the manager still sees the loss", () => {
+  // Only the manager's own roster prunes; a rival's pick is invisible here and
+  // stays queued, where queueEntries marks it unavailable instead.
+  assert.deepEqual(pruneQueue([1, 2], []), [1, 2]);
+});
+
+test("pruneQueue returns the same array reference when nothing was drafted, to avoid a pointless re-render", () => {
+  const queue = [1, 2];
+  assert.equal(pruneQueue(queue, [player(9, "MID")]), queue);
+});
+
+test("pruneQueue tolerates a null queue and a null roster", () => {
+  assert.deepEqual(pruneQueue(null, null), []);
+});
+
+// -- topQueuedPick: the queue's best still-legal pick ------------------------------
+
+test("topQueuedPick returns the first queued player who is both available and legal", () => {
+  const pool = [player(1, "GK"), player(2, "DEF"), player(3, "MID")];
+  const pick = topQueuedPick([1, 2, 3], pool, [], new Set());
+  assert.equal(pick.id, 1, "the first entry in queue order wins when everything ahead of it is clear");
+});
+
+test("topQueuedPick skips a queued player already taken by someone else", () => {
+  const pool = [player(1, "GK"), player(2, "DEF")];
+  const pick = topQueuedPick([1, 2], pool, [], new Set([1]));
+  assert.equal(pick.id, 2, "the taken 1st-queued player is skipped in favour of the next one");
+});
+
+test("topQueuedPick skips a queued player whose position bucket is now full on my roster", () => {
+  const myRoster = [player(10, "GK"), player(11, "GK")]; // GK cap is 2, now full
+  const pool = [player(1, "GK"), player(2, "DEF")];
+  const pick = topQueuedPick([1, 2], pool, myRoster, new Set());
+  assert.equal(pick.id, 2, "the GK is queued first but illegal now, so the next legal queued player wins");
+});
+
+test("topQueuedPick returns null once nothing in the queue is both available and legal", () => {
+  const myRoster = [player(10, "GK"), player(11, "GK")];
+  const pool = [player(1, "GK")];
+  assert.equal(topQueuedPick([1], pool, myRoster, new Set()), null);
+});
+
+test("topQueuedPick returns null for an empty or unset queue", () => {
+  const pool = [player(1, "GK")];
+  assert.equal(topQueuedPick([], pool, [], new Set()), null);
+  assert.equal(topQueuedPick(undefined, pool, [], new Set()), null);
 });
