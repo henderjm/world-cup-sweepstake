@@ -3,23 +3,51 @@ import test from "node:test";
 
 import { SQUAD_SIZE, SQUAD_SLOTS } from "../src/fantasy.js";
 import {
+  advanceDemoSeasonChunk,
   applyDemoPick,
+  autoBenchInjured,
   autoPickForRoom,
+  availableWaiverPlayers,
   buildDemoReportCard,
   composeDemoShareText,
   createDemoMembers,
   DEFAULT_DEMO_CLOCK_SECONDS,
   DEFAULT_DEMO_MANAGER_NAME,
+  demoChunkBoundaries,
+  DEMO_CHUNK_COUNT,
   DEMO_CLOCK_SECONDS_OPTIONS,
   DEMO_CLOCK_UNTIMED,
   DEMO_HUMAN_ID,
+  demoManagerForm,
+  DEMO_SEASON_GAMEWEEKS,
   demoClockDurationMs,
   draftedPlayerIds,
   initDemoDraftRoom,
+  initDemoSeason,
   isDemoDraftComplete,
+  isDemoSeasonComplete,
+  isFinalChunk,
+  saveDemoLineup,
   seededPlayerGameweekPoints,
-  simulateDemoSeason,
+  simulateDemoSeasonToEnd,
+  standingsThroughGameweek,
+  submitDemoWaiverClaims,
 } from "../src/fantasyDemo.js";
+import { standingsFromFixtures } from "../src/fantasyGameweek.js";
+
+// Runs the new stepwise engine to completion, the equivalent of the old
+// one-shot simulateDemoSeason (removed - see CLAUDE.md/the task brief: "the
+// old batch behaviour"), then attaches the final standings the same way
+// app.js does once a season finishes, so buildDemoReportCard tests below can
+// keep reading season.standings as a plain array.
+function runFullSeason({ seed, members, rosters, gameweeks = DEMO_SEASON_GAMEWEEKS }) {
+  let season = initDemoSeason({ seed, members, rosters, gameweeks });
+  while (!isDemoSeasonComplete(season)) {
+    season = advanceDemoSeasonChunk(season);
+  }
+  season.standings = standingsFromFixtures(season.fixtures, members);
+  return season;
+}
 
 // -- Setup --------------------------------------------------------------------
 
@@ -281,10 +309,10 @@ function smallRosterFor(prefix) {
   return roster;
 }
 
-test("simulateDemoSeason keeps a manager's points-for equal to the sum of their own gameweek scores", () => {
+test("advanceDemoSeasonChunk keeps a manager's points-for equal to the sum of their own gameweek scores", () => {
   const { members } = createDemoMembers(4, "Tester");
   const rosters = new Map(members.map((member) => [member.userId, smallRosterFor(member.userId)]));
-  const season = simulateDemoSeason({ seed: "consistency-seed", members, rosters, gameweeks: 10 });
+  const season = runFullSeason({ seed: "consistency-seed", members, rosters, gameweeks: 10 });
   for (const member of members) {
     const row = season.standings.find((entry) => entry.userId === member.userId);
     const sum = season.gwPointsByUser.get(member.userId).reduce((total, points) => total + points, 0);
@@ -292,11 +320,11 @@ test("simulateDemoSeason keeps a manager's points-for equal to the sum of their 
   }
 });
 
-test("simulateDemoSeason is deterministic given the same seed", () => {
+test("advanceDemoSeasonChunk is deterministic given the same seed and no waiver activity", () => {
   const { members } = createDemoMembers(4, "Tester");
   const rosters = new Map(members.map((member) => [member.userId, smallRosterFor(member.userId)]));
-  const first = simulateDemoSeason({ seed: "replay-seed", members, rosters, gameweeks: 12 });
-  const second = simulateDemoSeason({ seed: "replay-seed", members, rosters, gameweeks: 12 });
+  const first = runFullSeason({ seed: "replay-seed", members, rosters, gameweeks: 12 });
+  const second = runFullSeason({ seed: "replay-seed", members, rosters, gameweeks: 12 });
   assert.deepEqual(
     first.fixtures.map((f) => [f.gameweek, f.homeUserId, f.awayUserId, f.homeScore, f.awayScore]),
     second.fixtures.map((f) => [f.gameweek, f.homeUserId, f.awayUserId, f.homeScore, f.awayScore]),
@@ -304,11 +332,21 @@ test("simulateDemoSeason is deterministic given the same seed", () => {
   assert.deepEqual(first.standings, second.standings);
 });
 
-test("simulateDemoSeason produces the full round-robin fixture count for an even league", () => {
+test("advanceDemoSeasonChunk produces the full round-robin fixture count for an even league", () => {
   const { members } = createDemoMembers(6, "Tester");
   const rosters = new Map(members.map((member) => [member.userId, smallRosterFor(member.userId)]));
-  const season = simulateDemoSeason({ seed: "fixture-count-seed", members, rosters, gameweeks: 38 });
+  const season = runFullSeason({ seed: "fixture-count-seed", members, rosters, gameweeks: 38 });
   assert.equal(season.fixtures.length, (38 * 6) / 2);
+});
+
+test("initDemoSeason/advanceDemoSeasonChunk pauses at each chunk boundary rather than simulating all 38 gameweeks at once", () => {
+  const { members } = createDemoMembers(4, "Tester");
+  const rosters = new Map(members.map((member) => [member.userId, smallRosterFor(member.userId)]));
+  let season = initDemoSeason({ seed: "chunked-seed", members, rosters });
+  assert.equal(season.simulatedThrough, 0);
+  season = advanceDemoSeasonChunk(season);
+  assert.equal(season.simulatedThrough, 7, "the first of 6 chunks should stop after gameweek 7 (38/6, remainder-first)");
+  assert.equal(isDemoSeasonComplete(season), false);
 });
 
 // -- Report card -----------------------------------------------------------------
@@ -464,4 +502,372 @@ test("composeDemoShareText omits the MVP clause gracefully when there is no MVP"
   const text = composeDemoShareText(reportCard, "https://kickoffdraft.com/#demo");
   assert.match(text, /1st of 4/);
   assert.equal(text.includes("MVP"), false);
+});
+
+// -- Fixture-aware scoring, injuries, and form (season engine integration) -------
+
+function teamedRoster(prefix, team) {
+  return smallRosterFor(prefix).map((player) => ({ ...player, team }));
+}
+
+test("a club with no fixture that gameweek scores 0 for every one of its players (a blank gameweek)", () => {
+  const { members } = createDemoMembers(4, "Tester");
+  const rosters = new Map([
+    [members[0].userId, teamedRoster(members[0].userId, "Alpha")],
+    [members[1].userId, teamedRoster(members[1].userId, "Beta")],
+    [members[2].userId, teamedRoster(members[2].userId, "Gamma")],
+    [members[3].userId, teamedRoster(members[3].userId, "Delta")],
+  ]);
+  const matches = [
+    { matchday: 1, homeTeam: "Alpha", awayTeam: "Beta" },
+    { matchday: 1, homeTeam: "Gamma", awayTeam: "Delta" },
+    // gameweek 2: only Gamma/Delta have a fixture - Alpha and Beta are blank.
+    { matchday: 2, homeTeam: "Gamma", awayTeam: "Delta" },
+  ];
+  let season = initDemoSeason({ seed: "blank-seed", members, rosters, matches, gameweeks: 2, chunks: 1 });
+  season = advanceDemoSeasonChunk(season);
+  const alphaRoster = rosters.get(members[0].userId);
+  const betaRoster = rosters.get(members[1].userId);
+  for (const player of [...alphaRoster, ...betaRoster]) {
+    assert.equal(
+      season.playerPointsByGameweek.get(player.id)[1],
+      0,
+      `${player.id} (blank club) should score 0 in gameweek 2`,
+    );
+  }
+  const gammaRoster = rosters.get(members[2].userId);
+  const anyGammaScored = gammaRoster.some((player) => season.playerPointsByGameweek.get(player.id)[1] > 0);
+  assert.ok(anyGammaScored, "sanity check: a club WITH a fixture that gameweek should not be forced to 0");
+});
+
+test("an injured player scores exactly 0 for every gameweek inside their injury window", () => {
+  const { members } = createDemoMembers(4, "Tester");
+  const rosters = new Map(members.map((member) => [member.userId, smallRosterFor(member.userId)]));
+  let season = initDemoSeason({ seed: "injury-integration-seed", members, rosters, gameweeks: 38, chunks: 1 });
+  season = advanceDemoSeasonChunk(season);
+  let foundInjury = false;
+  for (const [playerId, series] of season.playerPointsByGameweek.entries()) {
+    for (const window of season.injuryWindows.get(playerId) ?? []) {
+      foundInjury = true;
+      for (let gw = window.start; gw <= window.end; gw++) {
+        assert.equal(series[gw - 1], 0, `player ${playerId} should score 0 in gw ${gw} (injured ${window.start}-${window.end})`);
+      }
+    }
+  }
+  assert.ok(foundInjury, "expected at least one injury across a 60-player pool over 38 gameweeks");
+});
+
+test("fixture difficulty changes a player's total: facing a weak side all season outscores facing a strong side", () => {
+  const { members } = createDemoMembers(2, "Tester");
+  const roster = teamedRoster("mine", "MyClub");
+  const rosters = new Map([
+    [members[0].userId, roster],
+    [members[1].userId, teamedRoster("theirs", "Filler")],
+  ]);
+
+  const weakOpponentTable = new Map([
+    ["Top", { team: "Top", position: 1, played: 10 }],
+    ["MyClub", { team: "MyClub", position: 2, played: 10 }],
+    ["Mid", { team: "Mid", position: 3, played: 10 }],
+    ["Weakling", { team: "Weakling", position: 4, played: 10 }],
+  ]);
+  const strongOpponentTable = new Map([
+    ["Titan", { team: "Titan", position: 1, played: 10 }],
+    ["MyClub", { team: "MyClub", position: 2, played: 10 }],
+    ["Mid2", { team: "Mid2", position: 3, played: 10 }],
+    ["Bottom", { team: "Bottom", position: 4, played: 10 }],
+  ]);
+  const matchesVsWeak = Array.from({ length: 38 }, (_, i) => ({ matchday: i + 1, homeTeam: "MyClub", awayTeam: "Weakling" }));
+  const matchesVsStrong = Array.from({ length: 38 }, (_, i) => ({ matchday: i + 1, homeTeam: "MyClub", awayTeam: "Titan" }));
+
+  let easySeason = initDemoSeason({ seed: "difficulty-seed", members, rosters, matches: matchesVsWeak, standingsMap: weakOpponentTable, chunks: 1 });
+  let hardSeason = initDemoSeason({ seed: "difficulty-seed", members, rosters, matches: matchesVsStrong, standingsMap: strongOpponentTable, chunks: 1 });
+  easySeason = advanceDemoSeasonChunk(easySeason);
+  hardSeason = advanceDemoSeasonChunk(hardSeason);
+
+  const totalEasy = roster.reduce((sum, player) => sum + (easySeason.seasonPointsByPlayer.get(player.id) ?? 0), 0);
+  const totalHard = roster.reduce((sum, player) => sum + (hardSeason.seasonPointsByPlayer.get(player.id) ?? 0), 0);
+  assert.ok(totalEasy > totalHard, `facing a weak side all season (${totalEasy}) should outscore facing a strong side (${totalHard})`);
+});
+
+// -- Waivers at the desk ------------------------------------------------------------
+
+test("submitDemoWaiverClaims: the human wins a contested wire player when their rolling priority is better", () => {
+  const { members } = createDemoMembers(3, "Tester"); // you (priority 1), bot-1, bot-2
+  const rosters = new Map(members.map((member) => [member.userId, smallRosterFor(member.userId)]));
+  let season = initDemoSeason({ seed: "waiver-seed", members, rosters, gameweeks: 7, chunks: 1 });
+  season = advanceDemoSeasonChunk(season);
+
+  const freeAgent = { id: "wire-def-1", name: "Wire DEF", position: "DEF", tier: "starter" };
+  season.rosterById.set(freeAgent.id, freeAgent);
+  season.seasonPointsByPlayer.set(freeAgent.id, 999); // an irresistible upgrade for anyone's weakest DEF
+
+  const myWorstDef = rosters.get("you").find((player) => player.position === "DEF");
+  const humanClaim = { addPlayerId: freeAgent.id, dropPlayerId: myWorstDef.id };
+
+  const { season: resolved, humanResult } = submitDemoWaiverClaims(season, { humanId: "you", humanClaim });
+  assert.equal(humanResult.status, "processed", "priority 1 should win a contested claim over lower-priority bots");
+  const humanRosterAfter = resolved.rosters.get("you");
+  assert.equal(humanRosterAfter.length, SQUAD_SIZE);
+  assert.ok(humanRosterAfter.some((player) => player.id === freeAgent.id));
+  assert.equal(humanRosterAfter.some((player) => player.id === myWorstDef.id), false);
+  const counts = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+  for (const player of humanRosterAfter) counts[player.position] += 1;
+  assert.deepEqual(counts, SQUAD_SLOTS, "the same-position-swap invariant must hold after a waiver win");
+});
+
+test("submitDemoWaiverClaims: a bot with better rolling priority wins the same contested wire player instead", () => {
+  const { members } = createDemoMembers(3, "Tester");
+  const rosters = new Map(members.map((member) => [member.userId, smallRosterFor(member.userId)]));
+  let season = initDemoSeason({ seed: "waiver-seed-2", members, rosters, gameweeks: 7, chunks: 1 });
+  season = advanceDemoSeasonChunk(season);
+  season.priorities = [
+    { userId: "bot-1", priority: 1 },
+    { userId: "bot-2", priority: 2 },
+    { userId: "you", priority: 3 },
+  ];
+
+  const freeAgent = { id: "wire-def-2", name: "Wire DEF 2", position: "DEF", tier: "starter" };
+  season.rosterById.set(freeAgent.id, freeAgent);
+  season.seasonPointsByPlayer.set(freeAgent.id, 999);
+  const myWorstDef = rosters.get("you").find((player) => player.position === "DEF");
+  const humanClaim = { addPlayerId: freeAgent.id, dropPlayerId: myWorstDef.id };
+
+  const { season: resolved, humanResult } = submitDemoWaiverClaims(season, { humanId: "you", humanClaim });
+  assert.equal(humanResult.status, "rejected");
+  assert.equal(humanResult.reason, "Player already claimed");
+  const humanRosterAfter = resolved.rosters.get("you");
+  assert.ok(humanRosterAfter.some((player) => player.id === myWorstDef.id), "a rejected claim must not drop the player after all");
+});
+
+test("submitDemoWaiverClaims lets bots act even when the human makes no claim at all", () => {
+  const { members } = createDemoMembers(3, "Tester");
+  const rosters = new Map(members.map((member) => [member.userId, smallRosterFor(member.userId)]));
+  let season = initDemoSeason({ seed: "waiver-seed-3", members, rosters, gameweeks: 7, chunks: 1 });
+  season = advanceDemoSeasonChunk(season);
+  const freeAgent = { id: "wire-def-3", name: "Wire DEF 3", position: "DEF", tier: "starter" };
+  season.rosterById.set(freeAgent.id, freeAgent);
+  season.seasonPointsByPlayer.set(freeAgent.id, 999);
+
+  const { season: resolved, humanResult } = submitDemoWaiverClaims(season, { humanId: "you", humanClaim: null });
+  assert.equal(humanResult, null);
+  assert.notEqual(resolved.ownedBy.get(freeAgent.id), undefined);
+  assert.notEqual(resolved.ownedBy.get(freeAgent.id), "you");
+});
+
+test("submitDemoWaiverClaims is a no-op that returns the SAME season when nobody makes a claim", () => {
+  const { members } = createDemoMembers(2, "Tester"); // no bots to auto-claim
+  const rosters = new Map(members.map((member) => [member.userId, smallRosterFor(member.userId)]));
+  const season = initDemoSeason({ seed: "waiver-noop-seed", members, rosters, gameweeks: 3, chunks: 1 });
+  const { season: resolved, humanResult } = submitDemoWaiverClaims(season, { humanId: "you", humanClaim: null });
+  assert.equal(resolved, season);
+  assert.equal(humanResult, null);
+});
+
+test("availableWaiverPlayers ranks the unowned pool by season-to-date points, not preseason tier", () => {
+  const { members } = createDemoMembers(2, "Tester");
+  const rosters = new Map(members.map((member) => [member.userId, smallRosterFor(member.userId)]));
+  const season = initDemoSeason({ seed: "wire-rank-seed", members, rosters, gameweeks: 3, chunks: 1 });
+  season.rosterById.set("hidden-gem", { id: "hidden-gem", name: "Hidden Gem", position: "FWD", tier: "fringe" });
+  season.rosterById.set("bust", { id: "bust", name: "Bust", position: "FWD", tier: "starter" });
+  season.seasonPointsByPlayer.set("hidden-gem", 80);
+  season.seasonPointsByPlayer.set("bust", 5);
+  const ranked = availableWaiverPlayers(season).filter((player) => ["hidden-gem", "bust"].includes(player.id));
+  assert.deepEqual(ranked.map((player) => player.id), ["hidden-gem", "bust"]);
+});
+
+// -- Lineup edits at the desk --------------------------------------------------------
+
+test("saveDemoLineup rejects an illegal formation via the REAL validateLineupSelection, leaving the season untouched", () => {
+  const { members } = createDemoMembers(2, "Tester");
+  const roster = smallRosterFor("you");
+  const rosters = new Map([
+    [members[0].userId, roster],
+    [members[1].userId, smallRosterFor("bot-1")],
+  ]);
+  const season = initDemoSeason({ seed: "lineup-seed", members, rosters, gameweeks: 5, chunks: 1 });
+  const tooFewStarters = roster.slice(0, 5).map((player) => player.id);
+  const result = saveDemoLineup(season, "you", { starters: tooFewStarters, captainId: tooFewStarters[0] });
+  assert.equal(result.ok, false);
+  assert.ok(result.error);
+  assert.equal(result.season, season, "a rejected save must return the SAME season reference, not a mutated copy");
+});
+
+test("saveDemoLineup applies a legal captain change", () => {
+  const { members } = createDemoMembers(2, "Tester");
+  const roster = smallRosterFor("you");
+  const rosters = new Map([
+    [members[0].userId, roster],
+    [members[1].userId, smallRosterFor("bot-1")],
+  ]);
+  const season = initDemoSeason({ seed: "lineup-seed-2", members, rosters, gameweeks: 5, chunks: 1 });
+  const starters = season.lineups.get("you").starters.map((entry) => entry.playerId);
+  const newCaptain = starters[1];
+  const result = saveDemoLineup(season, "you", { starters, captainId: newCaptain });
+  assert.equal(result.ok, true);
+  const captainEntry = result.season.lineups.get("you").starters.find((entry) => entry.isCaptain);
+  assert.equal(captainEntry.playerId, newCaptain);
+});
+
+test("autoBenchInjured swaps an injured starter for the best same-position bench option by season-to-date points", () => {
+  const { members } = createDemoMembers(2, "Tester");
+  const roster = smallRosterFor("you");
+  const rosters = new Map([
+    [members[0].userId, roster],
+    [members[1].userId, smallRosterFor("bot-1")],
+  ]);
+  const season = initDemoSeason({ seed: "bench-seed", members, rosters, gameweeks: 5, chunks: 1 });
+
+  const lineup = season.lineups.get("you");
+  const starterId = lineup.starters[0].playerId;
+  const starterPlayer = roster.find((player) => player.id === starterId);
+  const benchOption = roster.find(
+    (player) => player.position === starterPlayer.position && !lineup.starters.some((entry) => entry.playerId === player.id),
+  );
+  assert.ok(benchOption, "test fixture assumption: a bench player shares the first starter's position");
+
+  season.injuryWindows.set(starterId, [{ start: 1, end: 3 }]);
+  season.seasonPointsByPlayer.set(benchOption.id, 500);
+
+  const next = autoBenchInjured(season, "you", 2);
+  const newStarterIds = next.lineups.get("you").starters.map((entry) => entry.playerId);
+  assert.equal(newStarterIds.includes(starterId), false);
+  assert.equal(newStarterIds.includes(benchOption.id), true);
+});
+
+test("autoBenchInjured is a no-op when nobody in the lineup is currently injured", () => {
+  const { members } = createDemoMembers(2, "Tester");
+  const rosters = new Map(members.map((member) => [member.userId, smallRosterFor(member.userId)]));
+  const season = initDemoSeason({ seed: "bench-noop-seed", members, rosters, gameweeks: 5, chunks: 1 });
+  assert.equal(autoBenchInjured(season, "you", 1), season);
+});
+
+// -- Watch or manage: the "sim to the end" escape ------------------------------------
+
+test("simulateDemoSeasonToEnd reaches the final gameweek without needing any further desk decisions", () => {
+  const { members } = createDemoMembers(4, "Tester");
+  const rosters = new Map(members.map((member) => [member.userId, smallRosterFor(member.userId)]));
+  let season = initDemoSeason({ seed: "sim-to-end-seed", members, rosters });
+  season = advanceDemoSeasonChunk(season);
+  const finished = simulateDemoSeasonToEnd(season, { humanId: "you" });
+  assert.equal(isDemoSeasonComplete(finished), true);
+  assert.equal(finished.simulatedThrough, DEMO_SEASON_GAMEWEEKS);
+});
+
+test("simulateDemoSeasonToEnd never breaks the human's squad-slot invariant despite auto-managed waiver activity", () => {
+  const { members } = createDemoMembers(6, "Tester");
+  const rosters = new Map(members.map((member) => [member.userId, smallRosterFor(member.userId)]));
+  const season = initDemoSeason({ seed: "sim-to-end-invariant-seed", members, rosters });
+  const finished = simulateDemoSeasonToEnd(season, { humanId: "you" });
+  const roster = finished.rosters.get("you");
+  assert.equal(roster.length, SQUAD_SIZE);
+  const counts = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+  for (const player of roster) counts[player.position] += 1;
+  assert.deepEqual(counts, SQUAD_SLOTS);
+});
+
+// -- Chunking and form helpers --------------------------------------------------------
+
+test("demoChunkBoundaries splits 38 gameweeks into 6 chunks, remainder spread across the first chunks", () => {
+  assert.deepEqual(demoChunkBoundaries(38, 6), [7, 14, 20, 26, 32, 38]);
+});
+
+test("DEMO_CHUNK_COUNT is 6, matching the 'roughly 6 decisions' pacing from the brief", () => {
+  assert.equal(DEMO_CHUNK_COUNT, 6);
+});
+
+test("isFinalChunk is only true once every chunk boundary has been played", () => {
+  const { members } = createDemoMembers(2, "Tester");
+  const rosters = new Map(members.map((member) => [member.userId, smallRosterFor(member.userId)]));
+  let season = initDemoSeason({ seed: "final-chunk-seed", members, rosters, gameweeks: 4, chunks: 2 });
+  assert.equal(isFinalChunk(season), false);
+  season = advanceDemoSeasonChunk(season);
+  assert.equal(isFinalChunk(season), false);
+  season = advanceDemoSeasonChunk(season);
+  assert.equal(isFinalChunk(season), true);
+});
+
+test("demoManagerForm reports W/D/L oldest-first for a manager's own decided fixtures only", () => {
+  const fixtures = [
+    { gameweek: 1, homeUserId: "you", awayUserId: "bot-1", homeScore: 50, awayScore: 40 },
+    { gameweek: 2, homeUserId: "bot-2", awayUserId: "you", homeScore: 60, awayScore: 60 },
+    { gameweek: 3, homeUserId: "you", awayUserId: "bot-1", homeScore: 30, awayScore: 45 },
+  ];
+  assert.deepEqual(demoManagerForm(fixtures, "you", 3), ["W", "D", "L"]);
+});
+
+test("demoManagerForm caps to the last N results", () => {
+  const fixtures = Array.from({ length: 7 }, (_, i) => ({
+    gameweek: i + 1,
+    homeUserId: "you",
+    awayUserId: "bot-1",
+    homeScore: 10,
+    awayScore: 0,
+  }));
+  assert.equal(demoManagerForm(fixtures, "you", 7, 5).length, 5);
+});
+
+// -- Report card: bestTransfer / worstInjuryLuck --------------------------------------
+
+test("buildDemoReportCard surfaces the best transfer: the acquired player's points scored SINCE acquisition", () => {
+  const season = {
+    standings: [{ userId: "you", played: 2, wins: 1, draws: 0, losses: 1, pointsFor: 100, pointsAgainst: 90 }],
+    fixtures: [],
+    gwPointsByUser: new Map([["you", [50, 50]]]),
+    playerSeasonTotals: new Map([["you", new Map()]]),
+    lineups: new Map([["you", { starters: [] }]]),
+    rosterById: new Map([
+      [1, { id: 1, name: "Waiver Wonder" }],
+      [2, { id: 2, name: "Dropped Dud" }],
+    ]),
+    waiverLog: [
+      { userId: "you", status: "processed", addPlayerId: 1, dropPlayerId: 2, gameweek: 1 },
+      { userId: "bot-1", status: "processed", addPlayerId: 3, dropPlayerId: 4, gameweek: 1 },
+    ],
+    playerPointsByGameweek: new Map([[1, [0, 20, 15]]]),
+  };
+  const card = buildDemoReportCard({ humanId: "you", members: REPORT_MEMBERS, season });
+  assert.equal(card.bestTransfer.player.name, "Waiver Wonder");
+  assert.equal(card.bestTransfer.points, 35);
+});
+
+test("buildDemoReportCard surfaces the worst injury luck among the human's CURRENT roster", () => {
+  const season = {
+    standings: [{ userId: "you", played: 1, wins: 1, draws: 0, losses: 0, pointsFor: 50, pointsAgainst: 10 }],
+    fixtures: [],
+    gwPointsByUser: new Map([["you", [50]]]),
+    playerSeasonTotals: new Map([["you", new Map()]]),
+    lineups: new Map([["you", { starters: [] }]]),
+    rosterById: new Map(),
+    rosters: new Map([
+      [
+        "you",
+        [
+          { id: 1, name: "Fit" },
+          { id: 2, name: "Crocked" },
+        ],
+      ],
+    ]),
+    injuryWindows: new Map([
+      [1, [{ start: 1, end: 1 }]],
+      [2, [{ start: 2, end: 5 }]],
+    ]),
+  };
+  const card = buildDemoReportCard({ humanId: "you", members: REPORT_MEMBERS, season });
+  assert.equal(card.worstInjuryLuck.player.name, "Crocked");
+  assert.equal(card.worstInjuryLuck.gameweeksMissed, 4);
+});
+
+test("buildDemoReportCard's bestTransfer/worstInjuryLuck are null (not throwing) against a minimal hand-built season", () => {
+  const season = {
+    standings: [{ userId: "you", played: 0, wins: 0, draws: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 }],
+    fixtures: [],
+    gwPointsByUser: new Map([["you", []]]),
+    playerSeasonTotals: new Map([["you", new Map()]]),
+    lineups: new Map([["you", { starters: [] }]]),
+    rosterById: new Map(),
+  };
+  const card = buildDemoReportCard({ humanId: "you", members: REPORT_MEMBERS, season });
+  assert.equal(card.bestTransfer, null);
+  assert.equal(card.worstInjuryLuck, null);
 });

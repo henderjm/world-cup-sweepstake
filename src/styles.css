@@ -2476,4 +2476,87 @@ button { font-family: inherit; cursor: pointer; }
   .demo-report__actions { flex-direction: column; }
   .demo-report__actions .btn, .demo-report__actions .seg { width: 100%; text-align: center; }
 }
+
+/* Manager desk (Phase 4.6): the interactive pause between simulated chunks.
+   No fixed-width grid columns anywhere here (unlike demo-roll__table, which
+   needs one for its compact standings grid) - every row below is a flexible
+   flex row with min-width: 0 on the text cell, so it reflows rather than
+   overflows at 375px. -------------------------------------------------- */
+
+.demo-desk { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.demo-desk__card { display: flex; flex-direction: column; gap: 10px; }
+
+.demo-desk__headrow { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.demo-desk__position { font-size: 20px; font-weight: 900; margin-top: 2px; }
+
+.demo-desk-form { display: flex; gap: 4px; flex-wrap: wrap; }
+.demo-desk-form__chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--accent-ink);
+  background: var(--faint);
+}
+.demo-desk-form__chip--w { background: var(--accent); }
+.demo-desk-form__chip--l { background: var(--clay); color: var(--text); }
+.demo-desk-form__chip--d { background: var(--muted); }
+
+.demo-desk-results { display: flex; flex-direction: column; gap: 4px; }
+.demo-desk-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.demo-desk-result__gw { flex: none; width: 44px; font-size: 11px; color: var(--muted); }
+.demo-desk-result__score { flex: none; font-weight: 800; font-size: 13px; }
+.demo-desk-result__opp { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+.demo-desk-result__outcome { flex: none; width: 20px; text-align: center; font-weight: 900; font-size: 12px; }
+.demo-desk-result--w .demo-desk-result__outcome { color: var(--accent); }
+.demo-desk-result--l .demo-desk-result__outcome { color: var(--clay); }
+.demo-desk-result--d .demo-desk-result__outcome { color: var(--muted); }
+
+.demo-desk-news__group { margin-bottom: 10px; }
+.demo-desk-news__group:last-child { margin-bottom: 0; }
+.demo-desk-news__label { font-size: 11px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fantasy-accent); margin-bottom: 6px; }
+.demo-desk-news__row { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 12.5px; }
+.demo-desk-news__name { flex: none; font-weight: 700; min-width: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.demo-desk-wire__rows { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+/* .fantasy-fa-row's own grid (grid-template-columns / min-width: 320px, see
+   above) assumes the real free-agents panel's own horizontal-scroll wrapper
+   (.fantasy-pool__scroll), which the desk does not have - reusing it as-is
+   here overflowed the whole page at 375px (the exact bug class CLAUDE.md
+   warns about). Overriding to a flexible flex row, no minimum width, fixes
+   it while keeping the same background/padding/badge look. */
+.demo-desk-wire__row.fantasy-fa-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.demo-desk-wire__row .fantasy-fa-row__id { flex: 1 1 auto; min-width: 0; }
+.demo-desk-wire__row .fantasy-pos { flex: none; }
+.demo-desk-wire__row .fantasy-fa-row__action { flex: none; }
+.demo-desk-wire__row.is-queued .fantasy-fa-row__action { opacity: 0.85; }
+.demo-desk-waiver__lastresult { padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.demo-desk-waiver__lastresult--won { color: var(--fantasy-accent); }
+.demo-desk-wire__queued { color: var(--fantasy-accent); }
+.demo-desk-wire__flow { margin-top: 10px; }
+
+.demo-desk__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+@media (max-width: 480px) {
+  .demo-desk__actions { flex-direction: column; }
+  .demo-desk__actions .btn, .demo-desk__actions .seg { width: 100%; text-align: center; }
+  .demo-desk-news__name { max-width: 60%; }
+}
+
 .tutorial-resolver__aftermath dd { margin: 0; color: var(--muted); line-height: 1.6; }
