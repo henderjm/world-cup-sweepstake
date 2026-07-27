@@ -66,6 +66,7 @@ import {
 } from "../src/fantasyWaivers.js";
 import { lockedPlayerIds, playerLockState } from "../src/fantasyLocks.js";
 import { dueDraftReminder, validateDraftSchedule } from "../src/fantasyScheduling.js";
+import { blendWithCurrentSeason } from "../src/fantasyExpectedPoints.js";
 
 export { FantasyDraftRoom } from "./draftRoom.js";
 
@@ -254,6 +255,12 @@ export default {
     if (fantasyLeagueDetailRoute && request.method === "GET") {
       return handleFantasyLeagueDetail(request, env, Number(fantasyLeagueDetailRoute[1]), cors);
     }
+    // Public, not league-scoped: xP is a property of the player, not of any
+    // one manager's league membership, and the figure itself carries nothing
+    // sensitive (see /analysis/:id for the same "public read" precedent).
+    if (url.pathname === "/fantasy/players/xp" && request.method === "GET") {
+      return handleFantasyPlayersXp(env, cors);
+    }
 
     // Deliberately above the API_FOOTBALL_KEY guard below. This answers the
     // one question that decides whether a draft can run, and it is worth the
@@ -337,6 +344,10 @@ export default {
         await runScheduledFantasyScoring(env);
         await runScheduledWaiverRuns(env);
         await runScheduledDraftReminders(env);
+        // Last, deliberately: this only refreshes a display figure (xP), so a
+        // bug here must never sit upstream of scoring/waivers/reminders the
+        // way an early throw would otherwise skip everything after it.
+        await runScheduledFantasyXpBlend(env);
       })(),
     );
   },
@@ -1293,6 +1304,14 @@ async function upsertFantasyPlayerPool(env) {
 
   // D1 batches are practically bounded; chunk the upsert so a large squad pool
   // (all 20 PL clubs, ~500-600 players) never risks a single oversized batch.
+  // Each chunk also seeds fantasy_player_xp's historical_xp/historical_basis
+  // from the baked pool's own xp/xpBasis (Phase 4.5's expected-points bake -
+  // see scripts/fetch-fantasy-players.mjs). historical_* is always refreshed
+  // from the pool; xp/xp_basis (what the app actually reads) is only
+  // INSERTed for a player fantasy_player_xp has never seen before - an
+  // existing row's xp/xp_basis is left alone here so a re-bake never
+  // clobbers whatever runScheduledFantasyXpBlend already computed this
+  // season with the untouched historical figure.
   const CHUNK = 100;
   for (let i = 0; i < players.length; i += CHUNK) {
     const chunk = players.slice(i, i + CHUNK);
@@ -1303,6 +1322,17 @@ async function upsertFantasyPlayerPool(env) {
            ON CONFLICT(id) DO UPDATE SET name = ?2, team = ?3, position = ?4, updated_at = datetime('now')`,
         ).bind(player.id, player.name ?? "", player.team ?? "", player.position ?? "MID"),
       ),
+    );
+    await env.DB.batch(
+      chunk.map((player) => {
+        const xp = typeof player.xp === "number" && Number.isFinite(player.xp) ? player.xp : null;
+        const basis = typeof player.xpBasis === "string" ? player.xpBasis : null;
+        return env.DB.prepare(
+          `INSERT INTO fantasy_player_xp (player_id, historical_xp, historical_basis, xp, xp_basis, updated_at)
+           VALUES (?1, ?2, ?3, ?2, ?3, datetime('now'))
+           ON CONFLICT(player_id) DO UPDATE SET historical_xp = ?2, historical_basis = ?3, updated_at = datetime('now')`,
+        ).bind(player.id, xp, basis);
+      }),
     );
   }
 }
@@ -1695,6 +1725,106 @@ async function recomputeLeagueGameweek(env, leagueId, gameweek, playerPoints) {
     }
   }
   if (fixtureUpdates.length) await env.DB.batch(fixtureUpdates);
+}
+
+// -- Expected points (xP): in-season blend (Phase 4.5) -----------------------
+// data/PL/players.json bakes each player's HISTORICAL xP (see
+// scripts/fetch-fantasy-players.mjs and src/fantasyExpectedPoints.js), seeded
+// into fantasy_player_xp.historical_xp/historical_basis by
+// upsertFantasyPlayerPool above. This pass blends that prior with the
+// player's actual scoring so far THIS season
+// (src/fantasyExpectedPoints.js's blendWithCurrentSeason) and writes the
+// result to fantasy_player_xp.xp/xp_basis, which is what GET
+// /fantasy/players/xp (and so the app) actually reads.
+//
+// Gated on a newly-COMPLETED gameweek, not run on every one-minute tick:
+// fantasy_xp_state remembers the last gameweek this pass already blended
+// through, so a tick that finds no new completed gameweek is a single cheap
+// D1 read and nothing else - recomputing ~550 players' worth of scores every
+// minute for a figure that only changes once a gameweek finishes would be
+// pure waste.
+async function runScheduledFantasyXpBlend(env) {
+  if (!env.DB || !env.API_FOOTBALL_KEY) return;
+  try {
+    const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
+    if (!comp) return; // fantasy is PL-only; nothing to blend without PL configured
+
+    // Reuses the same /live fetch runScheduledFantasyScoring already made
+    // this tick (same edge cache, same reasoning as the scheduled() handler's
+    // own docstring on why these passes run sequentially rather than in
+    // parallel).
+    const live = await getLive(comp, env.API_FOOTBALL_KEY);
+    const currentGameweek = currentGameweekFromMatches(live.matches);
+    const latestCompleted = currentGameweek - 1;
+    if (latestCompleted < 1) return; // season hasn't produced a completed gameweek yet
+
+    const state = await env.DB.prepare(`SELECT last_completed_gameweek FROM fantasy_xp_state WHERE id = 1`).first();
+    if ((state?.last_completed_gameweek ?? 0) >= latestCompleted) return; // nothing new to blend
+
+    const [playersResult, scoresResult] = await Promise.all([
+      env.DB.prepare(`SELECT id, historical_xp, historical_basis FROM fantasy_players WHERE active = 1`).all(),
+      env.DB.prepare(`SELECT player_id, points FROM fantasy_player_scores WHERE gameweek <= ?1`)
+        .bind(latestCompleted)
+        .all(),
+    ]);
+
+    const pointsByPlayer = new Map();
+    const gameweeksByPlayer = new Map();
+    for (const row of scoresResult.results ?? []) {
+      pointsByPlayer.set(row.player_id, (pointsByPlayer.get(row.player_id) ?? 0) + row.points);
+      gameweeksByPlayer.set(row.player_id, (gameweeksByPlayer.get(row.player_id) ?? 0) + 1);
+    }
+
+    const CHUNK = 100;
+    const players = playersResult.results ?? [];
+    for (let i = 0; i < players.length; i += CHUNK) {
+      const chunk = players.slice(i, i + CHUNK);
+      try {
+        await env.DB.batch(
+          chunk.map((player) => {
+            const gameweeksPlayed = gameweeksByPlayer.get(player.id) ?? 0;
+            const currentSeasonPoints = pointsByPlayer.get(player.id) ?? 0;
+            const blended = blendWithCurrentSeason(player.historical_xp, currentSeasonPoints, gameweeksPlayed);
+            const basis = gameweeksPlayed > 0 ? "blended" : player.historical_basis;
+            return env.DB.prepare(
+              `UPDATE fantasy_player_xp SET xp = ?2, xp_basis = ?3, updated_at = datetime('now') WHERE player_id = ?1`,
+            ).bind(player.id, blended, basis);
+          }),
+        );
+      } catch {
+        // one bad chunk must not block the others; the next gameweek's blend
+        // (or a later tick, once fantasy_xp_state hasn't advanced) retries it
+      }
+    }
+
+    await env.DB.prepare(
+      `INSERT INTO fantasy_xp_state (id, last_completed_gameweek, updated_at) VALUES (1, ?1, datetime('now'))
+       ON CONFLICT(id) DO UPDATE SET last_completed_gameweek = ?1, updated_at = datetime('now')`,
+    )
+      .bind(latestCompleted)
+      .run();
+  } catch {
+    // best-effort, same discipline as the bake's own historical enrichment:
+    // xP is a display figure, never a new single point of failure for the
+    // rest of the cron (see the comment on its call site in scheduled())
+  }
+}
+
+// GET /fantasy/players/xp: every active player's current xp/xpBasis, public
+// and not league-scoped (xP is a property of the player, not of a manager's
+// membership). Returns only players with a non-null xp, so the client never
+// has to special-case an entry that carries nulls anyway.
+async function handleFantasyPlayersXp(env, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  try {
+    const rows = await env.DB.prepare(`SELECT player_id, xp, xp_basis FROM fantasy_player_xp WHERE xp IS NOT NULL`).all();
+    const players = Object.fromEntries(
+      (rows.results ?? []).map((row) => [row.player_id, { xp: row.xp, xpBasis: row.xp_basis }]),
+    );
+    return json({ players }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
 }
 
 async function fantasyGameweekScore(env, leagueId, userId, gameweek) {

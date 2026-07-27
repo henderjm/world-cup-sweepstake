@@ -683,6 +683,70 @@ test("renderFantasyRosterPanel shows a real xP value for a player the pool has s
   assert.match(html, /Expected points from last-5 form, minutes and fixture difficulty\./);
 });
 
+test("renderFantasyRosterPanel marks an estimated xP with the is-estimate class and a projection tooltip, never like a measured figure", () => {
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup(),
+    playerPool: [{ id: 10, name: "Forward One", team: "Test FC", position: "FWD", xp: 6.1, xpBasis: "estimate" }],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "",
+  });
+  assert.match(html, /xP 6\.1/);
+  assert.match(html, /fantasy-pitch__xp is-estimate/);
+  assert.match(html, /a projection, not this player's own record/);
+});
+
+test("renderFantasyRosterPanel gives a measured (history) xP its season-sourced tooltip, with no estimate class", () => {
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup(),
+    playerPool: [{ id: 10, name: "Forward One", team: "Test FC", position: "FWD", xp: 8.4, xpBasis: "history" }],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "",
+    xpStats: { available: true, seasons: ["2025", "2024", "2023"], requestCount: 87, basisCounts: { history: 400, estimate: 50, none: 6 } },
+  });
+  assert.match(html, /From actual history: 2025\/26, 2024\/25, 2023\/24\./);
+  assert.doesNotMatch(html, /fantasy-pitch__xp is-estimate/);
+});
+
+test("renderFantasyRosterPanel's bench row and Squad xP rail also carry the estimate marker for an estimated starter/bench player", () => {
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup(),
+    playerPool: [
+      { id: 10, name: "Forward One", team: "Test FC", position: "FWD", xp: 6.1, xpBasis: "estimate" }, // starter
+      { id: 12, name: "Bench Keeper", team: "Test FC", position: "GK", xp: 3.2, xpBasis: "estimate" }, // bench
+    ],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "",
+  });
+  assert.match(html, /fantasy-bench-row__xp is-estimate/);
+  assert.match(html, /fantasy-squadxp__value is-estimate/);
+});
+
+test("renderFantasyRosterPanel's player drawer marks an estimated xP the same way", () => {
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup(),
+    playerPool: [{ id: 10, name: "Forward One", team: "Test FC", position: "FWD", xp: 6.1, xpBasis: "estimate" }],
+    picks: [],
+    editState: null,
+    drawerPlayerId: 10,
+    lineupError: "",
+  });
+  assert.match(html, /fantasy-stat is-estimate/);
+});
+
 test("renderFantasyRosterPanel shows the Squad xP placeholder line when no starter has real stats", () => {
   const html = renderFantasyRosterPanel({
     currentGameweek: 5,

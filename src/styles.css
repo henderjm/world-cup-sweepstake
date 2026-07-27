@@ -1983,6 +1983,23 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-bench-row__name { display: flex; flex-direction: column; min-width: 0; }
 .fantasy-bench-row__name strong { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fantasy-bench-row__xp { font-size: 11px; font-weight: 800; color: var(--fantasy-accent); white-space: nowrap; }
+/* An estimated xP (a same-position cohort median, never this player's own
+   record - see xpTooltip in src/fantasyDraft.js) reuses the fantasy accent
+   family rather than inventing a new color: the softer --fantasy-accent-2
+   plus italics distinguishes it from a measured figure without reading as an
+   error or an empty placeholder. One rule shared by every xP badge (pitch
+   tile, bench row, squad xP, drawer stat) so "estimate" always looks the
+   same wherever it appears; each selector still pairs with its own element
+   class rather than a bare .is-estimate, so its two-class specificity always
+   beats that element's plain one-class color rule regardless of source
+   order. */
+.fantasy-pitch__xp.is-estimate,
+.fantasy-bench-row__xp.is-estimate,
+.fantasy-squadxp__value.is-estimate,
+.fantasy-stat.is-estimate {
+  color: var(--fantasy-accent-2);
+  font-style: italic;
+}
 
 .fantasy-squadxp-card .fantasy-eyebrow { display: flex; align-items: center; gap: 6px; }
 .fantasy-squadxp { display: flex; flex-direction: column; gap: 9px; margin-top: 8px; }

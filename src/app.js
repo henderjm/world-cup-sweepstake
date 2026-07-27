@@ -52,6 +52,7 @@ import {
   isFantasyNotDeployed,
   joinLeague as apiJoinLeague,
   listLeagues as apiListLeagues,
+  loadBlendedXp,
   loadLeague as apiLoadLeague,
   loadMatchup as apiLoadMatchup,
   loadPlayerPool,
@@ -66,6 +67,7 @@ import {
   unscheduleDraft as apiUnscheduleDraft,
 } from "./fantasyApi.js";
 import {
+  applyBlendedXp,
   currentSeasonLabel,
   draftOrderEntries,
   formatCountdown,
@@ -780,6 +782,7 @@ function renderFantasyMyTeamBody(league, room) {
     drawerPlayerId: f.playerDrawerId,
     lineupError: f.lineupError,
     priorSeasonStats: f.playerPool?.priorSeasonStats,
+    xpStats: f.playerPool?.xpStats,
   });
 }
 
@@ -1268,6 +1271,17 @@ async function ensureFantasyPlayerPool() {
   f.playerPoolLoading = true;
   try {
     f.playerPool = await loadPlayerPool();
+    // Best-effort upgrade: the Worker may have blended fresher in-season xP
+    // for some players once a gameweek has completed (see worker/worker.js's
+    // runScheduledFantasyXpBlend). Any failure here (route not deployed yet,
+    // offline) just leaves the static bake's own xp/xpBasis in place - never
+    // a reason to fail the pool load itself, so no Sentry breadcrumb either.
+    try {
+      const blended = await loadBlendedXp();
+      f.playerPool = { ...f.playerPool, players: applyBlendedXp(f.playerPool.players, blended) };
+    } catch {
+      // the static bake's own xp stands
+    }
   } catch (error) {
     // A 404 is the expected, calm case today (the pool has never been baked
     // in production); anything else still gets a Sentry breadcrumb. Either
@@ -1678,6 +1692,7 @@ function renderDemoDeskStage() {
       drawerPlayerId: desk.drawerPlayerId,
       lineupError: "",
       priorSeasonStats: d.pool?.priorSeasonStats,
+      xpStats: d.pool?.xpStats,
     }),
     isFinal: isFinalChunk(season),
   });

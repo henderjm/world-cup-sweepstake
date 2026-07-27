@@ -170,6 +170,41 @@ CREATE TABLE IF NOT EXISTS fantasy_scored_matches (
   scored_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Expected points (xP), a separate table rather than new columns on
+-- fantasy_players so this file stays idempotent (this schema is applied with
+-- `wrangler d1 execute` and has no ALTER TABLE precedent - see CLAUDE.md; a
+-- CREATE TABLE IF NOT EXISTS for a brand-new table is safe to re-run whether
+-- fantasy_players already existed from an earlier deploy or not).
+--
+-- historical_xp/historical_basis are the baked pool's own figure
+-- (data/PL/players.json's xp/xpBasis - see
+-- scripts/fetch-fantasy-players.mjs), refreshed whenever the pool is
+-- upserted (upsertFantasyPlayerPool in worker/worker.js). xp/xp_basis are
+-- what the app actually reads: equal to the historical figure until a
+-- gameweek has been played, then recomputed by blending in this season's own
+-- scoring (runScheduledFantasyXpBlend, src/fantasyExpectedPoints.js's
+-- blendWithCurrentSeason) - kept separate from the historical columns so
+-- every blend recomputes from the same untouched prior rather than
+-- compounding the previous tick's already-blended figure.
+CREATE TABLE IF NOT EXISTS fantasy_player_xp (
+  player_id INTEGER PRIMARY KEY REFERENCES fantasy_players(id),
+  historical_xp REAL,
+  historical_basis TEXT,
+  xp REAL,
+  xp_basis TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Single-row marker of the last gameweek runScheduledFantasyXpBlend has
+-- already blended through, so the cron can skip recomputing every active
+-- player on every one-minute tick and only redo it once a new gameweek has
+-- actually completed (see worker/worker.js).
+CREATE TABLE IF NOT EXISTS fantasy_xp_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  last_completed_gameweek INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- A manager's rolled-up total for one gameweek in one league (starting lineup's
 -- player scores, captain doubled), recomputed as that gameweek's matches finish.
 CREATE TABLE IF NOT EXISTS fantasy_gameweek_scores (

@@ -21,6 +21,7 @@ import {
   suggestedPickReason,
   tierLabel,
   topQueuedPick,
+  xpTooltip,
 } from "./fantasyDraft.js";
 import {
   buildWaiverPlayerLookup,
@@ -739,9 +740,23 @@ function isTileDimmed(playerId, { pending, legalTargets, starterIds }) {
   return !legalTargets.has(playerId);
 }
 
-function renderPitchTile(player, { isCaptain, isPending, isDimmed, editing }, statsById) {
+// A "measured" xP (history/blended) reads plain; an "estimate" gets its own
+// modifier class (never invents a new visual language - reuses the existing
+// xp token color, just dimmed/italicised, see .is-estimate in styles.css) and
+// a title naming it a projection, so a manager can never mistake a cohort
+// guess for this player's own record. `xpStats` is the pool's own xpStats
+// header (data/PL/players.json), used only to name which seasons a measured
+// figure came from.
+function xpBadge(stats, position, xpStats) {
+  if (stats.xp == null) return { text: "xP •", cls: "is-empty", title: "" };
+  const cls = stats.xpBasis === "estimate" ? "is-estimate" : "";
+  const title = xpTooltip(stats.xpBasis, { seasons: xpStats?.seasons, position });
+  return { text: `xP ${stats.xp.toFixed(1)}`, cls, title };
+}
+
+function renderPitchTile(player, { isCaptain, isPending, isDimmed, editing }, statsById, xpStats) {
   const stats = normalizePlayerStats(statsById.get(player.id) ?? {});
-  const xpText = stats.xp != null ? `xP ${stats.xp.toFixed(1)}` : "xP •";
+  const badge = xpBadge(stats, player.position, xpStats);
   const classes = ["fantasy-pitch__player"];
   if (isPending) classes.push("is-pending");
   if (isDimmed) classes.push("is-dimmed");
@@ -751,12 +766,12 @@ function renderPitchTile(player, { isCaptain, isPending, isDimmed, editing }, st
       <span class="fantasy-pitch__crest">${badgeFor(player.team)}</span>
       <p class="fantasy-pitch__name">${esc(player.name)}</p>
       <p class="fantasy-pitch__club">${esc(abbrFor(player.team))}</p>
-      <p class="fantasy-pitch__xp ${stats.xp == null ? "is-empty" : ""}">${xpText}</p>
+      <p class="fantasy-pitch__xp ${badge.cls}" ${badge.title ? `title="${esc(badge.title)}" aria-label="${esc(badge.title)}"` : ""}>${badge.text}</p>
       ${editing && isPending ? `<button class="fantasy-pitch__captainbtn" type="button" data-fantasy-make-captain="${player.id}">Make captain</button>` : ""}
     </div>`;
 }
 
-function renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById }) {
+function renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats }) {
   const byId = new Map(roster.map((player) => [player.id, player]));
   const editing = Boolean(editState);
   const pending = editState?.pendingId ?? null;
@@ -779,6 +794,7 @@ function renderPitch({ roster, starterIds, benchIds, captainId, editState, stats
             editing,
           },
           statsById,
+          xpStats,
         ),
       )
       .join("");
@@ -824,9 +840,13 @@ function renderPitchHead(currentGameweek, lineup, editState) {
     ${editState?.error ? `<p class="fantasy-form__error">${esc(editState.error)}</p>` : ""}`;
 }
 
-function renderBenchRow(player, { isPending, isDimmed }, statsById) {
+function renderBenchRow(player, { isPending, isDimmed }, statsById, xpStats) {
   const stats = normalizePlayerStats(statsById.get(player.id) ?? {});
-  const xpCell = stats.xp != null ? `<span class="fantasy-bench-row__xp">xP ${stats.xp.toFixed(1)}</span>` : renderStatCell(null);
+  const badge = xpBadge(stats, player.position, xpStats);
+  const xpCell =
+    stats.xp != null
+      ? `<span class="fantasy-bench-row__xp ${badge.cls}" ${badge.title ? `title="${esc(badge.title)}" aria-label="${esc(badge.title)}"` : ""}>${badge.text}</span>`
+      : renderStatCell(null);
   const classes = ["fantasy-bench-row"];
   if (isPending) classes.push("is-pending");
   if (isDimmed) classes.push("is-dimmed");
@@ -839,7 +859,7 @@ function renderBenchRow(player, { isPending, isDimmed }, statsById) {
     </div>`;
 }
 
-function renderBench({ roster, starterIds, benchIds, captainId, editState, statsById }) {
+function renderBench({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats }) {
   const byId = new Map(roster.map((player) => [player.id, player]));
   const editing = Boolean(editState);
   const pending = editState?.pendingId ?? null;
@@ -859,6 +879,7 @@ function renderBench({ roster, starterIds, benchIds, captainId, editState, stats
           isDimmed: isTileDimmed(player.id, { pending, legalTargets, starterIds }),
         },
         statsById,
+        xpStats,
       ),
     )
     .join("");
@@ -876,19 +897,24 @@ function renderBench({ roster, starterIds, benchIds, captainId, editState, stats
 // sentence only appears once at least one starter actually has a real xp
 // value; otherwise a single honest placeholder line replaces it so the card
 // never implies a projection model is running when the pool has no stats yet.
-function renderSquadXp({ roster, starterIds, statsById }) {
+function renderSquadXp({ roster, starterIds, statsById, xpStats }) {
   const byId = new Map(roster.map((player) => [player.id, player]));
   const entries = starterIds
     .map((id) => byId.get(id))
     .filter(Boolean)
-    .map((player) => ({ player, xp: normalizePlayerStats(statsById.get(player.id) ?? {}).xp }));
-  const maxXp = Math.max(0.0001, ...entries.map((entry) => entry.xp ?? 0));
-  const hasAny = entries.some((entry) => entry.xp != null);
+    .map((player) => ({ player, stats: normalizePlayerStats(statsById.get(player.id) ?? {}) }));
+  const maxXp = Math.max(0.0001, ...entries.map((entry) => entry.stats.xp ?? 0));
+  const hasAny = entries.some((entry) => entry.stats.xp != null);
 
   const rows = entries
-    .map(({ player, xp }) => {
+    .map(({ player, stats }) => {
+      const { xp } = stats;
       const width = xp != null ? `${Math.max(4, Math.round((xp / maxXp) * 100))}%` : "0%";
-      const value = xp != null ? `<span class="fantasy-squadxp__value">${xp.toFixed(1)}</span>` : `<span class="fantasy-squadxp__value fantasy-stat--empty">•</span>`;
+      const badge = xpBadge(stats, player.position, xpStats);
+      const value =
+        xp != null
+          ? `<span class="fantasy-squadxp__value ${badge.cls}" ${badge.title ? `title="${esc(badge.title)}" aria-label="${esc(badge.title)}"` : ""}>${xp.toFixed(1)}</span>`
+          : `<span class="fantasy-squadxp__value fantasy-stat--empty">•</span>`;
       return `
         <div class="fantasy-squadxp__row">
           <span class="fantasy-squadxp__name">${esc(player.name)}</span>
@@ -912,11 +938,13 @@ function renderSquadXp({ roster, starterIds, statsById }) {
 // shell as matchDetail.js) with crest, name, club, position, draft pick (from
 // the picks log, when this manager's own pick - other members' picks are also
 // in `picks` but a player is only ever on one roster), the prior-season Tier/
-// Apps/Minutes when the pool has that enrichment, and xP when a future stats
-// bake supplies it. Always rendered (hidden when no player is open) so app.js
-// can toggle it by re-rendering the panel rather than managing a second piece
-// of imperative DOM state.
-function renderPlayerDrawer(player, { picks, statsById, priorSeasonStats }) {
+// Apps/Minutes when the pool has that enrichment, and xP (data/PL/players.json's
+// baked expected points, see src/fantasyExpectedPoints.js) with a tooltip
+// naming its basis - which seasons for a measured figure, or that it's a
+// same-position projection for an estimate (see xpTooltip). Always rendered
+// (hidden when no player is open) so app.js can toggle it by re-rendering the
+// panel rather than managing a second piece of imperative DOM state.
+function renderPlayerDrawer(player, { picks, statsById, priorSeasonStats, xpStats }) {
   if (!player) return `<div class="dz fantasy-player-drawer" data-fantasy-player-drawer hidden></div>`;
 
   const pick = (picks ?? []).find((entry) => entry.player?.id === player.id);
@@ -925,18 +953,24 @@ function renderPlayerDrawer(player, { picks, statsById, priorSeasonStats }) {
   const stats = normalizePlayerStats(source);
   const enriched = hasPriorSeasonData([source]);
   const hasStats = enriched || stats.xp != null;
+  const xpBadgeInfo = xpBadge(stats, player.position, xpStats);
 
   const seasonNote =
     enriched && priorSeasonStats?.season
       ? `<p class="note--dim">Appearances and minutes are from last season (${esc(priorSeasonRangeLabel(priorSeasonStats.season))}).</p>`
       : "";
 
+  const xpCell =
+    stats.xp != null
+      ? `<span class="fantasy-stat ${xpBadgeInfo.cls}" ${xpBadgeInfo.title ? `title="${esc(xpBadgeInfo.title)}" aria-label="${esc(xpBadgeInfo.title)}"` : ""}>${stats.xp.toFixed(1)}</span>`
+      : renderStatCell(null);
+
   const statRows = hasStats
     ? `<div class="fantasy-drawer__stats">
         ${enriched ? `<div class="fantasy-drawer__stat"><span class="note--dim">Tier</span>${renderTierChip(source.tier)}</div>` : ""}
         ${enriched ? `<div class="fantasy-drawer__stat"><span class="note--dim">Apps</span>${renderStatCell(source.appearances, 0)}</div>` : ""}
         ${enriched ? `<div class="fantasy-drawer__stat"><span class="note--dim">Minutes</span>${renderStatCell(source.minutes, 0)}</div>` : ""}
-        <div class="fantasy-drawer__stat"><span class="note--dim">xP</span>${renderStatCell(stats.xp, 1)}</div>
+        <div class="fantasy-drawer__stat"><span class="note--dim">xP</span>${xpCell}</div>
       </div>
       ${seasonNote}`
     : `<p class="note">More stats coming with live player data.</p>`;
@@ -981,6 +1015,7 @@ export function renderFantasyRosterPanel({
   drawerPlayerId,
   lineupError,
   priorSeasonStats,
+  xpStats,
 }) {
   if (!lineup) {
     return lineupError
@@ -996,7 +1031,7 @@ export function renderFantasyRosterPanel({
   const pitchCard = `
     <section class="card fantasy-pitch">
       ${renderPitchHead(currentGameweek, lineup, editState)}
-      ${renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById })}
+      ${renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats })}
     </section>`;
 
   const drawerPlayer = drawerPlayerId != null ? (roster ?? []).find((player) => player.id === drawerPlayerId) ?? null : null;
@@ -1005,13 +1040,13 @@ export function renderFantasyRosterPanel({
     <div class="fantasy-myteam-grid">
       <div class="fantasy-myteam-grid__main">
         ${pitchCard}
-        ${renderBench({ roster, starterIds, benchIds, captainId, editState, statsById })}
+        ${renderBench({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats })}
       </div>
       <div class="fantasy-myteam-grid__rail">
-        ${renderSquadXp({ roster, starterIds, statsById })}
+        ${renderSquadXp({ roster, starterIds, statsById, xpStats })}
       </div>
     </div>
-    ${renderPlayerDrawer(drawerPlayer, { picks, statsById, priorSeasonStats })}`;
+    ${renderPlayerDrawer(drawerPlayer, { picks, statsById, priorSeasonStats, xpStats })}`;
 }
 
 const POSITION_FILTERS = ["All", "GK", "DEF", "MID", "FWD"];
