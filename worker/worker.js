@@ -34,6 +34,10 @@ import {
 } from "../src/mapApiFootball.js";
 import { isLive } from "../src/format.js";
 import {
+  MATCH_DETAIL_LIVE,
+  matchDetailCacheProfile,
+} from "../src/matchDetailCache.js";
+import {
   ANALYSIS_SCHEMA,
   ANALYSIS_SYSTEM_PROMPT,
   analysisCacheSignature,
@@ -116,20 +120,24 @@ function parseCompetitions(env) {
     .filter((comp) => /^[A-Z0-9]{2,6}$/.test(comp.code) && Number.isInteger(comp.leagueId));
 }
 
-// Is this match id in any configured competition's fixture list? Each getLive is
-// edge-cached, so checking the union costs at most one upstream call per competition
-// per cache window.
-async function matchKnown(competitions, id, token) {
+// Returns the known fixture summary, or null if the id belongs to no configured
+// competition. Each getLive is edge-cached, so checking the union costs at most
+// one upstream call per competition per cache window. Returning the match
+// rather than a boolean is what lets the caller choose cache windows from its
+// status (see matchDetailCacheProfile) at no extra cost.
+async function findKnownMatch(competitions, id, token) {
   for (const comp of competitions) {
     try {
       const live = await getLive(comp, token);
-      if (live.matches.some((match) => match.id === id)) return true;
+      const match = live.matches.find((entry) => entry.id === id);
+      if (match) return match;
     } catch {
       // one competition's feed being down must not 404 the others
     }
   }
-  return false;
+  return null;
 }
+
 
 export default {
   async fetch(request, env) {
@@ -313,12 +321,32 @@ export default {
 
       const detailRoute = url.pathname.match(/^\/match\/(\d{1,12})$/);
       if (detailRoute) {
+        // A second, much tighter limit on top of the general per-IP one. This
+        // route is the only unauthenticated path that can cost four upstream
+        // calls, so the 200/min that is generous for polling /live is far too
+        // loose here. Keyed per IP and separate from LIMITER so hammering the
+        // drawer cannot also lock a user out of the rest of the API. No-ops if
+        // the binding is absent, same convention as LIMITER.
+        if (env.DETAIL_LIMITER) {
+          const ip = request.headers.get("CF-Connecting-IP") || "anon";
+          try {
+            const { success } = await env.DETAIL_LIMITER.limit({ key: ip });
+            if (!success) return json({ error: "rate limited" }, 429, { ...cors, "Retry-After": "30" });
+          } catch {
+            // limiter unavailable, fail open
+          }
+        }
         const id = Number(detailRoute[1]);
-        if (!(await matchKnown(competitions, id, token))) {
+        const known = await findKnownMatch(competitions, id, token);
+        if (!known) {
           return json({ error: "unknown match" }, 404, cors);
         }
-        const detail = await fetchMatchDetail(id, token);
-        return json(detail, 200, { ...cors, "Cache-Control": "public, max-age=25" });
+        const profile = matchDetailCacheProfile(known);
+        const detail = await fetchMatchDetail(id, token, profile);
+        // The browser cache window follows the same reasoning as the edge one:
+        // a finished match does not need re-fetching every 25 seconds.
+        const browserMaxAge = profile === MATCH_DETAIL_LIVE ? 25 : 300;
+        return json(detail, 200, { ...cors, "Cache-Control": `public, max-age=${browserMaxAge}` });
       }
 
       const analysisRoute = url.pathname.match(/^\/analysis\/(\d{1,12})$/);
@@ -3537,14 +3565,17 @@ function corsHeaders(request) {
   };
 }
 
-async function fetchMatchDetail(id, token) {
+// `profile` is a matchDetailCacheProfile result: how long each payload may sit
+// in the edge cache, chosen from the fixture's state rather than fixed. Defaults
+// to the live windows so any caller that has not classified the match gets the
+// safe-but-expensive behaviour rather than accidentally serving stale scores.
+async function fetchMatchDetail(id, token, profile = MATCH_DETAIL_LIVE) {
   // Interactive detail reads include the fixture endpoint for half-time scores and
-  // referee data. Slow-changing payloads keep longer cache windows so opening the
-  // drawer cannot multiply upstream usage.
-  const fixture = await fetchJson(`/fixtures?id=${id}`, token, 60);
-  const lineups = await fetchJson(`/fixtures/lineups?fixture=${id}`, token, 15 * 60);
-  const events = await fetchJson(`/fixtures/events?fixture=${id}`, token, 60);
-  const players = await fetchJson(`/fixtures/players?fixture=${id}`, token, 5 * 60);
+  // referee data.
+  const fixture = await fetchJson(`/fixtures?id=${id}`, token, profile.fixture);
+  const lineups = await fetchJson(`/fixtures/lineups?fixture=${id}`, token, profile.lineups);
+  const events = await fetchJson(`/fixtures/events?fixture=${id}`, token, profile.events);
+  const players = await fetchJson(`/fixtures/players?fixture=${id}`, token, profile.players);
   return mapApiFootballMatchDetail(fixture, lineups, events, players);
 }
 
