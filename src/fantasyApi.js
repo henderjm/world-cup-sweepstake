@@ -208,6 +208,26 @@ export async function saveWaiverSettings(leagueId, body) {
   });
 }
 
+// GET the league feed: { entries: [...], viewerUserId }. One timeline
+// carrying both the app's own events (draft picks, waiver runs, free-agent
+// adds, lineup changes, the weekly AI recap) and managers' own messages, so a
+// move and the conversation about it are never on separate surfaces.
+// Member-only in BOTH directions, unlike match banter which is publicly
+// readable: a private league's transactions are nobody else's business.
+export async function loadLeagueFeed(leagueId) {
+  return api(`/fantasy/league/${leagueId}/chat`);
+}
+
+// Posts to the feed: { action: "message", text } or { action: "react",
+// messageId, emoji }. Returns the WHOLE refreshed feed rather than just the
+// new row, because D1 is strongly consistent and the response therefore
+// always includes this very write, which is what lets the optimistic UI
+// reconcile against it without flicker (see src/banter.js for the original of
+// this pattern).
+export async function postLeagueFeed(leagueId, body) {
+  return api(`/fantasy/league/${leagueId}/chat`, { method: "POST", body: JSON.stringify(body) });
+}
+
 // Browsers cannot set an Authorization header on a WebSocket handshake, so the
 // bearer token rides as a query parameter instead (the one exception to
 // Authorization-only auth in this codebase; see worker/worker.js

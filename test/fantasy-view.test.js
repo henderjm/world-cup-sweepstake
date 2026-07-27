@@ -613,6 +613,21 @@ test("renderFantasyLeagueHeader marks the active sub-tab and leaves the other th
   assert.doesNotMatch(html, /Soon/);
 });
 
+test("renderFantasyLeagueHeader puts Feed first in the sub-tab bar and never disables it", () => {
+  const html = renderFantasyLeagueHeader({ name: "Test League", draftStatus: "pending" }, members, "draftroom");
+  const order = [...html.matchAll(/data-fantasy-subtab="([a-z]+)"/g)].map((match) => match[1]);
+  // Feed leads the bar deliberately: league chat behind a corner tab is the
+  // version managers abandon for WhatsApp.
+  assert.equal(order[0], "feed");
+  const feedButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="feed"[^>]*>/)[0];
+  assert.doesNotMatch(feedButton, /disabled/);
+});
+
+test("renderFantasyLeagueHeader shows Feed as the active tab's title", () => {
+  const html = renderFantasyLeagueHeader({ name: "Test League" }, members, "feed");
+  assert.match(html, /<h1 class="hero__title">Feed<\/h1>/);
+});
+
 test("renderFantasyLeagueHeader shows Matchup as the active tab's title", () => {
   const html = renderFantasyLeagueHeader({ name: "Test League" }, members, "matchup");
   assert.match(html, /<h1 class="hero__title">Matchup<\/h1>/);

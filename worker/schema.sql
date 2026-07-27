@@ -9,13 +9,14 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT,
   avatar TEXT,
   -- Notification preferences, stored now so Phase 3 (push) is pure delivery.
-  -- "draft" defaults true (unlike the optional match alerts): joining a
-  -- league is itself an active opt-in, so a manager should hear about their
-  -- own draft unless they turn it off. An account created before this key
-  -- existed has no "draft" entry in its stored JSON at all; publicUser()
-  -- (worker.js) merges DEFAULT_PREFS underneath whatever is stored so a
-  -- missing key still reads as true rather than requiring a backfill.
-  prefs TEXT NOT NULL DEFAULT '{"goals":true,"kickoff":true,"fulltime":true,"red":false,"analysis":false,"draft":true}',
+  -- "draft" and "recap" default true (unlike the optional match alerts):
+  -- joining a league is itself an active opt-in, so a manager should hear
+  -- about their own draft and their own league's weekly recap unless they turn
+  -- it off. An account created before either key existed has no entry for it
+  -- in its stored JSON at all; publicUser() (worker.js) merges DEFAULT_PREFS
+  -- underneath whatever is stored so a missing key still reads as true rather
+  -- than requiring a backfill.
+  prefs TEXT NOT NULL DEFAULT '{"goals":true,"kickoff":true,"fulltime":true,"red":false,"analysis":false,"draft":true,"recap":true}',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -359,3 +360,61 @@ CREATE UNIQUE INDEX IF NOT EXISTS fantasy_waiver_runs_once ON fantasy_waiver_run
 -- boundary race across two instances, in theory) into a rejected insert instead
 -- of silent duplicate-pick corruption.
 CREATE UNIQUE INDEX IF NOT EXISTS fantasy_draft_picks_league_overall ON fantasy_draft_picks(league_id, overall_pick);
+
+-- League feed (Phase 4.6): ONE append-only stream per league carrying both
+-- what the app did and what managers said about it. Deliberately one table,
+-- not a chat table beside a transaction log: the whole reason built-in league
+-- chat works on Sleeper and is abandoned on ESPN/Yahoo is that a move and the
+-- reaction to it appear on the same surface, in one timeline. Splitting them
+-- would rebuild the thing that fails.
+--
+-- kind = 'message': a human wrote it. user_id is the author, `text` is the
+--   whole content, event/payload are NULL.
+-- kind = 'system': the app wrote it. user_id is NULL, `event` names what
+--   happened (see CHAT_EVENTS in src/fantasyChat.js) and `payload` is JSON
+--   carrying the FACTS, never pre-rendered prose - the wording is produced at
+--   read time by describeChatEvent so a copy change never leaves old rows
+--   speaking an older dialect.
+--
+-- Payload values are denormalised on write (a manager's display name is copied
+-- in rather than joined at read time): the feed is a permanent history and
+-- must keep reading correctly after an account is renamed or deleted, which is
+-- also why user_id is nullable here and NOT the source of the displayed name.
+CREATE TABLE IF NOT EXISTS fantasy_chat_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  kind TEXT NOT NULL DEFAULT 'message', -- message | system
+  event TEXT,    -- system rows only
+  payload TEXT,  -- system rows only, JSON
+  text TEXT,     -- human rows only
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS fantasy_chat_messages_league ON fantasy_chat_messages(league_id, id);
+
+-- Emoji reactions, one row per user x message x emoji, rolled up to counts on
+-- read exactly like banter_reactions. Keyed on the message rather than on the
+-- league, because in a running feed the interesting question is which MOVE
+-- everyone laughed at.
+CREATE TABLE IF NOT EXISTS fantasy_chat_reactions (
+  message_id INTEGER NOT NULL REFERENCES fantasy_chat_messages(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  emoji TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (message_id, user_id, emoji)
+);
+
+-- Dedup ledger for the AI weekly recap: exactly one per league per gameweek,
+-- ever. The unique index is the real gate - the cron checks it cheaply first,
+-- then commits the ledger row and the recap's own feed message in ONE batch,
+-- so two overlapping ticks cannot both post (the loser's whole batch is
+-- rejected atomically, feed message included). prompt_version records which
+-- build's prompt wrote it, so a later prompt change is traceable rather than
+-- silently mixed in.
+CREATE TABLE IF NOT EXISTS fantasy_league_recaps (
+  league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  gameweek INTEGER NOT NULL,
+  prompt_version INTEGER NOT NULL DEFAULT 1,
+  generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (league_id, gameweek)
+);

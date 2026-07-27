@@ -220,6 +220,7 @@ export function renderFantasyLeagueList(leagues, formState = {}) {
 // active tab's label doubles as the view's display title (see
 // renderFantasyLeagueHeader).
 const FANTASY_SUBTAB_LABELS = {
+  feed: "Feed",
   matchup: "Matchup",
   myteam: "My team",
   draftroom: "Draft room",
@@ -227,9 +228,14 @@ const FANTASY_SUBTAB_LABELS = {
   standings: "Standings",
 };
 
+// Feed leads the bar, and is where a running league lands by default (see
+// defaultFantasySubTab in app.js). League chat hidden behind a corner tab is
+// the version managers abandon for WhatsApp; the one that gets used is the one
+// they arrive on, where the moves and the talk about them share a timeline.
 function renderFantasySubtabs(activeSubTab, waiversEnabled) {
   return `
     <div class="fantasy-subtabs">
+      <button class="fantasy-subtab ${activeSubTab === "feed" ? "is-active" : ""}" type="button" data-fantasy-subtab="feed">Feed</button>
       <button class="fantasy-subtab ${activeSubTab === "matchup" ? "is-active" : ""}" type="button" data-fantasy-subtab="matchup">Matchup</button>
       <button class="fantasy-subtab ${activeSubTab === "myteam" ? "is-active" : ""}" type="button" data-fantasy-subtab="myteam">My team</button>
       <button class="fantasy-subtab ${activeSubTab === "draftroom" ? "is-active" : ""}" type="button" data-fantasy-subtab="draftroom">Draft room</button>

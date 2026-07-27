@@ -55,7 +55,9 @@ import {
   loadBlendedXp,
   loadDraftQueue as apiLoadDraftQueue,
   loadLeague as apiLoadLeague,
+  loadLeagueFeed as apiLoadLeagueFeed,
   loadMatchup as apiLoadMatchup,
+  postLeagueFeed as apiPostLeagueFeed,
   loadPlayerPool,
   loadPlFixtureData,
   loadStandings as apiLoadStandings,
@@ -85,6 +87,7 @@ import {
   topQueuedPick,
 } from "./fantasyDraft.js";
 import { formatScheduleCountdown, localInputValueToUtcIso } from "./fantasyScheduling.js";
+import { renderFantasyFeedPanel, renderFeedEntries } from "./fantasyChatView.js";
 import {
   renderDraftErrorNotice,
   renderDraftStatusCard,
@@ -239,7 +242,11 @@ function initialFantasyState() {
     draftRoom: null, // { controller, state, remainingMs } once a socket is open
     filter: { position: "All", club: "All", search: "", hideTaken: true, sort: DEFAULT_POOL_SORT },
     queue: [], // ordered array of queued player ids, personal shortlist (see fantasyDraft.js)
-    subTab: "draftroom", // "draftroom" | "myteam" | "matchup" | "standings"
+    subTab: null, // null until a league opens; see defaultFantasySubTab
+    feed: null, // { entries, viewerUserId } from GET .../chat
+    feedLoading: false,
+    feedError: "",
+    feedInflight: 0, // posts in the air; poll responses are dropped while > 0
     lineup: null, // { gameweek, source, starters: [{playerId,isCaptain}], bench } from GET .../lineup
     lineupLoading: false,
     lineupError: "",
@@ -333,6 +340,7 @@ async function start() {
       // Signing out mid-draft must drop the socket, not just swap the panel for
       // the signed-out card underneath it.
       teardownFantasyDraftRoom();
+      stopFantasyFeedPolling();
       state.fantasy = initialFantasyState();
     } else if (state.fantasy.sessionExpired) {
       // A fresh sign-in (typically done from the You section, with the
@@ -631,6 +639,9 @@ function renderFantasy() {
   // schedule (closing it, switching sub-tabs once the draft starts, signing
   // out) can never leave a stray interval ticking against a detached DOM node.
   stopFantasyScheduleCountdownTimer();
+  // Same reasoning for the feed poll: only the two in-league branches below
+  // restart it, via syncFantasyFeedPolling.
+  stopFantasyFeedPolling();
 
   if (!isSignedIn()) {
     elements.layout.innerHTML = renderFantasySignedOut();
@@ -674,7 +685,7 @@ function renderFantasy() {
   }
 
   const { league, members, schedule } = f.league;
-  const subTab = f.subTab ?? "draftroom";
+  const subTab = f.subTab ?? defaultFantasySubTab(league.draftStatus);
 
   if (league.draftStatus === "pending") {
     // Pre-draft scouting needs the player pool too, loaded lazily the moment
@@ -683,15 +694,17 @@ function renderFantasy() {
     // blocking the lobby itself behind an extra fetch.
     if (!f.playerPool && !f.playerPoolLoading) loadFantasyPlayerPoolForLobby();
     const body =
-      subTab === "myteam"
-        ? renderFantasyMyTeamPanel([], f.myUserId)
-        : subTab === "matchup"
-          ? renderFantasyMatchupBody()
-          : subTab === "standings"
-            ? renderFantasyStandingsBody()
-            : subTab === "waivers"
-              ? renderFantasyWaiversBody(league)
-              : renderFantasyLobby(league, members, {
+      subTab === "feed"
+        ? renderFantasyFeedBody()
+        : subTab === "myteam"
+          ? renderFantasyMyTeamPanel([], f.myUserId)
+          : subTab === "matchup"
+            ? renderFantasyMatchupBody()
+            : subTab === "standings"
+              ? renderFantasyStandingsBody()
+              : subTab === "waivers"
+                ? renderFantasyWaiversBody(league)
+                : renderFantasyLobby(league, members, {
                   playerPool: f.playerPool,
                   filter: f.filter,
                   schedule,
@@ -700,6 +713,7 @@ function renderFantasy() {
                   queuedIds: new Set(f.queue ?? []),
                 });
     elements.layout.innerHTML = renderFantasyLeagueShell(league, members, subTab, body);
+    syncFantasyFeedPolling(subTab);
     if (schedule?.scheduledAt) startFantasyScheduleCountdownTimer();
     return;
   }
@@ -724,30 +738,33 @@ function renderFantasyDraftPanel() {
 
   const room = f.draftRoom.state;
   const { league, members } = f.league;
-  const subTab = f.subTab ?? "draftroom";
+  const subTab = f.subTab ?? defaultFantasySubTab(league.draftStatus);
 
   const body =
-    subTab === "myteam"
-      ? renderFantasyMyTeamBody(league, room)
-      : subTab === "matchup"
-        ? renderFantasyMatchupBody()
-        : subTab === "standings"
-          ? renderFantasyStandingsBody()
-          : subTab === "waivers"
-            ? renderFantasyWaiversBody(league)
-            : room.status === "complete"
-              ? renderFantasyComplete(members, room.picks)
-              : renderFantasyDraftRoom({
-                league,
-                members,
-                draft: { ...room, remainingMs: f.draftRoom.remainingMs },
-                playerPool: f.playerPool?.players ?? [],
-                filter: f.filter,
-                myUserId: f.myUserId,
-                priorSeasonStats: f.playerPool?.priorSeasonStats,
-                queue: f.queue,
-              });
+    subTab === "feed"
+      ? renderFantasyFeedBody()
+      : subTab === "myteam"
+        ? renderFantasyMyTeamBody(league, room)
+        : subTab === "matchup"
+          ? renderFantasyMatchupBody()
+          : subTab === "standings"
+            ? renderFantasyStandingsBody()
+            : subTab === "waivers"
+              ? renderFantasyWaiversBody(league)
+              : room.status === "complete"
+                ? renderFantasyComplete(members, room.picks)
+                : renderFantasyDraftRoom({
+                  league,
+                  members,
+                  draft: { ...room, remainingMs: f.draftRoom.remainingMs },
+                  playerPool: f.playerPool?.players ?? [],
+                  filter: f.filter,
+                  myUserId: f.myUserId,
+                  priorSeasonStats: f.playerPool?.priorSeasonStats,
+                  queue: f.queue,
+                });
   elements.layout.innerHTML = renderFantasyLeagueShell(league, members, subTab, body);
+  syncFantasyFeedPolling(subTab);
 
   if (wasSearchFocused) {
     const input = elements.layout.querySelector("[data-fantasy-search]");
@@ -805,6 +822,158 @@ async function loadFantasyLineup(leagueId) {
     if (f.activeLeagueId === leagueId) f.lineupLoading = false;
   }
   if (state.section === "fantasy") renderLayout();
+}
+
+// -- League feed ---------------------------------------------------------------
+//
+// The default landing tab for a league whose draft is done, which is most of a
+// league's life. Built-in chat that sits behind a corner tab is the version
+// managers abandon for WhatsApp; the version that gets used is the one they
+// land on, where the app's own events and the conversation about them are one
+// timeline.
+//
+// A live draft is the exception: while the clock is running, the draft board
+// is where a manager needs to be, and the feed is one tap away. A pending
+// league lands on its lobby for the same reason (the invite code and the start
+// button live there).
+function defaultFantasySubTab(draftStatus) {
+  return draftStatus === "complete" ? "feed" : "draftroom";
+}
+
+const FEED_POLL_MS = 12000;
+let feedPollTimer = null;
+
+// Starts the poll while the Feed tab is on screen and stops it the moment it
+// is not, so navigating away can never leave an interval firing against a
+// detached DOM node (the same discipline as the schedule countdown timer).
+function syncFantasyFeedPolling(subTab) {
+  const wantPolling = state.section === "fantasy" && subTab === "feed" && state.fantasy.activeLeagueId != null;
+  if (!wantPolling) return stopFantasyFeedPolling();
+  if (feedPollTimer) return;
+  feedPollTimer = window.setInterval(() => refreshFantasyFeed(), FEED_POLL_MS);
+}
+
+function stopFantasyFeedPolling() {
+  if (feedPollTimer) window.clearInterval(feedPollTimer);
+  feedPollTimer = null;
+}
+
+function renderFantasyFeedBody() {
+  const f = state.fantasy;
+  if (!f.feed && !f.feedLoading && !f.feedError) loadFantasyFeed(f.activeLeagueId);
+  return renderFantasyFeedPanel(f.feed, { myUserId: f.myUserId, error: f.feedError, signedIn: isSignedIn() });
+}
+
+async function loadFantasyFeed(leagueId) {
+  const f = state.fantasy;
+  if (f.feedLoading) return;
+  f.feedLoading = true;
+  f.feedError = "";
+  try {
+    const feed = await apiLoadLeagueFeed(leagueId);
+    if (f.activeLeagueId !== leagueId) return; // navigated elsewhere mid-flight
+    f.feed = feed;
+  } catch (error) {
+    if (f.activeLeagueId !== leagueId) return;
+    f.feedError = error.message || "Couldn't load the league feed.";
+  } finally {
+    if (f.activeLeagueId === leagueId) f.feedLoading = false;
+  }
+  if (state.section === "fantasy") renderLayout();
+}
+
+// A poll, not a load: it paints the rows in place rather than re-rendering the
+// panel, so a half-typed message and the scroll position both survive. Dropped
+// entirely while a post is in the air, since that post's own response is
+// strongly consistent and supersedes anything this read could return (the
+// inflight-counter race banter.js already solves).
+async function refreshFantasyFeed() {
+  const f = state.fantasy;
+  // Self-healing stop. Navigating away from the Fantasy section never re-runs
+  // renderFantasy, so nothing else would clear this interval; noticing here
+  // that the feed is no longer on screen is what stops a background tab
+  // polling a league forever.
+  if (state.section !== "fantasy" || f.subTab !== "feed") return stopFantasyFeedPolling();
+  const leagueId = f.activeLeagueId;
+  if (leagueId == null || f.feedInflight > 0) return;
+  try {
+    const feed = await apiLoadLeagueFeed(leagueId);
+    if (f.activeLeagueId !== leagueId || f.feedInflight > 0) return;
+    f.feed = feed;
+    f.feedError = "";
+    paintFantasyFeedEntries();
+  } catch {
+    // Transient: the previous entries stay on screen and the next tick retries.
+  }
+}
+
+// Surgical repaint of just the timeline (see renderFantasyFreeAgentRows for
+// the same pattern on the waivers lists). Keeps the view pinned to the bottom
+// only when the reader was already there, so a new message never yanks someone
+// away from what they were scrolled back to read.
+function paintFantasyFeedEntries() {
+  const list = elements.layout.querySelector("[data-feed-list]");
+  if (!list) return;
+  const wasAtBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+  list.innerHTML = renderFeedEntries(state.fantasy.feed?.entries ?? [], {
+    myUserId: state.fantasy.myUserId,
+    signedIn: isSignedIn(),
+  });
+  if (wasAtBottom) list.scrollTop = list.scrollHeight;
+}
+
+// Optimistic paint before the round trip, reconciled by the POST's own
+// strongly-consistent response. The pending row carries no id, so it renders
+// without reaction controls (there is nothing to react to yet) and cannot be
+// mistaken for a real entry.
+function appendOptimisticFeedMessage(text) {
+  const f = state.fantasy;
+  if (!f.feed) f.feed = { entries: [], viewerUserId: f.myUserId };
+  f.feed.entries = [
+    ...f.feed.entries,
+    { id: null, kind: "message", userId: f.myUserId, name: "You", text, pending: true, reactions: { counts: {}, mine: [] } },
+  ];
+  paintFantasyFeedEntries();
+}
+
+function applyOptimisticFeedReaction(messageId, emoji) {
+  const entry = (state.fantasy.feed?.entries ?? []).find((row) => row.id === messageId);
+  if (!entry) return;
+  const reactions = entry.reactions ?? { counts: {}, mine: [] };
+  const mine = new Set(reactions.mine ?? []);
+  const counts = { ...(reactions.counts ?? {}) };
+  if (mine.has(emoji)) {
+    mine.delete(emoji);
+    counts[emoji] = Math.max(0, (counts[emoji] ?? 1) - 1);
+  } else {
+    mine.add(emoji);
+    counts[emoji] = (counts[emoji] ?? 0) + 1;
+  }
+  entry.reactions = { counts, mine: [...mine] };
+  paintFantasyFeedEntries();
+}
+
+async function postFantasyFeed(body) {
+  const f = state.fantasy;
+  const leagueId = f.activeLeagueId;
+  f.feedInflight += 1;
+  try {
+    const feed = await apiPostLeagueFeed(leagueId, body);
+    if (f.activeLeagueId !== leagueId) return;
+    // Authoritative: D1 reads include this very write, so replacing the
+    // optimistic state never rolls the UI backwards.
+    f.feed = feed;
+    f.feedError = "";
+  } catch (error) {
+    if (f.activeLeagueId !== leagueId) return;
+    f.feedError = error.message || "Couldn't send that.";
+  } finally {
+    if (f.activeLeagueId === leagueId) f.feedInflight = Math.max(0, f.feedInflight - 1);
+  }
+  if (state.section === "fantasy" && (f.subTab ?? "") === "feed") {
+    if (f.feedError) renderLayout();
+    else paintFantasyFeedEntries();
+  }
 }
 
 // Matchup/Standings bodies: the same "trigger the load the first time it
@@ -1225,7 +1394,13 @@ async function openFantasyLeague(id) {
   f.myUserId = null;
   f.loadError = "";
   f.notDeployed = false;
-  f.subTab = "draftroom";
+  // Left null until the league detail lands: the right landing tab depends on
+  // the draft status, which is not known yet (see defaultFantasySubTab).
+  f.subTab = null;
+  f.feed = null;
+  f.feedLoading = false;
+  f.feedError = "";
+  f.feedInflight = 0;
   f.lineup = null;
   f.lineupLoading = false;
   f.lineupError = "";
@@ -1252,6 +1427,7 @@ async function openFantasyLeague(id) {
     if (f.activeLeagueId !== id) return; // navigated elsewhere mid-flight
     f.league = detail;
     f.myUserId = detail.viewerUserId ?? null;
+    f.subTab = defaultFantasySubTab(detail.league.draftStatus);
     // Best-effort: restores whatever shortlist this manager last saved for
     // this league (see persistFantasyQueue), so a reload/reconnect shows the
     // same queue the server would actually autopick from, rather than a
@@ -1356,6 +1532,17 @@ function mountFantasyDraftRoom(leagueId) {
       // message, is what keeps a manager's pool scroll position/filters/focus
       // intact through a turn change (see patchDraftRoomDom) - no additional
       // save/restore dance needed for this path.
+      // While the Feed tab is the one on screen, a pick/clock/chat message
+      // must NOT reach renderLayout: rebuilding the panel would wipe a
+      // half-typed message out of the compose box on every tick of a live
+      // draft. Refetching the feed instead picks up the pick events the
+      // Durable Object writes to the same table, and repaints only the
+      // timeline. "complete" still falls through, because that genuinely
+      // changes which body the shell shows.
+      if (state.fantasy.subTab === "feed" && message.type !== "complete" && message.type !== "state") {
+        if (message.type === "pick" || message.type === "chat") refreshFantasyFeed();
+        return;
+      }
       const canPatch = message.type === "pick" || message.type === "clock" || message.type === "error";
       if (!canPatch || !refreshFantasyDraftRoomLive()) renderLayout();
     },
@@ -1569,10 +1756,16 @@ async function clearFantasyLeagueSchedule() {
 
 function closeFantasyLeague() {
   teardownFantasyDraftRoom();
+  stopFantasyFeedPolling();
   const f = state.fantasy;
   f.activeLeagueId = null;
   f.league = null;
   f.myUserId = null;
+  f.subTab = null;
+  f.feed = null;
+  f.feedLoading = false;
+  f.feedError = "";
+  f.feedInflight = 0;
   f.leagues = null; // refetch so status/member counts are current
   f.loadError = "";
   f.sessionExpired = false;
@@ -2708,6 +2901,21 @@ function wireLayoutControls() {
       closeFantasyLeague();
       return;
     }
+    const feedReactButton = event.target.closest("[data-feed-react]");
+    if (feedReactButton && isSignedIn()) {
+      const messageId = Number(feedReactButton.dataset.feedMessage);
+      const emoji = feedReactButton.dataset.feedReact;
+      applyOptimisticFeedReaction(messageId, emoji);
+      posthog.capture("fantasy_feed_reaction_sent", { league_id: state.fantasy.activeLeagueId, emoji });
+      postFantasyFeed({ action: "react", messageId, emoji });
+      return;
+    }
+    if (event.target.closest("[data-feed-retry]")) {
+      state.fantasy.feedError = "";
+      loadFantasyFeed(state.fantasy.activeLeagueId);
+      renderLayout();
+      return;
+    }
     const fantasySubtabButton = event.target.closest("[data-fantasy-subtab]");
     if (fantasySubtabButton && !fantasySubtabButton.disabled) {
       state.fantasy.subTab = fantasySubtabButton.dataset.fantasySubtab;
@@ -3003,6 +3211,21 @@ function wireLayoutControls() {
       event.preventDefault();
       handleFantasyPlayerTileClick(Number(tile.dataset.fantasyPlayerId));
     }
+  });
+  // The league feed's compose box is the only real <form> inside #layout, so
+  // this listener exists purely to stop it navigating and to post instead.
+  elements.layout.addEventListener("submit", (event) => {
+    const form = event.target.closest("[data-feed-form]");
+    if (!form) return;
+    event.preventDefault();
+    if (!isSignedIn()) return;
+    const input = form.querySelector("[data-feed-text]");
+    const text = (input?.value ?? "").trim();
+    if (!text) return;
+    input.value = "";
+    appendOptimisticFeedMessage(text);
+    posthog.capture("fantasy_feed_message_sent", { league_id: state.fantasy.activeLeagueId });
+    postFantasyFeed({ action: "message", text });
   });
   elements.layout.addEventListener("input", (event) => {
     if (state.section === "demo") {
