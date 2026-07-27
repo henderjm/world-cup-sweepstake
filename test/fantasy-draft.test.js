@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   addToQueue,
+  applyBlendedXp,
   canDraftPlayer,
   currentSeasonLabel,
   draftOrderEntries,
@@ -27,6 +28,8 @@ import {
   tierLabel,
   toggleQueue,
   topQueuedPick,
+  xpSeasonsLabel,
+  xpTooltip,
 } from "../src/fantasyDraft.js";
 
 test("formatCountdown renders mm:ss and rounds up to the next full second", () => {
@@ -302,17 +305,29 @@ test("formatOrdinal treats 11-13 as th regardless of the last digit", () => {
 });
 
 // -- normalizePlayerStats -----------------------------------------------------------
+// Deliberately widened to also carry xpBasis (data/PL/players.json's
+// "history" | "estimate" | null, see src/fantasyExpectedPoints.js's
+// expectedPointsFor), so a renderer can distinguish a measured figure from a
+// cohort estimate - see xpBadge/xpTooltip in fantasyView.js/fantasyDraft.js.
 
-test("normalizePlayerStats passes through a finite xp field", () => {
-  const stats = normalizePlayerStats({ xp: 7.8 });
-  assert.deepEqual(stats, { xp: 7.8 });
+test("normalizePlayerStats passes through a finite xp field and its basis", () => {
+  const stats = normalizePlayerStats({ xp: 7.8, xpBasis: "history" });
+  assert.deepEqual(stats, { xp: 7.8, xpBasis: "history" });
 });
 
 test("normalizePlayerStats treats a missing or non-numeric xp as null, never a fabricated number", () => {
-  assert.deepEqual(normalizePlayerStats({ name: "No stats yet" }), { xp: null });
-  assert.deepEqual(normalizePlayerStats({ xp: Infinity }), { xp: null });
-  assert.deepEqual(normalizePlayerStats({ xp: NaN }), { xp: null });
-  assert.deepEqual(normalizePlayerStats({ xp: "7.8" }), { xp: null });
+  assert.deepEqual(normalizePlayerStats({ name: "No stats yet" }), { xp: null, xpBasis: null });
+  assert.deepEqual(normalizePlayerStats({ xp: Infinity }), { xp: null, xpBasis: null });
+  assert.deepEqual(normalizePlayerStats({ xp: NaN }), { xp: null, xpBasis: null });
+  assert.deepEqual(normalizePlayerStats({ xp: "7.8" }), { xp: null, xpBasis: null });
+});
+
+test("normalizePlayerStats never attaches a basis to a null xp, even if the source object carries one", () => {
+  assert.deepEqual(normalizePlayerStats({ xp: null, xpBasis: "estimate" }), { xp: null, xpBasis: null });
+});
+
+test("normalizePlayerStats falls back to a null basis for a non-string xpBasis", () => {
+  assert.deepEqual(normalizePlayerStats({ xp: 4, xpBasis: 123 }), { xp: 4, xpBasis: null });
 });
 
 // -- hasPriorSeasonData -------------------------------------------------------------
@@ -347,6 +362,62 @@ test("tierLabel returns null for a missing or unrecognised tier so the caller re
   assert.equal(tierLabel(undefined), null);
   assert.equal(tierLabel(null), null);
   assert.equal(tierLabel("legend"), null);
+});
+
+// -- applyBlendedXp -----------------------------------------------------------------
+
+test("applyBlendedXp overlays a fresher xp/xpBasis onto the matching player id", () => {
+  const players = [{ id: 1, xp: 3, xpBasis: "history" }, { id: 2, xp: 1, xpBasis: "estimate" }];
+  const blended = { 1: { xp: 5.5, xpBasis: "blended" } };
+  const result = applyBlendedXp(players, blended);
+  assert.deepEqual(result[0], { id: 1, xp: 5.5, xpBasis: "blended" });
+  assert.deepEqual(result[1], players[1]); // player 2 untouched: no blended entry for them
+});
+
+test("applyBlendedXp leaves the pool completely unchanged when there is nothing to overlay with", () => {
+  const players = [{ id: 1, xp: 3 }];
+  assert.equal(applyBlendedXp(players, null), players);
+  assert.equal(applyBlendedXp(players, undefined), players);
+});
+
+test("applyBlendedXp ignores a blended entry whose own xp is null, keeping the pool's baked figure", () => {
+  const players = [{ id: 1, xp: 3, xpBasis: "history" }];
+  const result = applyBlendedXp(players, { 1: { xp: null, xpBasis: "blended" } });
+  assert.deepEqual(result[0], players[0]);
+});
+
+test("applyBlendedXp does not mutate its input players array", () => {
+  const players = [{ id: 1, xp: 3, xpBasis: "history" }];
+  applyBlendedXp(players, { 1: { xp: 9, xpBasis: "blended" } });
+  assert.equal(players[0].xp, 3);
+});
+
+// -- xpSeasonsLabel / xpTooltip -------------------------------------------------------
+
+test("xpSeasonsLabel joins multiple season-start years into a readable range list", () => {
+  assert.equal(xpSeasonsLabel(["2025", "2024", "2023"]), "2025/26, 2024/25, 2023/24");
+  assert.equal(xpSeasonsLabel([]), "");
+  assert.equal(xpSeasonsLabel(null), "");
+});
+
+test("xpTooltip names the projection and the peer position for an estimate, never as a personal record", () => {
+  const text = xpTooltip("estimate", { position: "MID" });
+  assert.match(text, /estimat/i);
+  assert.match(text, /MID/);
+  assert.match(text, /not this player's own record/);
+});
+
+test("xpTooltip names the seasons behind a measured history figure", () => {
+  assert.equal(xpTooltip("history", { seasons: ["2025", "2024"] }), "From actual history: 2025/26, 2024/25.");
+});
+
+test("xpTooltip names the seasons behind a blended figure too", () => {
+  assert.match(xpTooltip("blended", { seasons: ["2025"] }), /blended with actual history \(2025\/26\)/);
+});
+
+test("xpTooltip returns an empty string when there is no basis to explain", () => {
+  assert.equal(xpTooltip(null), "");
+  assert.equal(xpTooltip(undefined), "");
 });
 
 // -- priorSeasonRangeLabel -----------------------------------------------------------

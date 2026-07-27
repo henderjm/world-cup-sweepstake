@@ -10,6 +10,9 @@
 // whatever season the rest of the fetch is already using rather than a
 // hardcoded year, and stays correct as seasons roll forward.
 
+import { normalizeTeamName } from "./domain.js";
+import { normalizeSeasonLine } from "./fantasyExpectedPoints.js";
+
 // Roughly ten full matches: enough to call someone an established starter
 // without requiring an implausible ever-present season.
 const STARTER_MINUTES_THRESHOLD = 900;
@@ -50,6 +53,21 @@ export function previousSeasonFor(season) {
   return String(year - 1);
 }
 
+// Walks previousSeasonFor back `count` times, most recent first: for the
+// current season 2026 and count 3, ["2025", "2024", "2023"]. Used by the
+// multi-season xP baseline (src/fantasyExpectedPoints.js's SEASON_WEIGHTS,
+// most recent first), which needs several completed seasons rather than the
+// single one the tier signal above still uses.
+export function previousSeasonsFor(season, count = 3) {
+  const seasons = [];
+  let current = String(season);
+  for (let i = 0; i < count; i++) {
+    current = previousSeasonFor(current);
+    seasons.push(current);
+  }
+  return seasons;
+}
+
 // Stable-sorts a player pool so likely first-teamers surface first. Safe to
 // call even when no player carries a `tier` (the pre-enrichment/degraded
 // shape): every entry then ranks equally and the original order is preserved,
@@ -59,16 +77,32 @@ export function sortPlayerPool(players) {
 }
 
 // Parses the raw API-Football /players payload pages (each `{ response: [...] }`,
-// as returned by the Go CLI) into a Map<playerId, { appearances, minutes }>,
-// summing across any repeated rows for the same player (a mid-season transfer
-// can produce one row per club) and across duplicate rows across pages.
-// Filtered to the requested league id defensively, even though the upstream
-// query already scopes to one league, in case a player's statistics entry
-// carries a different competition (API-Football's `statistics` array is not
-// contractually guaranteed to be pre-filtered).
+// as returned by the Go CLI) into a Map<playerId, line>, where `line` is a full
+// normalizeSeasonLine-shaped season total (appearances, minutes, goals, assists,
+// cards, ...), summing across any repeated rows for the same player (a
+// mid-season transfer can produce one row per club) and across duplicate rows
+// across pages. Filtered to the requested league id defensively, even though
+// the upstream query already scopes to one league, in case a player's
+// statistics entry carries a different competition (API-Football's
+// `statistics` array is not contractually guaranteed to be pre-filtered).
 //
-// Note the upstream field is spelled "appearences" (an API-Football quirk),
-// not the standard English spelling; both are accepted defensively.
+// The returned line still carries `appearances`/`minutes` at the top level, so
+// deriveTier (below) keeps working unchanged; the extra goals/assists/cards
+// fields are what scripts/fetch-fantasy-players.mjs feeds to
+// src/fantasyExpectedPoints.js's expectedPointsFor as one season of history.
+const EMPTY_SEASON_LINE = () => ({
+  appearances: 0,
+  lineups: 0,
+  minutes: 0,
+  goals: 0,
+  assists: 0,
+  conceded: 0,
+  yellow: 0,
+  yellowRed: 0,
+  red: 0,
+  ownGoals: 0,
+});
+
 export function buildPriorSeasonStatsIndex(pages, leagueId) {
   const index = new Map();
   for (const page of pages ?? []) {
@@ -77,17 +111,44 @@ export function buildPriorSeasonStatsIndex(pages, leagueId) {
       if (id == null) continue;
       const statistics = (entry.statistics ?? []).filter((row) => row?.league?.id === leagueId);
       if (!statistics.length) continue;
-      const appearances = statistics.reduce(
-        (sum, row) => sum + (Number(row.games?.appearences ?? row.games?.appearances) || 0),
-        0,
-      );
-      const minutes = statistics.reduce((sum, row) => sum + (Number(row.games?.minutes) || 0), 0);
-      const previous = index.get(id);
-      if (previous) {
-        previous.appearances += appearances;
-        previous.minutes += minutes;
-      } else {
-        index.set(id, { appearances, minutes });
+      const line = index.get(id) ?? EMPTY_SEASON_LINE();
+      for (const row of statistics) {
+        const normalized = normalizeSeasonLine(row);
+        if (!normalized) continue;
+        for (const key of Object.keys(line)) line[key] += normalized[key] ?? 0;
+      }
+      index.set(id, line);
+    }
+  }
+  return index;
+}
+
+// Per-player, per-club appearance breakdown for one season's league-scoped
+// statistics rows: Map<playerId, Map<clubName, appearances>>. Used only to
+// weight a transferred player's clean-sheet rate across every club they
+// actually turned out for that season (see
+// src/fantasyExpectedPoints.js's weightedCleanSheetRate) rather than
+// attributing the whole season to one club arbitrarily.
+//
+// Club names are run through normalizeTeamName here, same as
+// mapApiFootballMatches does for the fixtures feed clubCleanSheetRates reads:
+// API-Football's /players endpoint and its /fixtures endpoint spell some clubs
+// differently ("Coventry" vs "Coventry City"), and without normalizing both
+// sides the join silently returns a 0 rate for every promoted club's players.
+export function buildPlayerClubAppearances(pages, leagueId) {
+  const index = new Map();
+  for (const page of pages ?? []) {
+    for (const entry of page?.response ?? []) {
+      const id = entry?.player?.id;
+      if (id == null) continue;
+      for (const row of entry.statistics ?? []) {
+        if (row?.league?.id !== leagueId) continue;
+        const appearances = Number(row.games?.appearences ?? row.games?.appearances) || 0;
+        const club = row.team?.name ? normalizeTeamName(row.team.name) : null;
+        if (!club || appearances <= 0) continue;
+        const byClub = index.get(id) ?? new Map();
+        byClub.set(club, (byClub.get(club) ?? 0) + appearances);
+        index.set(id, byClub);
       }
     }
   }

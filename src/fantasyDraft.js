@@ -215,7 +215,64 @@ export function topQueuedPick(queue, playerPool, myRoster, draftedIds, squadSlot
 // number.
 export function normalizePlayerStats(player) {
   const num = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
-  return { xp: num(player?.xp) };
+  const xp = num(player?.xp);
+  // A basis is only ever attached to a real number: a stray xpBasis string on
+  // a player whose xp itself failed to parse would attribute a figure that
+  // doesn't exist.
+  const xpBasis = xp == null ? null : typeof player?.xpBasis === "string" ? player.xpBasis : null;
+  return { xp, xpBasis };
+}
+
+// Overlays the Worker's in-season-blended xp/xpBasis (GET
+// /fantasy/players/xp, see worker/worker.js's runScheduledFantasyXpBlend)
+// onto the static pool's own baked figures, keyed by player id. `blended` is
+// the raw `{ [id]: { xp, xpBasis } }` map that route returns, or null/undefined
+// when the fetch never happened or failed - in which case the pool passes
+// through completely unchanged, since the Worker figure is purely an upgrade
+// once any gameweek has actually completed, never a requirement. A player id
+// absent from `blended`, or present with a null xp, also keeps the pool's own
+// value: the blend only ever replaces a figure it actually has a fresher
+// answer for. Returns a NEW array (never mutates `players`).
+export function applyBlendedXp(players, blended) {
+  if (!blended) return players ?? [];
+  return (players ?? []).map((player) => {
+    const entry = blended[player.id];
+    if (!entry || entry.xp == null) return player;
+    return { ...player, xp: entry.xp, xpBasis: entry.xpBasis ?? player.xpBasis ?? null };
+  });
+}
+
+// Tooltip/title text for an xP figure, keyed off its basis (see
+// src/fantasyExpectedPoints.js's expectedPointsFor/blendWithCurrentSeason) -
+// the one place that decides what a manager is told about where a number
+// came from. "estimate" must never read like a personal record: it names the
+// projection explicitly and the peer group it was drawn from
+// (baselineFromCohort is a same-position median, never this player's own
+// history). "history"/"blended" name the actual season(s) behind the figure,
+// via `seasons` (data/PL/players.json's xpStats.seasons header), so a bare
+// number never floats free of its source.
+export function xpTooltip(basis, { seasons, position } = {}) {
+  if (basis === "estimate") {
+    return `Estimated from similar ${position ?? "players"} - a projection, not this player's own record.`;
+  }
+  const seasonsLabel = xpSeasonsLabel(seasons);
+  if (basis === "blended") {
+    return seasonsLabel
+      ? `This season's form blended with actual history (${seasonsLabel}).`
+      : "This season's form blended with prior history.";
+  }
+  if (basis === "history") {
+    return seasonsLabel ? `From actual history: ${seasonsLabel}.` : "From actual season history.";
+  }
+  return "";
+}
+
+// "2025/26, 2024/25, 2023/24" style label for a list of season-start years
+// (data/PL/players.json's xpStats.seasons), reusing priorSeasonRangeLabel's
+// own single-season formatting rather than re-deriving it. Empty string for
+// a missing/empty list.
+export function xpSeasonsLabel(seasons) {
+  return (seasons ?? []).map((season) => priorSeasonRangeLabel(season)).filter(Boolean).join(", ");
 }
 
 // -- Prior-season enrichment (appearances/minutes/tier) -----------------------

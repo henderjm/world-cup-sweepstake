@@ -215,6 +215,18 @@ export async function loadPlayerPool() {
   return response.json();
 }
 
+// GET the Worker's in-season-blended xp for every active player: { [id]:
+// { xp, xpBasis } }, "blended" once at least one gameweek has finished this
+// season, else the same historical figure the static bake already carries
+// (see worker/worker.js's runScheduledFantasyXpBlend). Public, not
+// league-scoped. 501 if the fantasy DB binding is missing - same
+// isFantasyNotDeployed handling as the rest of this module; callers treat
+// any failure here as "the static pool's own xp stands" (see
+// applyBlendedXp in fantasyDraft.js) rather than blocking on it.
+export async function loadBlendedXp() {
+  return (await api("/fantasy/players/xp")).players;
+}
+
 // The same static PL live feed data.js's loadModel("PL") reads, fetched
 // directly rather than through loadModel: the demo only needs raw
 // matches/standings for a fixture join and a club-strength derivation (see

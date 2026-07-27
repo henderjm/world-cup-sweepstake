@@ -18,14 +18,22 @@ import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { COMPETITIONS } from "../src/competitions.js";
 import { bucketPosition } from "../src/fantasy.js";
 import { normalizeTeamName } from "../src/domain.js";
-import { decodeEntities } from "../src/mapApiFootball.js";
+import { decodeEntities, mapApiFootballMatches } from "../src/mapApiFootball.js";
 import {
+  buildPlayerClubAppearances,
   buildPriorSeasonStatsIndex,
-  deriveTier,
-  previousSeasonFor,
+  previousSeasonsFor,
   sortPlayerPool,
 } from "../src/fantasyPlayerTier.js";
+import { clubCleanSheetRates } from "../src/fantasyExpectedPoints.js";
+import { deriveTiersFromSeason, enrichPoolWithHistoricalXp } from "../src/fantasyHistoricalXp.js";
 import { fetchApiFootball, isUnexpectedApiFootballFailure } from "./lib/apiFootball.mjs";
+
+// How many completed seasons of history feed the xP baseline (see
+// src/fantasyExpectedPoints.js's SEASON_WEIGHTS, which is sized for exactly
+// this many). Each season is roughly 28 paginated /players calls plus one
+// /fixtures call, so this is the dominant cost of the whole bake.
+const HISTORY_SEASONS = 3;
 
 const token = process.env.API_FOOTBALL_KEY;
 const competition = process.env.FANTASY_COMPETITION ?? "PL";
@@ -74,18 +82,34 @@ if (!clubs.length) {
 const players = await fetchViaSquads(clubs);
 const { list, complete } = players ?? (await fetchViaLineups());
 
-const priorSeasonStats = await fetchPriorSeasonStats(leagueId, season);
-const priorSeasonStatsHeader = enrichWithPriorSeasonStats(list, priorSeasonStats);
+// Best-effort, never a new single point of failure for the pool: any failure
+// here (rate limit, plan restriction, upstream outage, a genuine bug) is
+// caught and the pool ships exactly as it does without this enrichment at
+// all - see fetchHistoricalSeasons's own per-season handling for the partial
+// case (some seasons fetched, others not).
+const historical = await fetchHistoricalSeasons(leagueId, season).catch((error) => {
+  if (isUnexpectedApiFootballFailure(error)) throw error;
+  console.warn(`historical season data unavailable (${error.message}); pool will ship without tier/xP enrichment.`);
+  return { seasons: previousSeasonsFor(season, HISTORY_SEASONS), perSeason: [], requestCount: 0 };
+});
+
+const tierResult = deriveTiersFromSeason(list, historical.perSeason[0] ?? null);
+const xpResult = enrichPoolWithHistoricalXp(tierResult.players, historical.perSeason, historical.requestCount);
 
 const body = {
   source: complete ? "API-Football (squads)" : "API-Football (accumulated from lineups)",
   lastUpdated: new Date().toISOString(),
   complete,
-  priorSeasonStats: priorSeasonStatsHeader,
-  players: priorSeasonStats ? sortPlayerPool(list) : list,
+  priorSeasonStats: tierResult.header,
+  xpStats: xpResult.header,
+  players: sortPlayerPool(xpResult.players),
 };
 await writeFile(playersFile, `${JSON.stringify(body, null, 2)}\n`);
-console.log(`Wrote ${competition}/players.json (${list.length} players, complete=${complete}).`);
+console.log(
+  `Wrote ${competition}/players.json (${list.length} players, complete=${complete}, ` +
+    `xp available=${xpResult.header.available}, history=${xpResult.header.basisCounts.history}, ` +
+    `estimate=${xpResult.header.basisCounts.estimate}, none=${xpResult.header.basisCounts.none}).`,
+);
 
 // Primary path: one call per club to /players/squads. Any single club failing marks
 // the whole run as unavailable (rather than a competition's pool being some clubs'
@@ -153,60 +177,61 @@ async function fetchViaLineups() {
   return { list: [...byId.values()], complete: false };
 }
 
-// Enrichment path: pulls the previous completed season's per-player
-// appearance/minutes totals from the paginated /players endpoint, as a proxy
-// for "does this player actually play" (the season in `season`/`leagueId`
-// hasn't kicked off yet, so its own appearance data is all zeros and useless
-// for this purpose; see src/fantasyPlayerTier.js for the reasoning).
+// Enrichment path: fetches HISTORY_SEASONS completed seasons' per-player
+// statistics (goals/assists/cards, not just appearances/minutes - the season
+// in `currentSeason`/`leagueId` hasn't kicked off yet, so its own data is all
+// zeros and useless for this purpose) plus each season's finished fixtures,
+// for src/fantasyHistoricalXp.js's xP baseline and the pool's existing
+// single-season "likely first-teamer" tier signal (see
+// src/fantasyPlayerTier.js).
 //
-// This is best-effort and never a new single point of failure for the pool:
-// any failure (rate limit, plan restriction, upstream outage) is caught and
-// logged, and the caller falls back to shipping the pool exactly as it does
-// today, just without the tier/ordering enrichment.
-async function fetchPriorSeasonStats(currentLeagueId, currentSeason) {
-  const previousSeason = previousSeasonFor(currentSeason);
-  try {
-    const first = await fetchApiFootball(`/players?league=${currentLeagueId}&season=${previousSeason}&page=1`);
-    const totalPages = Number(first?.paging?.total) || 1;
-    const remainingPaths = Array.from(
-      { length: Math.max(totalPages - 1, 0) },
-      (_, index) => `/players?league=${currentLeagueId}&season=${previousSeason}&page=${index + 2}`,
-    );
-    const remaining = remainingPaths.length ? await fetchApiFootball(remainingPaths) : [];
-    const pages = [first, ...remaining];
-    console.log(`Fetched ${pages.length}/${totalPages} page(s) of ${previousSeason} player statistics.`);
-    return {
-      season: previousSeason,
-      requestCount: pages.length,
-      index: buildPriorSeasonStatsIndex(pages, currentLeagueId),
-    };
-  } catch (error) {
-    if (isUnexpectedApiFootballFailure(error)) throw error;
-    console.warn(
-      `prior-season (${previousSeason}) player stats unavailable (${error.message}); ` +
-        "pool will ship without the likely-starter enrichment.",
-    );
-    return null;
-  }
-}
+// Each season is independent: a season whose stats or fixtures call fails
+// (rate limit, plan restriction, a season API-Football doesn't have this far
+// back, upstream outage) simply contributes nothing for that piece rather
+// than aborting the other seasons, so the bake still ships whatever real
+// history it could fetch instead of an all-or-nothing failure. Every
+// fetchApiFootball call is logged and counted, since three seasons at
+// roughly 28 paginated calls each is a real jump in upstream usage versus the
+// single-season enrichment this replaces.
+async function fetchHistoricalSeasons(currentLeagueId, currentSeason) {
+  const seasons = previousSeasonsFor(currentSeason, HISTORY_SEASONS);
+  let requestCount = 0;
+  const perSeason = [];
 
-// Mutates `list` in place, adding `appearances`/`minutes`/`tier`/`likelyStarter`
-// to every player when prior-season stats were fetched successfully. Returns
-// the header object to record in the baked file (or an "unavailable" header
-// when the fetch failed entirely, so the frontend can be honest about it
-// rather than the enrichment silently disappearing).
-function enrichWithPriorSeasonStats(list, priorSeasonStats) {
-  if (!priorSeasonStats) {
-    return { available: false, season: null, playersWithoutRecord: null };
+  for (const seasonYear of seasons) {
+    let statsIndex = null;
+    let clubAppearances = null;
+    try {
+      const first = await fetchApiFootball(`/players?league=${currentLeagueId}&season=${seasonYear}&page=1`);
+      const totalPages = Number(first?.paging?.total) || 1;
+      const remainingPaths = Array.from(
+        { length: Math.max(totalPages - 1, 0) },
+        (_, index) => `/players?league=${currentLeagueId}&season=${seasonYear}&page=${index + 2}`,
+      );
+      const remaining = remainingPaths.length ? await fetchApiFootball(remainingPaths) : [];
+      const pages = [first, ...remaining];
+      requestCount += pages.length;
+      statsIndex = buildPriorSeasonStatsIndex(pages, currentLeagueId);
+      clubAppearances = buildPlayerClubAppearances(pages, currentLeagueId);
+      console.log(`Fetched ${pages.length}/${totalPages} page(s) of ${seasonYear} player statistics.`);
+    } catch (error) {
+      if (isUnexpectedApiFootballFailure(error)) throw error;
+      console.warn(`${seasonYear} player statistics unavailable (${error.message}); that season contributes no history.`);
+    }
+
+    let cleanSheetRates = new Map();
+    try {
+      const fixtures = await fetchApiFootball(`/fixtures?league=${currentLeagueId}&season=${seasonYear}`);
+      requestCount += 1;
+      cleanSheetRates = clubCleanSheetRates(mapApiFootballMatches(fixtures));
+    } catch (error) {
+      if (isUnexpectedApiFootballFailure(error)) throw error;
+      console.warn(`${seasonYear} fixtures unavailable (${error.message}); that season's clean-sheet rate defaults to 0.`);
+    }
+
+    perSeason.push({ season: seasonYear, statsIndex, clubAppearances, cleanSheetRates });
   }
-  let playersWithoutRecord = 0;
-  for (const player of list) {
-    const stat = priorSeasonStats.index.get(player.id) ?? null;
-    if (!stat) playersWithoutRecord += 1;
-    player.appearances = stat ? stat.appearances : null;
-    player.minutes = stat ? stat.minutes : null;
-    player.tier = deriveTier(stat);
-    player.likelyStarter = player.tier === "starter";
-  }
-  return { available: true, season: priorSeasonStats.season, playersWithoutRecord };
+
+  console.log(`Historical xP fetch: ${requestCount} API-Football request(s) across ${seasons.length} season(s) (${seasons.join(", ")}).`);
+  return { seasons, perSeason, requestCount };
 }
