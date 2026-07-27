@@ -8,8 +8,12 @@ import {
   buildDemoReportCard,
   composeDemoShareText,
   createDemoMembers,
+  DEFAULT_DEMO_CLOCK_SECONDS,
   DEFAULT_DEMO_MANAGER_NAME,
+  DEMO_CLOCK_SECONDS_OPTIONS,
+  DEMO_CLOCK_UNTIMED,
   DEMO_HUMAN_ID,
+  demoClockDurationMs,
   draftedPlayerIds,
   initDemoDraftRoom,
   isDemoDraftComplete,
@@ -34,6 +38,31 @@ test("createDemoMembers keeps a real name and marks bots distinctly", () => {
   assert.equal(members.slice(1).every((member) => member.isBot), true);
   // Every id is unique.
   assert.equal(new Set(members.map((member) => member.userId)).size, 6);
+});
+
+// -- Pick clock choice ------------------------------------------------------------
+
+test("demoClockDurationMs converts a timed choice to milliseconds", () => {
+  for (const seconds of DEMO_CLOCK_SECONDS_OPTIONS) {
+    assert.equal(demoClockDurationMs(seconds), seconds * 1000);
+  }
+  assert.equal(demoClockDurationMs(DEFAULT_DEMO_CLOCK_SECONDS), DEFAULT_DEMO_CLOCK_SECONDS * 1000);
+});
+
+test("demoClockDurationMs returns null for the untimed option", () => {
+  assert.equal(demoClockDurationMs(DEMO_CLOCK_UNTIMED), null);
+});
+
+test("demoClockDurationMs returns null for a missing or bogus choice rather than guessing a default", () => {
+  assert.equal(demoClockDurationMs(null), null);
+  assert.equal(demoClockDurationMs(undefined), null);
+  assert.equal(demoClockDurationMs("not-a-number"), null);
+  assert.equal(demoClockDurationMs(0), null);
+  assert.equal(demoClockDurationMs(-30), null);
+});
+
+test("demoClockDurationMs accepts a stringified number (setup buttons carry the choice as a data attribute string)", () => {
+  assert.equal(demoClockDurationMs("30"), 30000);
 });
 
 // -- Draft ----------------------------------------------------------------------

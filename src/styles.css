@@ -1702,20 +1702,21 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-pool__table { overflow-x: auto; }
 
 /* Column header row and each data row share one grid template so PLAYER / POS /
-   TIER / APPS / action line up exactly: badge, name, pos, tier chip, apps
-   count, action. The header's first and last cells are empty (badge/action). */
+   TIER / APPS / queue / action line up exactly: badge, name, pos, tier chip,
+   apps count, queue star, action. The header's first, queue and action cells
+   are empty (badge/queue/action). */
 .fantasy-pool__cols,
 .fantasy-player-row {
   display: grid;
-  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 70px 48px 76px;
-  min-width: 460px;
+  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 70px 48px 32px 76px;
+  min-width: 500px;
   align-items: center;
   gap: 10px;
 }
 .fantasy-pool__table--degraded .fantasy-pool__cols,
 .fantasy-pool__table--degraded .fantasy-player-row {
-  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 76px;
-  min-width: 320px;
+  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 32px 76px;
+  min-width: 360px;
 }
 .fantasy-pool__cols {
   /* 26px = the rows wrapper's 16px padding + a row's own 10px padding, so the
@@ -1747,6 +1748,22 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-player-row__action { text-align: right; }
 .fantasy-player-row__stat { text-align: center; }
 .fantasy-player-row__tier { display: flex; justify-content: center; }
+.fantasy-player-row__queue { display: flex; justify-content: center; }
+
+/* Queue star toggle: a plain icon button (no background pill) so it reads as
+   a small affordance next to the row, not another action competing with
+   Draft. Outline star when not queued, filled purple star once queued. */
+.fantasy-queue-toggle {
+  background: none;
+  border: none;
+  padding: 2px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--faint);
+  cursor: pointer;
+}
+.fantasy-queue-toggle:hover { color: var(--fantasy-accent); }
+.fantasy-queue-toggle.is-active { color: var(--fantasy-accent); }
 .fantasy-draft-btn {
   padding: 6px 12px;
   font-size: 12px;
@@ -1826,6 +1843,39 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-feed__player { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .fantasy-feed__player strong { font-size: 12px; }
 .fantasy-feed__by { color: var(--muted); white-space: nowrap; }
+
+/* Your queue: a manager's own ordered shortlist, same squad-row card language
+   as Recent picks/Your squad, plus per-row up/down/remove controls and a
+   bulk Clear in the header. A taken entry (is-gone) stays in the list, dimmed
+   and struck through, rather than disappearing. */
+.fantasy-queue-card__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.fantasy-queue-rows { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
+.fantasy-queue-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12px;
+}
+.fantasy-queue-row__name { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.fantasy-queue-row__name strong { font-size: 12px; }
+.fantasy-queue-row.is-gone { opacity: 0.5; }
+.fantasy-queue-row.is-gone .fantasy-queue-row__name strong { text-decoration: line-through; }
+.fantasy-queue-row__status { flex: none; font-size: 10px; font-weight: 800; text-transform: uppercase; color: var(--faint); }
+.fantasy-queue-row__actions { display: flex; align-items: center; gap: 2px; flex: none; }
+.fantasy-queue-btn {
+  background: none;
+  border: none;
+  padding: 3px 5px;
+  font-size: 11px;
+  color: var(--faint);
+  cursor: pointer;
+}
+.fantasy-queue-btn:hover { color: var(--fantasy-accent); }
+.fantasy-queue-btn:disabled { opacity: 0.3; cursor: default; }
+.fantasy-queue-btn--remove:hover { color: var(--clay); }
 
 .fantasy-rosters { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
 .fantasy-roster-card .fantasy-squad-rows { max-height: none; }

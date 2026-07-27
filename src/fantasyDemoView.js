@@ -9,7 +9,14 @@
 
 import { badgeFor } from "./badges.js";
 import { formatOrdinal } from "./fantasyDraft.js";
-import { DEFAULT_DEMO_MANAGER_NAME, DEMO_LEAGUE_SIZES, DEFAULT_DEMO_LEAGUE_SIZE } from "./fantasyDemo.js";
+import {
+  DEFAULT_DEMO_MANAGER_NAME,
+  DEMO_LEAGUE_SIZES,
+  DEFAULT_DEMO_LEAGUE_SIZE,
+  DEMO_CLOCK_SECONDS_OPTIONS,
+  DEMO_CLOCK_UNTIMED,
+  DEFAULT_DEMO_CLOCK_SECONDS,
+} from "./fantasyDemo.js";
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"]/g, (char) => ({
@@ -22,11 +29,19 @@ function esc(value) {
 
 // -- Setup ----------------------------------------------------------------------
 
-export function renderDemoSetup({ name = "", size = DEFAULT_DEMO_LEAGUE_SIZE, busy = false } = {}) {
+export function renderDemoSetup({ name = "", size = DEFAULT_DEMO_LEAGUE_SIZE, clock = DEFAULT_DEMO_CLOCK_SECONDS, busy = false } = {}) {
   const sizeButtons = DEMO_LEAGUE_SIZES.map(
     (option) =>
       `<button class="seg ${option === size ? "is-active" : ""}" type="button" data-demo-size="${option}" ${busy ? "disabled" : ""}>${option} managers</button>`,
   ).join("");
+
+  const clockButtons = [...DEMO_CLOCK_SECONDS_OPTIONS, DEMO_CLOCK_UNTIMED]
+    .map((option) => {
+      const label = option === DEMO_CLOCK_UNTIMED ? "Untimed" : `${option}s`;
+      const isActive = String(option) === String(clock);
+      return `<button class="seg ${isActive ? "is-active" : ""}" type="button" data-demo-clock="${option}" ${busy ? "disabled" : ""}>${label}</button>`;
+    })
+    .join("");
 
   return `
     <div class="demo-setup">
@@ -51,6 +66,8 @@ export function renderDemoSetup({ name = "", size = DEFAULT_DEMO_LEAGUE_SIZE, bu
         />
         <h3 class="card__title demo-setup__sizelabel">League size</h3>
         <div class="segrow">${sizeButtons}</div>
+        <h3 class="card__title demo-setup__sizelabel">Pick clock</h3>
+        <div class="segrow">${clockButtons}</div>
         <button class="btn btn--primary demo-setup__start" type="button" data-demo-start ${busy ? "disabled" : ""}>
           ${busy ? "Setting up…" : "Start draft"}
         </button>

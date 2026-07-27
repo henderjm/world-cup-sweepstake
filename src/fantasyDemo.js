@@ -152,12 +152,31 @@ export function isDemoDraftComplete(room) {
   return room?.status === "complete";
 }
 
-// UI pacing: bots pick fast, the human's own clock is short with the same
-// autopick fallback on expiry. Centralised here (not scattered as magic
-// numbers in the view layer) even though only the constants themselves are
+// UI pacing: bots always pick fast, on their own fixed delay regardless of
+// the human's chosen pick clock. Centralised here (not scattered as magic
+// numbers in the view layer) even though only the constant itself is
 // meaningfully "pure".
 export const DEMO_BOT_PICK_DELAY_MS = 550;
-export const DEMO_HUMAN_CLOCK_MS = 12000;
+
+// The human's own pick clock is a setup-screen choice, not a fixed constant:
+// a small set of sensible seconds-per-pick options plus an untimed option
+// (no autopick ever fires on the human's own turn - bots are unaffected,
+// they always use DEMO_BOT_PICK_DELAY_MS). 30s is the default: fast enough to
+// keep the "5 minutes" pitch honest, slow enough not to feel rushed on a
+// first try.
+export const DEMO_CLOCK_SECONDS_OPTIONS = [10, 30, 60];
+export const DEMO_CLOCK_UNTIMED = "untimed";
+export const DEFAULT_DEMO_CLOCK_SECONDS = 30;
+
+// Milliseconds for a chosen pick-clock option, or null for untimed/an
+// unrecognised value - the caller's signal to never start an autopick timer
+// for the human's own turn. Never throws on a bogus value; treats it the
+// same as untimed rather than guessing a default.
+export function demoClockDurationMs(choice) {
+  if (choice === DEMO_CLOCK_UNTIMED || choice == null) return null;
+  const seconds = Number(choice);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
+}
 
 // -- Season simulation --------------------------------------------------------
 

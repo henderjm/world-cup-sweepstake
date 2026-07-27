@@ -15,10 +15,12 @@ import {
   matchupLeadSide,
   normalizePlayerStats,
   priorSeasonRangeLabel,
+  queueEntries,
   squadBucketCounts,
   suggestedPick,
   suggestedPickReason,
   tierLabel,
+  topQueuedPick,
 } from "./fantasyDraft.js";
 import {
   buildWaiverPlayerLookup,
@@ -396,7 +398,7 @@ function renderPoolMeta(playerPool) {
 // free. The pool is supplementary here, so its own absence (fetch 404, never
 // baked in production) degrades to a quiet note rather than hiding the rest of
 // the lobby or looking like a bug.
-function renderScoutingSection(playerPool, filter) {
+function renderScoutingSection(playerPool, filter, queuedIds) {
   if (!playerPool) {
     return `<section class="card"><h3 class="card__title">Player pool</h3><p class="note">Loading player pool…</p></section>`;
   }
@@ -405,13 +407,13 @@ function renderScoutingSection(playerPool, filter) {
   }
   return `
     ${renderPoolMeta(playerPool)}
-    ${renderFantasyPlayerPool(playerPool.players, filter, { isMyTurn: false, myRoster: [], draftedIds: new Set() }, playerPool.priorSeasonStats)}`;
+    ${renderFantasyPlayerPool(playerPool.players, filter, { isMyTurn: false, myRoster: [], draftedIds: new Set(), queuedIds }, playerPool.priorSeasonStats)}`;
 }
 
 export function renderFantasyLobby(
   league,
   members,
-  { playerPool, filter, schedule, scheduleBusy = false, scheduleError = "" } = {},
+  { playerPool, filter, schedule, scheduleBusy = false, scheduleError = "", queuedIds } = {},
 ) {
   const sorted = [...members].sort(
     (a, b) => (a.draftPosition ?? 999) - (b.draftPosition ?? 999) || a.name.localeCompare(b.name),
@@ -446,7 +448,7 @@ export function renderFantasyLobby(
     </section>
     ${renderFantasyScheduleCard(league, schedule, { scheduleBusy, scheduleError })}
     <section class="card fantasy-start">${startControl}</section>
-    ${renderScoutingSection(playerPool, filter ?? { position: "All", club: "All", search: "" })}`;
+    ${renderScoutingSection(playerPool, filter ?? { position: "All", club: "All", search: "", hideTaken: true }, queuedIds)}`;
 }
 
 // Draft scheduling card: a commissioner can pick/reschedule/clear a start
@@ -507,7 +509,7 @@ function renderFantasyScheduleCard(league, schedule, { scheduleBusy, scheduleErr
 // data-fantasy-dismiss-error. Styled with existing classes only (no new CSS
 // added here): the card shell plus the same error-red text style the create/
 // join forms already use.
-function renderDraftErrorNotice(message) {
+export function renderDraftErrorNotice(message) {
   return `<div class="card" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
       <p class="fantasy-form__error" style="margin:0;">${esc(message)}</p>
       <button class="seg" type="button" data-fantasy-dismiss-error>Dismiss</button>
@@ -518,7 +520,7 @@ function renderDraftErrorNotice(message) {
 // on the SAME row as the manager chip strip (headline left, chips right,
 // wrapping below only at narrow widths) - the countdown itself lives in its own
 // On the clock card now (see renderOnClockCard), not here.
-function renderDraftStatusCard({ members, draft, myUserId, season, entries }) {
+export function renderDraftStatusCard({ members, draft, myUserId, season, entries }) {
   const { round, overallPick } = draft;
   const chips = entries
     .map((entry) => {
@@ -548,6 +550,10 @@ function renderDraftStatusCard({ members, draft, myUserId, season, entries }) {
 function renderOnClockCard({ members, draft, myUserId, entries, isMyTurn }) {
   const { onClockUserId, remainingMs } = draft;
   const name = onClockUserId == null ? "Next pick…" : isMyTurn ? "You" : nameForUser(onClockUserId, members);
+  // remainingMs is null only for the demo's untimed pick clock (see
+  // scheduleDemoTurn in app.js): a real draft room's clock is always a
+  // number, since worker/draftRoom.js always runs a 60s alarm.
+  const clockLabel = remainingMs == null ? "No clock" : formatCountdown(remainingMs);
   let context = "";
   if (isMyTurn) {
     context = "You're on the clock.";
@@ -568,30 +574,33 @@ function renderOnClockCard({ members, draft, myUserId, entries, isMyTurn }) {
       <p class="fantasy-eyebrow">On the clock</p>
       <div class="fantasy-onclock__row">
         <h2 class="fantasy-onclock__name">${esc(name)}</h2>
-        <span class="fantasy-onclock__time" data-fantasy-clock>${formatCountdown(remainingMs)}</span>
+        <span class="fantasy-onclock__time" data-fantasy-clock>${esc(clockLabel)}</span>
       </div>
       <p class="fantasy-onclock__context">${context}</p>
     </section>`;
 }
 
-// Suggested pick: a purple-tinted card naming the player the deterministic
-// autoPick heuristic (src/draftLogic.js, via suggestedPick in fantasyDraft.js)
-// would take for the caller's own roster right now. Not AI, not a projection:
-// the same scarcest-bucket-first rule the server falls back to on a timeout,
-// with a one-line rationale walking that exact decision path (suggestedPickReason
-// in fantasyDraft.js). The Draft button uses the exact same gating as a pool
-// row (my turn, legal pick), so it never offers an action the pool itself would
-// refuse.
-function renderSuggestedPickCard(player, context) {
+// Suggested pick: a purple-tinted card naming the player who would be taken
+// right now, either the top still-available player from the manager's own
+// queue (fromQueue: true - see topQueuedPick in fantasyDraft.js, checked
+// first so a manager's own shortlist always outranks the generic heuristic),
+// or, when the queue is empty or has nothing legal left in it, the
+// deterministic autoPick heuristic (src/draftLogic.js, via suggestedPick in
+// fantasyDraft.js) - the same scarcest-bucket-first rule the server falls
+// back to on a timeout. The Draft button uses the exact same gating as a
+// pool row (my turn, legal pick), so it never offers an action the pool
+// itself would refuse.
+function renderSuggestedPickCard(player, context, fromQueue = false) {
   if (!player) return "";
   const legal = Boolean(context?.isMyTurn) && canDraftPlayer(player, context);
   const action = legal
     ? `<button class="btn fantasy-draft-btn" type="button" data-fantasy-draft-player="${player.id}">Draft</button>`
     : "";
-  const reason = suggestedPickReason(player, context?.myRoster);
+  const reason = fromQueue ? "Next up in your queue." : suggestedPickReason(player, context?.myRoster);
+  const eyebrow = fromQueue ? "Your queue suggests" : "Squad suggests";
   return `
     <section class="card fantasy-suggest">
-      <p class="fantasy-eyebrow">${SPARKLE_ICON} Squad suggests</p>
+      <p class="fantasy-eyebrow">${SPARKLE_ICON} ${eyebrow}</p>
       <div class="fantasy-suggest__row">
         ${badgeFor(player.team)}
         <span class="fantasy-suggest__name"><strong>${esc(player.name)}</strong></span>
@@ -615,6 +624,44 @@ function renderPickFeed(picks, members) {
       </div>`,
     )
     .join("")}</div>`;
+}
+
+// Personal pick queue: a manager's own ordered shortlist (fantasyDraft.js's
+// addToQueue/removeFromQueue/moveQueueItem/queueEntries/topQueuedPick - this
+// card is purely a view over that pure client-side state, never sent to the
+// server). A queued player taken by someone else stays in the list, struck
+// through and marked "Gone" rather than disappearing, so a manager can see
+// what they lost and clear it deliberately instead of wondering where it
+// went; up/down buttons (not drag-and-drop - more reliable on mobile) reorder
+// it, and each entry has its own remove button alongside a bulk "Clear".
+function renderFantasyQueueCard(queue, playerPool, draftedIds) {
+  const entries = queueEntries(queue, playerPool, draftedIds).filter((entry) => entry.player);
+  const rows = entries
+    .map((entry, index) => {
+      const player = entry.player;
+      const classes = ["fantasy-queue-row"];
+      if (!entry.available) classes.push("is-gone");
+      return `<div class="${classes.join(" ")}">
+          ${badgeFor(player.team)}
+          <span class="fantasy-queue-row__name"><strong>${esc(player.name)}</strong><span class="note--dim">${esc(abbrFor(player.team))}</span></span>
+          <span class="fantasy-pos">${esc(player.position)}</span>
+          <span class="fantasy-queue-row__status">${entry.available ? "" : "Gone"}</span>
+          <div class="fantasy-queue-row__actions">
+            <button class="fantasy-queue-btn" type="button" data-fantasy-queue-up="${player.id}" ${index === 0 ? "disabled" : ""} aria-label="Move up in queue">▲</button>
+            <button class="fantasy-queue-btn" type="button" data-fantasy-queue-down="${player.id}" ${index === entries.length - 1 ? "disabled" : ""} aria-label="Move down in queue">▼</button>
+            <button class="fantasy-queue-btn fantasy-queue-btn--remove" type="button" data-fantasy-queue-remove="${player.id}" aria-label="Remove ${esc(player.name)} from queue">✕</button>
+          </div>
+        </div>`;
+    })
+    .join("");
+  return `
+    <section class="card fantasy-queue-card">
+      <div class="fantasy-queue-card__head">
+        <h3 class="card__title">Your queue</h3>
+        ${entries.length ? `<button class="seg" type="button" data-fantasy-queue-clear>Clear</button>` : ""}
+      </div>
+      <div class="fantasy-queue-rows">${rows || `<p class="note">Star players in the pool below to queue them up.</p>`}</div>
+    </section>`;
 }
 
 // Your squad: R.PP pick number, player name, club abbreviation, POS chip, plus a
@@ -969,10 +1016,17 @@ export function renderFantasyRosterPanel({
 
 const POSITION_FILTERS = ["All", "GK", "DEF", "MID", "FWD"];
 
-function filterPlayers(players, filter) {
+// `hideTaken` defaults to on (the spec's "hide-taken filter, defaulting to
+// on"): a caller must explicitly set it to `false` to see drafted players
+// greyed out inline instead. `draftedIds` is required to apply it - callers
+// without a live draft (the pre-draft lobby's read-only scouting list) pass
+// an empty Set, so the filter is naturally a no-op there.
+function filterPlayers(players, filter, draftedIds) {
   const search = (filter?.search ?? "").trim().toLowerCase();
   const club = filter?.club ?? "All";
+  const hideTaken = filter?.hideTaken !== false;
   return (players ?? []).filter((player) => {
+    if (hideTaken && draftedIds?.has?.(player.id)) return false;
     if (filter?.position && filter.position !== "All" && player.position !== filter.position) return false;
     if (club !== "All" && player.team !== club) return false;
     if (!search) return true;
@@ -981,28 +1035,36 @@ function filterPlayers(players, filter) {
 }
 
 // The available-player rows only: exported separately so app.js can re-render
-// just this list on every keystroke/filter change without rebuilding (and
-// stealing focus from) the search input above it. Whether the Tier/Apps cells
-// render at all is decided once from the full (unfiltered) pool passed in, so
-// a search that happens to match zero enriched players never flips columns
-// on and off under the header sitting above this list (see
-// renderFantasyPlayerPool, which must make the identical decision from the
-// same `players` argument for the two to stay column-aligned).
+// just this list on every keystroke/filter/turn change without rebuilding
+// (and stealing focus and scroll position from) the search input and scroll
+// region above it. Whether the Tier/Apps cells render at all is decided once
+// from the full (unfiltered) pool passed in, so a search that happens to
+// match zero enriched players never flips columns on and off under the
+// header sitting above this list (see renderFantasyPlayerPool, which must
+// make the identical decision from the same `players` argument for the two
+// to stay column-aligned).
 export function renderFantasyPlayerRows(players, filter, context) {
-  const filtered = filterPlayers(players, filter);
+  const { isMyTurn, myRoster, draftedIds, suggestedId, queuedIds } = context ?? {};
+  const filtered = filterPlayers(players, filter, draftedIds);
   if (!filtered.length) return `<p class="note">No players match.</p>`;
-  const { isMyTurn, myRoster, draftedIds, suggestedId } = context ?? {};
   const enriched = hasPriorSeasonData(players);
   return filtered
     .map((player) => {
       const drafted = draftedIds?.has?.(player.id);
       const legal = !drafted && canDraftPlayer(player, { isMyTurn, myRoster, draftedIds });
       const isSuggested = suggestedId != null && player.id === suggestedId;
+      const isQueued = Boolean(queuedIds?.has?.(player.id));
       const action = legal
         ? `<button class="btn fantasy-draft-btn" type="button" data-fantasy-draft-player="${player.id}">Draft</button>`
         : drafted
           ? `<span class="note--dim">Drafted</span>`
           : "";
+      // A drafted player can no longer usefully be queued/unqueued from the
+      // pool row (the queue card's own remove button is where a stale entry
+      // gets cleared), so the star only renders for a still-available player.
+      const queueCell = drafted
+        ? ""
+        : `<button class="fantasy-queue-toggle ${isQueued ? "is-active" : ""}" type="button" data-fantasy-queue-toggle="${player.id}" aria-pressed="${isQueued}" aria-label="${isQueued ? "Remove from queue" : "Add to queue"}" title="${isQueued ? "Remove from queue" : "Add to queue"}">${isQueued ? "★" : "☆"}</button>`;
       const suggestedBadge = isSuggested ? `<span class="chip fantasy-chip--suggested">Pick</span>` : "";
       const tierCell = enriched ? `<span class="fantasy-player-row__tier">${renderTierChip(player.tier)}</span>` : "";
       const appsCell = enriched ? `<span class="fantasy-player-row__stat">${renderStatCell(player.appearances, 0)}</span>` : "";
@@ -1012,6 +1074,7 @@ export function renderFantasyPlayerRows(players, filter, context) {
           <span class="fantasy-pos">${esc(player.position)}</span>
           ${tierCell}
           ${appsCell}
+          <span class="fantasy-player-row__queue">${queueCell}</span>
           <span class="fantasy-player-row__action">${action}</span>
         </div>`;
     })
@@ -1049,6 +1112,7 @@ export function renderFantasyPlayerPool(players, filter, context, priorSeasonSta
     (position) =>
       `<button class="seg ${position === activePosition ? "is-active" : ""}" type="button" data-fantasy-position-filter="${position}">${position}</button>`,
   ).join("");
+  const hideTaken = filter?.hideTaken !== false;
   const enriched = hasPriorSeasonData(players);
   const seasonLabel = enriched && priorSeasonStats?.season ? priorSeasonRangeLabel(priorSeasonStats.season) : "";
 
@@ -1060,13 +1124,14 @@ export function renderFantasyPlayerPool(players, filter, context, priorSeasonSta
           ${seasonLabel ? `<p class="note--dim">Tier and appearances are from last season (${esc(seasonLabel)})</p>` : ""}
           <div class="fantasy-pool__filters">
             <div class="segrow fantasy-pool__positions">${positionPills}</div>
+            <button class="seg ${hideTaken ? "is-active" : ""}" type="button" data-fantasy-hide-taken aria-pressed="${hideTaken}">Hide taken</button>
             <select class="fantasy-select" data-fantasy-club-filter>${renderClubOptions(players, filter?.club)}</select>
             <input class="fantasy-input" type="text" placeholder="Search players or clubs" value="${esc(filter?.search ?? "")}" data-fantasy-search autocomplete="off" />
           </div>
         </div>
         <div class="fantasy-pool__table ${enriched ? "" : "fantasy-pool__table--degraded"}">
           <div class="fantasy-pool__cols">
-            <span></span><span>Player</span><span>Pos</span>${enriched ? `<span>Tier</span><span>Apps</span>` : ""}<span></span>
+            <span></span><span>Player</span><span>Pos</span>${enriched ? `<span>Tier</span><span>Apps</span>` : ""}<span></span><span></span>
           </div>
           <div class="fantasy-pool__rows" data-fantasy-pool-list>${renderFantasyPlayerRows(players, filter, context)}</div>
         </div>
@@ -1074,7 +1139,16 @@ export function renderFantasyPlayerPool(players, filter, context, priorSeasonSta
     </section>`;
 }
 
-export function renderFantasyDraftRoom({ members, draft, playerPool, filter, myUserId, season = currentSeasonLabel(), priorSeasonStats }) {
+// The draft room's side column: suggested pick, on-the-clock, recent picks,
+// your queue, your squad - everything a pick or clock update needs to
+// refresh, exported as one unit so app.js can patch it in one shot (see
+// patchDraftRoomDom) rather than recreating the whole draft-grid layout (and
+// with it the pool's own scrolling container) on every WebSocket message or
+// bot pick. `queue` is the caller's ordered array of queued player ids (see
+// fantasyDraft.js); the queue's own top still-available legal pick outranks
+// the generic suggestedPick heuristic for the suggested-pick card, exactly
+// as it does for the demo's clock-expiry autopick in app.js.
+export function renderFantasyDraftSide({ members, draft, playerPool, myUserId, entries, queue }) {
   const myRoster = draft.rosters?.[myUserId] ?? [];
   const draftedIds = new Set(
     Object.values(draft.rosters ?? {})
@@ -1082,24 +1156,51 @@ export function renderFantasyDraftRoom({ members, draft, playerPool, filter, myU
       .map((player) => player.id),
   );
   const isMyTurn = draft.onClockUserId != null && draft.onClockUserId === myUserId;
-  const suggested = suggestedPick(playerPool, myRoster, draftedIds);
+  const queuedTop = topQueuedPick(queue, playerPool, myRoster, draftedIds);
+  const suggested = queuedTop ?? suggestedPick(playerPool, myRoster, draftedIds);
   const context = { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null };
+
+  return `
+    ${renderSuggestedPickCard(suggested, context, queuedTop != null)}
+    ${renderOnClockCard({ members, draft, myUserId, entries, isMyTurn })}
+    <section class="card fantasy-feed-card">
+      <h3 class="card__title">Recent picks</h3>
+      <div data-fantasy-feed-list>${renderPickFeed(draft.picks, members)}</div>
+    </section>
+    ${renderFantasyQueueCard(queue, playerPool, draftedIds)}
+    <div data-fantasy-mysquad-card>${renderMySquad(draft.picks, myUserId, { compact: true })}</div>`;
+}
+
+export function renderFantasyDraftRoom({
+  members,
+  draft,
+  playerPool,
+  filter,
+  myUserId,
+  season = currentSeasonLabel(),
+  priorSeasonStats,
+  queue,
+}) {
+  const myRoster = draft.rosters?.[myUserId] ?? [];
+  const draftedIds = new Set(
+    Object.values(draft.rosters ?? {})
+      .flat()
+      .map((player) => player.id),
+  );
+  const isMyTurn = draft.onClockUserId != null && draft.onClockUserId === myUserId;
+  // Queue-aware, matching renderFantasyDraftSide's own suggested-pick logic
+  // exactly, so the pool's "Pick" badge always lands on the same player the
+  // side column names as the suggestion rather than the plain heuristic.
+  const suggested = topQueuedPick(queue, playerPool, myRoster, draftedIds) ?? suggestedPick(playerPool, myRoster, draftedIds);
+  const context = { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null, queuedIds: new Set(queue ?? []) };
   const entries = draftOrderEntries(draft.memberIds, draft.round, draft.onClockUserId, draft.overallPick);
 
   return `
-    ${draft.lastError ? renderDraftErrorNotice(draft.lastError) : ""}
-    ${renderDraftStatusCard({ members, draft, myUserId, season, entries })}
+    <div data-fantasy-error-slot>${draft.lastError ? renderDraftErrorNotice(draft.lastError) : ""}</div>
+    <div data-fantasy-draftstatus>${renderDraftStatusCard({ members, draft, myUserId, season, entries })}</div>
     <div class="fantasy-draftgrid">
       <div class="fantasy-draftgrid__main">${renderFantasyPlayerPool(playerPool, filter, context, priorSeasonStats)}</div>
-      <div class="fantasy-draftgrid__side">
-        ${renderSuggestedPickCard(suggested, context)}
-        ${renderOnClockCard({ members, draft, myUserId, entries, isMyTurn })}
-        <section class="card fantasy-feed-card">
-          <h3 class="card__title">Recent picks</h3>
-          ${renderPickFeed(draft.picks, members)}
-        </section>
-        ${renderMySquad(draft.picks, myUserId, { compact: true })}
-      </div>
+      <div class="fantasy-draftgrid__side" data-fantasy-draft-side>${renderFantasyDraftSide({ members, draft, playerPool, myUserId, entries, queue })}</div>
     </div>`;
 }
 
