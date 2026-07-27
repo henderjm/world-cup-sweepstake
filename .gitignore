@@ -3,3 +3,8 @@ dist/
 worker/.wrangler/
 .DS_Store
 .env
+
+# Wrangler local secrets. Never commit: this is where API_FOOTBALL_KEY and
+# ANTHROPIC_API_KEY go on a dev machine.
+.dev.vars
+*.dev.vars

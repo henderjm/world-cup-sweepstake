@@ -23,6 +23,7 @@ import {
   isUniqueConstraintError,
   resolvePick,
   roundRobinSchedule,
+  topQueuedPick,
   validatePick,
 } from "../src/draftLogic.js";
 import { SQUAD_SIZE, SQUAD_SLOTS } from "../src/fantasy.js";
@@ -155,7 +156,20 @@ export class FantasyDraftRoom {
       if (onClock == null) return;
       const roster = this.draft.rosters.get(onClock) ?? [];
       const available = this.availablePlayers();
-      const player = autoPick(available, roster, SQUAD_SLOTS);
+      // The manager's own shortlist beats the generic scarcest-bucket
+      // autopick: a manager who ranked players before their clock expired
+      // gets THEIR pick, not a stranger's heuristic. topQueuedPick already
+      // skips a queued player who was sniped or whose bucket has since
+      // filled, and returns null (falling through to autoPick below) once
+      // nothing in the queue is still legal.
+      const queuedPlayer = topQueuedPick(
+        this.draft.queues.get(onClock) ?? [],
+        this.playerPoolOrder,
+        roster,
+        this.draft.draftedPlayerIds,
+        SQUAD_SLOTS,
+      );
+      const player = queuedPlayer ?? autoPick(available, roster, SQUAD_SLOTS);
       if (!player) {
         // Every open bucket has run out of legal candidates in the pool. This
         // should not happen (the pool is far larger than a squad) but must not
@@ -166,7 +180,7 @@ export class FantasyDraftRoom {
         return;
       }
 
-      const result = await this.commitPick(onClock, player);
+      const result = await this.commitPick(onClock, player, { viaQueue: queuedPlayer != null });
       if (!result.ok) {
         // Lost the race to a human pick that landed a moment earlier (or, in
         // theory, another instance's write). commitPick already rehydrated;
@@ -184,7 +198,7 @@ export class FantasyDraftRoom {
   // in-memory overallPick could otherwise agree and both write the same slot.
   // The fantasy_draft_picks(league_id, overall_pick) unique index makes the
   // second write fail instead of silently duplicating a pick.
-  async commitPick(userId, player) {
+  async commitPick(userId, player, { viaQueue = false } = {}) {
     const leagueId = this.draft.leagueId;
     const overallPick = this.draft.overallPick;
     const resolved = resolvePick(this.draft.memberIds, overallPick, SQUAD_SIZE);
@@ -216,6 +230,20 @@ export class FantasyDraftRoom {
     roster.push(player);
     this.draft.rosters.set(userId, roster);
     this.draft.overallPick = overallPick + 1;
+    // Keep the in-memory picks log current (not just rosters/draftedPlayerIds
+    // above) so a client that joins/reconnects between now and this
+    // instance's next actual eviction still gets an accurate sendState feed,
+    // including whether this particular pick came from the manager's queue -
+    // D1 itself has no via_queue column, so this in-memory copy is the only
+    // place that survives past this one broadcast.
+    this.draft.picks.push({
+      round: resolved.round,
+      pickInRound: resolved.pickInRound,
+      overallPick,
+      userId,
+      player: publicPlayer(player),
+      viaQueue,
+    });
 
     this.broadcast({
       type: "pick",
@@ -224,6 +252,7 @@ export class FantasyDraftRoom {
       overallPick,
       userId,
       player: publicPlayer(player),
+      viaQueue,
     });
 
     if (this.draft.overallPick > this.draft.totalPicks) {
@@ -365,6 +394,15 @@ export class FantasyDraftRoom {
     )
       .bind(leagueId)
       .all();
+    // Every member's own shortlist, queue order. Read fresh on every wake
+    // (never cached beyond this instance's own commitPick/alarm lifetime), so
+    // a manager's most recent save always wins - this table has no idea which
+    // Durable Object instance is currently warm, and shouldn't need to.
+    const queueRows = await this.env.DB.prepare(
+      `SELECT user_id, player_id FROM fantasy_draft_queue WHERE league_id = ?1 ORDER BY user_id, position`,
+    )
+      .bind(leagueId)
+      .all();
 
     const memberIds = (members.results ?? []).map((row) => row.user_id);
     const rosters = new Map(memberIds.map((id) => [id, []]));
@@ -385,7 +423,19 @@ export class FantasyDraftRoom {
         overallPick: row.overall_pick,
         userId: row.user_id,
         player: player ? publicPlayer(player) : { id: row.player_id },
+        // fantasy_draft_picks carries no via_queue column, so a pick
+        // rebuilt from D1 (after a genuine eviction) can never say whether it
+        // came from a queue - false rather than an undefined field, so every
+        // picks entry has the same shape regardless of how it was built.
+        viaQueue: false,
       });
+    }
+
+    const queues = new Map(memberIds.map((id) => [id, []]));
+    for (const row of queueRows.results ?? []) {
+      const list = queues.get(row.user_id) ?? [];
+      list.push(row.player_id);
+      queues.set(row.user_id, list);
     }
 
     this.draft = {
@@ -397,6 +447,7 @@ export class FantasyDraftRoom {
       picks,
       rosters,
       draftedPlayerIds,
+      queues,
     };
   }
 

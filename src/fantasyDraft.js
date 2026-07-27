@@ -15,6 +15,11 @@ import { SQUAD_SLOTS } from "./fantasy.js";
 import { draftSocketUrl } from "./fantasyApi.js";
 import { validateLineupSelection } from "./fantasyLineups.js";
 
+// topQueuedPick moved to draftLogic.js (the Durable Object needs it and
+// cannot import this module - see the comment there); re-exported unchanged
+// so every existing caller/test here keeps working without modification.
+export { topQueuedPick } from "./draftLogic.js";
+
 // -- Pure logic ----------------------------------------------------------------
 
 // "0:45" / "1:00" style, clamped at zero so a message arriving a beat late never
@@ -175,26 +180,6 @@ export function pruneQueue(queue, myRoster) {
   const mine = new Set((myRoster ?? []).map((player) => player.id));
   if (!list.some((playerId) => mine.has(playerId))) return list;
   return list.filter((playerId) => !mine.has(playerId));
-}
-
-// The best pick from the queue right now: the first entry (in queue order)
-// that is both still available AND still a legal pick for `myRoster` (its
-// position bucket not already full) - a taken player, or one whose bucket
-// has since filled up from other picks, is skipped rather than offered.
-// Returns null once nothing in the queue clears both bars, so the caller
-// (the suggested-pick card, and the demo's clock-expiry autopick) can fall
-// back to the generic suggestedPick/autoPick heuristic.
-export function topQueuedPick(queue, playerPool, myRoster, draftedIds, squadSlots = SQUAD_SLOTS) {
-  const byId = new Map((playerPool ?? []).map((player) => [player.id, player]));
-  const drafted = draftedIds ?? new Set();
-  for (const playerId of queue ?? []) {
-    if (drafted.has(playerId)) continue;
-    const player = byId.get(playerId);
-    if (!player) continue;
-    const validation = validatePick({ roster: myRoster, draftedIds: drafted, player, squadSlots });
-    if (validation.valid) return player;
-  }
-  return null;
 }
 
 // -- Optional pool-file stat field (contract) --------------------------------
@@ -378,6 +363,12 @@ export function reduceDraftMessage(roomState, message) {
             overallPick: message.overallPick,
             userId: message.userId,
             player: message.player,
+            // Whether the Durable Object's alarm autopick drafted this from
+            // the on-clock manager's own queue (see worker/draftRoom.js and
+            // renderPickFeed's badge) rather than the generic autopick
+            // fallback or a manual human pick. Always false for the latter
+            // two since the server never sets it there.
+            viaQueue: Boolean(message.viaQueue),
           },
         ],
         rosters: {

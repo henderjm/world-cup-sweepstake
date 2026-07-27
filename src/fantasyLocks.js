@@ -86,3 +86,36 @@ export function lockedPlayerIds(players, matches, gameweek, now) {
   }
   return locked;
 }
+
+// Every player whose situation this lineup edit would actually change: added
+// to the XI, dropped out of it, or gaining or losing the armband. Only these
+// need a lock check, so a manager is never blocked from reshuffling players
+// who have not kicked off yet just because someone else in their squad has.
+//
+// BOTH directions matter, which is the easy half to get wrong. Starting a
+// player who has already scored is the obvious cheat, but benching one who has
+// already blanked is exactly as valuable and exactly as retroactive. So is
+// moving the armband onto a hat-trick that is already on the board. A check
+// that only guarded additions would leave two thirds of the exploit open.
+//
+// Ids are compared as-is; callers pass numbers on both sides (the route
+// coerces the request body with Number before this is reached).
+export function lineupChangedPlayerIds({
+  previousStarterIds = [],
+  previousCaptainId = null,
+  nextStarterIds = [],
+  nextCaptainId = null,
+} = {}) {
+  const before = new Set(previousStarterIds);
+  const after = new Set(nextStarterIds);
+  const changed = new Set();
+
+  for (const id of after) if (!before.has(id)) changed.add(id);
+  for (const id of before) if (!after.has(id)) changed.add(id);
+
+  if (previousCaptainId !== nextCaptainId) {
+    if (previousCaptainId != null) changed.add(previousCaptainId);
+    if (nextCaptainId != null) changed.add(nextCaptainId);
+  }
+  return changed;
+}

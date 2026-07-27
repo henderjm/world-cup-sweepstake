@@ -23,6 +23,7 @@ import {
   topQueuedPick,
   xpTooltip,
 } from "./fantasyDraft.js";
+import { DEFAULT_POOL_SORT, POOL_SORTS, rankDraftPool, sortPoolBy } from "./fantasyDraftRank.js";
 import {
   buildWaiverPlayerLookup,
   claimStatusLabel,
@@ -40,11 +41,12 @@ import {
 } from "./fantasyScheduling.js";
 
 function esc(value) {
-  return String(value ?? "").replace(/[&<>"]/g, (char) => ({
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
     '"': "&quot;",
+    "'": "&#39;",
   })[char]);
 }
 
@@ -73,6 +75,19 @@ function renderTierChip(tier) {
   const label = tierLabel(tier);
   if (!label) return "";
   return `<span class="chip fantasy-tier-chip fantasy-tier-chip--${esc(tier)}">${esc(label)}</span>`;
+}
+
+// Draft-rank cell: "#N" plus a projected-round hint ("R3") when both are
+// known, stacked the same compact way as the id cell's name/club. A player
+// with no xP anywhere (see fantasyDraftRank.js's rankDraftPool - the whole
+// pool is unranked until a real xP bake exists) has nothing to show here: a
+// dim placeholder bullet, never a fabricated rank.
+function renderRankCell(player) {
+  if (player?.draftRank == null) {
+    return `<span class="fantasy-player-row__rank fantasy-stat fantasy-stat--empty">•</span>`;
+  }
+  const round = player.projectedRound != null ? `<span class="note--dim">R${player.projectedRound}</span>` : "";
+  return `<span class="fantasy-player-row__rank"><strong>#${player.draftRank}</strong>${round}</span>`;
 }
 
 // -- Signed-out / not-configured / error states --------------------------------
@@ -399,7 +414,7 @@ function renderPoolMeta(playerPool) {
 // free. The pool is supplementary here, so its own absence (fetch 404, never
 // baked in production) degrades to a quiet note rather than hiding the rest of
 // the lobby or looking like a bug.
-function renderScoutingSection(playerPool, filter, queuedIds) {
+function renderScoutingSection(playerPool, filter, queuedIds, leagueSize) {
   if (!playerPool) {
     return `<section class="card"><h3 class="card__title">Player pool</h3><p class="note">Loading player pool…</p></section>`;
   }
@@ -408,7 +423,7 @@ function renderScoutingSection(playerPool, filter, queuedIds) {
   }
   return `
     ${renderPoolMeta(playerPool)}
-    ${renderFantasyPlayerPool(playerPool.players, filter, { isMyTurn: false, myRoster: [], draftedIds: new Set(), queuedIds }, playerPool.priorSeasonStats)}`;
+    ${renderFantasyPlayerPool(playerPool.players, filter, { isMyTurn: false, myRoster: [], draftedIds: new Set(), queuedIds, leagueSize }, playerPool.priorSeasonStats)}`;
 }
 
 export function renderFantasyLobby(
@@ -449,7 +464,7 @@ export function renderFantasyLobby(
     </section>
     ${renderFantasyScheduleCard(league, schedule, { scheduleBusy, scheduleError })}
     <section class="card fantasy-start">${startControl}</section>
-    ${renderScoutingSection(playerPool, filter ?? { position: "All", club: "All", search: "", hideTaken: true }, queuedIds)}`;
+    ${renderScoutingSection(playerPool, filter ?? { position: "All", club: "All", search: "", hideTaken: true }, queuedIds, members.length)}`;
 }
 
 // Draft scheduling card: a commissioner can pick/reschedule/clear a start
@@ -612,6 +627,13 @@ function renderSuggestedPickCard(player, context, fromQueue = false) {
     </section>`;
 }
 
+// `pick.viaQueue` (set by the Durable Object's alarm autopick when it drafted
+// from the on-clock manager's own shortlist rather than the generic
+// scarcest-bucket fallback - see worker/draftRoom.js's alarm, and the demo's
+// mirrored startDemoHumanClock in app.js) gets its own small badge so this
+// never reads as a random autopick: a manager whose clock expired should
+// recognise their own queue's work in the feed, not wonder why a stranger's
+// heuristic happened to agree with them.
 function renderPickFeed(picks, members) {
   const recent = [...(picks ?? [])].sort((a, b) => b.overallPick - a.overallPick).slice(0, 20);
   if (!recent.length) return `<p class="note">No picks yet.</p>`;
@@ -621,7 +643,7 @@ function renderPickFeed(picks, members) {
         <span class="fantasy-feed__pick">${formatPickNumber(pick.round, pick.pickInRound)}</span>
         ${badgeFor(pick.player.team)}
         <span class="fantasy-feed__player"><strong>${esc(pick.player.name)}</strong><span class="note--dim">${esc(pick.player.position)} · ${esc(abbrFor(pick.player.team))}</span></span>
-        <span class="fantasy-feed__by">${esc(nameForUser(pick.userId, members))}</span>
+        <span class="fantasy-feed__by">${esc(nameForUser(pick.userId, members))}${pick.viaQueue ? ` <span class="chip fantasy-chip--queue" title="Autopicked from this manager's own queue">Queue</span>` : ""}</span>
       </div>`,
     )
     .join("")}</div>`;
@@ -1078,9 +1100,18 @@ function filterPlayers(players, filter, draftedIds) {
 // header sitting above this list (see renderFantasyPlayerPool, which must
 // make the identical decision from the same `players` argument for the two
 // to stay column-aligned).
+// `context.leagueSize` drives the draft-board ranking (fantasyDraftRank.js's
+// rankDraftPool): replacement level, and so every player's rank, depends on
+// how many managers will actually draft from this pool, never a fixed
+// constant. `rankDraftPool` runs against the FULL `players` array (not yet
+// filtered) since a position's replacement level has to reflect the whole
+// pool, then filterPlayers narrows to what the UI is asking for, then
+// sortPoolBy applies the chosen column - in that order, or a search/position
+// filter would silently change what "the 12th best" means.
 export function renderFantasyPlayerRows(players, filter, context) {
-  const { isMyTurn, myRoster, draftedIds, suggestedId, queuedIds } = context ?? {};
-  const filtered = filterPlayers(players, filter, draftedIds);
+  const { isMyTurn, myRoster, draftedIds, suggestedId, queuedIds, leagueSize } = context ?? {};
+  const ranked = rankDraftPool(players, leagueSize ?? 1);
+  const filtered = sortPoolBy(filterPlayers(ranked, filter, draftedIds), filter?.sort ?? DEFAULT_POOL_SORT);
   if (!filtered.length) return `<p class="note">No players match.</p>`;
   const enriched = hasPriorSeasonData(players);
   return filtered
@@ -1107,6 +1138,7 @@ export function renderFantasyPlayerRows(players, filter, context) {
           ${badgeFor(player.team)}
           <span class="fantasy-player-row__id"><strong>${esc(player.name)}${suggestedBadge}</strong><span class="note--dim">${esc(abbrFor(player.team))}</span></span>
           <span class="fantasy-pos">${esc(player.position)}</span>
+          ${renderRankCell(player)}
           ${tierCell}
           ${appsCell}
           <span class="fantasy-player-row__queue">${queueCell}</span>
@@ -1130,17 +1162,23 @@ function renderClubOptions(players, selectedClub) {
 }
 
 // Player pool as a data-table card: PLAYER POOL label, position pills, club
-// filter and search all live in a sticky header inside the single scrolling
-// region, so they stay reachable no matter how far down a 500-row pool you've
-// scrolled. Column header row (Player / Pos / Tier / Apps / action) sits in
-// the same sticky block, directly above the rows it labels - present only
-// when the pool actually carries prior-season enrichment (hasPriorSeasonData),
-// so a failed bake never shows two empty-looking columns (see
-// renderFantasyPlayerRows, which makes the identical decision so header and
-// rows always agree on the column count). `priorSeasonStats` is the pool
-// file's own header ({ available, season, playersWithoutRecord }), used only
-// for the season note under the filters - a bare "37 appearances" is
-// meaningless without knowing which season it's from.
+// filter, search and the draft-rank sort control all live in a sticky header
+// inside the single scrolling region, so they stay reachable no matter how
+// far down a 500-row pool you've scrolled. Column header row (Player / Pos /
+// Rank / Tier / Apps / action) sits in the same sticky block, directly above
+// the rows it labels - Tier/Apps are present only when the pool actually
+// carries prior-season enrichment (hasPriorSeasonData), so a failed bake
+// never shows two empty-looking columns (see renderFantasyPlayerRows, which
+// makes the identical decision so header and rows always agree on the column
+// count); Rank is always shown - even with today's all-null xP it just reads
+// as a dim placeholder for every row rather than disappearing.
+// `priorSeasonStats` is the pool file's own header ({ available, season,
+// playersWithoutRecord }), used only for the season note under the filters -
+// a bare "37 appearances" is meaningless without knowing which season it's
+// from. The sort control is CLAUDE.md's documented in-panel-control pattern
+// (data-fantasy-pool-sort, reusing .segrow/.seg): app.js keeps the chosen key
+// in state.fantasy.filter.sort / state.demo.filter.sort, exactly like every
+// other pool filter here, defaulting to DEFAULT_POOL_SORT ("rank").
 export function renderFantasyPlayerPool(players, filter, context, priorSeasonStats) {
   const activePosition = filter?.position ?? "All";
   const positionPills = POSITION_FILTERS.map(
@@ -1150,6 +1188,13 @@ export function renderFantasyPlayerPool(players, filter, context, priorSeasonSta
   const hideTaken = filter?.hideTaken !== false;
   const enriched = hasPriorSeasonData(players);
   const seasonLabel = enriched && priorSeasonStats?.season ? priorSeasonRangeLabel(priorSeasonStats.season) : "";
+  const activeSort = POOL_SORTS[filter?.sort] ? filter.sort : DEFAULT_POOL_SORT;
+  const sortPills = Object.entries(POOL_SORTS)
+    .map(
+      ([key, def]) =>
+        `<button class="seg ${key === activeSort ? "is-active" : ""}" type="button" data-fantasy-pool-sort="${key}">${esc(def.label)}</button>`,
+    )
+    .join("");
 
   return `
     <section class="card fantasy-pool">
@@ -1163,10 +1208,14 @@ export function renderFantasyPlayerPool(players, filter, context, priorSeasonSta
             <select class="fantasy-select" data-fantasy-club-filter>${renderClubOptions(players, filter?.club)}</select>
             <input class="fantasy-input" type="text" placeholder="Search players or clubs" value="${esc(filter?.search ?? "")}" data-fantasy-search autocomplete="off" />
           </div>
+          <div class="fantasy-pool__filters fantasy-pool__sortrow">
+            <span class="note--dim fantasy-pool__sort-label">Sort</span>
+            <div class="segrow fantasy-pool__sort">${sortPills}</div>
+          </div>
         </div>
         <div class="fantasy-pool__table ${enriched ? "" : "fantasy-pool__table--degraded"}">
           <div class="fantasy-pool__cols">
-            <span></span><span>Player</span><span>Pos</span>${enriched ? `<span>Tier</span><span>Apps</span>` : ""}<span></span><span></span>
+            <span></span><span>Player</span><span>Pos</span><span>Rank</span>${enriched ? `<span>Tier</span><span>Apps</span>` : ""}<span></span><span></span>
           </div>
           <div class="fantasy-pool__rows" data-fantasy-pool-list>${renderFantasyPlayerRows(players, filter, context)}</div>
         </div>
@@ -1227,7 +1276,14 @@ export function renderFantasyDraftRoom({
   // exactly, so the pool's "Pick" badge always lands on the same player the
   // side column names as the suggestion rather than the plain heuristic.
   const suggested = topQueuedPick(queue, playerPool, myRoster, draftedIds) ?? suggestedPick(playerPool, myRoster, draftedIds);
-  const context = { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null, queuedIds: new Set(queue ?? []) };
+  const context = {
+    isMyTurn,
+    myRoster,
+    draftedIds,
+    suggestedId: suggested?.id ?? null,
+    queuedIds: new Set(queue ?? []),
+    leagueSize: members?.length ?? 1,
+  };
   const entries = draftOrderEntries(draft.memberIds, draft.round, draft.onClockUserId, draft.overallPick);
 
   return `

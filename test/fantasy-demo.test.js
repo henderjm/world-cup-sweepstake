@@ -164,6 +164,19 @@ test("applyDemoPick rejects a player already drafted anywhere in the room", () =
   assert.equal(draftedPlayerIds(again).size, 1);
 });
 
+test("applyDemoPick tags a pick's viaQueue flag onto its picks entry, defaulting false when the caller omits it", () => {
+  const pool = buildPool();
+  const { members } = createDemoMembers(4, "Tester");
+  const memberIds = members.map((member) => member.userId);
+  let room = initDemoDraftRoom(memberIds);
+  const [gk1, gk2] = pool.filter((candidate) => candidate.position === "GK");
+
+  room = applyDemoPick(room, gk1, { viaQueue: true });
+  room = applyDemoPick(room, gk2); // manual/bot pick: no second argument at all
+  assert.equal(room.picks[0].viaQueue, true, "the queue-driven pick must be flagged");
+  assert.equal(room.picks[1].viaQueue, false, "an ordinary pick must default to false, not undefined");
+});
+
 test("applyDemoPick rejects a pick into an already-full position bucket", () => {
   const pool = buildPool();
   const { members } = createDemoMembers(4, "Tester");

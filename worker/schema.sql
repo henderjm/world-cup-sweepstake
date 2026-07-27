@@ -139,6 +139,28 @@ CREATE TABLE IF NOT EXISTS fantasy_rosters (
 );
 CREATE INDEX IF NOT EXISTS fantasy_rosters_player ON fantasy_rosters(league_id, player_id);
 
+-- A manager's own pre-draft/in-draft shortlist (the "queue" - see
+-- src/fantasyDraft.js's addToQueue/toggleQueue/moveQueueItem). Replaced
+-- wholesale on every save (delete-then-insert for that league+user, same
+-- pattern as fantasy_lineups below) rather than diffed, since the client
+-- always sends the whole ordered list. `position` is the queue's own
+-- 0-based order, not a player attribute.
+--
+-- Read directly by FantasyDraftRoom's alarm autopick (worker/draftRoom.js),
+-- which rebuilds every member's queue from here on each wake, exactly like
+-- the pick log: a DO eviction mid-draft never loses a manager's shortlist.
+-- Written through a plain D1-backed Worker route rather than through the
+-- Durable Object - a manager only ever writes their own row, so there is no
+-- turn-order coordination to arbitrate, unlike an actual pick.
+CREATE TABLE IF NOT EXISTS fantasy_draft_queue (
+  league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES fantasy_players(id),
+  position INTEGER NOT NULL,
+  PRIMARY KEY (league_id, user_id, player_id)
+);
+CREATE INDEX IF NOT EXISTS fantasy_draft_queue_lookup ON fantasy_draft_queue(league_id, user_id, position);
+
 -- A manager's starting XI for one gameweek. Absence from this table for a given
 -- gameweek means "use the previous gameweek's lineup" (computed at scoring time,
 -- never copy-written), so inaction never zeroes a roster.

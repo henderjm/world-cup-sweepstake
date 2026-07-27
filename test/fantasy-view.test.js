@@ -11,6 +11,7 @@ import {
   renderFantasyLobby,
   renderFantasyMatchupPanel,
   renderFantasyMyTeamPanel,
+  renderFantasyPlayerPool,
   renderFantasyPlayerRows,
   renderFantasyRosterPanel,
   renderFantasySessionExpired,
@@ -107,6 +108,90 @@ test("renderFantasyPlayerRows says no players match once hideTaken filters every
   assert.match(html, /No players match/);
 });
 
+// -- Draft board: rank/round column and the sort control ------------------------
+//
+// Ranking itself (value over replacement, projected round) is fantasyDraftRank.js's
+// job and is exhaustively tested there; these tests only check that
+// renderFantasyPlayerRows/renderFantasyPlayerPool actually wire it up - real
+// leagueSize in, a rank/round rendered per row, and the chosen sort applied.
+
+test("renderFantasyPlayerRows shows a real rank and projected round once the pool carries xp", () => {
+  const players = [
+    { ...pooledPlayer(1, "FWD"), xp: 8 },
+    { ...pooledPlayer(2, "FWD"), xp: 2 },
+  ];
+  const html = renderFantasyPlayerRows(players, { position: "All", search: "" }, {
+    isMyTurn: false,
+    myRoster: [],
+    draftedIds: new Set(),
+    leagueSize: 8,
+  });
+  assert.match(html, /fantasy-player-row__rank"><strong>#1<\/strong><span class="note--dim">R1<\/span>/);
+  assert.doesNotMatch(html, /fantasy-player-row__rank fantasy-stat fantasy-stat--empty/);
+});
+
+test("renderFantasyPlayerRows degrades gracefully when every player is missing xp: dim rank placeholders, never a broken or empty board", () => {
+  const players = [pooledPlayer(1, "FWD"), pooledPlayer(2, "MID")];
+  const html = renderFantasyPlayerRows(players, { position: "All", search: "" }, {
+    isMyTurn: false,
+    myRoster: [],
+    draftedIds: new Set(),
+    leagueSize: 8,
+  });
+  assert.match(html, /Player 1/);
+  assert.match(html, /Player 2/);
+  assert.equal((html.match(/fantasy-player-row__rank fantasy-stat fantasy-stat--empty/g) ?? []).length, 2);
+});
+
+test("renderFantasyPlayerRows sorts by name when every player is unranked, so an all-null pool is still usable", () => {
+  const players = [pooledPlayer(2, "MID", "Zed"), pooledPlayer(1, "MID", "Amy")];
+  const html = renderFantasyPlayerRows(players, { position: "All", search: "", sort: "rank" }, {
+    isMyTurn: false,
+    myRoster: [],
+    draftedIds: new Set(),
+    leagueSize: 4,
+  });
+  assert.ok(html.indexOf("Amy") < html.indexOf("Zed"), "the default rank sort must fall back to alphabetical, not pool order");
+});
+
+test("renderFantasyPlayerRows honours the xp sort key, independent of rank", () => {
+  const players = [
+    { ...pooledPlayer(1, "MID", "Low xP"), xp: 2 },
+    { ...pooledPlayer(2, "MID", "High xP"), xp: 9 },
+  ];
+  const html = renderFantasyPlayerRows(players, { position: "All", search: "", sort: "xp" }, {
+    isMyTurn: false,
+    myRoster: [],
+    draftedIds: new Set(),
+    leagueSize: 4,
+  });
+  assert.ok(html.indexOf("High xP") < html.indexOf("Low xP"));
+});
+
+test("renderFantasyPlayerPool renders the Rank column header and a sort pill per POOL_SORTS entry, marking the active one", () => {
+  const players = [{ ...pooledPlayer(1, "MID"), xp: 4 }];
+  const html = renderFantasyPlayerPool(
+    players,
+    { position: "All", search: "", sort: "xp" },
+    { isMyTurn: false, myRoster: [], draftedIds: new Set(), leagueSize: 6 },
+  );
+  assert.match(html, /<span>Rank<\/span>/);
+  assert.match(html, /data-fantasy-pool-sort="rank">Rank</);
+  assert.match(html, /data-fantasy-pool-sort="xp">xP</);
+  assert.match(html, /data-fantasy-pool-sort="name">Name</);
+  assert.match(html, /seg is-active" type="button" data-fantasy-pool-sort="xp"/);
+});
+
+test("renderFantasyPlayerPool falls back to the default sort for an unrecognised filter.sort rather than throwing", () => {
+  const players = [pooledPlayer(1, "MID")];
+  const html = renderFantasyPlayerPool(
+    players,
+    { position: "All", search: "", sort: "nonsense" },
+    { isMyTurn: false, myRoster: [], draftedIds: new Set(), leagueSize: 6 },
+  );
+  assert.match(html, /seg is-active" type="button" data-fantasy-pool-sort="rank"/);
+});
+
 // -- Pick queue star toggle -------------------------------------------------------
 
 test("renderFantasyPlayerRows marks a queued player's star as active and an unqueued one as not", () => {
@@ -175,7 +260,13 @@ test("renderFantasyPlayerRows renders no Tier/Apps cells at all when the pool ca
   assert.doesNotMatch(html, /fantasy-tier-chip/);
   assert.doesNotMatch(html, /fantasy-player-row__tier/);
   assert.doesNotMatch(html, /fantasy-player-row__stat/);
-  assert.doesNotMatch(html, /fantasy-stat--empty/);
+  // The Rank column (fantasyDraftRank.js) is unconditional, unlike Tier/Apps -
+  // this fixture carries no xp, so it legitimately renders the same empty-
+  // placeholder class once, for the rank cell only. Scoped to "exactly one,
+  // and it's the rank cell's" rather than "absent anywhere in the row".
+  const emptyPlaceholders = html.match(/fantasy-stat--empty/g) ?? [];
+  assert.equal(emptyPlaceholders.length, 1, "only the Rank cell should use fantasy-stat--empty here");
+  assert.match(html, /fantasy-player-row__rank fantasy-stat fantasy-stat--empty/);
 });
 
 test("renderFantasyPlayerRows shows a Starter tier chip and the real appearances count when the pool has prior-season enrichment", () => {
@@ -187,7 +278,11 @@ test("renderFantasyPlayerRows shows a Starter tier chip and the real appearances
   });
   assert.match(html, /fantasy-tier-chip--starter">Starter</);
   assert.match(html, />37</);
-  assert.doesNotMatch(html, /fantasy-stat--empty/);
+  // The appearances stat cell itself must show the real number, not the
+  // empty-placeholder dot - scoped to that cell specifically (not "anywhere
+  // in the row") because this fixture carries no xp, so the unconditional
+  // Rank column legitimately renders its own empty placeholder alongside it.
+  assert.doesNotMatch(html, /fantasy-player-row__stat"><span class="fantasy-stat fantasy-stat--empty"/);
 });
 
 test("renderFantasyPlayerRows reads a player with no prior-season record as New, never zero or a blank cell", () => {
@@ -696,7 +791,7 @@ test("renderFantasyRosterPanel marks an estimated xP with the is-estimate class 
   });
   assert.match(html, /xP 6\.1/);
   assert.match(html, /fantasy-pitch__xp is-estimate/);
-  assert.match(html, /a projection, not this player's own record/);
+  assert.match(html, /a projection, not this player&#39;s own record/);
 });
 
 test("renderFantasyRosterPanel gives a measured (history) xP its season-sourced tooltip, with no estimate class", () => {
@@ -962,7 +1057,7 @@ test("renderFantasyRosterPanel shows a loading note before the lineup has loaded
     lineupError: "Couldn't load your lineup.",
   });
   assert.match(failed, /fantasy-form__error/);
-  assert.match(failed, /Couldn't load your lineup\./);
+  assert.match(failed, /Couldn&#39;t load your lineup\./);
   assert.match(failed, /data-fantasy-lineup-retry/);
 });
 
@@ -974,7 +1069,7 @@ test("renderFantasyMatchupPanel shows a loading note before the matchup has load
 
   const failed = renderFantasyMatchupPanel(null, { error: "Couldn't load your matchup." });
   assert.match(failed, /fantasy-form__error/);
-  assert.match(failed, /Couldn't load your matchup\./);
+  assert.match(failed, /Couldn&#39;t load your matchup\./);
   assert.match(failed, /data-fantasy-matchup-retry/);
 });
 
@@ -1031,7 +1126,7 @@ test("renderFantasyStandingsPanel shows a loading note before standings have loa
 
   const failed = renderFantasyStandingsPanel(null, { error: "Couldn't load the standings." });
   assert.match(failed, /fantasy-form__error/);
-  assert.match(failed, /Couldn't load the standings\./);
+  assert.match(failed, /Couldn&#39;t load the standings\./);
   assert.match(failed, /data-fantasy-standings-retry/);
 });
 
@@ -1103,7 +1198,7 @@ test("renderFantasyWaiversPanel shows a loading note before waivers have loaded,
 
   const failed = renderFantasyWaiversPanel(null, { error: "Couldn't load waivers." });
   assert.match(failed, /fantasy-form__error/);
-  assert.match(failed, /Couldn't load waivers\./);
+  assert.match(failed, /Couldn&#39;t load waivers\./);
   assert.match(failed, /data-fantasy-waivers-retry/);
 });
 

@@ -22,11 +22,12 @@ import {
 } from "./fantasyDemo.js";
 
 function esc(value) {
-  return String(value ?? "").replace(/[&<>"]/g, (char) => ({
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
     '"': "&quot;",
+    "'": "&#39;",
   })[char]);
 }
 

@@ -131,8 +131,12 @@ export function draftedPlayerIds(room) {
 // really is) or a "complete" message once every round is done. Rejects an
 // illegal pick (already drafted, bucket full) by returning the room
 // unchanged rather than throwing, so a stale click after state has moved on
-// is a safe no-op.
-export function applyDemoPick(room, player) {
+// is a safe no-op. `viaQueue` mirrors the real Durable Object's alarm
+// autopick flag (see worker/draftRoom.js and renderPickFeed's badge) so the
+// demo's pick feed marks a clock-expiry pick pulled from the human's own
+// queue exactly the same way the real product does - the same rule, not a
+// look-alike.
+export function applyDemoPick(room, player, { viaQueue = false } = {}) {
   if (!room || room.status === "complete") return room;
   const current = resolvePick(room.memberIds, room.overallPick, SQUAD_SIZE);
   if (!current || !player) return room;
@@ -152,6 +156,7 @@ export function applyDemoPick(room, player) {
     overallPick: room.overallPick,
     userId: current.userId,
     player,
+    viaQueue,
   });
 
   const upcoming = resolvePick(next.memberIds, next.overallPick, SQUAD_SIZE);

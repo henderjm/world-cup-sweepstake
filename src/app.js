@@ -53,12 +53,14 @@ import {
   joinLeague as apiJoinLeague,
   listLeagues as apiListLeagues,
   loadBlendedXp,
+  loadDraftQueue as apiLoadDraftQueue,
   loadLeague as apiLoadLeague,
   loadMatchup as apiLoadMatchup,
   loadPlayerPool,
   loadPlFixtureData,
   loadStandings as apiLoadStandings,
   loadWaivers as apiLoadWaivers,
+  saveDraftQueue as apiSaveDraftQueue,
   saveWaiverSettings as apiSaveWaiverSettings,
   scheduleDraft as apiScheduleDraft,
   setLineup as apiSetLineup,
@@ -66,6 +68,7 @@ import {
   submitWaiverClaim as apiSubmitWaiverClaim,
   unscheduleDraft as apiUnscheduleDraft,
 } from "./fantasyApi.js";
+import { DEFAULT_POOL_SORT } from "./fantasyDraftRank.js";
 import {
   applyBlendedXp,
   currentSeasonLabel,
@@ -204,7 +207,7 @@ function initialDemoState() {
     seed: null,
     room: null, // draft room state, same shape as the real draft room's (see fantasyDemo.js)
     remainingMs: 0,
-    filter: { position: "All", club: "All", search: "", hideTaken: true },
+    filter: { position: "All", club: "All", search: "", hideTaken: true, sort: DEFAULT_POOL_SORT },
     queue: [], // ordered array of queued player ids (see fantasyDraft.js's toggleQueue/moveQueueItem)
     botTimer: null,
     clockTimer: null,
@@ -234,7 +237,7 @@ function initialFantasyState() {
     playerPool: null,
     playerPoolLoading: false,
     draftRoom: null, // { controller, state, remainingMs } once a socket is open
-    filter: { position: "All", club: "All", search: "", hideTaken: true },
+    filter: { position: "All", club: "All", search: "", hideTaken: true, sort: DEFAULT_POOL_SORT },
     queue: [], // ordered array of queued player ids, personal shortlist (see fantasyDraft.js)
     subTab: "draftroom", // "draftroom" | "myteam" | "matchup" | "standings"
     lineup: null, // { gameweek, source, starters: [{playerId,isCaptain}], bench } from GET .../lineup
@@ -1249,6 +1252,11 @@ async function openFantasyLeague(id) {
     if (f.activeLeagueId !== id) return; // navigated elsewhere mid-flight
     f.league = detail;
     f.myUserId = detail.viewerUserId ?? null;
+    // Best-effort: restores whatever shortlist this manager last saved for
+    // this league (see persistFantasyQueue), so a reload/reconnect shows the
+    // same queue the server would actually autopick from, rather than a
+    // blank one that quietly disagrees with what the clock will do.
+    await loadFantasyDraftQueue(id);
     if (detail.league.draftStatus !== "pending") {
       await ensureFantasyPlayerPool();
       if (f.activeLeagueId === id) mountFantasyDraftRoom(id);
@@ -1259,6 +1267,35 @@ async function openFantasyLeague(id) {
     else f.loadError = error.message || "Couldn't load this league.";
   }
   if (state.section === "fantasy") renderLayout();
+}
+
+// Best-effort restore of the caller's own saved shortlist for this league.
+// Never fatal: a failure (offline, route not deployed yet) just leaves the
+// queue empty for this session, same as a league nobody has queued anything
+// for yet - the queue is a convenience, never something worth blocking the
+// league open over.
+async function loadFantasyDraftQueue(leagueId) {
+  const f = state.fantasy;
+  try {
+    const queue = await apiLoadDraftQueue(leagueId);
+    if (f.activeLeagueId === leagueId) f.queue = queue ?? [];
+  } catch (error) {
+    if (!isFantasyNotDeployed(error)) window.Sentry?.captureException?.(error);
+  }
+}
+
+// Best-effort push of the caller's own queue to the server, so a clock
+// expiring autopicks from it even if this tab has since closed (see
+// worker/draftRoom.js's alarm, which reads fantasy_draft_queue directly).
+// Fire-and-forget: the local queue is already the source of truth for this
+// tab's own UI regardless of whether any particular save lands, so a
+// transient failure here must never block or roll back a queue-star click.
+function persistFantasyQueue() {
+  const leagueId = state.fantasy.activeLeagueId;
+  if (leagueId == null) return;
+  apiSaveDraftQueue(leagueId, state.fantasy.queue).catch((error) => {
+    if (!isFantasyNotDeployed(error)) window.Sentry?.captureException?.(error);
+  });
 }
 
 // Loads the shared PL player pool once (cached across leagues for the rest of
@@ -1396,6 +1433,10 @@ function updateFantasyScheduleCountdownDisplay() {
 // matching renderFantasyDraftSide's identical rule for the suggested-pick
 // card, so the two never disagree about which player is "the" suggestion.
 function fantasyPoolContext() {
+  // The real member count, so replacement level (fantasyDraftRank.js) reflects
+  // how many managers will actually strip the pool - not a guess, and not the
+  // demo's own chosen size, which fantasyPoolContext never sees.
+  const leagueSize = state.fantasy.league?.members?.length ?? 1;
   const room = state.fantasy.draftRoom?.state;
   if (!room) {
     return {
@@ -1404,6 +1445,7 @@ function fantasyPoolContext() {
       draftedIds: new Set(),
       suggestedId: null,
       queuedIds: new Set(state.fantasy.queue ?? []),
+      leagueSize,
     };
   }
   const myRoster = room.rosters?.[state.fantasy.myUserId] ?? [];
@@ -1419,7 +1461,7 @@ function fantasyPoolContext() {
   const isMyTurn = room.onClockUserId != null && room.onClockUserId === state.fantasy.myUserId;
   const pool = state.fantasy.playerPool?.players ?? [];
   const suggested = topQueuedPick(state.fantasy.queue, pool, myRoster, draftedIds) ?? suggestedPick(pool, myRoster, draftedIds);
-  return { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null, queuedIds };
+  return { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null, queuedIds, leagueSize };
 }
 
 function refreshFantasyPool() {
@@ -1756,7 +1798,7 @@ async function startDemoDraft() {
   d.humanId = humanId;
   d.seed = `demo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   d.room = initDemoDraftRoom(members.map((member) => member.userId));
-  d.filter = { position: "All", club: "All", search: "", hideTaken: true };
+  d.filter = { position: "All", club: "All", search: "", hideTaken: true, sort: DEFAULT_POOL_SORT };
   d.queue = [];
   d.busy = false;
   d.stage = "drafting";
@@ -1814,7 +1856,7 @@ function startDemoHumanClock(durationMs) {
       const draftedIds = draftedPlayerIds(d.room);
       const queuedPick = topQueuedPick(d.queue, d.pool?.players ?? [], myRoster, draftedIds);
       const pick = queuedPick ?? autoPickForRoom(d.room, d.pool?.players ?? []);
-      if (pick) applyDemoPickAndAdvance(pick);
+      if (pick) applyDemoPickAndAdvance(pick, { viaQueue: queuedPick != null });
     }
   }, 1000);
 }
@@ -1833,10 +1875,10 @@ function updateDemoClockDisplay(remainingMs) {
 // on-clock card's countdown/"No clock" already reflects the new picker by
 // the time refreshDemoDraftRoomLive/renderLayout actually paints it, rather
 // than showing the previous picker's stale number for one frame.
-function applyDemoPickAndAdvance(player) {
+function applyDemoPickAndAdvance(player, { viaQueue = false } = {}) {
   const d = state.demo;
   clearDemoDraftTimers();
-  d.room = applyDemoPick(d.room, player);
+  d.room = applyDemoPick(d.room, player, { viaQueue });
   if (isDemoDraftComplete(d.room)) {
     beginDemoSeason();
     return;
@@ -1853,6 +1895,10 @@ function refreshDemoPool() {
 
 function demoPoolContext() {
   const d = state.demo;
+  // The chosen manager count from the setup screen, falling back to the
+  // members list length once the draft has actually started (both should
+  // agree; d.size is the earlier-known value before d.members exists).
+  const leagueSize = d.members?.length ?? d.size ?? 1;
   const room = d.room;
   if (!room) {
     return {
@@ -1861,6 +1907,7 @@ function demoPoolContext() {
       draftedIds: new Set(),
       suggestedId: null,
       queuedIds: new Set(d.queue ?? []),
+      leagueSize,
     };
   }
   const myRoster = room.rosters?.[d.humanId] ?? [];
@@ -1874,7 +1921,7 @@ function demoPoolContext() {
   const isMyTurn = room.onClockUserId != null && room.onClockUserId === d.humanId;
   const pool = d.pool?.players ?? [];
   const suggested = topQueuedPick(d.queue, pool, myRoster, draftedIds) ?? suggestedPick(pool, myRoster, draftedIds);
-  return { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null, queuedIds };
+  return { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null, queuedIds, leagueSize };
 }
 
 // The demo's own equivalent of refreshFantasyDraftRoomLive: same targeted
@@ -2424,6 +2471,15 @@ function wireLayoutControls() {
         refreshDemoPool();
         return;
       }
+      const demoPoolSortButton = event.target.closest("[data-fantasy-pool-sort]");
+      if (demoPoolSortButton) {
+        state.demo.filter.sort = demoPoolSortButton.dataset.fantasyPoolSort;
+        elements.layout.querySelectorAll("[data-fantasy-pool-sort]").forEach((button) => {
+          button.classList.toggle("is-active", button === demoPoolSortButton);
+        });
+        refreshDemoPool();
+        return;
+      }
       const demoQueueToggle = event.target.closest("[data-fantasy-queue-toggle]");
       if (demoQueueToggle) {
         const id = Number(demoQueueToggle.dataset.fantasyQueueToggle);
@@ -2712,24 +2768,36 @@ function wireLayoutControls() {
       refreshFantasyPool();
       return;
     }
+    const fantasyPoolSortButton = event.target.closest("[data-fantasy-pool-sort]");
+    if (fantasyPoolSortButton) {
+      state.fantasy.filter.sort = fantasyPoolSortButton.dataset.fantasyPoolSort;
+      elements.layout.querySelectorAll("[data-fantasy-pool-sort]").forEach((button) => {
+        button.classList.toggle("is-active", button === fantasyPoolSortButton);
+      });
+      refreshFantasyPool();
+      return;
+    }
     const fantasyQueueToggle = event.target.closest("[data-fantasy-queue-toggle]");
     if (fantasyQueueToggle) {
       const id = Number(fantasyQueueToggle.dataset.fantasyQueueToggle);
       state.fantasy.queue = toggleQueue(state.fantasy.queue, id);
       refreshFantasyPool();
       if (!refreshFantasyDraftRoomLive()) renderLayout();
+      persistFantasyQueue();
       return;
     }
     const fantasyQueueUp = event.target.closest("[data-fantasy-queue-up]");
     if (fantasyQueueUp) {
       state.fantasy.queue = moveQueueItem(state.fantasy.queue, Number(fantasyQueueUp.dataset.fantasyQueueUp), "up");
       if (!refreshFantasyDraftRoomLive()) renderLayout();
+      persistFantasyQueue();
       return;
     }
     const fantasyQueueDown = event.target.closest("[data-fantasy-queue-down]");
     if (fantasyQueueDown) {
       state.fantasy.queue = moveQueueItem(state.fantasy.queue, Number(fantasyQueueDown.dataset.fantasyQueueDown), "down");
       if (!refreshFantasyDraftRoomLive()) renderLayout();
+      persistFantasyQueue();
       return;
     }
     const fantasyQueueRemove = event.target.closest("[data-fantasy-queue-remove]");
@@ -2737,12 +2805,14 @@ function wireLayoutControls() {
       state.fantasy.queue = removeFromQueue(state.fantasy.queue, Number(fantasyQueueRemove.dataset.fantasyQueueRemove));
       refreshFantasyPool();
       if (!refreshFantasyDraftRoomLive()) renderLayout();
+      persistFantasyQueue();
       return;
     }
     if (event.target.closest("[data-fantasy-queue-clear]")) {
       state.fantasy.queue = [];
       refreshFantasyPool();
       if (!refreshFantasyDraftRoomLive()) renderLayout();
+      persistFantasyQueue();
       return;
     }
     const fantasyDraftButton = event.target.closest("[data-fantasy-draft-player]");

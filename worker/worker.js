@@ -64,7 +64,7 @@ import {
   resolveWaiverRun,
   validateAcquisition,
 } from "../src/fantasyWaivers.js";
-import { lockedPlayerIds, playerLockState } from "../src/fantasyLocks.js";
+import { lineupChangedPlayerIds, lockedPlayerIds, playerLockState } from "../src/fantasyLocks.js";
 import { dueDraftReminder, validateDraftSchedule } from "../src/fantasyScheduling.js";
 import { blendWithCurrentSeason } from "../src/fantasyExpectedPoints.js";
 
@@ -210,6 +210,19 @@ export default {
     if (fantasyDraftScheduleRoute && request.method === "DELETE") {
       return handleFantasyDraftScheduleClear(request, env, Number(fantasyDraftScheduleRoute[1]), cors);
     }
+    // A manager's own draft-pick shortlist. Plain D1 read/write, never routed
+    // through the FantasyDraftRoom Durable Object: there is no turn-order
+    // race to arbitrate here (a manager only ever touches their own row), so
+    // this is exactly like the lineup routes below rather than the pick
+    // itself. The Durable Object's alarm autopick (worker/draftRoom.js) reads
+    // this same table straight from D1 on every wake.
+    const fantasyDraftQueueRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/draft\/queue$/);
+    if (fantasyDraftQueueRoute && request.method === "GET") {
+      return handleFantasyDraftQueueGet(request, env, Number(fantasyDraftQueueRoute[1]), cors);
+    }
+    if (fantasyDraftQueueRoute && request.method === "POST") {
+      return handleFantasyDraftQueueSet(request, env, Number(fantasyDraftQueueRoute[1]), cors);
+    }
     const fantasyLineupRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/lineup$/);
     if (fantasyLineupRoute && request.method === "GET") {
       return handleFantasyLineupGet(request, env, Number(fantasyLineupRoute[1]), cors);
@@ -332,26 +345,47 @@ export default {
   async scheduled(controller, env, ctx) {
     ctx.waitUntil(
       (async () => {
-        // First, deliberately. These are unguarded sequential awaits, so any
-        // pass that throws skips everything after it, and the four below all
-        // touch the network. The pool seed is a COUNT that costs nothing on
-        // the overwhelmingly common already-seeded tick, and a draft that
-        // cannot start is a worse failure than a missed analysis, so it must
-        // not sit downstream of them.
-        await ensureFantasyPlayerPool(env);
-        await runScheduledAnalysis(env);
-        await runScheduledNotifications(env);
-        await runScheduledFantasyScoring(env);
-        await runScheduledWaiverRuns(env);
-        await runScheduledDraftReminders(env);
-        // Last, deliberately: this only refreshes a display figure (xP), so a
-        // bug here must never sit upstream of scoring/waivers/reminders the
-        // way an early throw would otherwise skip everything after it.
-        await runScheduledFantasyXpBlend(env);
+        // Each pass is isolated. They used to be bare sequential awaits, which
+        // meant any one of them throwing silently skipped every pass behind it
+        // for as long as the fault lasted. That was not hypothetical: an
+        // unchunked IN clause in the scoring pass (see fantasyScoredMatchIds)
+        // would have started throwing every tick around gameweek 11 and taken
+        // waivers, draft reminders and the xP blend down with it for the rest
+        // of the season, with nothing in the product to show anything was
+        // wrong. Isolation is what makes the ordering below a preference
+        // rather than a dependency chain.
+        //
+        // Order still matters for cache warmth and for priority: the passes
+        // share the same upstream fetches, and a sequential order lets each
+        // later one land on the edge cache an earlier one just warmed. The
+        // pool seed leads because a draft that cannot start is the worst
+        // failure here and its check is a COUNT that costs nothing; the xP
+        // blend trails because it only refreshes a display figure.
+        await runCronPass("player-pool", () => ensureFantasyPlayerPool(env));
+        await runCronPass("analysis", () => runScheduledAnalysis(env));
+        await runCronPass("notifications", () => runScheduledNotifications(env));
+        await runCronPass("fantasy-scoring", () => runScheduledFantasyScoring(env));
+        await runCronPass("waiver-runs", () => runScheduledWaiverRuns(env));
+        await runCronPass("draft-reminders", () => runScheduledDraftReminders(env));
+        await runCronPass("xp-blend", () => runScheduledFantasyXpBlend(env));
       })(),
     );
   },
 };
+
+// Runs one cron pass so a fault in it cannot reach its neighbours. Every pass
+// is already internally idempotent and retried by the next minute's tick, so
+// swallowing here loses nothing that the next tick will not redo. The name is
+// logged rather than discarded: a pass that fails every minute for a season
+// must be findable in the Worker's logs, since none of this is visible in the
+// product until something a user cares about has already stopped working.
+async function runCronPass(name, run) {
+  try {
+    await run();
+  } catch (error) {
+    console.error(`cron pass failed: ${name}`, error?.message ?? error);
+  }
+}
 
 async function getLive(comp, token) {
   try {
@@ -1500,6 +1534,47 @@ async function handleFantasyLineupSet(request, env, leagueId, cors) {
     if (!validation.ok) return json({ error: validation.error }, 400, cors);
 
     const gameweek = await currentFantasyGameweek(env);
+
+    // Kickoff lock. Writing to the server-derived current gameweek stops a
+    // manager rewriting a gameweek that has already SETTLED, but not one that
+    // is still in progress, and a Premier League gameweek stays current until
+    // its last fixture finishes. Without this check a manager could wait until
+    // Saturday's matches were done, then start the players who scored, bench
+    // the ones who blanked and captain the hat-trick, and the Monday-night
+    // rollup would score the rewritten XI. That is the exact exploit
+    // src/fantasyLocks.js exists to close, and it was wired into free agency
+    // and waivers but never into the lineup route itself.
+    //
+    // Only players whose status actually changes are checked, so a manager can
+    // still freely reshuffle team-mates who have not kicked off.
+    //
+    // Fails OPEN when the feed is unavailable, deliberately and identically to
+    // the free-agent path: freezing every manager's team on a feed blip is
+    // worse than the rare window it would leave open.
+    const matches = await currentFantasyMatches(env);
+    if (matches) {
+      const previous = await resolveManagerLineup(env, leagueId, user.id, gameweek);
+      const changed = lineupChangedPlayerIds({
+        previousStarterIds: previous.starters.map((entry) => entry.playerId),
+        previousCaptainId: previous.starters.find((entry) => entry.isCaptain)?.playerId ?? null,
+        nextStarterIds: starters,
+        nextCaptainId: captainId,
+      });
+      const rosterById = new Map(roster.map((player) => [player.id, player]));
+      for (const playerId of changed) {
+        const player = rosterById.get(playerId);
+        if (!player) continue;
+        const lock = playerLockState({ team: player.team, matches, gameweek, now: Date.now() });
+        if (lock.locked) {
+          return json(
+            { error: `${player.name} is locked: ${player.team} have already kicked off this gameweek` },
+            400,
+            cors,
+          );
+        }
+      }
+    }
+
     await env.DB.batch([
       env.DB.prepare(`DELETE FROM fantasy_lineups WHERE league_id = ?1 AND user_id = ?2 AND gameweek = ?3`).bind(
         leagueId,
@@ -1518,6 +1593,98 @@ async function handleFantasyLineupSet(request, env, leagueId, cors) {
     const bench = roster.filter((player) => !starterIds.has(player.id)).map((player) => player.id);
 
     return json({ gameweek, source: "set", starters: starterEntries, bench }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// A shortlist longer than the draftable pool is meaningless, and the pool is
+// roughly 550. This is the ceiling the write route enforces, sized well above
+// any real shortlist so it never inconveniences a manager, and well below a
+// number that would make one request expensive to serve.
+const MAX_DRAFT_QUEUE_LENGTH = 600;
+
+// GET the caller's own draft-pick shortlist: { queue: [playerId, ...] } in
+// queue order, or an empty array if they have never saved one. Member-only,
+// same 401/403/501 shape as the lineup routes above.
+async function handleFantasyDraftQueueGet(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+
+    const rows = await env.DB.prepare(
+      `SELECT player_id FROM fantasy_draft_queue WHERE league_id = ?1 AND user_id = ?2 ORDER BY position`,
+    )
+      .bind(leagueId, user.id)
+      .all();
+    return json({ queue: (rows.results ?? []).map((row) => row.player_id) }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// POST replaces the caller's own shortlist wholesale (delete-then-insert for
+// this league+user, same pattern as handleFantasyLineupSet above) - the
+// client always sends the whole ordered list, never a single mutation, so
+// there is nothing to diff. Never routed through FantasyDraftRoom: a manager
+// only ever writes their own row, so there is no turn-order race to
+// arbitrate, unlike an actual pick. The Durable Object's alarm autopick
+// (worker/draftRoom.js) reads this table directly on every wake.
+async function handleFantasyDraftQueueSet(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "bad body" }, 400, cors);
+  }
+  const queue = Array.isArray(body?.queue) ? body.queue.map(Number) : null;
+  if (!queue || queue.some((id) => !Number.isInteger(id))) {
+    return json({ error: "bad queue" }, 400, cors);
+  }
+  // Defensive de-dup: the client-side queue helpers (src/fantasyDraft.js)
+  // already prevent duplicates, but a stale/replayed save must not trip the
+  // (league_id, user_id, player_id) primary key.
+  const deduped = [...new Set(queue)];
+  // Hard cap. The UI can only queue players that exist in the pool (roughly
+  // 550), but this route trusts nothing from the client: without a ceiling one
+  // authenticated member could post an arbitrarily long list and have us write
+  // a row per entry, in a single batch, on every request. Rejected outright
+  // rather than truncated, so a client that somehow built an oversized queue
+  // is told instead of quietly losing the tail.
+  if (deduped.length > MAX_DRAFT_QUEUE_LENGTH) {
+    return json({ error: "queue too long" }, 400, cors);
+  }
+
+  try {
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+
+    await env.DB.batch([
+      env.DB.prepare(`DELETE FROM fantasy_draft_queue WHERE league_id = ?1 AND user_id = ?2`).bind(leagueId, user.id),
+      ...deduped.map((playerId, index) =>
+        env.DB.prepare(
+          `INSERT INTO fantasy_draft_queue (league_id, user_id, player_id, position) VALUES (?1, ?2, ?3, ?4)`,
+        ).bind(leagueId, user.id, playerId, index),
+      ),
+    ]);
+
+    return json({ queue: deduped }, 200, cors);
   } catch {
     return json({ error: "fantasy unavailable" }, 502, cors);
   }
@@ -1602,13 +1769,34 @@ async function runScheduledFantasyScoring(env) {
   }
 }
 
+// D1 caps a query at 100 bound parameters. The caller passes every FINISHED
+// fixture in the season (getLive returns the whole schedule, so that set only
+// grows), which means an unchunked IN clause silently works all pre-season and
+// then throws from the moment the 101st match finishes, around gameweek 11.
+// Worse, the throw used to escape the whole scoring pass and, because the cron
+// awaits its passes sequentially without guards, took waivers, draft reminders
+// and the xP blend down with it for the rest of the season.
+//
+// Chunked well under the cap rather than exactly at it: the limit applies to
+// bound parameters, and leaving headroom means a future caller adding one more
+// bound value to this query cannot quietly reintroduce the same cliff.
+const D1_MAX_BOUND_PARAMS = 100;
+const SCORED_MATCH_ID_CHUNK = 50;
+
 async function fantasyScoredMatchIds(env, ids) {
   if (!ids.length) return new Set();
-  const placeholders = ids.map((_, index) => `?${index + 1}`).join(",");
-  const rows = await env.DB.prepare(`SELECT match_id FROM fantasy_scored_matches WHERE match_id IN (${placeholders})`)
-    .bind(...ids)
-    .all();
-  return new Set((rows.results ?? []).map((row) => row.match_id));
+  const scored = new Set();
+  for (let i = 0; i < ids.length; i += SCORED_MATCH_ID_CHUNK) {
+    const chunk = ids.slice(i, i + SCORED_MATCH_ID_CHUNK);
+    const placeholders = chunk.map((_, index) => `?${index + 1}`).join(",");
+    const rows = await env.DB.prepare(
+      `SELECT match_id FROM fantasy_scored_matches WHERE match_id IN (${placeholders})`,
+    )
+      .bind(...chunk)
+      .all();
+    for (const row of rows.results ?? []) scored.add(row.match_id);
+  }
+  return scored;
 }
 
 async function upsertFantasyPlayersFromDetail(env, detail, extraIds = []) {

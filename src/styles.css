@@ -1489,6 +1489,23 @@ button { font-family: inherit; cursor: pointer; }
   vertical-align: middle;
 }
 
+/* Pick feed's "from your queue" badge (see renderPickFeed): an outline pill
+   rather than the suggested-pick badge's solid fill, so it reads as
+   provenance information sitting next to a manager's name, not another call
+   to action competing with it. */
+.fantasy-chip--queue {
+  margin-left: 6px;
+  font-size: 9px;
+  padding: 1px 7px;
+  color: var(--fantasy-accent);
+  background: transparent;
+  border: 1px solid var(--fantasy-line);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
 .fantasy-panel-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 
 /* League header: purple eyebrow, italic display title, chip row --------------- */
@@ -1690,33 +1707,43 @@ button { font-family: inherit; cursor: pointer; }
   }
 }
 
-/* The data table itself (column header + rows): six columns (badge, name,
-   pos, tier, apps, action) are too dense to fit a 320-375px phone at readable
-   sizes, so this wrapper scrolls horizontally rather than collapsing or
-   hiding any column - the PLAYER/POS/TIER/APPS structure stays intact at
-   every width, just panned into view with a swipe on mobile. On viewports
+/* The sort row (Rank/xP/Name pills, see renderFantasyPlayerPool's
+   data-fantasy-pool-sort control): a second .fantasy-pool__filters row, so it
+   inherits the same flex-wrap/stacking rules above rather than needing its
+   own - a short label plus a .segrow of three short pills never needs the
+   column's own horizontal scroll the way the wider data table below does. */
+.fantasy-pool__sortrow { margin-top: 6px; }
+.fantasy-pool__sort-label { flex: none; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+.fantasy-pool__sort { flex: none; }
+
+/* The data table itself (column header + rows): seven columns (badge, name,
+   pos, rank, tier, apps, action) are too dense to fit a 320-375px phone at
+   readable sizes, so this wrapper scrolls horizontally rather than collapsing
+   or hiding any column - the PLAYER/POS/RANK/TIER/APPS structure stays intact
+   at every width, just panned into view with a swipe on mobile. On viewports
    wide enough (any real desktop/tablet) the content already fits and this
    scroll never engages. The --degraded modifier (no prior-season enrichment
-   at all - see hasPriorSeasonData) drops to four columns rather than showing
-   Tier/Apps full of empty placeholders. */
+   at all - see hasPriorSeasonData) drops Tier/Apps rather than showing them
+   full of empty placeholders; Rank stays either way (see renderRankCell) -
+   even with no xP anywhere it just reads as a dim placeholder per row. */
 .fantasy-pool__table { overflow-x: auto; }
 
 /* Column header row and each data row share one grid template so PLAYER / POS /
-   TIER / APPS / queue / action line up exactly: badge, name, pos, tier chip,
-   apps count, queue star, action. The header's first, queue and action cells
-   are empty (badge/queue/action). */
+   RANK / TIER / APPS / queue / action line up exactly: badge, name, pos,
+   rank cell, tier chip, apps count, queue star, action. The header's first,
+   queue and action cells are empty (badge/queue/action). */
 .fantasy-pool__cols,
 .fantasy-player-row {
   display: grid;
-  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 70px 48px 32px 76px;
-  min-width: 500px;
+  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 54px 70px 48px 32px 76px;
+  min-width: 560px;
   align-items: center;
   gap: 10px;
 }
 .fantasy-pool__table--degraded .fantasy-pool__cols,
 .fantasy-pool__table--degraded .fantasy-player-row {
-  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 32px 76px;
-  min-width: 360px;
+  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 54px 32px 76px;
+  min-width: 420px;
 }
 .fantasy-pool__cols {
   /* 26px = the rows wrapper's 16px padding + a row's own 10px padding, so the
@@ -1728,8 +1755,13 @@ button { font-family: inherit; cursor: pointer; }
   text-transform: uppercase;
   color: var(--faint);
 }
+/* nth-child(4) is the Rank cell in both the enriched and degraded grids
+   (it always sits right after Pos); (5)/(6) are Tier/Apps, only present in
+   the enriched grid - centering an empty trailing span in the degraded one
+   is harmless, so one selector list covers both variants. */
 .fantasy-pool__cols span:nth-child(4),
-.fantasy-pool__cols span:nth-child(5) {
+.fantasy-pool__cols span:nth-child(5),
+.fantasy-pool__cols span:nth-child(6) {
   text-align: center;
 }
 .fantasy-pool__cols span:last-child { text-align: right; }
@@ -1748,6 +1780,17 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-player-row__action { text-align: right; }
 .fantasy-player-row__stat { text-align: center; }
 .fantasy-player-row__tier { display: flex; justify-content: center; }
+/* Rank cell: "#N" over a dim "R{round}" hint, the same stacked shape as the
+   id cell's name/club - see renderRankCell in src/fantasyView.js. */
+.fantasy-player-row__rank {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.fantasy-player-row__rank strong { font-size: 12px; }
+.fantasy-player-row__rank .note--dim { font-size: 9px; }
 .fantasy-player-row__queue { display: flex; justify-content: center; }
 
 /* Queue star toggle: a plain icon button (no background pill) so it reads as
