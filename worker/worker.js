@@ -301,6 +301,13 @@ export default {
       if (url.pathname === "/" || url.pathname === "/health") {
         return json({ ok: true, service: "goon-squad-data" }, 200, cors);
       }
+
+      // Answers the one question that actually decides whether a draft can
+      // run, so it is monitorable instead of being discovered by a
+      // commissioner whose league has already assembled.
+      if (url.pathname === "/health/draft-ready" && request.method === "GET") {
+        return handleDraftReadyHealth(env, cors);
+      }
       return json({ error: "not found" }, 404, cors);
     } catch {
       return json({ error: "upstream unavailable" }, 502, cors);
@@ -321,6 +328,7 @@ export default {
         await runScheduledNotifications(env);
         await runScheduledFantasyScoring(env);
         await runScheduledWaiverRuns(env);
+        await ensureFantasyPlayerPool(env);
         await runScheduledDraftReminders(env);
       })(),
     );
@@ -1023,6 +1031,23 @@ async function startFantasyDraft(env, leagueId, memberIds) {
   }
 }
 
+// Every binding and row a draft needs, reported individually rather than as a
+// single ok/not-ok, so a failure names its own cause. Deliberately unauthed
+// and free of counts that reveal anything about a league's members.
+async function handleDraftReadyHealth(env, cors) {
+  const checks = { db: Boolean(env.DB), draftRoom: Boolean(env.DRAFT_ROOM), players: 0 };
+  if (env.DB) {
+    try {
+      const row = await env.DB.prepare(`SELECT COUNT(*) AS count FROM fantasy_players`).first();
+      checks.players = row?.count ?? 0;
+    } catch {
+      checks.players = null; // the table itself is unreadable, a different fault to "empty"
+    }
+  }
+  const ready = checks.db && checks.draftRoom && checks.players > 0;
+  return json({ ready, checks }, ready ? 200 : 503, cors);
+}
+
 async function handleFantasyDraftStart(request, env, leagueId, cors) {
   if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
   if (!env.DRAFT_ROOM) return json({ error: "draft not configured" }, 501, cors);
@@ -1048,7 +1073,14 @@ async function handleFantasyDraftStart(request, env, leagueId, cors) {
     await startFantasyDraft(env, leagueId, memberIds);
 
     return json({ league: await fantasyLeagueSummary(env, leagueId) }, 200, cors);
-  } catch {
+  } catch (error) {
+    // A missing player pool is the one failure a commissioner can neither
+    // diagnose nor retry their way out of, so it gets its own message rather
+    // than hiding inside the generic 502 that told two real leagues only
+    // "fantasy unavailable".
+    if (error?.message === "EMPTY_PLAYER_POOL") {
+      return json({ error: "player pool unavailable, the draft cannot start yet" }, 503, cors);
+    }
     return json({ error: "fantasy unavailable" }, 502, cors);
   }
 }
@@ -1201,17 +1233,56 @@ function shuffle(list) {
   return array;
 }
 
+// Seeds the pool when it is empty, so a fresh database (or one whose first
+// seeding attempt failed) heals itself on the next cron tick rather than
+// waiting for a commissioner to discover it at draft time. Ordered before
+// runScheduledDraftReminders in the tick so a scheduled auto-start later in
+// the same tick finds a pool already there. Gated on a COUNT rather than
+// refreshing unconditionally: this runs every minute, and re-upserting ~556
+// rows a minute would be pure waste. Squad churn is picked up by the draft
+// start's own refresh and the nightly bake, not here.
+async function ensureFantasyPlayerPool(env) {
+  if (!env.DB) return;
+  try {
+    const row = await env.DB.prepare(`SELECT COUNT(*) AS count FROM fantasy_players`).first();
+    if ((row?.count ?? 0) > 0) return;
+    await upsertFantasyPlayerPool(env);
+  } catch {
+    // nothing here is load-bearing for this tick: the next one retries, and
+    // the draft-start path checks the pool again anyway
+  }
+}
+
 // Upserts the baked draftable player pool into fantasy_players so the draft's
 // foreign keys (fantasy_draft_picks.player_id, fantasy_rosters.player_id) hold.
 // Fetched from the same static site origin the frontend and the DO both read,
 // so there is exactly one source for "what a player id means".
+//
+// A refresh is best-effort, but having SOME pool is not: a draft that starts
+// against an empty fantasy_players hits a foreign-key failure on the very
+// first pick, which is how two real drafts died (the site origin was minutes
+// old and not yet resolving, so this threw and took the whole draft start with
+// it). So a failed or empty fetch is survivable whenever D1 already holds a
+// usable pool, and only a genuinely empty pool is fatal. Throws
+// EMPTY_PLAYER_POOL in that case so the caller can say something true rather
+// than a generic 502.
 async function upsertFantasyPlayerPool(env) {
   const origin = env.SITE_ORIGIN ?? "";
-  const response = await fetch(`${origin}/data/PL/players.json`);
-  if (!response.ok) throw new Error(`player pool fetch failed: ${response.status}`);
-  const body = await response.json();
-  const players = (body.players ?? []).filter((player) => player?.id != null);
-  if (!players.length) return;
+  let players = [];
+  try {
+    const response = await fetch(`${origin}/data/PL/players.json`);
+    if (!response.ok) throw new Error(`player pool fetch failed: ${response.status}`);
+    const body = await response.json();
+    players = (body.players ?? []).filter((player) => player?.id != null);
+  } catch {
+    players = [];
+  }
+
+  if (!players.length) {
+    const existing = await env.DB.prepare(`SELECT COUNT(*) AS count FROM fantasy_players`).first();
+    if ((existing?.count ?? 0) > 0) return;
+    throw new Error("EMPTY_PLAYER_POOL");
+  }
 
   // D1 batches are practically bounded; chunk the upsert so a large squad pool
   // (all 20 PL clubs, ~500-600 players) never risks a single oversized batch.
