@@ -75,33 +75,84 @@ function strengthFromStandings(standingsMap) {
   return strengthFromRankedTeams(ordered);
 }
 
-// Numerically identical to fantasyDemo.js's DEMO_TIER_MEAN, duplicated as
-// plain numbers rather than imported: fantasyDemo.js imports fixture helpers
-// from this module for its own per-player scoring, so importing DEMO_TIER_MEAN
-// back from fantasyDemo.js here would create an import cycle. The values are
-// cross-checked in the test file so the two can never silently drift apart.
-const TIER_WEIGHT = { starter: 5.6, squad: 3.6, unknown: 2.6, fringe: 1.1 };
+// How many players make up a club's strength: its best XI, not its whole
+// listed squad. Averaging the full squad measures continuity, not quality, and
+// gets the answer badly wrong: a club with academy players on the list is
+// dragged down, while a promoted club whose players all have no Premier League
+// record sits at a middling default and beats them. Against the real July 2026
+// pool that ranked Man United the toughest fixture in the league and Leeds
+// third, which reads as broken to anyone who follows the league.
+const STRENGTH_SQUAD_DEPTH = 11;
 
-function strengthFromPlayerTiers(players) {
-  const totals = new Map();
-  const counts = new Map();
+// Strength from the squad's best XI by expected points. xP is the right
+// signal because it is continuous and denominated in actual scoring, so it
+// separates twenty clubs cleanly.
+//
+// Player tier deliberately is NOT used as a fallback signal here. It has only
+// four levels, and every established club has at least eleven players in the
+// top one, so a tier-based best XI saturates and ties Arsenal with Bournemouth.
+// A ranking that cannot tell those apart is worse than no ranking, because it
+// still presents itself as knowledge.
+function strengthFromExpectedPoints(players) {
+  const byTeam = new Map();
+  for (const player of players ?? []) {
+    if (!player?.team || player.xp == null) continue;
+    const value = Number(player.xp);
+    if (!Number.isFinite(value)) continue;
+    const team = normalizeTeamName(player.team);
+    if (!byTeam.has(team)) byTeam.set(team, []);
+    byTeam.get(team).push(value);
+  }
+  if (!byTeam.size) return null;
+
+  const totals = [...byTeam.entries()].map(([team, values]) => {
+    const best = values.sort((a, b) => b - a).slice(0, STRENGTH_SQUAD_DEPTH);
+    return [team, best.reduce((sum, value) => sum + value, 0)];
+  });
+  totals.sort((a, b) => b[1] - a[1]);
+
+  // Tie-aware ranking. Converting totals straight to positions would hand two
+  // genuinely equal squads different strengths purely from sort order, so the
+  // model would claim a difference it cannot support. Equal totals share a
+  // rank, and the next distinct total resumes at its positional rank so the
+  // spread across the league is unchanged.
+  const strength = new Map();
+  let rank = 0;
+  let previousTotal = null;
+  totals.forEach(([team, total], index) => {
+    if (previousTotal === null || total !== previousTotal) {
+      rank = index + 1;
+      previousTotal = total;
+    }
+    strength.set(team, rankToStrength(rank, totals.length));
+  });
+  return strength;
+}
+
+// Every club equally strong. Used when nothing trustworthy is available, so
+// fixture difficulty collapses to home advantage alone rather than to an
+// invented pecking order. Consistent with how xP itself refuses to print a
+// number it cannot stand behind: a confidently wrong difficulty model is worse
+// than an openly neutral one, because a user checks it against their own
+// knowledge of the league and stops believing the rest of the app.
+export const NEUTRAL_CLUB_STRENGTH = 0.5;
+
+function neutralStrength(players) {
+  const strength = new Map();
   for (const player of players ?? []) {
     if (!player?.team) continue;
-    const team = normalizeTeamName(player.team);
-    const weight = TIER_WEIGHT[player.tier] ?? TIER_WEIGHT.unknown;
-    totals.set(team, (totals.get(team) ?? 0) + weight);
-    counts.set(team, (counts.get(team) ?? 0) + 1);
+    strength.set(normalizeTeamName(player.team), NEUTRAL_CLUB_STRENGTH);
   }
-  if (!totals.size) return new Map();
-  const averages = [...totals.entries()].map(([team, total]) => [team, total / (counts.get(team) || 1)]);
-  const ordered = averages.sort((a, b) => b[1] - a[1]).map(([team]) => team);
-  return strengthFromRankedTeams(ordered);
+  return strength;
 }
 
 // `standingsMap` is the Map mapStandings/standingsMapFromRawPayload produce;
 // `players` is the draft pool (data/PL/players.json's players array).
+//
+// Preference order is strongest evidence first: the real table once matches
+// have been played, then the squads' own expected points, then neutral.
 export function deriveClubStrength({ standingsMap, players } = {}) {
-  return strengthFromStandings(standingsMap) ?? strengthFromPlayerTiers(players);
+  return strengthFromStandings(standingsMap) ?? strengthFromExpectedPoints(players) ?? neutralStrength(players);
 }
 
 // Builds the standings Map deriveClubStrength expects straight from the raw
