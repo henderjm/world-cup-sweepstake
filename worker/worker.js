@@ -255,6 +255,14 @@ export default {
       return handleFantasyLeagueDetail(request, env, Number(fantasyLeagueDetailRoute[1]), cors);
     }
 
+    // Deliberately above the API_FOOTBALL_KEY guard below. This answers the
+    // one question that decides whether a draft can run, and it is worth the
+    // most exactly when the Worker is misconfigured, so it must not be gated
+    // behind a config check that a broken deployment would fail first.
+    if (url.pathname === "/health/draft-ready" && request.method === "GET") {
+      return handleDraftReadyHealth(env, cors);
+    }
+
     const token = env.API_FOOTBALL_KEY;
     if (!token) return json({ error: "service not configured" }, 500, cors);
     const competitions = parseCompetitions(env);
@@ -301,13 +309,6 @@ export default {
       if (url.pathname === "/" || url.pathname === "/health") {
         return json({ ok: true, service: "goon-squad-data" }, 200, cors);
       }
-
-      // Answers the one question that actually decides whether a draft can
-      // run, so it is monitorable instead of being discovered by a
-      // commissioner whose league has already assembled.
-      if (url.pathname === "/health/draft-ready" && request.method === "GET") {
-        return handleDraftReadyHealth(env, cors);
-      }
       return json({ error: "not found" }, 404, cors);
     } catch {
       return json({ error: "upstream unavailable" }, 502, cors);
@@ -324,11 +325,17 @@ export default {
   async scheduled(controller, env, ctx) {
     ctx.waitUntil(
       (async () => {
+        // First, deliberately. These are unguarded sequential awaits, so any
+        // pass that throws skips everything after it, and the four below all
+        // touch the network. The pool seed is a COUNT that costs nothing on
+        // the overwhelmingly common already-seeded tick, and a draft that
+        // cannot start is a worse failure than a missed analysis, so it must
+        // not sit downstream of them.
+        await ensureFantasyPlayerPool(env);
         await runScheduledAnalysis(env);
         await runScheduledNotifications(env);
         await runScheduledFantasyScoring(env);
         await runScheduledWaiverRuns(env);
-        await ensureFantasyPlayerPool(env);
         await runScheduledDraftReminders(env);
       })(),
     );
