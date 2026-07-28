@@ -106,8 +106,18 @@ import {
   chunkRows,
   createUsageBuffer,
   drainUsage,
+  latestQuota,
   usageDay,
 } from "../src/apiQuotaStore.js";
+import { createResponseCache, pruneCache, readCached, writeCached } from "../src/apiCache.js";
+import {
+  BUDGET_NORMAL,
+  allowsAnalysis,
+  allowsInteractiveDetail,
+  allowsLiveEventDetail,
+  budgetLevel,
+  matchDetailPlan,
+} from "../src/apiBudget.js";
 
 export { FantasyDraftRoom } from "./draftRoom.js";
 
@@ -158,10 +168,17 @@ function parseCompetitions(env) {
 }
 
 // Returns the known fixture summary, or null if the id belongs to no configured
-// competition. Each getLive is edge-cached, so checking the union costs at most
-// one upstream call per competition per cache window. Returning the match
-// rather than a boolean is what lets the caller choose cache windows from its
-// status (see matchDetailCacheProfile) at no extra cost.
+// competition. Returning the match rather than a boolean is what lets the
+// caller choose cache windows from its status (see matchDetailCacheProfile).
+//
+// What this costs, measured rather than assumed, because the previous note here
+// ("at most one upstream call per competition per cache window") and the route's
+// own "four upstream calls" were both optimistic. Each getLive is two or three
+// URLs (season schedule, standings, and a batched live request when anything is
+// in play), and this loops until the id matches, so on a COLD isolate a drawer
+// open cost 6 calls for a Premier League fixture and 8 for a Champions League
+// one, not 4. On a warm isolate the memo in fetchJson makes every one of them
+// free and only the match-detail payloads are actually spent.
 async function findKnownMatch(competitions, id, token) {
   for (const comp of competitions) {
     try {
@@ -384,9 +401,11 @@ export default {
       const detailRoute = url.pathname.match(/^\/match\/(\d{1,12})$/);
       if (detailRoute) {
         // A second, much tighter limit on top of the general per-IP one. This
-        // route is the only unauthenticated path that can cost four upstream
-        // calls, so the 200/min that is generous for polling /live is far too
-        // loose here. Keyed per IP and separate from LIMITER so hammering the
+        // route is the only unauthenticated path that fans out into several
+        // upstream calls (four match-detail payloads, plus up to four more
+        // validating the id on a cold isolate, see findKnownMatch), so the
+        // 200/min that is generous for polling /live is far too loose here.
+        // Keyed per IP and separate from LIMITER so hammering the
         // drawer cannot also lock a user out of the rest of the API. No-ops if
         // the binding is absent, same convention as LIMITER.
         if (env.DETAIL_LIMITER) {
@@ -404,7 +423,15 @@ export default {
           return json({ error: "unknown match" }, 404, cors);
         }
         const profile = matchDetailCacheProfile(known);
-        const detail = await fetchMatchDetail(id, token, profile);
+        // Cost scales with TRAFFIC here, unlike every cron pass, whose cost is
+        // fixed. That shape is the dangerous one against a hard daily cap, so
+        // this route is the first to give ground when the allowance runs low:
+        // it sheds payloads by budget level and, at the tightest level, is
+        // built entirely from the fixture summary findKnownMatch already
+        // returned for zero upstream calls. It always answers with a real
+        // match rather than an error, naming whatever it could not fetch on
+        // detail.degraded exactly as a genuine upstream failure would.
+        const detail = await fetchMatchDetail(id, token, profile, known, currentBudgetLevel());
         // The browser cache window follows the same reasoning as the edge one:
         // a finished match does not need re-fetching every 25 seconds. A read
         // that degraded is capped much shorter so a transient upstream fault
@@ -576,6 +603,15 @@ async function handleAnalysis(env, id, cors) {
 
 async function runScheduledAnalysis(env) {
   if (!env.ANTHROPIC_API_KEY || !env.ANALYSIS_CACHE || !env.API_FOOTBALL_KEY) return;
+  // First pass to be shed when the allowance runs low, and by a distance. It
+  // is the most expensive per live match (three upstream payloads every tick
+  // just to compute a signature, plus an Anthropic call when it regenerates)
+  // and the least load-bearing: a missing analysis renders as no card, while
+  // the same calls spent on scoring settle a gameweek. See src/apiBudget.js.
+  if (!allowsAnalysis(currentBudgetLevel())) {
+    console.warn("analysis pass skipped: API-Football allowance low");
+    return;
+  }
   for (const comp of parseCompetitions(env)) {
     await analyseCompetition(env, comp);
   }
@@ -3969,16 +4005,24 @@ async function notifyCompetition(env, comp) {
       }
     }
 
-    // Red cards come from match detail; the analysis pass fetches the same URL on
-    // the same tick, so this rides the edge cache rather than spending new calls.
+    // Red cards come from match detail; the analysis pass fetches the same URL
+    // on the same tick, so this is served from the in-isolate memo in fetchJson
+    // rather than spending new calls. That used to be a hope about Cloudflare's
+    // edge cache and is now a property of the program (see src/apiCache.js).
     // A transient fetch failure carries the previous tick's count forward instead
     // of resetting it to zero: zeroing it would make the signature regress, and
     // recovery on a later tick would then read as a fresh increase and fire a
     // duplicate red-card push for the same dismissal.
+    //
+    // Only the RED-CARD signal comes from detail. Goals, kickoff and full-time
+    // are diffed from the batched live-fixture request that getLive already
+    // made, so dropping this at the tightest budget level costs late red-card
+    // pushes and nothing else; carrying the previous count forward is the same
+    // behaviour a fetch failure already has, so no duplicate fires on recovery.
     let reds = prev?.reds ?? 0;
     let lastRed = null;
     let detailMinute = null;
-    if (isLive(match.status)) {
+    if (isLive(match.status) && allowsLiveEventDetail(currentBudgetLevel())) {
       try {
         if (liveDetailFetches > 0) await sleep(MATCH_DETAIL_PACING_MS);
         liveDetailFetches += 1;
@@ -4358,7 +4402,7 @@ function corsHeaders(request) {
 // in the edge cache, chosen from the fixture's state rather than fixed. Defaults
 // to the live windows so any caller that has not classified the match gets the
 // safe-but-expensive behaviour rather than accidentally serving stale scores.
-async function fetchMatchDetail(id, token, profile = MATCH_DETAIL_LIVE) {
+async function fetchMatchDetail(id, token, profile = MATCH_DETAIL_LIVE, summary = null, level = BUDGET_NORMAL) {
   // Interactive detail reads include the fixture endpoint for half-time scores and
   // referee data.
   //
@@ -4373,11 +4417,43 @@ async function fetchMatchDetail(id, token, profile = MATCH_DETAIL_LIVE) {
   // that an EMPTY payload was never the problem: results:0 with response:[]
   // maps cleanly to a detail with no timeline, which is the correct pre-match
   // answer and is what a healthy upstream returns for an unplayed fixture.
+  //
+  // A payload the BUDGET declined is reported on `degraded` alongside the ones
+  // that genuinely failed, and that conflation is deliberate: to the reader and
+  // to src/matchDetail.js they are the same situation, "this section is
+  // missing and the drawer should say so", and giving the client a second
+  // vocabulary to handle would be two code paths for one outcome.
+  const plan = matchDetailPlan(level);
   const degraded = [];
+  const skip = (path) => {
+    degraded.push(endpointFamily(path));
+    return EMPTY_API_PAYLOAD;
+  };
+
+  // Zero upstream calls: the summary the route already holds carries teams,
+  // score, kickoff, venue and status, which is a real answer. Only reachable
+  // when a summary was supplied, so the cron paths (which pass none) keep
+  // their strict behaviour and can never be silently emptied by a budget dip.
+  if (!plan.fixture && summary) {
+    const detail = mapApiFootballMatchDetailFromSummary(
+      summary,
+      skip("/fixtures/lineups"),
+      skip("/fixtures/events"),
+      skip("/fixtures/players"),
+    );
+    return { ...detail, degraded };
+  }
+
   const fixture = await fetchJson(`/fixtures?id=${id}`, token, profile.fixture);
-  const lineups = await fetchSupplementaryJson(`/fixtures/lineups?fixture=${id}`, token, profile.lineups, degraded);
-  const events = await fetchSupplementaryJson(`/fixtures/events?fixture=${id}`, token, profile.events, degraded);
-  const players = await fetchSupplementaryJson(`/fixtures/players?fixture=${id}`, token, profile.players, degraded);
+  const lineups = plan.lineups
+    ? await fetchSupplementaryJson(`/fixtures/lineups?fixture=${id}`, token, profile.lineups, degraded)
+    : skip("/fixtures/lineups");
+  const events = plan.events
+    ? await fetchSupplementaryJson(`/fixtures/events?fixture=${id}`, token, profile.events, degraded)
+    : skip("/fixtures/events");
+  const players = plan.players
+    ? await fetchSupplementaryJson(`/fixtures/players?fixture=${id}`, token, profile.players, degraded)
+    : skip("/fixtures/players");
   const detail = mapApiFootballMatchDetail(fixture, lineups, events, players);
   // Present only when something actually degraded, so a healthy read keeps the
   // exact shape the baked static files carry. It names the endpoint rather
@@ -4416,8 +4492,34 @@ async function fetchLiveMatchDetail(summary, token) {
   return mapApiFootballMatchDetailFromSummary(summary, lineups, events, players);
 }
 
+// The in-isolate response memo and its in-flight map. See src/apiCache.js for
+// why this exists at all; the short version is that one cron tick asked for the
+// same season-schedule URL eight times and paid for it more often than not.
+const responseCache = createResponseCache();
+// Coalescing is separate from the memo because a promise is not a cacheable
+// value: two passes reaching the same URL microseconds apart must share ONE
+// upstream request, and without this the memo would not be populated yet for
+// the second and both would go out.
+const inflightRequests = new Map();
+
 async function fetchJson(path, token, cacheTtl) {
-  const response = await fetch(`${API}${path}`, {
+  const url = `${API}${path}`;
+  const now = Date.now();
+
+  const cached = readCached(responseCache, url, now);
+  if (cached !== undefined) return cached;
+  const inflight = inflightRequests.get(url);
+  if (inflight) return inflight;
+
+  const request = fetchUpstream(url, path, token, cacheTtl).finally(() => {
+    inflightRequests.delete(url);
+  });
+  inflightRequests.set(url, request);
+  return request;
+}
+
+async function fetchUpstream(url, path, token, cacheTtl) {
+  const response = await fetch(url, {
     headers: { "x-apisports-key": token },
     cf: { cacheTtl, cacheEverything: true },
   });
@@ -4427,9 +4529,21 @@ async function fetchJson(path, token, cacheTtl) {
   // check, because a call that came back 500 was still a call: dropping the
   // failures would make the budget look healthiest exactly when upstream is
   // sick and the retries are stacking up.
+  //
+  // Note what the memo above does NOT change about this accounting: a memo hit
+  // returns before reaching here, so it is neither counted as spend nor as a
+  // cached call. That is correct rather than convenient. cacheHitRate is
+  // defined as the share of demand Cloudflare's edge absorbed, and folding our
+  // own memo into it would conflate two different caches and hide a
+  // regression in the one we do not control.
   recordUpstreamUsage(path, response);
   if (!response.ok) throw new Error(`upstream ${response.status}`);
-  return assertApiFootballPayload(await response.json());
+  const payload = assertApiFootballPayload(await response.json());
+  // Stored only on success. A thrown error must never be memoised: a single
+  // upstream blip would otherwise be replayed as a failure for the whole
+  // window, turning a one-second fault into a six-hour outage.
+  writeCached(responseCache, url, payload, cacheTtl, Date.now());
+  return payload;
 }
 
 // -- API-Football quota analytics ---------------------------------------------
@@ -4460,6 +4574,18 @@ function recordUpstreamUsage(path, response) {
   } catch {
     // Measurement must never break the thing it is measuring. A lost record
     // undercounts a chart; a throw here would fail a real user's request.
+  }
+}
+
+// The guard rail's reading of how much allowance is left, from the provider's
+// own headers (see src/apiBudget.js for what each level sheds and why). Wrapped
+// like recordUpstreamUsage is: if deciding how much to spend somehow throws,
+// the answer is "spend normally", never "fail the request".
+function currentBudgetLevel() {
+  try {
+    return budgetLevel(latestQuota(usageBuffer));
+  } catch {
+    return BUDGET_NORMAL;
   }
 }
 
@@ -4540,6 +4666,11 @@ async function pruneApiUsage(env) {
 // and then prunes.
 async function runScheduledApiUsage(env) {
   await flushApiUsage(env, { force: true });
+  // Expired memo entries are already inert to readCached, so this only
+  // reclaims memory. Done on the cron rather than on the read path because an
+  // isolate that serves a busy matchday and then idles overnight should not be
+  // holding ninety-odd stale payloads until it is recycled.
+  pruneCache(responseCache, Date.now());
   await pruneApiUsage(env);
 }
 

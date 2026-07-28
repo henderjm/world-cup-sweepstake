@@ -41,7 +41,7 @@ export function usageDay(at) {
 }
 
 export function createUsageBuffer() {
-  return { counts: new Map(), quota: new Map(), dropped: 0 };
+  return { counts: new Map(), quota: new Map(), dropped: 0, latestQuota: null };
 }
 
 // Folds one upstream response into the buffer. Returns the record so a caller
@@ -74,8 +74,25 @@ export function bufferUsage(buffer, { path, cacheStatus, headers, at }) {
     if (!seen || record.dailyRemaining < seen.dailyRemaining) {
       buffer.quota.set(day, { day, dailyLimit: record.dailyLimit, dailyRemaining: record.dailyRemaining });
     }
+    // A separate, STICKY copy of the same reading, kept because the two serve
+    // opposite purposes. `quota` above is ledger material: it is drained into
+    // D1 and must not be written twice. This is a gauge, read live by the
+    // budget guard rail (src/apiBudget.js) to decide what the Worker may still
+    // spend, and a gauge that blanked itself every time the ledger flushed
+    // would hand the guard rail "unknown" every thirty seconds and make it
+    // fail open exactly as often. Same monotonic rule within a day, and a new
+    // UTC day replaces it outright because that is the allowance resetting.
+    if (!buffer.latestQuota || buffer.latestQuota.day !== day || record.dailyRemaining < buffer.latestQuota.dailyRemaining) {
+      buffer.latestQuota = { day, dailyLimit: record.dailyLimit, dailyRemaining: record.dailyRemaining };
+    }
   }
   return record;
+}
+
+// The most pessimistic allowance reading this isolate has seen today, or null
+// if it has never seen one. Survives drainUsage on purpose (see bufferUsage).
+export function latestQuota(buffer) {
+  return buffer?.latestQuota ?? null;
 }
 
 // Empties the buffer and hands back what was in it. Draining rather than
@@ -89,6 +106,8 @@ export function drainUsage(buffer) {
   buffer.counts.clear();
   buffer.quota.clear();
   buffer.dropped = 0;
+  // buffer.latestQuota is deliberately NOT cleared: it is a gauge, not a
+  // ledger entry, and the guard rail that reads it needs it between flushes.
   return { rows, quota };
 }
 
