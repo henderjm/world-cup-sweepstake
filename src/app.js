@@ -90,7 +90,22 @@ import {
   submitWaiverClaim as apiSubmitWaiverClaim,
   unscheduleDraft as apiUnscheduleDraft,
 } from "./fantasyApi.js";
+import { roundRobinSchedule } from "./draftLogic.js";
+import { GAMEWEEKS_PER_SEASON } from "./fantasyExpectedPoints.js";
 import { DEFAULT_POOL_SORT } from "./fantasyDraftRank.js";
+import {
+  applyRankingImport,
+  emptyBoard,
+  moveBoardPlayer,
+  moveBoardPlayerToTop,
+  normalizeBoard,
+  rankedPoolFor,
+  resetBoard,
+  resolveRankingImport,
+  setBoardNote,
+  toggleTierBreak,
+} from "./fantasyDraftBoard.js";
+import { renderBoardRows, renderFantasyBoardPanel } from "./fantasyDraftBoardView.js";
 import {
   applyBlendedXp,
   currentSeasonLabel,
@@ -109,6 +124,8 @@ import {
 import { formatScheduleCountdown, localInputValueToUtcIso } from "./fantasyScheduling.js";
 import { DEFAULT_SCHEDULE_VIEW } from "./fantasyScheduleView.js";
 import { buildFreeAgentContext } from "./fantasyWaiversView.js";
+import { managerWeeklyMeans, simulatePlayoffOdds } from "./fantasyPlayoffOdds.js";
+import { renderFantasyPlayoffOddsPanel } from "./fantasyPlayoffOddsView.js";
 import { renderFantasyFeedPanel, renderFeedEntries } from "./fantasyChatView.js";
 import {
   renderDraftErrorNotice,
@@ -243,6 +260,24 @@ const state = {
   },
 };
 
+// The draft board's slice of state, identical on both surfaces that carry one
+// (a real league and the signed-out sandbox), so the delegated handlers can
+// operate on either through boardSurface() rather than forking per surface.
+function initialBoardState() {
+  return {
+    board: null, // { order, tierBreaks, notes } from localStorage; see loadStoredBoard
+    boardFilter: { position: "All", search: "" },
+    boardNoteEditId: null, // the one row with its note input open, if any
+    boardImportOpen: false,
+    // Kept in state, not left in the DOM: the panel re-renders to show the
+    // import's report, and the whole point of that report is to send the
+    // manager back to the lines that did not match. Losing their paste at
+    // exactly that moment would make the report useless.
+    boardImportText: "",
+    boardImportResult: null, // resolveRankingImport's report from the last paste
+  };
+}
+
 // Fresh signed-out demo state: used on boot and whenever "Draft again" resets
 // the trial (name/size are kept across a reset - everything else is thrown
 // away, including any timers, which teardownDemo() has already cleared).
@@ -262,6 +297,7 @@ function initialDemoState() {
     remainingMs: 0,
     filter: { position: "All", club: "All", search: "", hideTaken: true, sort: DEFAULT_POOL_SORT },
     queue: [], // ordered array of queued player ids (see fantasyDraft.js's toggleQueue/moveQueueItem)
+    ...initialBoardState(),
     botTimer: null,
     clockTimer: null,
     season: null, // the stepwise season state from initDemoSeason/advanceDemoSeasonChunk
@@ -307,6 +343,7 @@ function initialFantasyState() {
     draftRoom: null, // { controller, state, remainingMs } once a socket is open
     filter: { position: "All", club: "All", search: "", hideTaken: true, sort: DEFAULT_POOL_SORT },
     queue: [], // ordered array of queued player ids, personal shortlist (see fantasyDraft.js)
+    ...initialBoardState(),
     subTab: null, // null until a league opens; see defaultFantasySubTab
     feed: null, // { entries, viewerUserId } from GET .../chat
     feedLoading: false,
@@ -323,6 +360,7 @@ function initialFantasyState() {
     standings: null, // { throughGameweek, standings } from GET .../standings
     standingsLoading: false,
     standingsError: "",
+    playoffOdds: null, // { signature, result } memo; see fantasyPlayoffOdds() for what invalidates it
     waivers: null, // GET .../waivers response (mode, budgets, priorities, free agents, wire, my claims, last run)
     waiversLoading: false,
     waiversError: "",
@@ -886,9 +924,11 @@ function renderFantasy() {
             ? renderFantasyMatchupBody()
             : subTab === "standings"
               ? renderFantasyStandingsBody()
-              : subTab === "waivers"
-                ? renderFantasyWaiversBody(league)
-                : renderFantasyLobby(league, members, {
+              : subTab === "board"
+                ? renderFantasyBoardBody()
+                : subTab === "waivers"
+                  ? renderFantasyWaiversBody(league)
+                  : renderFantasyLobby(league, members, {
                   playerPool: f.playerPool,
                   filter: f.filter,
                   schedule,
@@ -938,9 +978,11 @@ function renderFantasyDraftPanel() {
           ? renderFantasyMatchupBody()
           : subTab === "standings"
             ? renderFantasyStandingsBody()
-            : subTab === "waivers"
-              ? renderFantasyWaiversBody(league)
-              : room.status === "complete"
+            : subTab === "board"
+              ? renderFantasyBoardBody()
+              : subTab === "waivers"
+                ? renderFantasyWaiversBody(league)
+                : room.status === "complete"
                 ? renderFantasyComplete(members, room.picks)
                 : renderFantasyDraftRoom({
                   league,
@@ -951,6 +993,8 @@ function renderFantasyDraftPanel() {
                   myUserId: f.myUserId,
                   priorSeasonStats: f.playerPool?.priorSeasonStats,
                   queue: f.queue,
+                  board: f.board,
+                  boardUi: boardUiState(f),
                 });
   elements.layout.innerHTML = renderFantasyLeagueShell(league, members, subTab, body);
   syncFantasyFeedPolling(subTab);
@@ -1216,7 +1260,85 @@ async function loadFantasyLeagueSchedule(leagueId) {
 function renderFantasyStandingsBody() {
   const f = state.fantasy;
   if (!f.standings && !f.standingsLoading && !f.standingsError) loadFantasyStandings(f.activeLeagueId);
-  return renderFantasyStandingsPanel(f.standings, { error: f.standingsError, myUserId: f.myUserId });
+  return `${renderFantasyStandingsPanel(f.standings, { error: f.standingsError, myUserId: f.myUserId })}
+    ${renderFantasyPlayoffOddsBody()}`;
+}
+
+// -- Playoff odds, under the standings table ------------------------------------
+//
+// Same question, one scroll apart: the table says where you are, this says
+// whether that still leaves you a way in. Only shown once the draft is
+// complete, because that is the moment worker/draftRoom.js writes the
+// league's 38-gameweek H2H schedule - before it there is no season to project
+// and no squad to project it from.
+//
+// Two inputs the browser cannot read directly, and how each is honestly
+// covered:
+//   - the decided fixtures. No route returns fantasy_h2h_fixtures; GET
+//     /standings returns the table already rolled up from them. That table is
+//     passed straight through as `decidedStandings` rather than reconstructing
+//     a plausible-looking result history to feed the same number back in (see
+//     mergeStandings in src/fantasyPlayoffOdds.js for why the two are the same
+//     projection).
+//   - the remaining fixtures. Derived here with the SAME roundRobinSchedule
+//     call the Durable Object made over the SAME member ordering (both read
+//     `ORDER BY draft_position IS NULL, draft_position, joined_at`), so this
+//     reproduces the stored schedule rather than guessing at one. If that
+//     ordering ever diverges, the pairings diverge with it; the counts, and so
+//     the clinched/eliminated facts, would not.
+function renderFantasyPlayoffOddsBody() {
+  const f = state.fantasy;
+  if (f.league?.league?.draftStatus !== "complete") return "";
+  if (!f.standings) return "";
+  if (!f.playerPool && !f.playerPoolLoading) loadFantasyPlayerPoolForLobby();
+  if (!f.playerPool) return `<p class="note">Loading playoff odds…</p>`;
+
+  const result = fantasyPlayoffOdds();
+  return result ? renderFantasyPlayoffOddsPanel(result, { myUserId: f.myUserId }) : "";
+}
+
+// Memoised: a 5000-iteration projection over a ~200-fixture schedule is
+// cheap once and wasteful on every paint, and the Standings tab repaints on
+// every poll tick. The signature is everything the projection reads, so a
+// finished gameweek or a roster change recomputes and nothing else does.
+function fantasyPlayoffOdds() {
+  const f = state.fantasy;
+  const members = f.league?.members ?? [];
+  const picks = f.league?.picks ?? [];
+  const signature = [
+    f.activeLeagueId,
+    f.standings.throughGameweek,
+    members.map((member) => member.userId).join(","),
+    picks.length,
+    f.playerPool?.lastUpdated ?? "",
+  ].join("|");
+  if (f.playoffOdds?.signature === signature) return f.playoffOdds.result;
+
+  const xpById = new Map((f.playerPool.players ?? []).map((player) => [player.id, player]));
+  const rostersByUser = new Map(members.map((member) => [member.userId, []]));
+  for (const pick of picks) {
+    const roster = rostersByUser.get(pick.userId);
+    // The pick carries name/team/position but not xp (it is joined from
+    // fantasy_players, not the baked pool), so the pool entry is what the
+    // projection actually reads; a player missing from the pool still holds
+    // his roster slot at xp 0 rather than vanishing from the squad.
+    if (roster) roster.push(xpById.get(pick.player.id) ?? pick.player);
+  }
+
+  const remaining = roundRobinSchedule(
+    members.map((member) => member.userId),
+    GAMEWEEKS_PER_SEASON,
+  ).filter((fixture) => fixture.gameweek > f.standings.throughGameweek);
+
+  const result = simulatePlayoffOdds({
+    members,
+    fixtures: remaining,
+    decidedStandings: f.standings.standings,
+    managers: managerWeeklyMeans(members, rostersByUser),
+    seed: `league:${f.activeLeagueId}`,
+  });
+  f.playoffOdds = { signature, result };
+  return result;
 }
 
 async function loadFantasyMatchup(leagueId) {
@@ -1685,6 +1807,10 @@ async function openFantasyLeague(id) {
   f.seasonScheduleError = "";
   f.seasonScheduleView = DEFAULT_SCHEDULE_VIEW;
   f.queue = []; // a fresh league starts with an empty shortlist, not the last one's
+  // The board is per league and lives in this browser only (see the draft
+  // board section further down), so it is read here rather than fetched.
+  Object.assign(f, initialBoardState());
+  f.board = loadStoredBoard(String(id));
   renderLayout();
   try {
     const detail = await apiLoadLeague(id);
@@ -1936,6 +2062,7 @@ function fantasyPoolContext() {
       suggestedId: null,
       queuedIds: new Set(state.fantasy.queue ?? []),
       leagueSize,
+      board: state.fantasy.board,
     };
   }
   const myRoster = room.rosters?.[state.fantasy.myUserId] ?? [];
@@ -1951,7 +2078,7 @@ function fantasyPoolContext() {
   const isMyTurn = room.onClockUserId != null && room.onClockUserId === state.fantasy.myUserId;
   const pool = state.fantasy.playerPool?.players ?? [];
   const suggested = topQueuedPick(state.fantasy.queue, pool, myRoster, draftedIds) ?? suggestedPick(pool, myRoster, draftedIds);
-  return { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null, queuedIds, leagueSize };
+  return { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null, queuedIds, leagueSize, board: state.fantasy.board };
 }
 
 function refreshFantasyPool() {
@@ -1962,6 +2089,142 @@ function refreshFantasyPool() {
     state.fantasy.filter,
     fantasyPoolContext(),
   );
+}
+
+// -- Draft board ---------------------------------------------------------------
+//
+// PERSISTENCE IS LOCAL, and deliberately so for now rather than half-built
+// server-side: every other per-manager artefact here (the pick queue, the
+// lineup) has a Worker route and a D1 table behind it, and the board has
+// neither yet. localStorage means a board follows the browser, not the
+// account: a manager who preps on a laptop and drafts on a phone starts over,
+// and a cleared site data wipes an evening's work. That is the known cost,
+// written up rather than hidden. Making it server-side needs one table
+// (league_id, user_id, ordered player ids, tier-break ids, notes) and one
+// GET/POST pair alongside /fantasy/league/:id/draft/queue, whose
+// whole-list-replacement shape this state already matches.
+const BOARD_STORAGE_PREFIX = "gs-draft-board:";
+
+// Scoped per league, because a board is an opinion about how THIS league's
+// pool should be drafted and replacement level (and so the default order)
+// depends on the league's own size. The sandbox gets its own scope so trying
+// the feature signed out can never overwrite a real league's prep.
+function boardScopeFor(surface) {
+  return surface === "demo" ? `${BOARD_STORAGE_PREFIX}demo` : `${BOARD_STORAGE_PREFIX}${surface}`;
+}
+
+function loadStoredBoard(scope) {
+  try {
+    return normalizeBoard(JSON.parse(window.localStorage.getItem(boardScopeFor(scope)) ?? "null"));
+  } catch {
+    // Unreadable/absent storage (private mode, quota, corrupt JSON) is a
+    // board that has never been customised, never an error: the default is
+    // the app's own ranking and nothing about the draft depends on this.
+    return emptyBoard();
+  }
+}
+
+function persistBoard(scope, board) {
+  try {
+    window.localStorage.setItem(boardScopeFor(scope), JSON.stringify(board));
+  } catch {
+    // Full or blocked storage loses the board on reload, which is strictly
+    // better than throwing out of a click handler mid-draft.
+  }
+}
+
+// Which state object the board controls are operating on right now. The
+// sandbox and a real league render the identical card through the identical
+// data-board-* attributes, so this is the one place that knows the difference.
+// Returns null when there is no board surface on screen (no league open).
+function boardSurface() {
+  if (state.section === "demo") {
+    return {
+      scope: "demo",
+      slice: state.demo,
+      players: state.demo.pool?.players ?? [],
+      leagueSize: state.demo.members?.length ?? state.demo.size ?? 1,
+      draftedIds: draftedIdsFromRoom(state.demo.room),
+      repaint: () => {
+        refreshDemoPool();
+        if (!refreshDemoDraftRoomLive()) renderLayout();
+      },
+    };
+  }
+  const f = state.fantasy;
+  if (f.activeLeagueId == null) return null;
+  return {
+    scope: String(f.activeLeagueId),
+    slice: f,
+    players: f.playerPool?.players ?? [],
+    leagueSize: f.league?.members?.length ?? 1,
+    draftedIds: draftedIdsFromRoom(f.draftRoom?.state),
+    repaint: () => {
+      if (!refreshFantasyDraftRoomLive()) renderLayout();
+      else refreshFantasyPool();
+    },
+  };
+}
+
+// The board card's transient UI state (which note is open, whether the
+// importer is showing, the last import's report), bundled so the draft room's
+// render and patch paths thread one argument instead of three - and so adding
+// a fourth later cannot silently miss a call site the way an unpassed
+// importOpen already did once.
+function boardUiState(slice) {
+  return {
+    noteEditId: slice.boardNoteEditId,
+    importOpen: slice.boardImportOpen,
+    importText: slice.boardImportText,
+    importResult: slice.boardImportResult,
+  };
+}
+
+function draftedIdsFromRoom(room) {
+  return new Set(
+    Object.values(room?.rosters ?? {})
+      .flat()
+      .map((player) => player.id),
+  );
+}
+
+// Every board edit goes through here: materialise the ranked pool the pure
+// mutations need, apply one, persist it, repaint. `mutate` returns the same
+// board reference when nothing changed (see fantasyDraftBoard.js), which is
+// what keeps a disabled-edge click from writing storage and repainting.
+function mutateBoard(mutate) {
+  const surface = boardSurface();
+  if (!surface) return;
+  const current = surface.slice.board ?? emptyBoard();
+  const next = mutate(current, rankedPoolFor(surface.players, surface.leagueSize));
+  if (next === current) return;
+  surface.slice.board = next;
+  persistBoard(surface.scope, next);
+  surface.repaint();
+}
+
+function refreshBoardRows() {
+  const surface = boardSurface();
+  const list = elements.layout.querySelector("[data-board-rows]");
+  if (!surface || !list) return;
+  list.innerHTML = renderBoardRows(surface.slice.board, rankedPoolFor(surface.players, surface.leagueSize), {
+    draftedIds: surface.draftedIds,
+    filter: surface.slice.boardFilter,
+    noteEditId: surface.slice.boardNoteEditId,
+  });
+}
+
+// The My board sub-tab. Needs the pool and nothing else: a board is prep, so
+// it is fully usable in a pending league days before anyone is on the clock.
+function renderFantasyBoardBody() {
+  const f = state.fantasy;
+  if (!f.playerPool && !f.playerPoolLoading) loadFantasyPlayerPoolForLobby();
+  if (!f.playerPool) return `<p class="note">Loading the player pool…</p>`;
+  return renderFantasyBoardPanel(f.board, rankedPoolFor(f.playerPool.players ?? [], f.league?.members?.length ?? 1), {
+    draftedIds: draftedIdsFromRoom(f.draftRoom?.state),
+    filter: f.boardFilter,
+    ...boardUiState(f),
+  });
 }
 
 // Targeted, scroll/focus-preserving refresh of everything in a live draft
@@ -1976,7 +2239,7 @@ function refreshFantasyPool() {
 // the very first "state" message before anything has been rendered, a
 // completed draft (a different body entirely takes over) - since there is
 // nothing to patch yet.
-function patchDraftRoomDom({ members, draft, playerPool, myUserId, queue, refreshPoolRows }) {
+function patchDraftRoomDom({ members, draft, playerPool, myUserId, queue, board, boardUi, refreshPoolRows }) {
   if (!draft || draft.status === "complete") return false;
   const statusEl = elements.layout.querySelector("[data-fantasy-draftstatus]");
   const sideEl = elements.layout.querySelector("[data-fantasy-draft-side]");
@@ -1987,7 +2250,7 @@ function patchDraftRoomDom({ members, draft, playerPool, myUserId, queue, refres
   const entries = draftOrderEntries(draft.memberIds, draft.round, draft.onClockUserId, draft.overallPick);
   errorEl.innerHTML = draft.lastError ? renderDraftErrorNotice(draft.lastError) : "";
   statusEl.innerHTML = renderDraftStatusCard({ members, draft, myUserId, season: currentSeasonLabel(), entries });
-  sideEl.innerHTML = renderFantasyDraftSide({ members, draft, playerPool, myUserId, entries, queue });
+  sideEl.innerHTML = renderFantasyDraftSide({ members, draft, playerPool, myUserId, entries, queue, board, boardUi });
   refreshPoolRows();
   return true;
 }
@@ -2003,6 +2266,8 @@ function refreshFantasyDraftRoomLive() {
     playerPool: f.playerPool?.players ?? [],
     myUserId: f.myUserId,
     queue: f.queue,
+    board: f.board,
+    boardUi: boardUiState(f),
     refreshPoolRows: refreshFantasyPool,
   });
 }
@@ -2174,6 +2439,8 @@ function renderDemo() {
       myUserId: d.humanId,
       priorSeasonStats: d.pool?.priorSeasonStats,
       queue: d.queue,
+      board: d.board,
+      boardUi: boardUiState(d),
     });
     if (wasSearchFocused) {
       const input = elements.layout.querySelector("[data-fantasy-search]");
@@ -2352,6 +2619,10 @@ async function startDemoDraft() {
   d.room = initDemoDraftRoom(members.map((member) => member.userId));
   d.filter = { position: "All", club: "All", search: "", hideTaken: true, sort: DEFAULT_POOL_SORT };
   d.queue = [];
+  // Kept across a "draft again": the sandbox board is the one a visitor spent
+  // effort on, and throwing it away every restart would make trying the
+  // feature pointless.
+  d.board = loadStoredBoard("demo");
   d.busy = false;
   d.stage = "drafting";
   d.exitReported = false; // a fresh attempt gets its own abandonment report
@@ -2475,6 +2746,7 @@ function demoPoolContext() {
       suggestedId: null,
       queuedIds: new Set(d.queue ?? []),
       leagueSize,
+      board: d.board,
     };
   }
   const myRoster = room.rosters?.[d.humanId] ?? [];
@@ -2488,7 +2760,7 @@ function demoPoolContext() {
   const isMyTurn = room.onClockUserId != null && room.onClockUserId === d.humanId;
   const pool = d.pool?.players ?? [];
   const suggested = topQueuedPick(d.queue, pool, myRoster, draftedIds) ?? suggestedPick(pool, myRoster, draftedIds);
-  return { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null, queuedIds, leagueSize };
+  return { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null, queuedIds, leagueSize, board: d.board };
 }
 
 // The demo's own equivalent of refreshFantasyDraftRoomLive: same targeted
@@ -2506,6 +2778,8 @@ function refreshDemoDraftRoomLive() {
     playerPool: d.pool?.players ?? [],
     myUserId: d.humanId,
     queue: d.queue,
+    board: d.board,
+    boardUi: boardUiState(d),
     refreshPoolRows: refreshDemoPool,
   });
 }
@@ -3021,8 +3295,139 @@ async function switchCompetition(code) {
   setUpdatedLabel();
 }
 
+// Every data-board-* control, for both the sandbox and a real league. Returns
+// true once it has handled the click, so the caller stops - the same
+// early-return discipline as every other handler in wireLayoutControls, just
+// factored out because this block is shared by two surfaces rather than
+// duplicated per surface the way the older demo/fantasy pairs are.
+function handleBoardClick(event) {
+  const moveUp = event.target.closest("[data-board-move-up]");
+  if (moveUp && !moveUp.disabled) {
+    const playerId = Number(moveUp.dataset.boardMoveUp);
+    mutateBoard((board, ranked) => moveBoardPlayer(board, ranked, playerId, "up"));
+    return true;
+  }
+  const moveDown = event.target.closest("[data-board-move-down]");
+  if (moveDown && !moveDown.disabled) {
+    const playerId = Number(moveDown.dataset.boardMoveDown);
+    mutateBoard((board, ranked) => moveBoardPlayer(board, ranked, playerId, "down"));
+    return true;
+  }
+  const moveTop = event.target.closest("[data-board-top]");
+  if (moveTop && !moveTop.disabled) {
+    const playerId = Number(moveTop.dataset.boardTop);
+    mutateBoard((board, ranked) => moveBoardPlayerToTop(board, ranked, playerId));
+    return true;
+  }
+  const tierToggle = event.target.closest("[data-board-tier-toggle]");
+  if (tierToggle) {
+    const playerId = Number(tierToggle.dataset.boardTierToggle);
+    mutateBoard((board, ranked) => toggleTierBreak(board, ranked, playerId));
+    return true;
+  }
+  const noteEdit = event.target.closest("[data-board-note-edit]");
+  if (noteEdit) {
+    const surface = boardSurface();
+    if (!surface) return true;
+    const playerId = Number(noteEdit.dataset.boardNoteEdit);
+    surface.slice.boardNoteEditId = surface.slice.boardNoteEditId === playerId ? null : playerId;
+    surface.repaint();
+    // The input only exists after the repaint, so focus lands here rather
+    // than as an autofocus attribute (which would also re-steal focus every
+    // time a bot pick repaints the side column mid-draft).
+    elements.layout.querySelector("[data-board-note-input]")?.focus();
+    return true;
+  }
+  const noteSave = event.target.closest("[data-board-note-save]");
+  if (noteSave) {
+    saveBoardNote(Number(noteSave.dataset.boardNoteSave));
+    return true;
+  }
+  if (event.target.closest("[data-board-note-cancel]")) {
+    const surface = boardSurface();
+    if (surface) {
+      surface.slice.boardNoteEditId = null;
+      surface.repaint();
+    }
+    return true;
+  }
+  if (event.target.closest("[data-board-reset]")) {
+    mutateBoard(() => resetBoard());
+    return true;
+  }
+  if (event.target.closest("[data-board-import-toggle]")) {
+    const surface = boardSurface();
+    if (surface) {
+      surface.slice.boardImportOpen = !surface.slice.boardImportOpen;
+      // Closing the importer drops the last report with it: leaving a stale
+      // "4 lines did not match" hanging over a board that has since been
+      // re-imported would be a claim about the wrong paste.
+      if (!surface.slice.boardImportOpen) {
+        surface.slice.boardImportResult = null;
+        surface.slice.boardImportText = "";
+      }
+      surface.repaint();
+    }
+    return true;
+  }
+  if (event.target.closest("[data-board-import-apply]")) {
+    applyBoardImport();
+    return true;
+  }
+  const positionFilter = event.target.closest("[data-board-position-filter]");
+  if (positionFilter) {
+    const surface = boardSurface();
+    if (surface) {
+      surface.slice.boardFilter.position = positionFilter.dataset.boardPositionFilter;
+      elements.layout.querySelectorAll("[data-board-position-filter]").forEach((button) => {
+        button.classList.toggle("is-active", button === positionFilter);
+      });
+      refreshBoardRows();
+    }
+    return true;
+  }
+  return false;
+}
+
+// Not routed through mutateBoard: closing the editor has to happen even when
+// the text came back identical, and mutateBoard's whole job is to skip the
+// repaint when nothing changed.
+function saveBoardNote(playerId) {
+  const surface = boardSurface();
+  if (!surface) return;
+  const text = elements.layout.querySelector(`[data-board-note-input="${playerId}"]`)?.value ?? "";
+  surface.slice.boardNoteEditId = null;
+  surface.slice.board = setBoardNote(surface.slice.board ?? emptyBoard(), playerId, text);
+  persistBoard(surface.scope, surface.slice.board);
+  surface.repaint();
+}
+
+function applyBoardImport() {
+  const surface = boardSurface();
+  if (!surface) return;
+  const text = elements.layout.querySelector("[data-board-import-text]")?.value ?? "";
+  if (!text.trim()) return;
+  surface.slice.boardImportText = text;
+  const resolved = resolveRankingImport(text, surface.players);
+  surface.slice.boardImportResult = resolved;
+  if (!resolved.order.length) {
+    // Nothing matched: leave the board alone and let the report say why,
+    // rather than "applying" an import that would only shuffle the pool.
+    surface.repaint();
+    return;
+  }
+  mutateBoard((board, ranked) => applyRankingImport(board, ranked, resolved));
+}
+
 function wireLayoutControls() {
   elements.layout.addEventListener("click", (event) => {
+    // Draft board controls sit ABOVE the demo intercept, not inside it: the
+    // sandbox and a real league render the same card through the same
+    // data-board-* attributes, and boardSurface() already knows which state
+    // object a click belongs to, so one block serves both rather than the
+    // duplicated pair every older shared control needed.
+    if (handleBoardClick(event)) return;
+
     // The demo screen reuses several of the real Fantasy section's data
     // attributes (data-fantasy-draft-player, data-fantasy-position-filter) so
     // it can reuse renderFantasyDraftRoom verbatim; intercept them here first
@@ -3644,6 +4049,20 @@ function wireLayoutControls() {
     if (row) openMatchRow(row);
   });
   elements.layout.addEventListener("keydown", (event) => {
+    const boardNoteInput = event.target.closest("[data-board-note-input]");
+    if (boardNoteInput && (event.key === "Enter" || event.key === "Escape")) {
+      event.preventDefault();
+      const playerId = Number(boardNoteInput.dataset.boardNoteInput);
+      if (event.key === "Enter") saveBoardNote(playerId);
+      else {
+        const surface = boardSurface();
+        if (surface) {
+          surface.slice.boardNoteEditId = null;
+          surface.repaint();
+        }
+      }
+      return;
+    }
     if (event.key === "Enter" && event.target.closest("[data-demo-name]")) {
       event.preventDefault();
       startDemoDraft();
@@ -3697,6 +4116,17 @@ function wireLayoutControls() {
     postFantasyFeed({ action: "message", text });
   });
   elements.layout.addEventListener("input", (event) => {
+    // Above the demo branch for the same reason the board's click block is:
+    // one control, two surfaces, boardSurface() picks the state object.
+    const boardSearch = event.target.closest("[data-board-search]");
+    if (boardSearch) {
+      const surface = boardSurface();
+      if (surface) {
+        surface.slice.boardFilter.search = boardSearch.value;
+        refreshBoardRows();
+      }
+      return;
+    }
     if (state.section === "demo") {
       const demoSearch = event.target.closest("[data-fantasy-search]");
       if (demoSearch) {

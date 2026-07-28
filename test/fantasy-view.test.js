@@ -1801,3 +1801,100 @@ test("the league header chip never reports a bare manager total that counts bots
   const humansOnly = renderFantasyLeagueHeader(lobbyLeague(), [{ userId: 1, name: "Alice" }, { userId: 2, name: "Bo" }], "draftroom");
   assert.match(humansOnly, /2 managers/);
 });
+
+// -- Draft board markers inside the pool and the sub-tab bar --------------------
+
+test("the pool sorts by the manager's own board when the Board pill is chosen", () => {
+  const players = [
+    { ...pooledPlayer(1, "MID", "Alpha"), xp: 9 },
+    { ...pooledPlayer(2, "MID", "Bravo"), xp: 8 },
+    { ...pooledPlayer(3, "MID", "Charlie"), xp: 7 },
+  ];
+  const board = { order: [3, 1, 2], tierBreaks: [], notes: {} };
+  const html = renderFantasyPlayerRows(
+    players,
+    { position: "All", search: "", sort: "board" },
+    { isMyTurn: false, myRoster: [], draftedIds: new Set(), leagueSize: 4, board },
+  );
+  assert.ok(html.indexOf("Charlie") < html.indexOf("Alpha"));
+  assert.ok(html.indexOf("Alpha") < html.indexOf("Bravo"));
+});
+
+test("a pool row carries the board's tier chip only once more than one tier exists", () => {
+  const players = [
+    { ...pooledPlayer(1, "MID", "Alpha"), xp: 9 },
+    { ...pooledPlayer(2, "MID", "Bravo"), xp: 8 },
+  ];
+  const context = { isMyTurn: false, myRoster: [], draftedIds: new Set(), leagueSize: 4 };
+  const flat = renderFantasyPlayerRows(players, { position: "All", search: "" }, {
+    ...context,
+    board: { order: [1, 2], tierBreaks: [], notes: {} },
+  });
+  assert.doesNotMatch(flat, /fantasy-board-chip/);
+
+  const tiered = renderFantasyPlayerRows(players, { position: "All", search: "" }, {
+    ...context,
+    board: { order: [1, 2], tierBreaks: [2], notes: {} },
+  });
+  assert.match(tiered, /fantasy-board-chip">T1</);
+  assert.match(tiered, /fantasy-board-chip">T2</);
+});
+
+test("a pool row shows the manager's own note, escaped, at the moment of the pick", () => {
+  const players = [{ ...pooledPlayer(1, "MID", "Alpha"), xp: 9 }];
+  const html = renderFantasyPlayerRows(players, { position: "All", search: "" }, {
+    isMyTurn: false,
+    myRoster: [],
+    draftedIds: new Set(),
+    leagueSize: 4,
+    board: { order: [1], tierBreaks: [], notes: { 1: `set-piece "specialist" & penalties` } },
+  });
+  assert.match(html, /fantasy-board-note-mark/);
+  assert.match(html, /set-piece &quot;specialist&quot; &amp; penalties/);
+});
+
+test("the draft room's side column carries the board card and the suggested pick's note", () => {
+  const members = [
+    { userId: 1, name: "Me" },
+    { userId: 2, name: "Them" },
+  ];
+  const players = [
+    { ...pooledPlayer(10, "GK", "Keeper"), xp: 5 },
+    { ...pooledPlayer(11, "MID", "Middle"), xp: 9 },
+  ];
+  const html = renderFantasyDraftRoom({
+    members,
+    draft: {
+      status: "drafting",
+      memberIds: [1, 2],
+      round: 1,
+      pickInRound: 1,
+      overallPick: 1,
+      onClockUserId: 1,
+      picks: [],
+      rosters: { 1: [], 2: [] },
+      remainingMs: 30000,
+    },
+    playerPool: players,
+    filter: { position: "All", search: "" },
+    myUserId: 1,
+    queue: [],
+    board: { order: [11, 10], tierBreaks: [10], notes: { 10: "only if the cheap keepers go" } },
+  });
+  assert.match(html, /class="card fantasy-board fantasy-board--compact/);
+  assert.match(html, /data-board-rows/);
+  // The suggestion here is the scarcest-bucket keeper, so its note is the one
+  // that must be in front of a manager on the clock.
+  assert.match(html, /Your note: only if the cheap keepers go/);
+});
+
+test("My board and Waivers are each live for exactly one half of a league's life", () => {
+  const members = [{ userId: 1, name: "Me" }];
+  const pending = renderFantasyLeagueHeader({ name: "L", draftStatus: "pending" }, members, "board");
+  assert.match(pending, /data-fantasy-subtab="board" >My board/);
+  assert.match(pending, /data-fantasy-subtab="waivers" disabled/);
+
+  const complete = renderFantasyLeagueHeader({ name: "L", draftStatus: "complete" }, members, "feed");
+  assert.match(complete, /data-fantasy-subtab="board" disabled/);
+  assert.match(complete, /data-fantasy-subtab="waivers" >Waivers/);
+});

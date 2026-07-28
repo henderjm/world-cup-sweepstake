@@ -65,3 +65,29 @@ test("renderFantasyPlayoffOddsPanel handles an empty standings list without thro
   const html = renderFantasyPlayoffOddsPanel({ standings: [], playoffSpots: 4, tooSmallForPlayoffs: false });
   assert.match(html, /No managers to project/);
 });
+
+test("a season with nothing decided says so instead of implying the spread is meaningful", () => {
+  const html = renderFantasyPlayoffOddsPanel({
+    playoffSpots: 4,
+    tooSmallForPlayoffs: false,
+    standings: [
+      { userId: 1, name: "Alex", played: 0, status: "contention", probability: 0.34 },
+      { userId: 2, name: "Sam", played: 0, status: "contention", probability: 0.33 },
+    ],
+  });
+  assert.match(html, /No gameweek has been decided yet/);
+  assert.doesNotMatch(html, /Monte Carlo projection over the remaining schedule/);
+});
+
+test("once a gameweek is decided the projection note replaces the pre-season caveat", () => {
+  const html = renderFantasyPlayoffOddsPanel({
+    playoffSpots: 4,
+    tooSmallForPlayoffs: false,
+    standings: [
+      { userId: 1, name: "Alex", played: 3, status: "contention", probability: 0.6 },
+      { userId: 2, name: "Sam", played: 3, status: "contention", probability: 0.1 },
+    ],
+  });
+  assert.match(html, /Monte Carlo projection over the remaining schedule/);
+  assert.doesNotMatch(html, /No gameweek has been decided yet/);
+});

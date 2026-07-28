@@ -152,8 +152,16 @@ export function rankDraftPool(players, leagueSize, squadSlots = SQUAD_SLOTS) {
 //
 // Every comparator puts a missing value last regardless of direction: a player
 // with no xP should never lead the board just because null sorted low.
+// `board` reads a boardRank the caller stamped on first (see
+// withBoardAnnotations in src/fantasyDraftBoard.js), rather than importing the
+// board here: replacement level and a manager's own opinion are different
+// things, and this module only knows about the first one. With no board
+// annotation present every player's boardRank is missing, so byNumber sorts
+// them all last and the order collapses to the name tie-break - which is why
+// callers must annotate before offering this sort.
 export const POOL_SORTS = {
   rank: { label: "Rank", compare: byNumber((player) => player.draftRank, "asc") },
+  board: { label: "Board", compare: byNumber((player) => player.boardRank, "asc") },
   xp: { label: "xP", compare: byNumber((player) => player.xp, "desc") },
   name: { label: "Name", compare: (a, b) => String(a?.name ?? "").localeCompare(String(b?.name ?? "")) },
 };

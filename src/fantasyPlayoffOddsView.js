@@ -1,8 +1,7 @@
 // HTML-string renderer for src/fantasyPlayoffOdds.js's simulatePlayoffOdds()
-// output. Not wired into src/app.js's navigation (see CLAUDE.md's fantasy
-// section for where a real sub-tab would need to hook in): this module is
-// exported and unmounted on purpose, so it can be reviewed and unit-tested
-// without touching the routing another change is concurrently working on.
+// output. Mounted under the Standings sub-tab (see renderFantasyStandingsBody
+// in src/app.js), which is where a manager is already asking the question
+// this answers.
 //
 // Follows the same HTML-string + delegated-event-listener convention as
 // fantasyView.js/fantasyChatView.js: pure string in, string out, no DOM APIs.
@@ -76,9 +75,17 @@ export function renderFantasyPlayoffOddsPanel(result, { myUserId } = {}) {
       </section>`;
   }
 
+  // Before a single fixture has been decided, every manager's odds come from
+  // the schedule and their squad alone, and the spread between them is
+  // noise-sized. Saying so is the whole difference between a projection and
+  // an implied precision the numbers do not have; a bare "31% / 29% / 28%"
+  // reads as a ranking nobody has earned yet.
+  const nothingDecided = standings.every((row) => (row.played ?? 0) === 0);
   const note = tooSmallForPlayoffs
     ? `<p class="note">Every manager in this league already qualifies for the ${esc(playoffSpots)}-spot playoff, so there is nothing left to project.</p>`
-    : `<p class="note">Top ${esc(playoffSpots)} make the playoffs. Odds are a Monte Carlo projection over the remaining schedule, not a guarantee.</p>`;
+    : nothingDecided
+      ? `<p class="note">Top ${esc(playoffSpots)} make the playoffs. No gameweek has been decided yet, so these are squad strength and the schedule only: expect them to sit close together and to say very little until real results land.</p>`
+      : `<p class="note">Top ${esc(playoffSpots)} make the playoffs. Odds are a Monte Carlo projection over the remaining schedule, not a guarantee.</p>`;
 
   const rows = standings.map((row) => renderRow(row, myUserId)).join("");
 
