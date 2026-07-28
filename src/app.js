@@ -75,6 +75,7 @@ import {
   loadDraftQueue as apiLoadDraftQueue,
   loadLeague as apiLoadLeague,
   loadLeagueFeed as apiLoadLeagueFeed,
+  loadLeagueSchedule as apiLoadLeagueSchedule,
   loadMatchup as apiLoadMatchup,
   postLeagueFeed as apiPostLeagueFeed,
   loadPlayerPool,
@@ -121,6 +122,8 @@ import {
   topQueuedPick,
 } from "./fantasyDraft.js";
 import { formatScheduleCountdown, localInputValueToUtcIso } from "./fantasyScheduling.js";
+import { DEFAULT_SCHEDULE_VIEW } from "./fantasyScheduleView.js";
+import { buildFreeAgentContext } from "./fantasyWaiversView.js";
 import { managerWeeklyMeans, simulatePlayoffOdds } from "./fantasyPlayoffOdds.js";
 import { renderFantasyPlayoffOddsPanel } from "./fantasyPlayoffOddsView.js";
 import { renderFantasyFeedPanel, renderFeedEntries } from "./fantasyChatView.js";
@@ -138,6 +141,7 @@ import {
   renderFantasyLeagueShell,
   renderFantasyLobby,
   renderFantasyMatchupPanel,
+  renderFantasySchedulePanel,
   renderFantasyMyTeamPanel,
   renderFantasyNotConfigured,
   renderFantasyPlayerRows,
@@ -367,6 +371,13 @@ function initialFantasyState() {
     waiverSettingsError: "",
     scheduleBusy: false, // draft-schedule save/clear in flight
     scheduleError: "",
+    // The league's H2H SEASON schedule (all 38 gameweeks), deliberately named
+    // apart from the draft `schedule*` keys above: in this module "schedule"
+    // already meant the draft's scheduled start time.
+    seasonSchedule: null,
+    seasonScheduleLoading: false,
+    seasonScheduleError: "",
+    seasonScheduleView: DEFAULT_SCHEDULE_VIEW,
     botBusy: false, // bot seat add/remove in flight
     botError: "",
     createBusy: false,
@@ -847,6 +858,9 @@ function renderFantasy() {
   // schedule (closing it, switching sub-tabs once the draft starts, signing
   // out) can never leave a stray interval ticking against a detached DOM node.
   stopFantasyScheduleCountdownTimer();
+  // Same reasoning for the squad-deadline countdown: stopped on every render
+  // and restarted below only once the banner is actually in the DOM.
+  stopFantasyDeadlineCountdownTimer();
   // Same reasoning for the feed poll: only the two in-league branches below
   // restart it, via syncFantasyFeedPolling.
   stopFantasyFeedPolling();
@@ -929,6 +943,7 @@ function renderFantasy() {
     elements.layout.innerHTML = renderFantasyLeagueShell(league, members, subTab, body);
     syncFantasyFeedPolling(subTab);
     if (schedule?.scheduledAt) startFantasyScheduleCountdownTimer();
+    if (elements.layout.querySelector("[data-fantasy-deadline-countdown]")) startFantasyDeadlineCountdownTimer();
     return;
   }
 
@@ -983,6 +998,10 @@ function renderFantasyDraftPanel() {
                 });
   elements.layout.innerHTML = renderFantasyLeagueShell(league, members, subTab, body);
   syncFantasyFeedPolling(subTab);
+  // Only ticks if a banner with a live countdown actually rendered; the
+  // pre-season and locked states carry no countdown node, so the timer stops
+  // itself on its first tick rather than running for nothing.
+  if (elements.layout.querySelector("[data-fantasy-deadline-countdown]")) startFantasyDeadlineCountdownTimer();
 
   if (wasSearchFocused) {
     const input = elements.layout.querySelector("[data-fantasy-search]");
@@ -1199,10 +1218,43 @@ async function postFantasyFeed(body) {
 // renderFantasyMyTeamBody's lineup fetch above (and loadPaperRun before it).
 // Neither tab depends on the draft room's own data, so they fetch and cache
 // independently of it and survive switching away to another sub-tab.
+// Matchup body: the caller's current head-to-head, then the league's whole
+// season schedule under it. The schedule is not its own sub-tab because the
+// tab bar is already six wide and cramped at 375px, and "who am I playing
+// later" belongs next to "who am I playing now".
 function renderFantasyMatchupBody() {
   const f = state.fantasy;
   if (!f.matchup && !f.matchupLoading && !f.matchupError) loadFantasyMatchup(f.activeLeagueId);
-  return renderFantasyMatchupPanel(f.matchup, { error: f.matchupError });
+  if (!f.seasonSchedule && !f.seasonScheduleLoading && !f.seasonScheduleError) loadFantasyLeagueSchedule(f.activeLeagueId);
+  return `
+    ${renderFantasyMatchupPanel(f.matchup, {
+      error: f.matchupError,
+      leagueSize: f.league?.members?.length ?? null,
+      now: Date.now(),
+    })}
+    ${renderFantasySchedulePanel(f.seasonSchedule, {
+      error: f.seasonScheduleError,
+      myUserId: f.myUserId,
+      view: f.seasonScheduleView,
+    })}`;
+}
+
+async function loadFantasyLeagueSchedule(leagueId) {
+  const f = state.fantasy;
+  if (f.seasonScheduleLoading) return;
+  f.seasonScheduleLoading = true;
+  f.seasonScheduleError = "";
+  try {
+    const schedule = await apiLoadLeagueSchedule(leagueId);
+    if (f.activeLeagueId !== leagueId) return; // navigated elsewhere mid-flight
+    f.seasonSchedule = schedule;
+  } catch (error) {
+    if (f.activeLeagueId !== leagueId) return;
+    f.seasonScheduleError = error.message || "Couldn't load the season schedule.";
+  } finally {
+    if (f.activeLeagueId === leagueId) f.seasonScheduleLoading = false;
+  }
+  if (state.section === "fantasy") renderLayout();
 }
 
 function renderFantasyStandingsBody() {
@@ -1335,6 +1387,14 @@ function renderFantasyWaiversBody(league) {
     return `<p class="note">Waivers open once the draft is complete.</p>`;
   }
   if (!f.waivers && !f.waiversLoading && !f.waiversError) loadFantasyWaivers(f.activeLeagueId);
+  // The free-agent rows quote xP and measure it against the manager's own worst
+  // starter, so this panel needs the same two inputs the pitch does: the baked
+  // player pool (xp/xpBasis) and the manager's actual lineup. Both are lazily
+  // loaded here rather than assumed, since a manager can land on Waivers
+  // without ever opening My Team. Until they arrive the rows simply render
+  // without those figures, never with substitute ones.
+  if (!f.playerPool && !f.playerPoolLoading) loadFantasyPlayerPoolForLobby();
+  if (!f.lineup && !f.lineupLoading && !f.lineupError) loadFantasyLineup(f.activeLeagueId);
   return renderFantasyWaiversPanel(f.waivers, {
     error: f.waiversError,
     myUserId: f.myUserId,
@@ -1346,6 +1406,10 @@ function renderFantasyWaiversBody(league) {
     flow: f.waiverFlow,
     settingsBusy: f.waiverSettingsBusy,
     settingsError: f.waiverSettingsError,
+    playerPool: f.playerPool?.players ?? [],
+    lineup: f.lineup,
+    xpStats: f.playerPool?.xpStats,
+    now: Date.now(),
   });
 }
 
@@ -1392,8 +1456,18 @@ async function reloadFantasyWaivers() {
 function refreshFantasyFreeAgentRows() {
   const list = elements.layout.querySelector("[data-fantasy-fa-list]");
   if (!list) return;
-  const lockedIds = new Set(state.fantasy.waivers?.lockedPlayerIds ?? []);
-  list.innerHTML = renderFantasyFreeAgentRows(state.fantasy.waivers?.freeAgents ?? [], state.fantasy.waiverFreeAgentFilter, lockedIds);
+  const f = state.fantasy;
+  const lockedIds = new Set(f.waivers?.lockedPlayerIds ?? []);
+  // The same context the full panel render builds, so filtering never changes
+  // what a row says about a player, only which rows are shown.
+  const context = buildFreeAgentContext({
+    waivers: f.waivers,
+    roster: f.league?.roster ?? [],
+    playerPool: f.playerPool?.players ?? [],
+    lineup: f.lineup,
+    xpStats: f.playerPool?.xpStats,
+  });
+  list.innerHTML = renderFantasyFreeAgentRows(f.waivers?.freeAgents ?? [], f.waiverFreeAgentFilter, lockedIds, context);
 }
 
 function refreshFantasyWireRows() {
@@ -1728,6 +1802,10 @@ async function openFantasyLeague(id) {
   f.waiverSettingsError = "";
   f.scheduleBusy = false;
   f.scheduleError = "";
+  f.seasonSchedule = null;
+  f.seasonScheduleLoading = false;
+  f.seasonScheduleError = "";
+  f.seasonScheduleView = DEFAULT_SCHEDULE_VIEW;
   f.queue = []; // a fresh league starts with an empty shortlist, not the last one's
   // The board is per league and lives in this browser only (see the draft
   // board section further down), so it is read here rather than fetched.
@@ -1927,6 +2005,40 @@ function updateFantasyScheduleCountdownDisplay() {
   const iso = el.dataset.scheduledAt;
   if (!iso) return;
   el.textContent = formatScheduleCountdown(new Date(iso).getTime() - Date.now());
+}
+
+// The squad deadline's countdown, the same in-place tick as the draft schedule
+// above and for the same reason: the deadline can be weeks out, so a full
+// re-render every 30 seconds would be waste, but a countdown that does not
+// count is not a countdown. The instant rides on data-fantasy-deadline, so this
+// timer keeps no state of its own.
+//
+// It self-stops when the banner leaves the DOM, and it deliberately does NOT
+// re-render when the deadline passes: the lock is enforced server-side, and the
+// next load or interaction repaints the banner as locked. A client-side clock
+// flipping the UI to "locked" would be a second, drifting source of truth.
+let fantasyDeadlineCountdownTimer = null;
+
+function startFantasyDeadlineCountdownTimer() {
+  stopFantasyDeadlineCountdownTimer();
+  updateFantasyDeadlineCountdownDisplay();
+  fantasyDeadlineCountdownTimer = window.setInterval(updateFantasyDeadlineCountdownDisplay, 30000);
+}
+
+function stopFantasyDeadlineCountdownTimer() {
+  if (fantasyDeadlineCountdownTimer) window.clearInterval(fantasyDeadlineCountdownTimer);
+  fantasyDeadlineCountdownTimer = null;
+}
+
+function updateFantasyDeadlineCountdownDisplay() {
+  const el = elements.layout.querySelector("[data-fantasy-deadline-countdown]");
+  if (!el) {
+    stopFantasyDeadlineCountdownTimer();
+    return;
+  }
+  const deadline = Number(el.closest("[data-fantasy-deadline]")?.dataset.fantasyDeadline);
+  if (!Number.isFinite(deadline)) return;
+  el.textContent = formatScheduleCountdown(deadline - Date.now());
 }
 
 // Legal-pick context for the player pool list: the live turn/roster state
@@ -3816,6 +3928,19 @@ function wireLayoutControls() {
     if (waiversRetryButton) {
       state.fantasy.waiversError = "";
       loadFantasyWaivers(state.fantasy.activeLeagueId);
+      return;
+    }
+    const scheduleViewButton = event.target.closest("[data-fantasy-schedule-view]");
+    if (scheduleViewButton) {
+      state.fantasy.seasonScheduleView = scheduleViewButton.dataset.fantasyScheduleView;
+      renderLayout();
+      return;
+    }
+    const scheduleRetryButton = event.target.closest("[data-fantasy-schedule-retry]");
+    if (scheduleRetryButton) {
+      state.fantasy.seasonScheduleError = "";
+      loadFantasyLeagueSchedule(state.fantasy.activeLeagueId);
+      renderLayout();
       return;
     }
     const faPositionButton = event.target.closest("[data-fantasy-fa-position-filter]");

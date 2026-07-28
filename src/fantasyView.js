@@ -24,10 +24,20 @@ import {
   topQueuedPick,
   xpTooltip,
 } from "./fantasyDraft.js";
-import { DEFAULT_POOL_SORT, POOL_SORTS, rankDraftPool, sortPoolBy } from "./fantasyDraftRank.js";
+import { DEFAULT_POOL_SORT, POOL_SORTS, rankDraftPool, sortPoolBy, startingUpgrade } from "./fantasyDraftRank.js";
 import { withBoardAnnotations } from "./fantasyDraftBoard.js";
 import { renderFantasyBoardPanel } from "./fantasyDraftBoardView.js";
 import {
+  DEFAULT_SCHEDULE_VIEW,
+  SCHEDULE_VIEWS,
+  byeNote,
+  deadlineBanner,
+  isDeadlineSoon,
+  matchupTiming,
+  scheduleRows,
+} from "./fantasyScheduleView.js";
+import {
+  buildFreeAgentContext,
   buildWaiverPlayerLookup,
   claimStatusLabel,
   claimWindowNote,
@@ -313,16 +323,44 @@ export function renderFantasyLeagueShell(league, members, activeSubTab, bodyHtml
 
 // -- Matchup tab (Phase 4.3) -----------------------------------------------------
 
-const MATCHUP_STATUS_LABEL = { scheduled: "Scheduled", live: "Live", final: "Final" };
+// The squad-deadline banner, shown above the matchup and above the pitch. This
+// is the surface the two-hour league-wide deadline needed: a manager cannot act
+// on a deadline they have never been told. Pre-season it deliberately shows no
+// countdown at all and names the season start instead (see
+// src/fantasyScheduleView.js's deadlineBanner, which decides all of this).
+//
+// `data-fantasy-deadline` carries the raw instant so app.js can re-tick the
+// countdown on a timer without a full re-render, exactly how the draft
+// schedule's own countdown works.
+export function renderSquadDeadlineBanner(source, now = Date.now()) {
+  if (!source) return "";
+  const { gameweek, deadline = null, locked = false, preseason = false, seasonStart = null } = source;
+  const banner = deadlineBanner({ gameweek, deadline, locked, preseason, seasonStart, now });
+  const soon = isDeadlineSoon(banner, { deadline, now });
+
+  return `
+    <section class="card fantasy-deadline fantasy-deadline--${esc(banner.kind)} ${soon ? "is-soon" : ""}"
+      data-fantasy-deadline="${deadline == null ? "" : esc(deadline)}">
+      <div class="fantasy-deadline__head">
+        <p class="fantasy-deadline__headline">${esc(banner.headline)}</p>
+        ${banner.countdown ? `<p class="fantasy-deadline__countdown" data-fantasy-deadline-countdown>${esc(banner.countdown)}</p>` : ""}
+      </div>
+      <p class="note fantasy-deadline__detail">${esc(banner.detail)}</p>
+    </section>`;
+}
 
 // Single centerpiece card: gameweek header, a status chip, both managers' names
 // and scores side by side with a lead indicator (highlight + comparison bar),
-// and a clear bye-week / not-yet-started state instead of a bare 0-0. `matchup`
+// and a clear bye-week / upcoming state instead of a bare 0-0. `matchup`
 // is the raw GET /fantasy/league/:id/matchup response (src/fantasyApi.js) or
 // null while the first load for this league is still in flight; `error` is a
 // load failure distinct from "not loaded yet", with its own retry control
 // (mirrors the lineup card's own retry, see renderFantasyRosterPanel).
-export function renderFantasyMatchupPanel(matchup, { error = "" } = {}) {
+//
+// Whether scores may be shown at all is matchupTiming's decision, not this
+// renderer's: a fixture nobody has played is upcoming, and rendering it as 0-0
+// was the reported bug.
+export function renderFantasyMatchupPanel(matchup, { error = "", leagueSize = null, now = Date.now() } = {}) {
   if (!matchup) {
     return error
       ? `<div class="card"><p class="fantasy-form__error">${esc(error)}</p><button class="seg" type="button" data-fantasy-matchup-retry>Retry</button></div>`
@@ -330,47 +368,133 @@ export function renderFantasyMatchupPanel(matchup, { error = "" } = {}) {
   }
 
   const { gameweek, status, me, opponent } = matchup;
-  const statusLabel = MATCHUP_STATUS_LABEL[status] ?? status;
+  const timing = matchupTiming(matchup, now);
+  const banner = renderSquadDeadlineBanner(matchup, now);
 
   if (!opponent) {
     return `
+      ${banner}
       <section class="card fantasy-matchup fantasy-matchup--bye">
         <p class="fantasy-eyebrow">Gameweek ${esc(gameweek)}</p>
-        <h2 class="fantasy-matchup__bye-title">Bye week</h2>
-        <p class="note">No fixture for you this gameweek. Everyone in the league can't always be paired up evenly, so this round you sit out; you're back in the schedule from next gameweek.</p>
+        <h2 class="fantasy-matchup__bye-title">You have a bye</h2>
+        <p class="note">${esc(byeNote(gameweek, leagueSize))}</p>
       </section>`;
   }
 
-  // A "scheduled" matchup hasn't kicked off, so its 0-0 score would read as a
-  // final result rather than "not started" - show a dim placeholder bullet
-  // instead (the same convention normalizePlayerStats/renderStatCell already
-  // use for "no real number yet") and skip the lead bar entirely.
-  const started = status !== "scheduled";
-  const leader = started ? matchupLeadSide(me.score, opponent.score) : "tied";
-  const widths = started ? matchupBarWidths(me.score, opponent.score) : null;
+  // A not-yet-started matchup shows a dim placeholder bullet instead of its
+  // 0-0 (the same convention normalizePlayerStats/renderStatCell already use
+  // for "no real number yet") and skips the lead bar entirely.
+  const { showScores } = timing;
+  const leader = showScores ? matchupLeadSide(me.score, opponent.score) : "tied";
+  const widths = showScores ? matchupBarWidths(me.score, opponent.score) : null;
 
   return `
+    ${banner}
     <section class="card fantasy-matchup">
       <div class="fantasy-matchup__head">
         <p class="fantasy-eyebrow">Gameweek ${esc(gameweek)}</p>
-        <span class="chip fantasy-status-chip fantasy-status-chip--${esc(status)}">${esc(statusLabel)}</span>
+        <span class="chip fantasy-status-chip fantasy-status-chip--${esc(status)}">${esc(timing.label)}</span>
       </div>
       <div class="fantasy-matchup__row">
         <div class="fantasy-matchup__side ${leader === "me" ? "is-ahead" : ""}">
           <p class="fantasy-matchup__name">${esc(me.name)}</p>
-          <p class="fantasy-matchup__score">${started ? esc(me.score) : `<span class="fantasy-stat--empty">•</span>`}</p>
+          <p class="fantasy-matchup__score">${showScores ? esc(me.score) : `<span class="fantasy-stat--empty">•</span>`}</p>
         </div>
         <span class="fantasy-matchup__vs">vs</span>
         <div class="fantasy-matchup__side fantasy-matchup__side--opponent ${leader === "opponent" ? "is-ahead" : ""}">
           <p class="fantasy-matchup__name">${esc(opponent.name)}${botChip(opponent.isBot)}</p>
-          <p class="fantasy-matchup__score">${started ? esc(opponent.score) : `<span class="fantasy-stat--empty">•</span>`}</p>
+          <p class="fantasy-matchup__score">${showScores ? esc(opponent.score) : `<span class="fantasy-stat--empty">•</span>`}</p>
         </div>
       </div>
       ${
-        started
+        showScores
           ? `<div class="fantasy-matchup__bar"><span class="fantasy-matchup__bar-me" style="width:${widths.me}%"></span><span class="fantasy-matchup__bar-opp" style="width:${widths.opponent}%"></span></div>`
-          : `<p class="note fantasy-matchup__pending">Not started yet: scores will fill in once this gameweek's matches kick off.</p>`
+          : `<p class="note fantasy-matchup__pending">${esc(timing.note)}</p>`
       }
+    </section>`;
+}
+
+// -- The league's season schedule ------------------------------------------------
+//
+// The concrete missing feature: 38 gameweeks of fixtures existed from the
+// moment the draft completed and there was nowhere in the product to read
+// them. Rendered under the matchup card rather than as a seventh sub-tab: the
+// tab bar is already six wide and cramped at 375px, and the season schedule is
+// the natural context for "who am I playing".
+//
+// One row per gameweek so it stays readable on a phone, rather than a table
+// that needs horizontal scrolling.
+function renderScheduleFixture(fixture, myUserId) {
+  const { home, away, homeScore, awayScore, played } = fixture;
+  const homeMine = home.userId === myUserId;
+  const awayMine = away.userId === myUserId;
+  const homeWon = played && homeScore > awayScore;
+  const awayWon = played && awayScore > homeScore;
+  const score = played
+    ? `<span class="fantasy-sched-fixture__score">${esc(formatScheduleScore(homeScore))}<span class="fantasy-sched-fixture__dash">-</span>${esc(formatScheduleScore(awayScore))}</span>`
+    : `<span class="fantasy-sched-fixture__score fantasy-stat--empty">v</span>`;
+
+  return `<div class="fantasy-sched-fixture">
+      <span class="fantasy-sched-fixture__side ${homeMine ? "is-me" : ""} ${homeWon ? "is-won" : ""}">${esc(home.name)}${botChip(home.isBot)}</span>
+      ${score}
+      <span class="fantasy-sched-fixture__side fantasy-sched-fixture__side--away ${awayMine ? "is-me" : ""} ${awayWon ? "is-won" : ""}">${esc(away.name)}${botChip(away.isBot)}</span>
+    </div>`;
+}
+
+// Scores are REAL (fantasy points carry a decimal), so a whole number renders
+// without a pointless ".0" while 61.5 keeps its half point.
+function formatScheduleScore(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function renderScheduleWeek(row, myUserId) {
+  const classes = ["fantasy-sched-week"];
+  if (row.isCurrent) classes.push("is-current");
+  if (row.isPast) classes.push("is-past");
+
+  // A bye is stated plainly and by name. This is the manager who currently
+  // sees nothing at all.
+  const byes = row.byes.length
+    ? `<p class="fantasy-sched-week__bye">${row.myBye ? "You have a bye" : `${esc(row.byes.map((bye) => bye.name).join(", "))} ${row.byes.length === 1 ? "has" : "have"} a bye`}</p>`
+    : "";
+
+  return `<div class="${classes.join(" ")}" data-fantasy-sched-gw="${esc(row.gameweek)}">
+      <div class="fantasy-sched-week__head">
+        <span class="fantasy-sched-week__gw">GW ${esc(row.gameweek)}</span>
+        ${row.isCurrent ? `<span class="chip fantasy-sched-week__now">Now</span>` : ""}
+        ${row.kickoff != null ? `<span class="fantasy-sched-week__when">${esc(formatLocalSchedule(row.kickoff))}</span>` : ""}
+      </div>
+      ${row.fixtures.map((fixture) => renderScheduleFixture(fixture, myUserId)).join("")}
+      ${byes}
+    </div>`;
+}
+
+// `schedule` is the raw GET /fantasy/league/:id/schedule response, or null
+// while the first load is in flight. `view` is "mine" | "all" (see
+// SCHEDULE_VIEWS), kept in app.js state like every other in-panel control.
+export function renderFantasySchedulePanel(schedule, { error = "", myUserId, view = DEFAULT_SCHEDULE_VIEW } = {}) {
+  if (!schedule) {
+    return error
+      ? `<div class="card"><p class="fantasy-form__error">${esc(error)}</p><button class="seg" type="button" data-fantasy-schedule-retry>Retry</button></div>`
+      : `<p class="note">Loading the season schedule…</p>`;
+  }
+
+  const rows = scheduleRows(schedule, { myUserId, view });
+  const pills = SCHEDULE_VIEWS.map(
+    ([key, label]) =>
+      `<button class="seg ${key === view ? "is-active" : ""}" type="button" data-fantasy-schedule-view="${key}">${label}</button>`,
+  ).join("");
+
+  return `
+    <section class="card fantasy-sched">
+      <div class="fantasy-sched__head">
+        <h3 class="card__title">Season schedule</h3>
+        <div class="segrow">${pills}</div>
+      </div>
+      <div class="fantasy-sched__weeks">
+        ${rows.length ? rows.map((row) => renderScheduleWeek(row, myUserId)).join("") : `<p class="note">No fixtures to show.</p>`}
+      </div>
     </section>`;
 }
 
@@ -1259,6 +1383,7 @@ export function renderFantasyRosterPanel({
   lineupError,
   priorSeasonStats,
   xpStats,
+  now = Date.now(),
 }) {
   if (!lineup) {
     return lineupError
@@ -1271,7 +1396,22 @@ export function renderFantasyRosterPanel({
   const captainId = editState ? editState.captainId : (lineup.starters.find((entry) => entry.isCaptain)?.playerId ?? null);
   const benchIds = editState ? editState.bench : lineup.bench;
 
+  // The deadline leads the pitch: it is the one thing a manager has to know
+  // before deciding whether it is even worth opening the editor. The lineup
+  // response carries the instant (see handleFantasyLineupGet).
+  const deadlineCard = renderSquadDeadlineBanner(
+    {
+      gameweek: lineup.gameweek ?? currentGameweek,
+      deadline: lineup.deadline ?? null,
+      locked: Boolean(lineup.locked),
+      preseason: Boolean(lineup.preseason),
+      seasonStart: lineup.seasonStart ?? null,
+    },
+    now,
+  );
+
   const pitchCard = `
+    ${deadlineCard}
     <section class="card fantasy-pitch">
       ${renderPitchHead(currentGameweek, lineup, editState, roster)}
       ${renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats })}
@@ -1587,21 +1727,35 @@ export function renderFantasyComplete(members, picks) {
 
 function renderFantasyWaiversStatus(waivers) {
   const { mode, faabBudget, myBudgetRemaining, myPriority, priorities, currentGameweek, claimWindow } = waivers;
+  const { preseason, seasonStart, squadLocked } = waivers;
   const total = (priorities ?? []).length;
   const detail =
     mode === "faab"
       ? `<p class="fantasy-waivers-status__detail"><strong>${esc(myBudgetRemaining)}</strong> credits left <span class="note--dim">(league budget ${esc(faabBudget)})</span></p>`
       : `<p class="fantasy-waivers-status__detail">Your priority: <strong>${esc(priorityOrdinalLabel(myPriority, total) || "-")}</strong></p>`;
-  // Names the run a claim submitted right now belongs to, rather than the
-  // current gameweek: inside the quiet period before a run those are different
-  // numbers, and that difference is exactly what a manager needs to know.
+
+  // Pre-season this must NOT describe a deadline, a quiet period or a "next
+  // run" three weeks away as though any of them were imminent. It names the
+  // season start and says everything is open, which is the honest state.
+  // In season it names the run a claim submitted right now belongs to, rather
+  // than the current gameweek: inside the quiet period before a run those are
+  // different numbers, and that difference is exactly what a manager needs.
+  //
+  // The pre-season wording is conditioned on the squad NOT being locked, since
+  // both are true in the two hours before the opening kickoff, and "nothing is
+  // locked" is flatly wrong there. Note a claim is still genuinely open in that
+  // window: it resolves after the gameweek settles, so the squad deadline has
+  // no bearing on it (see the reconciliation note in fantasyDeadlines.js).
   const windowNote =
-    claimWindowNote(claimWindow) || `Next run resolves at gameweek ${esc(currentGameweek)}.`;
+    preseason && !squadLocked
+      ? `Pre-season: transfers are open and nothing is locked. The season starts ${formatLocalSchedule(seasonStart)}.`
+      : claimWindowNote(claimWindow) || `Claims resolve after gameweek ${esc(currentGameweek)} finishes.`;
+
   return `
     <section class="card fantasy-waivers-status">
       <div class="fantasy-waivers-status__head">
         <span class="chip fantasy-waivers-mode-chip fantasy-waivers-mode-chip--${esc(mode)}">${esc(waiverModeLabel(mode))}</span>
-        <p class="note ${claimWindow?.deferred ? "fantasy-waivers-status__deferred" : ""}">${esc(windowNote)}</p>
+        <p class="note ${!preseason && claimWindow?.deferred ? "fantasy-waivers-status__deferred" : ""}">${esc(windowNote)}</p>
       </div>
       <p class="note">${esc(waiverModeExplanation(mode))}</p>
       ${detail}
@@ -1611,16 +1765,67 @@ function renderFantasyWaiversStatus(waivers) {
 
 // -- Free agents: instant add, first come first served ------------------------
 
-// `locked` is true once addPlayer.team's fixture has kicked off this
-// gameweek (src/fantasyLocks.js): the Add button is replaced with a "Locked"
-// chip so a manager can never bank a player's already-decided match.
-function renderFreeAgentRow(player, locked) {
+// The three numbers a manager actually needs to decide on a transfer, rendered
+// as a meta line UNDER the player's name rather than as extra grid columns.
+//
+// That is a 375px decision, made deliberately. The row grid is already at its
+// limit on a phone (24px crest + name + 44px position + 76px action) and three
+// more columns would push it past the viewport into a sideways scroll. Making
+// somebody scroll horizontally to reach the number the screen exists to show is
+// worse than a second line, so the stats live inside the name cell and the grid
+// is untouched. A wide screen simply gets a roomier name column.
+//
+// Honesty rules, inherited rather than restated:
+//   - xP goes through the SAME xpBadge the draft board and the pitch use, so a
+//     player can never be quoted two different ways in two places, and a
+//     cohort-derived figure keeps its is-estimate treatment.
+//   - A missing figure is the existing dim placeholder, never a zero.
+//   - Season points are omitted entirely rather than shown as 0 before any
+//     match has been played: "0" reads as "this player is worthless" when the
+//     truth is "no games yet".
+function renderFreeAgentStats(player, { statsById, starters, seasonPoints, xpStats }) {
+  const stats = normalizePlayerStats(statsById?.get?.(player.id) ?? {});
+  const badge = xpBadge(stats, player.position, xpStats);
+
+  // "Should I add him" measured against the manager's own worst starter at that
+  // position (src/fantasyDraftRank.js's startingUpgrade). Null whenever the
+  // comparison cannot honestly be made, which includes having no lineup loaded.
+  const upgrade = startingUpgrade({ position: player.position, xp: stats.xp }, starters);
+  const upgradeHtml =
+    upgrade == null
+      ? ""
+      : `<span class="fantasy-fa-row__delta ${upgrade >= 0 ? "is-up" : "is-down"}"
+           title="${esc(`${upgrade >= 0 ? "Gains" : "Loses"} ${Math.abs(upgrade).toFixed(1)} expected points a gameweek against your worst starting ${player.position}`)}"
+         >${upgrade >= 0 ? "+" : "-"}${esc(Math.abs(upgrade).toFixed(1))}</span>`;
+
+  const points = seasonPoints?.get?.(player.id);
+  const pointsHtml =
+    typeof points === "number" && Number.isFinite(points)
+      ? `<span class="fantasy-fa-row__pts" title="Fantasy points scored so far this season">${esc(formatScheduleScore(points))} pts</span>`
+      : "";
+
+  return `<span class="fantasy-fa-row__meta">
+      <span class="fantasy-fa-row__xp ${badge.cls}" ${badge.title ? `title="${esc(badge.title)}" aria-label="${esc(badge.title)}"` : ""}>${badge.text}</span>
+      ${upgradeHtml}
+      ${pointsHtml}
+    </span>`;
+}
+
+// `locked` is true once this player is locked for the gameweek: past the
+// league-wide squad deadline that is everyone, and before it the kickoff
+// backstop catches a club that has actually started (src/fantasyDeadlines.js).
+// The Add button is replaced with a "Locked" chip either way.
+function renderFreeAgentRow(player, locked, context) {
   const action = locked
-    ? `<span class="chip fantasy-chip fantasy-chip--locked" title="Locked: their club has already kicked off this gameweek">Locked</span>`
+    ? `<span class="chip fantasy-chip fantasy-chip--locked" title="Locked: the squad deadline for this gameweek has passed">Locked</span>`
     : `<button class="btn fantasy-draft-btn" type="button" data-fantasy-fa-add="${player.id}">Add</button>`;
   return `<div class="fantasy-fa-row">
       ${badgeFor(player.team)}
-      <span class="fantasy-fa-row__id"><strong>${esc(player.name)}</strong><span class="note--dim">${esc(abbrFor(player.team))}</span></span>
+      <span class="fantasy-fa-row__id">
+        <strong>${esc(player.name)}</strong>
+        <span class="note--dim">${esc(abbrFor(player.team))}</span>
+        ${renderFreeAgentStats(player, context)}
+      </span>
       <span class="fantasy-pos">${esc(player.position)}</span>
       <span class="fantasy-fa-row__action">${action}</span>
     </div>`;
@@ -1630,25 +1835,46 @@ function renderFreeAgentRow(player, locked) {
 // filter keystroke/change (mirrors renderFantasyPlayerRows for the draft
 // pool) - the search input itself lives outside this container, so a
 // targeted refresh never has to fight for its own focus back. `lockedIds`
-// (a Set, optional) comes straight off the waivers response.
-export function renderFantasyFreeAgentRows(players, filter, lockedIds) {
+// (a Set, optional) comes straight off the waivers response; `context` carries
+// the pool stats, the caller's own starters and the season-points map that
+// renderFreeAgentStats reads.
+export function renderFantasyFreeAgentRows(players, filter, lockedIds, context = {}) {
   const filtered = filterPlayers(players, filter);
   if (!filtered.length) return `<p class="note">No free agents match.</p>`;
-  return filtered.map((player) => renderFreeAgentRow(player, Boolean(lockedIds?.has?.(player.id)))).join("");
+  return filtered
+    .map((player) => renderFreeAgentRow(player, Boolean(lockedIds?.has?.(player.id)), context))
+    .join("");
 }
 
-function renderFantasyFreeAgents(freeAgents, filter, lockedIds) {
+function renderFantasyFreeAgents(freeAgents, filter, lockedIds, context = {}) {
   const activePosition = filter?.position ?? "All";
   const positionPills = POSITION_FILTERS.map(
     (position) =>
       `<button class="seg ${position === activePosition ? "is-active" : ""}" type="button" data-fantasy-fa-position-filter="${position}">${position}</button>`,
   ).join("");
+  // The lock sentence must describe the rule that is actually enforced. It used
+  // to name each club's own kickoff; the rule is now one league-wide deadline
+  // two hours before the gameweek's first kickoff (see fantasyDeadlines.js).
+  //
+  // The locked branch is checked FIRST because pre-season and locked overlap
+  // for two hours before the opening kickoff. Branching on pre-season alone put
+  // "nothing is locked" directly above a list where every row said Locked.
+  const lockNote = context.squadLocked
+    ? "This gameweek's squad deadline has passed, so every player is locked until the next gameweek opens."
+    : context.preseason
+      ? "Pre-season, so nothing is locked and every add is instant."
+      : "Everything locks two hours before the gameweek's first kickoff; a locked player shows Locked instead of Add, so nobody can bank a match that has already been decided.";
   return `
     <section class="card fantasy-pool fantasy-fa-pool">
       <div class="fantasy-pool__scroll">
         <div class="fantasy-pool__sticky">
           <h3 class="card__title">Free agents</h3>
-          <p class="note">Unowned and available now: add one instantly for a same-position drop from your squad. A player whose club has already kicked off this gameweek shows Locked instead, so nobody can bank a match that has already been decided.</p>
+          <p class="note">Unowned and available now: add one instantly for a same-position drop from your squad. ${esc(lockNote)}</p>
+          ${
+            context.starters?.length
+              ? `<p class="note note--dim">The +/- figure is expected points a gameweek against your own worst starter at that position.</p>`
+              : ""
+          }
           <div class="fantasy-pool__filters">
             <div class="segrow fantasy-pool__positions">${positionPills}</div>
             <select class="fantasy-select" data-fantasy-fa-club-filter>${renderClubOptions(freeAgents, filter?.club)}</select>
@@ -1657,7 +1883,7 @@ function renderFantasyFreeAgents(freeAgents, filter, lockedIds) {
         </div>
         <div class="fantasy-pool__table">
           <div class="fantasy-fa-cols"><span></span><span>Player</span><span>Pos</span><span></span></div>
-          <div class="fantasy-fa-rows" data-fantasy-fa-list>${renderFantasyFreeAgentRows(freeAgents, filter, lockedIds)}</div>
+          <div class="fantasy-fa-rows" data-fantasy-fa-list>${renderFantasyFreeAgentRows(freeAgents, filter, lockedIds, context)}</div>
         </div>
       </div>
     </section>`;
@@ -1731,14 +1957,14 @@ function renderFantasyWire(wire, filter) {
 // a manager is mid-acquisition (state.fantasy.waiverFlow in app.js); `mode`
 // is the league's current waiver mode, only consulted to decide whether a bid
 // field belongs here (a free-agent add never bids, regardless of mode).
-// `lockedIds` (a Set, optional) excludes any roster player whose own club
-// has already kicked off this gameweek from the drop candidates, the same
-// kickoff lock the Worker enforces server-side (src/fantasyLocks.js) - but
-// only for a free-agent add. A queued waiver claim is deliberately exempt:
-// it resolves at the next gameweek boundary, long after this gameweek's
-// matches are decided either way, so the lock has nothing meaningful to say
-// about a drop that will not actually happen until then (see CLAUDE.md and
-// worker.js's runLeagueWaiverRun).
+// `lockedIds` (a Set, optional) excludes any locked roster player from the
+// drop candidates, the same composed rule the Worker enforces server-side
+// (src/fantasyDeadlines.js: the league-wide squad deadline, with each club's
+// own kickoff as the backstop underneath it) - but only for a free-agent add.
+// A queued waiver claim is deliberately exempt: it resolves after this
+// gameweek has settled, long after its matches are decided either way, so the
+// lock has nothing meaningful to say about a drop that will not actually
+// happen until then (see CLAUDE.md and worker.js's runLeagueWaiverRun).
 export function renderFantasyClaimFlow(flow, { roster, mode, lockedIds } = {}) {
   const { addPlayer, path, dropPlayerId, busy = false, error = "" } = flow;
   const effectiveLockedIds = path === "free_agent" ? lockedIds : null;
@@ -1773,7 +1999,7 @@ export function renderFantasyClaimFlow(flow, { roster, mode, lockedIds } = {}) {
         </div>
       </div>
       <p class="note">Every squad slot is always full, so adding a ${esc(addPlayer.position)} means dropping one of your own ${esc(addPlayer.position)}s. Choose which one below.</p>
-      ${someLocked ? `<p class="note">This list is shorter than usual: a ${esc(addPlayer.position)} whose own club has already kicked off this gameweek is locked and can't be dropped.</p>` : ""}
+      ${someLocked ? `<p class="note">This list is shorter than usual: a locked ${esc(addPlayer.position)} can't be dropped. Squads lock two hours before the gameweek's first kickoff, and a club that has already kicked off is locked regardless.</p>` : ""}
       <div class="fantasy-claim-flow__drops">${drops}</div>
       ${bidField}
       ${error ? `<p class="fantasy-form__error">${esc(error)}</p>` : ""}
@@ -1921,6 +2147,10 @@ export function renderFantasyWaiversPanel(
     flow = null,
     settingsBusy = false,
     settingsError = "",
+    playerPool = [],
+    lineup = null,
+    xpStats = null,
+    now = Date.now(),
   } = {},
 ) {
   if (!waivers) {
@@ -1931,11 +2161,22 @@ export function renderFantasyWaiversPanel(
 
   const playersById = buildWaiverPlayerLookup({ freeAgents: waivers.freeAgents, wire: waivers.wire, roster });
   const lockedIds = new Set(waivers.lockedPlayerIds ?? []);
+  const freeAgentContext = buildFreeAgentContext({ waivers, roster, playerPool, lineup, xpStats });
 
   return `
     ${flow ? renderFantasyClaimFlow(flow, { roster, mode: waivers.mode, lockedIds }) : ""}
+    ${renderSquadDeadlineBanner(
+      {
+        gameweek: waivers.currentGameweek,
+        deadline: waivers.squadDeadline,
+        locked: waivers.squadLocked,
+        preseason: waivers.preseason,
+        seasonStart: waivers.seasonStart,
+      },
+      now,
+    )}
     ${renderFantasyWaiversStatus(waivers)}
-    ${renderFantasyFreeAgents(waivers.freeAgents, freeAgentFilter, lockedIds)}
+    ${renderFantasyFreeAgents(waivers.freeAgents, freeAgentFilter, lockedIds, freeAgentContext)}
     ${renderFantasyWire(waivers.wire, wireFilter)}
     ${renderFantasyMyClaims(waivers.myClaims, playersById)}
     ${renderFantasyPriorities(waivers.priorities, myUserId, waivers.mode)}

@@ -183,6 +183,7 @@ const ROUTES = [
   ["GET", "/fantasy/league/1/draft/queue"],
   ["GET", "/fantasy/league/1/draft/recap"],
   ["GET", "/fantasy/league/1/matchup"],
+  ["GET", "/fantasy/league/1/schedule"],
   ["GET", "/fantasy/league/1/standings"],
   ["GET", "/fantasy/league/1/waivers"],
   ["GET", "/fantasy/league/1/chat"],
@@ -955,6 +956,128 @@ test("GET the lineup reports each club's fixture count so a blank or double game
   // null (not {}) with no reachable feed: "we could not look" and "no club has
   // a fixture" must not render as the same thing.
   assert.ok(Object.hasOwn(body, "clubFixtures"));
+  // The squad deadline travels with the lineup so the pitch can count down to
+  // it. Null here (no feed behind this stub), but the KEY must be present or
+  // the client has no way to tell "no deadline known" from "not sent".
+  assert.ok(Object.hasOwn(body, "deadline"));
+  assert.equal(body.locked, false, "no feed must fail open, never lock a manager out");
+});
+
+// -- The league's own season schedule, actually executed ----------------------
+//
+// The stub has to return real fixtures and real members, because the whole
+// point of the route is a derivation over both: a BYE is the absence of a row,
+// so a stub that returns no fixtures would let a broken bye derivation pass.
+// Three members and one fixture per gameweek is exactly production League 1's
+// shape (Mark v Rory, Eoin byes), which is the case this was written for.
+const SCHEDULE_MEMBERS = [
+  { user_id: 1, name: "Ada", email: "ada@example.test", is_bot: 0 },
+  { user_id: 2, name: "Rory", email: "rory@example.test", is_bot: 0 },
+  { user_id: 3, name: "Eoin", email: "eoin@example.test", is_bot: 0 },
+];
+
+function scheduleDb(seen) {
+  const makeStatement = (sql) => {
+    const normalised = sql.replace(/\s+/g, " ").trim();
+    const statement = {
+      bind: () => statement,
+      first: async () => {
+        if (normalised.includes("FROM sessions s")) return { id: 1, email: "ada@example.test", name: "Ada", prefs: "{}" };
+        return { x: 1 };
+      },
+      all: async () => {
+        if (normalised.includes("FROM fantasy_h2h_fixtures")) {
+          return {
+            results: [
+              { gameweek: 1, home_user_id: 1, away_user_id: 2, home_score: null, away_score: null },
+              { gameweek: 2, home_user_id: 2, away_user_id: 3, home_score: null, away_score: null },
+              { gameweek: 3, home_user_id: 3, away_user_id: 1, home_score: 61.5, away_score: 48 },
+            ],
+          };
+        }
+        if (normalised.includes("FROM fantasy_league_members m")) return { results: SCHEDULE_MEMBERS };
+        return { results: [] };
+      },
+      run: async () => ({ success: true, meta: { changes: 1 } }),
+    };
+    return statement;
+  };
+  return {
+    prepare: (sql) => {
+      seen.push(sql.replace(/\s+/g, " ").trim());
+      return makeStatement(sql);
+    },
+    batch: async () => [],
+  };
+}
+
+function scheduleCall(path) {
+  const seen = [];
+  const headers = { Authorization: `Bearer ${SESSION_TOKEN}` };
+  const response = worker.fetch(new Request(`https://example.test${path}`, { headers }), {
+    ...env,
+    DB: scheduleDb(seen),
+  });
+  return { response, seen };
+}
+
+test("GET the league schedule returns every gameweek, not just the current one", async () => {
+  const { response, seen } = scheduleCall("/fantasy/league/1/schedule");
+  const resolved = await response;
+  assert.equal(resolved.status, 200);
+  assert.ok(
+    seen.some((sql) => sql.includes("FROM fantasy_h2h_fixtures")),
+    "the fixtures read never ran, so this test proves nothing",
+  );
+
+  const body = await resolved.json();
+  assert.equal(body.gameweeks.length, 3);
+  assert.deepEqual(
+    body.gameweeks.map((week) => week.gameweek),
+    [1, 2, 3],
+    "gameweeks must come back in season order",
+  );
+  assert.equal(body.gameweeks[0].fixtures.length, 1);
+  assert.deepEqual(body.gameweeks[0].fixtures[0], {
+    homeUserId: 1,
+    awayUserId: 2,
+    homeScore: null,
+    awayScore: null,
+  });
+});
+
+test("the schedule states a bye plainly instead of leaving a manager with no row", async () => {
+  // The complaint this route exists for: an odd-sized league byes somebody
+  // every week, and that manager currently sees nothing at all, which is
+  // indistinguishable from a bug.
+  const { response } = scheduleCall("/fantasy/league/1/schedule");
+  const body = await (await response).json();
+
+  assert.deepEqual(body.gameweeks[0].byeUserIds, [3], "Eoin byes gameweek 1");
+  assert.deepEqual(body.gameweeks[1].byeUserIds, [1], "Ada byes gameweek 2");
+  assert.deepEqual(body.gameweeks[2].byeUserIds, [2], "Rory byes gameweek 3");
+  // Exactly one manager byes each week in a three-manager league, never zero
+  // and never all of them.
+  for (const week of body.gameweeks) assert.equal(week.byeUserIds.length, 1);
+});
+
+test("the schedule carries member names so a bye can be attributed to a person", async () => {
+  const { response } = scheduleCall("/fantasy/league/1/schedule");
+  const body = await (await response).json();
+  assert.equal(body.members.length, 3);
+  assert.deepEqual(
+    body.members.map((member) => member.name).sort(),
+    ["Ada", "Eoin", "Rory"],
+  );
+  // A settled gameweek keeps its real scores; an unplayed one stays null so
+  // the client can render it as upcoming rather than as a 0-0 result.
+  assert.equal(body.gameweeks[0].fixtures[0].homeScore, null);
+  assert.equal(body.gameweeks[2].fixtures[0].homeScore, 61.5);
+});
+
+test("the schedule route is membership-checked like every other league route", async () => {
+  const response = await worker.fetch(new Request("https://example.test/fantasy/league/1/schedule"), env);
+  assert.equal(response.status, 401, "an unauthenticated caller must not read a league's schedule");
 });
 
 // -- The waiver run's lock and roll-forward, actually executed ----------------

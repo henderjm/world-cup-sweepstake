@@ -2097,6 +2097,7 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-pitch__xp.is-estimate,
 .fantasy-bench-row__xp.is-estimate,
 .fantasy-squadxp__value.is-estimate,
+.fantasy-fa-row__xp.is-estimate,
 .fantasy-stat.is-estimate {
   color: var(--fantasy-accent-2);
   font-style: italic;
@@ -2157,6 +2158,107 @@ button { font-family: inherit; cursor: pointer; }
 
 .fantasy-matchup--bye { text-align: center; padding: 28px 16px; }
 .fantasy-matchup__bye-title { margin: 4px 0 8px; font-size: 20px; font-weight: 900; font-style: italic; text-transform: uppercase; }
+
+/* Squad deadline banner: the league-wide two-hour deadline, shown above the
+   matchup, the pitch and the waivers panel. Four states (see deadlineBanner in
+   fantasyScheduleView.js): preseason, open, locked, unknown. Deliberately
+   understated pre-season, and only the last hour (.is-soon) earns the accent
+   treatment - a countdown that shouts three weeks out is what this replaced. */
+.fantasy-deadline { display: grid; gap: 6px; }
+.fantasy-deadline__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.fantasy-deadline__headline {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.fantasy-deadline__countdown {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: var(--fantasy-accent);
+}
+.fantasy-deadline__detail { margin: 0; }
+.fantasy-deadline--preseason .fantasy-deadline__headline { color: var(--fantasy-accent); }
+.fantasy-deadline--locked {
+  background: var(--fantasy-soft);
+  box-shadow: inset 0 0 0 1px var(--fantasy-line);
+}
+.fantasy-deadline--locked .fantasy-deadline__headline { color: var(--fantasy-accent); }
+.fantasy-deadline--unknown .fantasy-deadline__headline { color: var(--muted); }
+.fantasy-deadline.is-soon { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.fantasy-deadline.is-soon .fantasy-deadline__countdown { color: var(--accent); }
+
+/* Season schedule: one block per gameweek rather than a table, so it reads on
+   a phone with no horizontal scrolling at all. */
+.fantasy-sched__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.fantasy-sched__weeks { display: flex; flex-direction: column; gap: 6px; }
+.fantasy-sched-week { padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.fantasy-sched-week.is-current { box-shadow: inset 0 0 0 1px var(--fantasy-line); background: var(--fantasy-soft); }
+.fantasy-sched-week.is-past { opacity: 0.62; }
+.fantasy-sched-week__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.fantasy-sched-week__gw {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.fantasy-sched-week__now {
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fantasy-accent);
+  border-color: var(--fantasy-line);
+  background: var(--fantasy-soft);
+}
+.fantasy-sched-week__when { margin-left: auto; font-size: 11px; color: var(--muted); }
+.fantasy-sched-week__bye { margin: 6px 0 0; font-size: 11px; color: var(--muted); }
+
+/* The fixture line is a 3-column grid with a fixed centre, so both manager
+   names get equal room and a long name ellipsizes instead of pushing the score
+   off the side at 375px. */
+.fantasy-sched-fixture {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+.fantasy-sched-fixture__side {
+  min-width: 0;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fantasy-sched-fixture__side--away { text-align: right; }
+.fantasy-sched-fixture__side.is-me { font-weight: 800; color: var(--fantasy-accent); }
+.fantasy-sched-fixture__side.is-won { font-weight: 800; }
+.fantasy-sched-fixture__score {
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.fantasy-sched-fixture__dash { margin: 0 3px; color: var(--faint); }
 
 /* Standings tab (Phase 4.3): Rank/Manager/P/W/D/L/PF/PA/PTS table ------------- */
 
@@ -2342,6 +2444,36 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-fa-row__id { display: flex; flex-direction: column; min-width: 0; }
 .fantasy-fa-row__id strong { font-size: 13px; }
 .fantasy-fa-row__action { text-align: right; }
+
+/* The three decision numbers ride INSIDE the name cell as a wrapping meta
+   line, rather than as extra grid columns. That is what keeps the row at its
+   existing 320px min-width: three more columns would push the free-agent table
+   into a horizontal scroll at 375px, and making somebody scroll sideways to
+   reach the number that decides the transfer is worse than a second line.
+   `align-items: start` on the row so the taller name cell does not drag the
+   position pill and the Add button off centre. */
+.fantasy-fa-row { align-items: start; }
+.fantasy-fa-row .fantasy-pos,
+.fantasy-fa-row__action { margin-top: 2px; }
+.fantasy-fa-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin-top: 3px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+/* .fantasy-fa-row__xp is added to the shared .is-estimate rule above rather
+   than given its own, so a cohort-derived figure looks identical here and on
+   the draft board. Same for the .is-empty placeholder below: a free agent must
+   never be quoted differently from the same player on the board. */
+.fantasy-fa-row__xp { color: var(--fantasy-accent); font-weight: 700; }
+.fantasy-fa-row__xp.is-empty { color: var(--faint); font-weight: 600; }
+.fantasy-fa-row__delta { font-weight: 800; }
+.fantasy-fa-row__delta.is-up { color: var(--accent); }
+.fantasy-fa-row__delta.is-down { color: var(--muted); }
+.fantasy-fa-row__pts { color: var(--muted); }
 
 .fantasy-wire-cols,
 .fantasy-wire-row {

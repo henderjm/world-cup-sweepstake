@@ -5,7 +5,7 @@
 // which this file stays honest with rather than re-deriving the rule). No
 // DOM, no fetch: fantasyView.js renders with these, app.js wires the clicks.
 
-import { formatOrdinal } from "./fantasyDraft.js";
+import { formatOrdinal, normalizePlayerStats } from "./fantasyDraft.js";
 
 // Short, plain-English label for the mode chip.
 const MODE_LABELS = {
@@ -44,6 +44,46 @@ export function claimWindowNote(claimWindow) {
     return `Gameweek ${gameweek - 1}'s run is closing. A claim submitted now is queued for the gameweek ${gameweek} run instead.`;
   }
   return `A claim submitted now is resolved by the gameweek ${gameweek} run.`;
+}
+
+// Everything a free-agent ROW needs to show its three decision numbers, built
+// once and shared by the full panel render and the filter-keystroke repaint
+// (refreshFantasyFreeAgentRows in app.js). Built here rather than inline in
+// either caller because the two must agree: a manager typing in the search box
+// must not watch the xP column change basis or disappear.
+//
+// `starters` is the caller's real XI with each starter's xP attached, and it is
+// EMPTY unless a lineup has actually been loaded. That is deliberate: the
+// upgrade figure is defined against the manager's own worst starter, so with no
+// lineup there is no honest comparison to make and every upgrade comes back
+// null rather than being quietly computed against something else.
+export function buildFreeAgentContext({ waivers, roster, playerPool, lineup, xpStats } = {}) {
+  const statsById = new Map((playerPool ?? []).map((player) => [player.id, player]));
+  const rosterById = new Map((roster ?? []).map((player) => [player.id, player]));
+
+  const starters = (lineup?.starters ?? [])
+    .map((entry) => {
+      const player = rosterById.get(entry.playerId);
+      if (!player) return null;
+      return { position: player.position, xp: normalizePlayerStats(statsById.get(player.id) ?? {}).xp };
+    })
+    .filter(Boolean);
+
+  return {
+    statsById,
+    starters,
+    // The Worker sends season points as a plain object (JSON has no Map), so
+    // the keys arrive as strings and have to be coerced back to the numeric
+    // player ids every other lookup here uses.
+    seasonPoints: new Map(Object.entries(waivers?.seasonPoints ?? {}).map(([id, points]) => [Number(id), points])),
+    xpStats,
+    preseason: Boolean(waivers?.preseason),
+    // Carried separately from `preseason` because BOTH can be true at once, in
+    // the two hours between gameweek 1's deadline and the opening kickoff. The
+    // panel's lock sentence has to follow the lock, or it ends up telling a
+    // manager nothing is locked directly above fifteen rows marked Locked.
+    squadLocked: Boolean(waivers?.squadLocked),
+  };
 }
 
 // "3rd of 4" for the rolling/reverse_standings status line. A null priority (a
