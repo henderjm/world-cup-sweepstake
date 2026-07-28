@@ -94,11 +94,33 @@ jobs:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           API_FOOTBALL_CLI: /tmp/squad-goals-api
           API_FOOTBALL_COMPETITIONS: "PL:2026,CL:2026"
-      # Fantasy draft pool (Phase 4). The cached file and script freshness guard make
-      # this a daily upstream refresh even though the Pages job runs more frequently.
+      # Fantasy draft pool. This is BY FAR the most expensive step in the whole
+      # workflow: it walks three seasons of paginated player statistics, measured
+      # at 34 + 57 + 51 pages plus squads, roughly 180 upstream calls, against a
+      # 7,500/day plan.
+      #
+      # The script has its own 24-hour freshness guard, and it does not fire
+      # here. Observed on 28 July 2026: a bake at 12:39 re-fetched all 142 pages
+      # despite the pool having been written at 08:38 the same morning, four
+      # hours earlier. The guard reads the file's mtime, and the file only
+      # exists in CI via the Actions cache, so its timestamp does not survive
+      # the way the script assumes. Rather than depend on that, the hour gate
+      # below is deterministic and cannot be defeated by cache semantics.
+      #
+      # Without it, ten scheduled bakes a day at 180 calls each is 1,800 calls,
+      # a quarter of the daily allowance, spent re-reading three seasons of
+      # history that by definition never change. Squad lists change daily at
+      # most, so once a day at 11:00 UTC is the right cadence, and a manual run
+      # still forces a refresh whenever the pool logic itself changes.
       - name: Fetch fantasy player pool
         if: github.event_name != 'push'
-        run: npm run fetch:fantasy-players
+        run: |
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ] && [ "$(date -u +%H)" != "11" ]; then
+            echo "Not the 11:00 UTC daily pool refresh, and not a manual run. Skipping."
+            echo "The cached pool from the last refresh is used as-is."
+            exit 0
+          fi
+          npm run fetch:fantasy-players
         env:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           API_FOOTBALL_CLI: /tmp/squad-goals-api
