@@ -4,12 +4,19 @@ import test from "node:test";
 import {
   DEFAULT_FAAB_BUDGET,
   WAIVER_MODES,
+  WAIVER_QUIET_PERIOD_MS,
+  WAIVER_SETTLE_BUFFER_MS,
+  claimGameweek,
   nextRollingPriorities,
   orderClaims,
   playerAvailability,
   resolveWaiverRun,
   validateAcquisition,
+  waiverRunReady,
+  waiverRunWindow,
 } from "../src/fantasyWaivers.js";
+
+const DAY = 24 * 60 * 60 * 1000;
 
 // -- playerAvailability -------------------------------------------------------
 
@@ -548,4 +555,90 @@ test("nextRollingPriorities accepts a plain array of winner ids too", () => {
 test("WAIVER_MODES and DEFAULT_FAAB_BUDGET are the agreed values", () => {
   assert.deepEqual(WAIVER_MODES, ["faab", "rolling", "reverse_standings"]);
   assert.equal(DEFAULT_FAAB_BUDGET, 100);
+});
+
+// -- the settlement buffer ------------------------------------------------------
+
+// Matches carry an explicit `gameweek` here (what assignGameweeks stamps on),
+// so these tests exercise the window logic rather than re-testing the calendar.
+function fixture(gameweek, utcDate) {
+  return { gameweek, matchday: gameweek, status: "SCHEDULED", utcDate, homeTeam: "A", awayTeam: "B" };
+}
+
+const GW10_LAST_KICKOFF = Date.parse("2026-11-08T16:30:00Z");
+const GW10 = [fixture(10, "2026-11-07T12:30:00Z"), fixture(10, "2026-11-08T16:30:00Z")];
+const GW11 = [fixture(11, "2026-11-21T15:00:00Z")];
+
+test("waiverRunWindow hangs both instants off the gameweek's last kickoff", () => {
+  const window = waiverRunWindow({ matches: GW10, gameweek: 10, now: GW10_LAST_KICKOFF - DAY });
+  assert.equal(window.deadline, GW10_LAST_KICKOFF);
+  assert.equal(window.quietFrom, GW10_LAST_KICKOFF - WAIVER_QUIET_PERIOD_MS);
+  assert.equal(window.earliestRunAt, GW10_LAST_KICKOFF + WAIVER_SETTLE_BUFFER_MS);
+  assert.equal(window.phase, "open");
+});
+
+test("waiverRunWindow moves through open, quiet and closed as the clock advances", () => {
+  const at = (offset) => waiverRunWindow({ matches: GW10, gameweek: 10, now: GW10_LAST_KICKOFF + offset }).phase;
+  assert.equal(at(-WAIVER_QUIET_PERIOD_MS - 1), "open");
+  assert.equal(at(-WAIVER_QUIET_PERIOD_MS), "quiet"); // the quiet period is inclusive at its start
+  assert.equal(at(0), "quiet");
+  assert.equal(at(WAIVER_SETTLE_BUFFER_MS - 1), "quiet");
+  assert.equal(at(WAIVER_SETTLE_BUFFER_MS), "closed");
+});
+
+test("waiverRunWindow stays open for a gameweek with no datable fixture", () => {
+  // A fully blank window, or a feed that has published no kickoffs: there is
+  // no timetable to enforce, so this fails open to the pre-buffer behaviour
+  // rather than freezing every claim on missing data.
+  const window = waiverRunWindow({ matches: [], gameweek: 10, now: GW10_LAST_KICKOFF });
+  assert.deepEqual(window, { gameweek: 10, deadline: null, quietFrom: null, earliestRunAt: null, phase: "open" });
+});
+
+test("claimGameweek keeps a claim in the current run while the window is open", () => {
+  const target = claimGameweek({
+    matches: [...GW10, ...GW11],
+    currentGameweek: 10,
+    now: GW10_LAST_KICKOFF - DAY,
+  });
+  assert.equal(target.gameweek, 10);
+  assert.equal(target.deferred, false);
+  assert.equal(target.runsAfter, GW10_LAST_KICKOFF + WAIVER_SETTLE_BUFFER_MS);
+});
+
+test("claimGameweek defers a claim submitted in the quiet period to the next run", () => {
+  // The whole point of the buffer: a claim landing an instant before the run
+  // is never silently included, never silently dropped and never rejected. It
+  // is accepted, explicitly tagged with the next gameweek, and says so.
+  const target = claimGameweek({
+    matches: [...GW10, ...GW11],
+    currentGameweek: 10,
+    now: GW10_LAST_KICKOFF - 1000,
+  });
+  assert.equal(target.gameweek, 11);
+  assert.equal(target.deferred, true);
+  assert.equal(target.runsAfter, Date.parse("2026-11-21T15:00:00Z") + WAIVER_SETTLE_BUFFER_MS);
+});
+
+test("waiverRunReady holds the run back until the settlement buffer has elapsed", () => {
+  const ready = (offset) =>
+    waiverRunReady({ matches: GW10, settledGameweek: 10, now: GW10_LAST_KICKOFF + offset });
+  // Every match can be terminal barely two hours after the last kickoff; the
+  // run still waits, so the gap between the last acceptable claim and the run
+  // reading the claim set is never a matter of milliseconds.
+  assert.equal(ready(2 * 60 * 60 * 1000), false);
+  assert.equal(ready(WAIVER_SETTLE_BUFFER_MS - 1), false);
+  assert.equal(ready(WAIVER_SETTLE_BUFFER_MS), true);
+});
+
+test("waiverRunReady fails open when there is no timetable to wait for", () => {
+  assert.equal(waiverRunReady({ matches: null, settledGameweek: 10, now: Date.now() }), true);
+  assert.equal(waiverRunReady({ matches: GW10, settledGameweek: 10, now: undefined }), true);
+});
+
+test("the guaranteed gap between the last acceptable claim and the run is hours, not milliseconds", () => {
+  // The property the owner actually asked for, asserted as one number rather
+  // than left implicit in the two constants.
+  const lastClaimAt = GW10_LAST_KICKOFF - WAIVER_QUIET_PERIOD_MS - 1;
+  const runAt = waiverRunWindow({ matches: GW10, gameweek: 10, now: lastClaimAt }).earliestRunAt;
+  assert.ok(runAt - lastClaimAt >= WAIVER_QUIET_PERIOD_MS + WAIVER_SETTLE_BUFFER_MS);
 });

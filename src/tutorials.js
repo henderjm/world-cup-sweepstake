@@ -197,12 +197,16 @@ export const TUTORIALS = [
             body: "Ferguson picks up a free agent forward and drops Erling Haaland to make room. Haaland goes on the wire, not straight back into the pool.",
           },
           {
-            when: "Tuesday to Saturday",
+            when: "Tuesday to the last kickoff",
             body: "Klopp, Ancelotti and Guardiola all want him. Each submits a claim: the player to add, one of their own forwards to drop, and in FAAB a bid. Nobody can see anyone else's claim.",
           },
           {
-            when: "Saturday, gameweek ends",
-            body: "The gameweek settles and the run fires automatically. Every pending claim resolves at once, in the league's priority order.",
+            when: "An hour before the last kickoff",
+            body: "The window goes quiet. Claims are still accepted, but they are queued for NEXT week's run instead, and the Waivers panel says so in as many words. Nothing you submit is ever left ambiguous about which run it is in.",
+          },
+          {
+            when: "A few hours after the gameweek ends",
+            body: "The run fires automatically. Every claim that made the window resolves at once, in the league's priority order.",
             emphasis: true,
           },
           {
@@ -280,13 +284,14 @@ export const TUTORIALS = [
         type: "prose",
         heading: "When does the window close?",
         body: [
-          "There is one window and it is the same in all three modes. It opens the moment a player is dropped onto the wire, and closes the instant the gameweek settles, the moment the last match of that gameweek finishes. The run fires immediately at that point. Timing never varies by mode: the mode only decides who wins, not when.",
+          "There is one window and it is the same in all three modes. It opens the moment a player is dropped onto the wire, and closes an hour before the last kickoff of the gameweek. The run itself does not fire at that moment: it waits until a few hours after that last kickoff, by which time the gameweek is long settled. Timing never varies by mode: the mode only decides who wins, not when.",
+          "That gap is deliberate. A claim landing in the same instant a run reads the claim set would be genuinely ambiguous, so instead there are hours between the last claim a run can contain and the moment it looks.",
         ],
       },
       {
         type: "callout",
         body: [
-          "There is no announced deadline. A claim submitted a minute before the final whistle counts; a minute after, it belongs to next week's run instead. Nothing warns you the window is about to shut.",
+          "You are never left guessing which run your claim is in. Submit after the window has gone quiet and the claim is still accepted, just queued for next week's run instead, and the Waivers panel tells you that before and after you submit. Nothing is silently included, and nothing is silently thrown away for being a minute late.",
         ],
       },
       {
@@ -298,7 +303,7 @@ export const TUTORIALS = [
       {
         type: "callout",
         body: [
-          "That lock only applies to the instant add. A queued waiver claim does not need it: it resolves at the gameweek boundary, once every match in the gameweek that just finished is already over for everybody, so there is no hindsight left to guard against by the time it is actually processed.",
+          "That lock only applies to the instant add. A queued waiver claim does not need it: claims stop counting towards a run before the gameweek's last kickoff, and the run happens once every match in it is over for everybody, so there is no hindsight left to guard against by the time it is actually processed.",
         ],
       },
       {

@@ -174,20 +174,35 @@ CREATE TABLE IF NOT EXISTS fantasy_lineups (
   PRIMARY KEY (league_id, user_id, gameweek, player_id)
 );
 
--- A player's raw fantasy points for a gameweek, computed once from match data and
+-- A player's raw fantasy points for ONE MATCH, computed once from match data and
 -- shared across every league/roster that has them (league-independent by design,
--- since the same player can sit on many managers' squads).
-CREATE TABLE IF NOT EXISTS fantasy_player_scores (
-  gameweek INTEGER NOT NULL,
+-- since the same player can sit on many managers' squads). `gameweek` is the
+-- calendar WINDOW that match was played in (src/fantasyCalendar.js), not the
+-- provider's matchday label.
+--
+-- Keyed on the match and not on the gameweek: a club can play twice inside one
+-- window (a double gameweek, when a postponed fixture is replayed later in the
+-- season), and both matches score into that gameweek. The predecessor table
+-- fantasy_player_scores was keyed on (gameweek, player_id) and written with
+-- INSERT OR REPLACE, so a player's second match of a double gameweek silently
+-- overwrote his first instead of adding to it. A gameweek total is now always
+-- SUM(points) over this table, never a single row.
+-- See worker/migrations/002-gameweek-windows.sql for dropping the old table on
+-- an existing database (fresh databases never create it).
+CREATE TABLE IF NOT EXISTS fantasy_player_match_scores (
+  match_id INTEGER NOT NULL,
   player_id INTEGER NOT NULL REFERENCES fantasy_players(id),
+  gameweek INTEGER NOT NULL,
   points REAL NOT NULL DEFAULT 0,
   breakdown TEXT, -- JSON: {goals, assists, cleanSheet, appearance, cards, ownGoals}
   computed_at TEXT NOT NULL DEFAULT (datetime('now')),
-  PRIMARY KEY (gameweek, player_id)
+  PRIMARY KEY (match_id, player_id)
 );
+CREATE INDEX IF NOT EXISTS fantasy_player_match_scores_gw ON fantasy_player_match_scores(gameweek, player_id);
 
--- Dedup ledger: a finished match's points are applied to fantasy_player_scores
--- exactly once, the same "first sighting only" discipline as notify_state.
+-- Dedup ledger: a finished match's points are applied to
+-- fantasy_player_match_scores exactly once, the same "first sighting only"
+-- discipline as notify_state.
 CREATE TABLE IF NOT EXISTS fantasy_scored_matches (
   match_id INTEGER PRIMARY KEY,
   scored_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -353,6 +368,28 @@ CREATE TABLE IF NOT EXISTS fantasy_waiver_runs (
   processed_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS fantasy_waiver_runs_once ON fantasy_waiver_runs(league_id, gameweek);
+
+-- Advisory lock so two overlapping cron ticks cannot both do a league's waiver
+-- run work. One row per league at most; acquired with a single guarded upsert
+-- (atomic in SQLite, so exactly one of two racing ticks sees changes = 1) and
+-- released inside the same atomic batch that commits the run.
+--
+-- This is a LIVENESS mechanism, never a correctness one, and the distinction
+-- matters: `expires_at` is a lease so a tick that dies mid-run cannot wedge a
+-- league's waivers forever, but nothing about correctness depends on that
+-- clock. Even if the lease expired instantly and both ticks ran the whole
+-- thing, the unique index on fantasy_waiver_runs(league_id, gameweek) plus the
+-- single atomic batch mean only one can commit and the loser's entire batch
+-- rolls back. The lock only stops the wasted work and the duplicate upstream
+-- reads. `holder` is a per-attempt random token so a tick can only ever
+-- release the lease it actually took, not a successor's.
+CREATE TABLE IF NOT EXISTS fantasy_waiver_locks (
+  league_id INTEGER PRIMARY KEY REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  gameweek INTEGER NOT NULL,
+  holder TEXT NOT NULL,
+  acquired_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL
+);
 
 -- Defense in depth for the draft room's commit path: blockConcurrencyWhile in
 -- the FantasyDraftRoom Durable Object already serializes picks within one
