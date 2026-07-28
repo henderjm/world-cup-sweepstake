@@ -25,6 +25,8 @@ import {
   xpTooltip,
 } from "./fantasyDraft.js";
 import { DEFAULT_POOL_SORT, POOL_SORTS, rankDraftPool, sortPoolBy } from "./fantasyDraftRank.js";
+import { withBoardAnnotations } from "./fantasyDraftBoard.js";
+import { renderFantasyBoardPanel } from "./fantasyDraftBoardView.js";
 import {
   buildWaiverPlayerLookup,
   claimStatusLabel,
@@ -242,6 +244,7 @@ const FANTASY_SUBTAB_LABELS = {
   matchup: "Matchup",
   myteam: "My team",
   draftroom: "Draft room",
+  board: "My board",
   waivers: "Waivers",
   standings: "Standings",
 };
@@ -250,13 +253,19 @@ const FANTASY_SUBTAB_LABELS = {
 // defaultFantasySubTab in app.js). League chat hidden behind a corner tab is
 // the version managers abandon for WhatsApp; the one that gets used is the one
 // they arrive on, where the moves and the talk about them share a timeline.
+// My board and Waivers are each live for exactly one half of a league's life
+// and disabled for the other, so the bar never grows: a board ranks players
+// nobody has drafted yet and is meaningless once every squad is fixed, which
+// is precisely when free agency and waivers begin.
 function renderFantasySubtabs(activeSubTab, waiversEnabled) {
+  const boardEnabled = !waiversEnabled;
   return `
     <div class="fantasy-subtabs">
       <button class="fantasy-subtab ${activeSubTab === "feed" ? "is-active" : ""}" type="button" data-fantasy-subtab="feed">Feed</button>
       <button class="fantasy-subtab ${activeSubTab === "matchup" ? "is-active" : ""}" type="button" data-fantasy-subtab="matchup">Matchup</button>
       <button class="fantasy-subtab ${activeSubTab === "myteam" ? "is-active" : ""}" type="button" data-fantasy-subtab="myteam">My team</button>
       <button class="fantasy-subtab ${activeSubTab === "draftroom" ? "is-active" : ""}" type="button" data-fantasy-subtab="draftroom">Draft room</button>
+      <button class="fantasy-subtab ${activeSubTab === "board" ? "is-active" : ""}" type="button" data-fantasy-subtab="board" ${boardEnabled ? "" : "disabled"}>My board</button>
       <button class="fantasy-subtab ${activeSubTab === "waivers" ? "is-active" : ""}" type="button" data-fantasy-subtab="waivers" ${waiversEnabled ? "" : "disabled"}>Waivers</button>
       <button class="fantasy-subtab ${activeSubTab === "standings" ? "is-active" : ""}" type="button" data-fantasy-subtab="standings">Standings</button>
     </div>`;
@@ -795,7 +804,13 @@ function renderOnClockCard({ members, draft, myUserId, entries, isMyTurn }) {
 // back to on a timeout. The Draft button uses the exact same gating as a
 // pool row (my turn, legal pick), so it never offers an action the pool
 // itself would refuse.
-function renderSuggestedPickCard(player, context, fromQueue = false) {
+//
+// `boardNote` is the manager's own note on this player, if they wrote one. It
+// renders in their own words and separately from the app's reason, because
+// the two are different claims: one is a heuristic, the other is what the
+// manager decided in the calm of a Tuesday evening, and a running pick clock
+// is exactly when that is worth more.
+function renderSuggestedPickCard(player, context, fromQueue = false, boardNote = "") {
   if (!player) return "";
   const legal = Boolean(context?.isMyTurn) && canDraftPlayer(player, context);
   const action = legal
@@ -812,6 +827,7 @@ function renderSuggestedPickCard(player, context, fromQueue = false) {
         <span class="chip fantasy-suggest__chip">${esc(player.position)} · ${esc(abbrFor(player.team))}</span>
       </div>
       <p class="fantasy-suggest__reason">${esc(reason)}</p>
+      ${boardNote ? `<p class="fantasy-suggest__note">Your note: ${esc(boardNote)}</p>` : ""}
       ${action}
     </section>`;
 }
@@ -1313,12 +1329,24 @@ function filterPlayers(players, filter, draftedIds) {
 // pool, then filterPlayers narrows to what the UI is asking for, then
 // sortPoolBy applies the chosen column - in that order, or a search/position
 // filter would silently change what "the 12th best" means.
+//
+// `context.board` is the manager's own draft board (src/fantasyDraftBoard.js).
+// It is stamped onto the ranked pool BEFORE filtering and sorting, because a
+// board rank is a property of the whole board and must not change when the
+// pool is narrowed to forwards, and because the "Board" sort reads the
+// annotation rather than the board itself (see POOL_SORTS).
 export function renderFantasyPlayerRows(players, filter, context) {
-  const { isMyTurn, myRoster, draftedIds, suggestedId, queuedIds, leagueSize } = context ?? {};
-  const ranked = rankDraftPool(players, leagueSize ?? 1);
+  const { isMyTurn, myRoster, draftedIds, suggestedId, queuedIds, leagueSize, board } = context ?? {};
+  const ranked = withBoardAnnotations(rankDraftPool(players, leagueSize ?? 1), board, draftedIds);
   const filtered = sortPoolBy(filterPlayers(ranked, filter, draftedIds), filter?.sort ?? DEFAULT_POOL_SORT);
   if (!filtered.length) return `<p class="note">No players match.</p>`;
   const enriched = hasPriorSeasonData(players);
+  // A tier chip on every row when the manager has drawn no tiers at all is
+  // noise saying "tier 1" 500 times; it earns its space only once there is
+  // more than one tier to be in. Both markers ride inside the existing name
+  // cell rather than adding grid columns, so the pool table's width - and its
+  // fit inside its own horizontal scroll on a phone - is unchanged.
+  const showBoardTiers = Boolean(board?.tierBreaks?.length);
   return filtered
     .map((player) => {
       const drafted = draftedIds?.has?.(player.id);
@@ -1339,9 +1367,18 @@ export function renderFantasyPlayerRows(players, filter, context) {
       const suggestedBadge = isSuggested ? `<span class="chip fantasy-chip--suggested">Pick</span>` : "";
       const tierCell = enriched ? `<span class="fantasy-player-row__tier">${renderTierChip(player.tier)}</span>` : "";
       const appsCell = enriched ? `<span class="fantasy-player-row__stat">${renderStatCell(player.appearances, 0)}</span>` : "";
+      const boardTierChip =
+        showBoardTiers && player.boardTier != null
+          ? ` <span class="fantasy-board-chip">T${esc(player.boardTier)}</span>`
+          : "";
+      // The note is the whole reason to have written it: it has to be legible
+      // at the moment of the pick, not one navigation away.
+      const boardNote = player.boardNote
+        ? ` <span class="fantasy-board-note-mark" title="${esc(player.boardNote)}">✎ ${esc(player.boardNote)}</span>`
+        : "";
       return `<div class="fantasy-player-row ${drafted ? "is-drafted" : ""} ${isSuggested ? "is-suggested" : ""}">
           ${badgeFor(player.team)}
-          <span class="fantasy-player-row__id"><strong>${esc(player.name)}${suggestedBadge}</strong><span class="note--dim">${esc(abbrFor(player.team))}</span></span>
+          <span class="fantasy-player-row__id"><strong>${esc(player.name)}${suggestedBadge}</strong><span class="note--dim">${esc(abbrFor(player.team))}${boardTierChip}${boardNote}</span></span>
           <span class="fantasy-pos">${esc(player.position)}</span>
           ${renderRankCell(player)}
           ${tierCell}
@@ -1437,7 +1474,7 @@ export function renderFantasyPlayerPool(players, filter, context, priorSeasonSta
 // fantasyDraft.js); the queue's own top still-available legal pick outranks
 // the generic suggestedPick heuristic for the suggested-pick card, exactly
 // as it does for the demo's clock-expiry autopick in app.js.
-export function renderFantasyDraftSide({ members, draft, playerPool, myUserId, entries, queue }) {
+export function renderFantasyDraftSide({ members, draft, playerPool, myUserId, entries, queue, board, boardUi }) {
   const myRoster = draft.rosters?.[myUserId] ?? [];
   const draftedIds = new Set(
     Object.values(draft.rosters ?? {})
@@ -1447,11 +1484,17 @@ export function renderFantasyDraftSide({ members, draft, playerPool, myUserId, e
   const isMyTurn = draft.onClockUserId != null && draft.onClockUserId === myUserId;
   const queuedTop = topQueuedPick(queue, playerPool, myRoster, draftedIds);
   const suggested = queuedTop ?? suggestedPick(playerPool, myRoster, draftedIds);
+  const boardNote = board?.notes?.[String(suggested?.id)] ?? "";
   const context = { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null };
+  const rankedPool = rankDraftPool(playerPool, members?.length ?? 1);
 
+  // The board sits directly under the suggestion and above the queue: it is
+  // the thing a manager consults when the clock is running, and burying it
+  // below the squad list would make it the tab nobody scrolls to.
   return `
-    ${renderSuggestedPickCard(suggested, context, queuedTop != null)}
+    ${renderSuggestedPickCard(suggested, context, queuedTop != null, boardNote)}
     ${renderOnClockCard({ members, draft, myUserId, entries, isMyTurn })}
+    ${renderFantasyBoardPanel(board, rankedPool, { draftedIds, ...(boardUi ?? {}), compact: true })}
     <section class="card fantasy-feed-card">
       <h3 class="card__title">Recent picks</h3>
       <div data-fantasy-feed-list>${renderPickFeed(draft.picks, members)}</div>
@@ -1469,6 +1512,8 @@ export function renderFantasyDraftRoom({
   season = currentSeasonLabel(),
   priorSeasonStats,
   queue,
+  board,
+  boardUi,
 }) {
   const myRoster = draft.rosters?.[myUserId] ?? [];
   const draftedIds = new Set(
@@ -1488,6 +1533,7 @@ export function renderFantasyDraftRoom({
     suggestedId: suggested?.id ?? null,
     queuedIds: new Set(queue ?? []),
     leagueSize: members?.length ?? 1,
+    board,
   };
   const entries = draftOrderEntries(draft.memberIds, draft.round, draft.onClockUserId, draft.overallPick);
 
@@ -1496,7 +1542,7 @@ export function renderFantasyDraftRoom({
     <div data-fantasy-draftstatus>${renderDraftStatusCard({ members, draft, myUserId, season, entries })}</div>
     <div class="fantasy-draftgrid">
       <div class="fantasy-draftgrid__main">${renderFantasyPlayerPool(playerPool, filter, context, priorSeasonStats)}</div>
-      <div class="fantasy-draftgrid__side" data-fantasy-draft-side>${renderFantasyDraftSide({ members, draft, playerPool, myUserId, entries, queue })}</div>
+      <div class="fantasy-draftgrid__side" data-fantasy-draft-side>${renderFantasyDraftSide({ members, draft, playerPool, myUserId, entries, queue, board, boardUi })}</div>
     </div>`;
 }
 
