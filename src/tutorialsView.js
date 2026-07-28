@@ -9,8 +9,14 @@
 // Escaping every string through esc() even though today's content is static
 // authored copy: it is content data like any other, and the next tutorial's
 // author may paste something with an ampersand or a quote in it.
+//
+// A handful of the pieces below are exported purely so src/learnPageView.js
+// (the build-time static /learn/ pages) can reuse the EXACT same block markup
+// rather than growing a second copy that quietly drifts. That module overrides
+// only the resolver block, which is interactive here and expanded to all three
+// modes there; every other block type is literally this file's renderer.
 
-function esc(value) {
+export function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
     "<": "&lt;",
@@ -58,7 +64,7 @@ export function renderTutorialIndex(tutorials) {
 
 // -- Section blocks --------------------------------------------------------------
 
-function renderHeading(heading) {
+export function renderHeading(heading) {
   return heading ? `<h2 class="tutorial-heading">${esc(heading)}</h2>` : "";
 }
 
@@ -132,7 +138,7 @@ function renderTimelineSection(section) {
 // click-delegation pattern in wireLayoutControls, with the active mode read
 // straight off `state.resolverMode` (state.learn.resolverMode in app.js) -
 // no inline script, no onclick, exactly like every other in-panel control.
-const RESOLVER_MODE_ORDER = ["faab", "rolling", "reverse_standings"];
+export const RESOLVER_MODE_ORDER = ["faab", "rolling", "reverse_standings"];
 
 function renderResolverModeButtons(modes, activeMode) {
   return RESOLVER_MODE_ORDER.filter((key) => modes[key])
@@ -143,7 +149,7 @@ function renderResolverModeButtons(modes, activeMode) {
     .join("");
 }
 
-function renderResolverClaimsTable(target, claims) {
+export function renderResolverClaimsTable(target, claims) {
   const rows = (claims ?? [])
     .map(
       (claim) => `<tr>
@@ -165,7 +171,7 @@ function renderResolverClaimsTable(target, claims) {
     </div>`;
 }
 
-function renderResolverOutcomes(outcomes) {
+export function renderResolverOutcomes(outcomes) {
   const rows = (outcomes ?? [])
     .map((outcome) => {
       const won = outcome.result === "won";
@@ -213,7 +219,7 @@ function renderResolverSection(section, state) {
 
 // -- Top-level tutorial reader -----------------------------------------------------
 
-const SECTION_RENDERERS = {
+export const SECTION_RENDERERS = {
   prose: renderProseSection,
   callout: renderCalloutSection,
   states: renderStatesSection,
