@@ -65,6 +65,10 @@ export async function buildSeoPages({
   tutorials = TUTORIALS,
   origin = SITE_ORIGIN,
   now = new Date(),
+  // { key, host } for the anonymous Learn pageview beacon. Absent (the
+  // default) emits no script at all, which is what a local build without a
+  // PostHog config should do. See renderLearnBeacon in src/learnPageView.js.
+  analytics,
 } = {}) {
   if (!cssFile) throw new Error("buildSeoPages needs the built stylesheet path (cssFile)");
 
@@ -76,7 +80,7 @@ export async function buildSeoPages({
   const learnDir = path.join(outDir, LEARN_SEGMENT);
   await mkdir(learnDir, { recursive: true });
 
-  const indexHtml = renderLearnIndexPage({ pages, origin, cssFile, lastmod: learnLastmod });
+  const indexHtml = renderLearnIndexPage({ pages, origin, cssFile, lastmod: learnLastmod, analytics });
   const indexPath = path.join(learnDir, "index.html");
   await writeFile(indexPath, indexHtml, "utf8");
   written.push(indexPath);
@@ -84,7 +88,7 @@ export async function buildSeoPages({
   for (const page of pages) {
     const dir = path.join(learnDir, page.slug);
     await mkdir(dir, { recursive: true });
-    const html = renderLearnArticlePage({ page, pages, origin, cssFile, lastmod: learnLastmod });
+    const html = renderLearnArticlePage({ page, pages, origin, cssFile, lastmod: learnLastmod, analytics });
     const file = path.join(dir, "index.html");
     await writeFile(file, html, "utf8");
     written.push(file);

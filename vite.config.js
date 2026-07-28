@@ -1,6 +1,6 @@
 import { cp, mkdir } from "node:fs/promises";
 
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 
 import { TUTORIALS } from "./src/tutorials.js";
@@ -19,7 +19,7 @@ import { renderLearnArticlePage, renderLearnIndexPage, renderNoscriptLearnLinks 
 // rather than the JS module an `import "./styles.css"` would get.
 const DEV_CSS_FILE = "src/styles.css?direct";
 
-function seoLearnPages() {
+function seoLearnPages(analytics) {
   let cssFile = "";
   return {
     name: "seo-learn-pages",
@@ -43,8 +43,8 @@ function seoLearnPages() {
         const page = match[1] ? pages.find((candidate) => candidate.slug === match[1]) : null;
         if (match[1] && !page) return next();
         const html = page
-          ? renderLearnArticlePage({ page, pages, cssFile: DEV_CSS_FILE })
-          : renderLearnIndexPage({ pages, cssFile: DEV_CSS_FILE });
+          ? renderLearnArticlePage({ page, pages, cssFile: DEV_CSS_FILE, analytics })
+          : renderLearnIndexPage({ pages, cssFile: DEV_CSS_FILE, analytics });
         res.setHeader("Content-Type", "text/html");
         res.end(await server.transformIndexHtml(pathname, html));
       });
@@ -60,36 +60,44 @@ function seoLearnPages() {
 
     async closeBundle() {
       const { buildSeoPages } = await import("./scripts/build-seo-pages.mjs");
-      const { written } = await buildSeoPages({ outDir: "dist", cssFile });
+      const { written } = await buildSeoPages({ outDir: "dist", cssFile, analytics });
       this.info?.(`wrote ${written.length} files (learn pages + sitemap)`);
     },
   };
 }
 
-export default defineConfig({
-  base: "./",
-  plugins: [
-    svelte(),
-    seoLearnPages(),
-    {
-      name: "copy-runtime-assets",
-      async closeBundle() {
-        await mkdir("dist", { recursive: true });
-        await Promise.all([
-          cp("assets", "dist/assets", { recursive: true }),
-          cp("data", "dist/data", { recursive: true }),
-          cp("sw.js", "dist/sw.js"),
-          cp("site.webmanifest", "dist/site.webmanifest"),
-          cp("robots.txt", "dist/robots.txt"),
-          // sitemap.xml is deliberately NOT in this list, and no longer exists
-          // at the repo root: it is generated straight into dist by the
-          // seo-learn-pages plugin above, from the same TUTORIALS array the
-          // pages come from, so it cannot fall out of date with them.
-          // GitHub Pages custom domain: this file must ship in every deploy or
-          // the custom domain setting unsets itself on the next Pages publish.
-          cp("CNAME", "dist/CNAME"),
-        ]);
+export default defineConfig(({ mode }) => {
+  // The Learn pages are generated in Node, outside the client bundle, so
+  // import.meta.env is not available to them; the same two public client
+  // tokens the app uses are read explicitly here and handed to the renderers.
+  const env = loadEnv(mode, process.cwd(), "VITE_");
+  const analytics = { key: env.VITE_POSTHOG_KEY, host: env.VITE_POSTHOG_HOST };
+
+  return {
+    base: "./",
+    plugins: [
+      svelte(),
+      seoLearnPages(analytics),
+      {
+        name: "copy-runtime-assets",
+        async closeBundle() {
+          await mkdir("dist", { recursive: true });
+          await Promise.all([
+            cp("assets", "dist/assets", { recursive: true }),
+            cp("data", "dist/data", { recursive: true }),
+            cp("sw.js", "dist/sw.js"),
+            cp("site.webmanifest", "dist/site.webmanifest"),
+            cp("robots.txt", "dist/robots.txt"),
+            // sitemap.xml is deliberately NOT in this list, and no longer exists
+            // at the repo root: it is generated straight into dist by the
+            // seo-learn-pages plugin above, from the same TUTORIALS array the
+            // pages come from, so it cannot fall out of date with them.
+            // GitHub Pages custom domain: this file must ship in every deploy or
+            // the custom domain setting unsets itself on the next Pages publish.
+            cp("CNAME", "dist/CNAME"),
+          ]);
+        },
       },
-    },
-  ],
+    ],
+  };
 });

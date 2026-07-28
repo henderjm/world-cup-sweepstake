@@ -394,9 +394,14 @@ export function renderDemoReportCard({ reportCard, isSignedIn = false, shareStat
       )
     : factCard("Worst injury luck", "Clean bill of health", "Nobody on your squad missed time");
 
+  // data-demo-real-league is an analytics marker only; data-section-nav still
+  // does the actual navigating. Kept as a separate attribute rather than a new
+  // nav value so the routing behaviour is untouched, and carrying the
+  // destination because the signed-out path detours through sign-in and is a
+  // materially harder conversion than the signed-in one.
   const createLeagueButton = isSignedIn
-    ? `<button class="btn btn--primary" type="button" data-section-nav="fantasy">Create a real league</button>`
-    : `<button class="btn btn--primary" type="button" data-section-nav="you">Create a real league</button>`;
+    ? `<button class="btn btn--primary" type="button" data-section-nav="fantasy" data-demo-real-league="fantasy">Create a real league</button>`
+    : `<button class="btn btn--primary" type="button" data-section-nav="you" data-demo-real-league="you">Create a real league</button>`;
 
   return `
     <div class="demo-report">
