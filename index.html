@@ -64,6 +64,7 @@
         .noscript-fallback h1 { color: #c8f542; font-size: 28px; margin: 0 0 16px; }
         .noscript-fallback p { line-height: 1.5; color: #8b95a0; }
         .noscript-fallback ul { line-height: 1.7; padding-left: 20px; }
+        .noscript-fallback a { color: #c8f542; }
       </style>
       <div class="noscript-fallback">
         <div class="noscript-fallback__inner">
@@ -82,6 +83,11 @@
             <li>Top scorer and assist charts</li>
           </ul>
           <p>Please enable JavaScript in your browser to use the app.</p>
+          <!-- Replaced at build time by vite.config.js's seo-learn-pages plugin
+               with a link per tutorial in src/tutorials.js. Generated rather
+               than hand-written so a new tutorial cannot be left unlinked; it
+               is the crawl path into /learn/ that needs no JavaScript. -->
+          <!--seo:learn-links-->
         </div>
       </div>
     </noscript>

@@ -696,6 +696,11 @@ button { font-family: inherit; cursor: pointer; }
   border-top: 1px solid rgb(255 255 255 / 0.06);
   padding-top: 14px;
 }
+/* Second footer line: links out to the pre-rendered /learn/ guides. It sits
+   directly under the credits line, so it drops the rule the first line draws. */
+.footer__learn { border-top: none; padding-top: 6px; }
+.footer__learn a { color: var(--muted); font-weight: 700; }
+.footer__learn a:hover { color: var(--accent); }
 
 /* Mobile bottom nav -------------------------------------------------------------------------------- */
 
@@ -2803,4 +2808,119 @@ button { font-family: inherit; cursor: pointer; }
   .fantasy-feed-send { width: 100%; }
   .fantasy-recap-result { grid-template-columns: 1fr auto; row-gap: 2px; }
   .fantasy-recap-result span:last-child { grid-column: 1; text-align: left; }
+}
+
+/* Static Learn pages (/learn/) ------------------------------------------------------
+   The build-time pre-rendered tutorial pages (src/learnPageView.js) reuse this
+   whole stylesheet so they look like the product rather than a bare document.
+   Only the bits the app shell provides in markup need adding here: a nav that
+   survives without the mobile bottom bar, breadcrumbs, the calls to action and
+   the stacked (non-interactive) resolver. Nothing below is used by the app
+   itself. Every rule keeps to the existing tokens; no new colours. */
+
+.learnpage-nav { display: flex; flex-wrap: wrap; gap: 4px; margin-left: 12px; }
+.learnpage-nav .navbtn { text-decoration: none; }
+
+.learnpage-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.learnpage-cta:hover { background: var(--accent-2); border-color: var(--accent-2); color: var(--accent-ink); }
+.learnpage-cta--nav { padding: 7px 14px; font-size: 12.5px; }
+.learnpage-cta--ghost { background: transparent; border-color: var(--line-2); color: var(--text); }
+.learnpage-cta--ghost:hover { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
+
+/* The article column is .tutorial (max-width 720px, centred), so the crumbs
+   line up with it rather than with the full-bleed .main container. */
+.learnpage-crumbs {
+  max-width: 720px;
+  margin: 0 auto 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.learnpage-crumbs a { color: var(--muted); }
+.learnpage-crumbs a:hover { color: var(--accent); }
+.learnpage-crumbs__sep { color: var(--faint); }
+
+.learnpage-article { padding-bottom: 8px; }
+
+/* No mobile bottom nav on these pages, so the app footer's 90px clearance for
+   it would just be dead space. */
+.learnpage-footer { padding-bottom: 34px; }
+.learnpage-footer a { font-weight: 700; }
+
+/* Stacked resolver: three cards, one per waiver mode, instead of the app's
+   three-way toggle. */
+.learnpage-resolver { margin-top: 14px; }
+.learnpage-resolver__label {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fantasy-accent);
+}
+
+.learnpage-cta-card {
+  margin-top: 30px;
+  padding: 20px;
+  border-color: var(--accent-line);
+  background: linear-gradient(180deg, var(--accent-soft), transparent 70%), var(--surface);
+}
+.learnpage-cta-card__title {
+  margin: 0 0 8px;
+  font-size: 19px;
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+}
+.learnpage-cta-card__row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.learnpage-cta-card__note { margin-top: 12px; }
+
+.learnpage-more { margin-top: 34px; }
+.learnpage-more__card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: inherit;
+  margin-top: 10px;
+}
+.learnpage-more__card:hover { border-color: var(--accent-line); }
+.learnpage-more__title { font-size: 14px; font-weight: 800; }
+.learnpage-more__all { margin-top: 12px; }
+
+/* Index cards are anchors here rather than the app's buttons, so they need the
+   link colour reset the .tutorial-card button never did. */
+.learnpage-card { color: inherit; }
+.learnpage-card .card__title { margin: 0; }
+
+/* Narrow screens: the app hides .topnav__sections here and moves navigation to
+   the fixed bottom bar, which these pages do not have. Wrapping the header
+   instead keeps every link reachable, and it matters because brand plus three
+   links plus the CTA on one row overflows 375px horizontally. */
+@media (max-width: 760px) {
+  .shell--learnpage .topnav { flex-wrap: wrap; gap: 8px; }
+  .shell--learnpage .topnav__spacer { display: none; }
+  .shell--learnpage .main { padding-bottom: 40px; }
+  .learnpage-nav { order: 3; width: 100%; margin-left: 0; }
+  .learnpage-cta--nav { margin-left: auto; }
 }

@@ -34,6 +34,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history rather than the default depth-1 clone. The build
+          # derives each sitemap lastmod from the commit that last touched the
+          # content (scripts/build-seo-pages.mjs); a shallow clone usually does
+          # not contain that commit, so every URL would quietly fall back to
+          # the build date. This repo is a few MiB, so the cost is negligible.
+          fetch-depth: 0
       - name: Set up Node
         uses: actions/setup-node@v4
         with:

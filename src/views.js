@@ -2,6 +2,8 @@ import { abbrFor, badgeFor } from "./badges.js";
 import { COMPETITIONS } from "./competitions.js";
 import { compareByGoals, compareByInvolvements } from "./scorers.js";
 import { dateLabel, dayLabel, formatStage, isFinished, isLive, statusLabel } from "./format.js";
+import { learnPages } from "./learnSeo.js";
+import { TUTORIALS } from "./tutorials.js";
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -616,7 +618,21 @@ export function renderSignedIn(model, account, isFollowed) {
 
 // -- Footer ------------------------------------------------------------------------------------------------
 
+// The guide links are real anchors to the pre-rendered /learn/ pages, not
+// `data-tutorial-open` buttons, on purpose: those pages only rank if something
+// links to them, and this is the site-wide link that every rendered page
+// carries. Relative hrefs (no leading slash) so they keep resolving if the site
+// is ever served from a subpath again, matching vite's base: "./".
+// Derived from TUTORIALS, so a new tutorial appears here with no edit.
+function footerLearnLinks() {
+  const links = learnPages(TUTORIALS)
+    .map((page) => `<a href="learn/${esc(page.slug)}/">${esc(page.tutorial.title)}</a>`)
+    .join(" · ");
+  return links ? `<p class="footer__learn">Guides: ${links} · <a href="learn/">all guides</a></p>` : "";
+}
+
 export function renderFooter(model) {
   return `
-    <p>Data: ${esc(model.source)}${model.lastUpdated ? ` · updated ${dateLabel(model.lastUpdated)}` : ""} · Kickoff Draft is a Goon Squad production · Not affiliated with the Premier League or UEFA.</p>`;
+    <p>Data: ${esc(model.source)}${model.lastUpdated ? ` · updated ${dateLabel(model.lastUpdated)}` : ""} · Kickoff Draft is a Goon Squad production · Not affiliated with the Premier League or UEFA.</p>
+    ${footerLearnLinks()}`;
 }
