@@ -70,7 +70,25 @@ jobs:
           key: api-football-data-2026-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             api-football-data-2026-
+      # Scheduled and manual runs only, never a push.
+      #
+      # A push changes CODE, not match data, and the cache restore above already
+      # carries the previous bake's data into the build, so a deploy ships fresh
+      # code against data at most an hour old. Re-fetching on every push bought
+      # nothing and was expensive: one bake costs roughly 180 upstream calls
+      # against a 7,500/day plan, so five deploys in a day spent about 900
+      # calls, 12% of the allowance, refreshing data nobody had asked for. Worse,
+      # it coupled spend to deploy frequency, so a busy development day could
+      # exhaust the allowance and take live scores and fantasy scoring with it.
+      #
+      # Measured, not assumed: two pushes on 28 July 2026 triggered bakes at
+      # 12:31 and 12:39, and a five-minute sample spanning one of them showed
+      # 181 calls against an otherwise idle Worker.
+      #
+      # The hourly scheduled run through the 11:00-22:00 match window is
+      # unchanged and remains the static fallback's real refresh.
       - name: Fetch live competition data
+        if: github.event_name != 'push'
         run: npm run fetch:live
         env:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
@@ -79,6 +97,7 @@ jobs:
       # Fantasy draft pool (Phase 4). The cached file and script freshness guard make
       # this a daily upstream refresh even though the Pages job runs more frequently.
       - name: Fetch fantasy player pool
+        if: github.event_name != 'push'
         run: npm run fetch:fantasy-players
         env:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
