@@ -16,7 +16,8 @@
 //   - Errors are generic; no token or upstream detail is leaked.
 //
 // Endpoints: GET /:comp/live (and legacy /live for the default competition),
-// GET /match/:id, GET /analysis/:id, GET /health. Match-scoped routes take no
+// GET /match/:id, GET /analysis/:id, GET /health, GET /health/draft-ready and
+// GET /health/quota (upstream call accounting). Match-scoped routes take no
 // competition segment: API-Football fixture ids are globally unique, so ids are
 // validated against the union of all configured competitions' fixtures.
 
@@ -35,6 +36,7 @@ import {
 import { isLive } from "../src/format.js";
 import {
   MATCH_DETAIL_LIVE,
+  matchDetailBrowserMaxAge,
   matchDetailCacheProfile,
 } from "../src/matchDetailCache.js";
 import {
@@ -96,6 +98,16 @@ import {
   buildRecapPrompt,
   mergeRecap,
 } from "../src/fantasyRecapPrompt.js";
+import { endpointFamily } from "../src/apiQuota.js";
+import {
+  bufferSize,
+  bufferUsage,
+  buildQuotaReport,
+  chunkRows,
+  createUsageBuffer,
+  drainUsage,
+  usageDay,
+} from "../src/apiQuotaStore.js";
 
 export { FantasyDraftRoom } from "./draftRoom.js";
 
@@ -165,9 +177,17 @@ async function findKnownMatch(competitions, id, token) {
 
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const cors = corsHeaders(request);
+
+    // Writes out what EARLIER requests on this isolate recorded about upstream
+    // API-Football usage. At the top and handed to waitUntil on purpose: it
+    // must never sit between a user and their response, and by definition it
+    // only ever flushes calls that have already completed. No-ops unless the
+    // buffer is due, so this is a couple of comparisons on most requests. See
+    // runScheduledApiUsage for the cron's own forced flush.
+    ctx?.waitUntil?.(flushApiUsage(env));
 
     if (request.method === "OPTIONS") return new Response(null, { headers: cors });
 
@@ -325,6 +345,14 @@ export default {
       return handleDraftReadyHealth(env, cors);
     }
 
+    // Above the same guard, for the same reason plus one of its own: the
+    // question this answers is "how much of the paid API-Football allowance is
+    // left", and a deployment that has lost its key is exactly when someone
+    // wants to look.
+    if (url.pathname === "/health/quota" && request.method === "GET") {
+      return handleQuotaHealth(env, cors);
+    }
+
     const token = env.API_FOOTBALL_KEY;
     if (!token) return json({ error: "service not configured" }, 500, cors);
     const competitions = parseCompetitions(env);
@@ -378,8 +406,10 @@ export default {
         const profile = matchDetailCacheProfile(known);
         const detail = await fetchMatchDetail(id, token, profile);
         // The browser cache window follows the same reasoning as the edge one:
-        // a finished match does not need re-fetching every 25 seconds.
-        const browserMaxAge = profile === MATCH_DETAIL_LIVE ? 25 : 300;
+        // a finished match does not need re-fetching every 25 seconds. A read
+        // that degraded is capped much shorter so a transient upstream fault
+        // cannot outlive itself in every reader's cache.
+        const browserMaxAge = matchDetailBrowserMaxAge(profile, Boolean(detail.degraded));
         return json(detail, 200, { ...cors, "Cache-Control": `public, max-age=${browserMaxAge}` });
       }
 
@@ -438,6 +468,13 @@ export default {
         // have written, so trailing it is what lets a recap describe the
         // gameweek that settled this very tick.
         await runCronPass("league-recaps", () => runScheduledLeagueRecaps(env));
+        // Dead last, after the recap. Every pass above spends API-Football
+        // calls, so running the flush behind all of them is what lets one tick
+        // record its own spend instead of leaving it for the next one. It is
+        // also the pass that must never sit upstream of anything: analytics
+        // failing is a blank chart, whereas scoring or waivers failing corrupts
+        // a season.
+        await runCronPass("api-usage", () => runScheduledApiUsage(env));
       })(),
     );
   },
@@ -4324,11 +4361,47 @@ function corsHeaders(request) {
 async function fetchMatchDetail(id, token, profile = MATCH_DETAIL_LIVE) {
   // Interactive detail reads include the fixture endpoint for half-time scores and
   // referee data.
+  //
+  // Exactly one of these four is load-bearing. The fixture payload IS the
+  // match: without it there are no teams, no kickoff and no venue to describe,
+  // so it stays strict and a failure there is still a 502. The other three are
+  // supplementary, and for a fixture that has not kicked off they have nothing
+  // to contribute anyway. Failing the whole read on one of them was the bug:
+  // any single upstream hiccup, error-shaped payload or per-minute rate limit
+  // on lineups, events or player stats threw away the fixture payload that had
+  // already arrived and turned an openable pre-match drawer into a 502. Note
+  // that an EMPTY payload was never the problem: results:0 with response:[]
+  // maps cleanly to a detail with no timeline, which is the correct pre-match
+  // answer and is what a healthy upstream returns for an unplayed fixture.
+  const degraded = [];
   const fixture = await fetchJson(`/fixtures?id=${id}`, token, profile.fixture);
-  const lineups = await fetchJson(`/fixtures/lineups?fixture=${id}`, token, profile.lineups);
-  const events = await fetchJson(`/fixtures/events?fixture=${id}`, token, profile.events);
-  const players = await fetchJson(`/fixtures/players?fixture=${id}`, token, profile.players);
-  return mapApiFootballMatchDetail(fixture, lineups, events, players);
+  const lineups = await fetchSupplementaryJson(`/fixtures/lineups?fixture=${id}`, token, profile.lineups, degraded);
+  const events = await fetchSupplementaryJson(`/fixtures/events?fixture=${id}`, token, profile.events, degraded);
+  const players = await fetchSupplementaryJson(`/fixtures/players?fixture=${id}`, token, profile.players, degraded);
+  const detail = mapApiFootballMatchDetail(fixture, lineups, events, players);
+  // Present only when something actually degraded, so a healthy read keeps the
+  // exact shape the baked static files carry. It names the endpoint rather
+  // than setting a bare flag because the whole reason this was hard to
+  // diagnose was not knowing WHICH of the four was failing.
+  return degraded.length ? { ...detail, degraded } : detail;
+}
+
+// A supplementary payload that came back empty and one that could not be
+// fetched are the same thing to the mapper, and deliberately so: both mean
+// "nothing to show here". They are not the same thing to an operator, which is
+// why the failure is logged with its endpoint and reason and surfaced on the
+// response. The fetch is still recorded as spend by fetchJson before it throws.
+const EMPTY_API_PAYLOAD = Object.freeze({ response: [] });
+
+async function fetchSupplementaryJson(path, token, cacheTtl, degraded) {
+  try {
+    return await fetchJson(path, token, cacheTtl);
+  } catch (error) {
+    const family = endpointFamily(path);
+    degraded.push(family);
+    console.warn(`match detail: ${family} unavailable, serving empty`, error?.message ?? error);
+    return EMPTY_API_PAYLOAD;
+  }
 }
 
 async function fetchLiveMatchDetail(summary, token) {
@@ -4348,8 +4421,162 @@ async function fetchJson(path, token, cacheTtl) {
     headers: { "x-apisports-key": token },
     cf: { cacheTtl, cacheEverything: true },
   });
+  // Recorded here and nowhere else: this is the single chokepoint every
+  // upstream call passes through, so anything measured further out would be a
+  // second count to keep in step with this one. Deliberately BEFORE the status
+  // check, because a call that came back 500 was still a call: dropping the
+  // failures would make the budget look healthiest exactly when upstream is
+  // sick and the retries are stacking up.
+  recordUpstreamUsage(path, response);
   if (!response.ok) throw new Error(`upstream ${response.status}`);
   return assertApiFootballPayload(await response.json());
+}
+
+// -- API-Football quota analytics ---------------------------------------------
+// The maths is in src/apiQuota.js and the buffering in src/apiQuotaStore.js;
+// this is only the wiring. See GET /health/quota for the read side.
+//
+// A flush is never on a user's critical path: recording is an in-memory counter
+// bump, and the write is handed to waitUntil at the TOP of a later request, so
+// by the time it runs it can only be flushing work that has already finished.
+
+const usageBuffer = createUsageBuffer();
+const USAGE_FLUSH_INTERVAL_MS = 30 * 1000;
+// A busy isolate should not sit on half a minute of records, so size forces a
+// flush too. Well below the buffer's key cap: this counts calls, not keys.
+const USAGE_FLUSH_MAX_RECORDS = 200;
+const USAGE_RETENTION_DAYS = 14;
+let usageFlushedAt = 0;
+let usageFlushInFlight = null;
+
+function recordUpstreamUsage(path, response) {
+  try {
+    bufferUsage(usageBuffer, {
+      path,
+      cacheStatus: response.headers.get("cf-cache-status"),
+      headers: response.headers,
+      at: Date.now(),
+    });
+  } catch {
+    // Measurement must never break the thing it is measuring. A lost record
+    // undercounts a chart; a throw here would fail a real user's request.
+  }
+}
+
+// No-ops unless there is something to write, somewhere to write it, and the
+// buffer is actually due. Concurrent callers share one in-flight flush rather
+// than each draining a slice, which keeps the writes to one per interval.
+async function flushApiUsage(env, { force = false } = {}) {
+  if (!env?.DB) return;
+  const size = bufferSize(usageBuffer);
+  if (!size) return;
+  const due = force || size >= USAGE_FLUSH_MAX_RECORDS || Date.now() - usageFlushedAt >= USAGE_FLUSH_INTERVAL_MS;
+  if (!due) return;
+  if (usageFlushInFlight) return usageFlushInFlight;
+
+  usageFlushedAt = Date.now();
+  usageFlushInFlight = writeApiUsage(env).finally(() => {
+    usageFlushInFlight = null;
+  });
+  return usageFlushInFlight;
+}
+
+async function writeApiUsage(env) {
+  // Drained, not copied: a write that fails takes its records with it, which
+  // undercounts. Retrying a copy would risk counting the same calls twice, and
+  // an overcount is the direction that makes the projection cry wolf.
+  const { rows, quota } = drainUsage(usageBuffer);
+  if (!rows.length && !quota.length) return;
+  try {
+    const statements = [];
+    // Chunked even though a drain is realistically a handful of rows: D1's
+    // 100 bound-parameter limit is a cliff, not a slowdown.
+    for (const chunk of chunkRows(rows, 4)) {
+      for (const row of chunk) {
+        statements.push(
+          env.DB.prepare(
+            `INSERT INTO api_usage_daily (day, endpoint, upstream, calls) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(day, endpoint, upstream) DO UPDATE SET calls = calls + excluded.calls`,
+          ).bind(row.day, row.endpoint, row.upstream ? 1 : 0, row.count),
+        );
+      }
+    }
+    for (const entry of quota) {
+      // MIN on remaining: within a UTC day the provider's counter only falls,
+      // so a higher reading arriving late (another isolate flushing out of
+      // order) must not make the gauge appear to refill.
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO api_usage_quota (day, daily_limit, daily_remaining, updated_at)
+           VALUES (?1, ?2, ?3, datetime('now'))
+           ON CONFLICT(day) DO UPDATE SET
+             daily_limit = COALESCE(excluded.daily_limit, api_usage_quota.daily_limit),
+             daily_remaining = MIN(COALESCE(api_usage_quota.daily_remaining, excluded.daily_remaining), excluded.daily_remaining),
+             updated_at = datetime('now')`,
+        ).bind(entry.day, entry.dailyLimit, entry.dailyRemaining),
+      );
+    }
+    if (statements.length) await env.DB.batch(statements);
+  } catch (error) {
+    console.error("api usage flush failed", error?.message ?? error);
+  }
+}
+
+// Retention runs on the cron rather than on the flush path: it is a whole-table
+// delete and has no business happening behind a user's request.
+async function pruneApiUsage(env) {
+  if (!env?.DB) return;
+  const cutoff = usageDay(Date.now() - USAGE_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  if (!cutoff) return;
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM api_usage_daily WHERE day < ?1`).bind(cutoff),
+    env.DB.prepare(`DELETE FROM api_usage_quota WHERE day < ?1`).bind(cutoff),
+  ]);
+}
+
+// The cron's own analytics pass. Forces a flush (the tick is a minute apart, so
+// waiting for the interval would mean the cron's own upstream calls, which are
+// the bulk of the spend on a quiet day, sat unrecorded until a visitor arrived)
+// and then prunes.
+async function runScheduledApiUsage(env) {
+  await flushApiUsage(env, { force: true });
+  await pruneApiUsage(env);
+}
+
+// Unauthenticated and read-only, the same call as /health/draft-ready: the body
+// is aggregate call counts and the provider's own allowance, with no user data
+// and nothing that helps an attacker. Making it require a session would mean
+// the one view that says "the budget is about to run out" is unavailable from
+// a phone at the moment it matters.
+async function handleQuotaHealth(env, cors) {
+  if (!env.DB) return json({ error: "usage analytics not configured" }, 501, cors);
+  const now = Date.now();
+  const day = usageDay(now);
+  try {
+    // Flushed first so the report includes this isolate's own buffer rather
+    // than reading a picture up to half a minute stale.
+    await flushApiUsage(env, { force: true });
+    const [usage, quota] = await Promise.all([
+      env.DB.prepare(`SELECT endpoint, upstream, calls FROM api_usage_daily WHERE day = ?1`).bind(day).all(),
+      env.DB.prepare(`SELECT daily_limit, daily_remaining FROM api_usage_quota WHERE day = ?1`).bind(day).first(),
+    ]);
+    const rows = (usage.results ?? []).map((row) => ({
+      endpoint: row.endpoint,
+      upstream: row.upstream === 1,
+      count: row.calls,
+    }));
+    const report = buildQuotaReport({
+      rows,
+      quota: quota ? { dailyLimit: quota.daily_limit, dailyRemaining: quota.daily_remaining } : null,
+      now,
+    });
+    return json(report, 200, { ...cors, "Cache-Control": "no-store" });
+  } catch (error) {
+    // Almost always "the tables have not been applied to this database yet",
+    // which is worth saying rather than returning a 502 that reads like the
+    // football feed is down.
+    return json({ error: "usage analytics unavailable", detail: String(error?.message ?? error) }, 503, cors);
+  }
 }
 
 function json(body, status = 200, extra = {}) {

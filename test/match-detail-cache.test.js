@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  MATCH_DETAIL_DEGRADED_MAX_AGE,
   MATCH_DETAIL_FINISHED,
   MATCH_DETAIL_IMMINENT_MS,
   MATCH_DETAIL_LIVE,
+  MATCH_DETAIL_LIVE_MAX_AGE,
+  MATCH_DETAIL_RESTING_MAX_AGE,
   MATCH_DETAIL_UPCOMING,
+  matchDetailBrowserMaxAge,
   matchDetailCacheProfile,
 } from "../src/matchDetailCache.js";
 
@@ -91,4 +95,26 @@ test("the cheap profiles really are cheaper than the live one on every payload",
     assert.ok(MATCH_DETAIL_FINISHED[key] >= MATCH_DETAIL_LIVE[key], `${key} not longer when finished`);
     assert.ok(MATCH_DETAIL_UPCOMING[key] >= MATCH_DETAIL_LIVE[key], `${key} not longer when upcoming`);
   }
+});
+
+// -- the browser window, and what a degraded read does to it ------------------
+
+test("the browser holds a resting match far longer than a live one", () => {
+  assert.equal(matchDetailBrowserMaxAge(MATCH_DETAIL_LIVE), MATCH_DETAIL_LIVE_MAX_AGE);
+  assert.equal(matchDetailBrowserMaxAge(MATCH_DETAIL_UPCOMING), MATCH_DETAIL_RESTING_MAX_AGE);
+  assert.equal(matchDetailBrowserMaxAge(MATCH_DETAIL_FINISHED), MATCH_DETAIL_RESTING_MAX_AGE);
+});
+
+test("a degraded read is cached briefly so an upstream blip cannot outlive itself", () => {
+  // Without this, a five-minute window would leave every reader who opened the
+  // drawer during the blip looking at an empty timeline long after the data
+  // came back.
+  assert.equal(matchDetailBrowserMaxAge(MATCH_DETAIL_UPCOMING, true), MATCH_DETAIL_DEGRADED_MAX_AGE);
+  assert.equal(matchDetailBrowserMaxAge(MATCH_DETAIL_FINISHED, true), MATCH_DETAIL_DEGRADED_MAX_AGE);
+});
+
+test("a degraded live read is never cached LONGER than a healthy one", () => {
+  // The live window is already shorter than the degraded cap, so degrading
+  // must not accidentally relax it.
+  assert.ok(matchDetailBrowserMaxAge(MATCH_DETAIL_LIVE, true) <= matchDetailBrowserMaxAge(MATCH_DETAIL_LIVE));
 });
