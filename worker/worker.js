@@ -76,6 +76,12 @@ import {
   waiverRunWindow,
 } from "../src/fantasyWaivers.js";
 import { lineupChangedPlayerIds, lockedPlayerIds, playerLockState } from "../src/fantasyLocks.js";
+import {
+  botSubPatternForLeague,
+  isRealGoogleSub,
+  planBotSeats,
+  seatSummary,
+} from "../src/fantasyBots.js";
 import { dueDraftReminder, validateDraftSchedule } from "../src/fantasyScheduling.js";
 import { blendWithCurrentSeason } from "../src/fantasyExpectedPoints.js";
 import {
@@ -247,6 +253,33 @@ export default {
     }
     if (url.pathname === "/fantasy/leagues/join" && request.method === "POST") {
       return handleFantasyLeagueJoin(request, env, cors);
+    }
+    // The one PUBLIC fantasy route, and deliberately so: a shared invite link
+    // has to show what is being joined BEFORE asking anyone to sign in, or the
+    // sign-in wall is the first thing a prospective manager meets and the link
+    // does not convert. Read-only, no ids, no email addresses. See
+    // handleFantasyInvitePreview for what the invite code itself is trusted to
+    // be worth.
+    const fantasyInviteRoute = url.pathname.match(/^\/fantasy\/invite\/([A-Za-z0-9]{1,16})$/);
+    if (fantasyInviteRoute && request.method === "GET") {
+      return handleFantasyInvitePreview(env, fantasyInviteRoute[1], cors);
+    }
+    // Bot managers filling empty seats. Commissioner-only and pending-only;
+    // see handleFantasyBotsAdd for why that pair of checks is the whole
+    // security surface here.
+    const fantasyBotsRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/bots$/);
+    if (fantasyBotsRoute && request.method === "POST") {
+      return handleFantasyBotsAdd(request, env, Number(fantasyBotsRoute[1]), cors);
+    }
+    const fantasyBotRemoveRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/bots\/(\d+)$/);
+    if (fantasyBotRemoveRoute && request.method === "DELETE") {
+      return handleFantasyBotRemove(
+        request,
+        env,
+        Number(fantasyBotRemoveRoute[1]),
+        Number(fantasyBotRemoveRoute[2]),
+        cors,
+      );
     }
     const fantasyDraftWsRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/draft\/ws$/);
     if (fantasyDraftWsRoute && request.method === "GET") {
@@ -751,6 +784,14 @@ async function handleGoogleAuth(request, env, cors) {
   ) {
     return json({ error: "invalid credential" }, 401, cors);
   }
+  // The users table also holds bot managers (src/fantasyBots.js), whose
+  // google_sub is "bot:<leagueId>:<random>". The upsert below is keyed on
+  // google_sub, so a sub outside Google's own decimal-digit namespace must
+  // never reach it: it would match an existing bot row and issue a real
+  // session for it. Google cannot produce such a sub, which is exactly why
+  // that namespace was chosen, but "an identity provider will never return an
+  // unexpected shape" is not a thing to leave a session mint resting on.
+  if (!isRealGoogleSub(info.sub)) return json({ error: "invalid credential" }, 401, cors);
 
   try {
     await env.DB.prepare(
@@ -1047,6 +1088,233 @@ async function handleFantasyLeagueJoin(request, env, cors) {
   }
 }
 
+// -- Bot managers (empty-seat fill) ---------------------------------------------
+//
+// The authorization story, stated once because it is the only thing here worth
+// getting wrong: "a commissioner can add a bot" must never become "anyone can
+// add a member to any league". Both routes below therefore resolve user.id from
+// the session and then check TWO things against the league row itself, in this
+// order: the caller IS that league's commissioner, and the draft is still
+// pending. Nothing is ever read from the request body except a seat count.
+// There is no path here that adds a HUMAN to a league, which is the property
+// that keeps this feature from becoming a membership-injection route.
+//
+// A bot is a users row whose google_sub is outside Google's namespace (see
+// src/fantasyBots.js). Nothing else about it is special: it takes a draft slot,
+// its clock expires into the existing autopick, and resolveEffectiveLineup
+// gives it a legal XI without a row anywhere.
+
+const MAX_BOTS_PER_REQUEST = MAX_LEAGUE_SIZE;
+
+function botToken() {
+  const bytes = new Uint8Array(6);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Deletes any bot users row for this league that holds no membership. Two
+// things create one: a seat insert that lost a race with a real join (the
+// guarded INSERT below simply changes nothing rather than erroring), and a
+// removed bot, whose users row should go with its seat.
+//
+// Scoped by google_sub's per-league prefix AND is_bot, so it can never reach a
+// human or another league's bot. Both callers require draft_status = 'pending',
+// which is what makes deleting the row safe: fantasy_draft_picks and
+// fantasy_rosters cascade from users(id), and a pending league has neither.
+async function sweepOrphanBots(env, leagueId) {
+  await env.DB.prepare(
+    `DELETE FROM users WHERE is_bot = 1 AND google_sub LIKE ?1
+     AND id NOT IN (SELECT user_id FROM fantasy_league_members WHERE league_id = ?2)`,
+  )
+    .bind(botSubPatternForLeague(leagueId), leagueId)
+    .run();
+}
+
+async function handleFantasyBotsAdd(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "bad body" }, 400, cors);
+  }
+  const count = Number(body?.count);
+  if (!Number.isInteger(count) || count < 1 || count > MAX_BOTS_PER_REQUEST) {
+    return json({ error: "bad bot count" }, 400, cors);
+  }
+
+  try {
+    const league = await env.DB.prepare(
+      `SELECT commissioner_user_id, draft_status FROM fantasy_leagues WHERE id = ?1`,
+    )
+      .bind(leagueId)
+      .first();
+    if (!league) return json({ error: "unknown league" }, 404, cors);
+    if (league.commissioner_user_id !== user.id) return json({ error: "commissioner only" }, 403, cors);
+    if (league.draft_status !== "pending") return json({ error: "draft already started" }, 400, cors);
+
+    const members = await env.DB.prepare(
+      `SELECT u.name, u.email FROM fantasy_league_members m JOIN users u ON u.id = m.user_id
+       WHERE m.league_id = ?1`,
+    )
+      .bind(leagueId)
+      .all();
+    const existing = members.results ?? [];
+    const plan = planBotSeats({
+      leagueId,
+      memberCount: existing.length,
+      requested: count,
+      maxLeagueSize: MAX_LEAGUE_SIZE,
+      takenNames: existing.map((row) => row.name).filter(Boolean),
+      makeToken: botToken,
+    });
+    if (!plan.ok) return json({ error: plan.error }, 400, cors);
+
+    const added = [];
+    for (const seat of plan.seats) {
+      const insert = await env.DB.prepare(
+        `INSERT INTO users (google_sub, email, name, is_bot) VALUES (?1, ?2, ?3, 1)`,
+      )
+        .bind(seat.googleSub, seat.email, seat.name)
+        .run();
+      const botUserId = insert.meta?.last_row_id;
+      // The same guarded INSERT...SELECT the human join path uses, for the same
+      // reason: the seat count is re-evaluated inside the one atomic statement,
+      // so a real manager joining between the plan above and this write cannot
+      // be pushed out of the league by a bot.
+      const seated = await env.DB.prepare(
+        `INSERT INTO fantasy_league_members (league_id, user_id)
+         SELECT ?1, ?2 WHERE (SELECT COUNT(*) FROM fantasy_league_members WHERE league_id = ?1) < ?3`,
+      )
+        .bind(leagueId, botUserId, MAX_LEAGUE_SIZE)
+        .run();
+      if ((seated.meta?.changes ?? 0) === 0) break; // filled up underneath us; sweep cleans the row
+      added.push(seat.name);
+    }
+
+    await sweepOrphanBots(env, leagueId);
+    if (!added.length) return json({ error: "This league is already full." }, 400, cors);
+
+    await postLeagueEvent(env, leagueId, CHAT_EVENTS.BOTS_ADDED, {
+      actor: memberDisplayName(user),
+      count: added.length,
+      bots: added,
+    });
+
+    return json({ league: await fantasyLeagueSummary(env, leagueId), added }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// Removing a bot is the same authorization pair plus one more check that
+// matters as much: the target must actually BE a bot and actually be in THIS
+// league. Without both, this route would be "the commissioner can evict any
+// member", which is a different feature with different consequences.
+async function handleFantasyBotRemove(request, env, leagueId, botUserId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const league = await env.DB.prepare(
+      `SELECT commissioner_user_id, draft_status FROM fantasy_leagues WHERE id = ?1`,
+    )
+      .bind(leagueId)
+      .first();
+    if (!league) return json({ error: "unknown league" }, 404, cors);
+    if (league.commissioner_user_id !== user.id) return json({ error: "commissioner only" }, 403, cors);
+    if (league.draft_status !== "pending") return json({ error: "draft already started" }, 400, cors);
+
+    const target = await env.DB.prepare(
+      `SELECT u.id, u.name FROM fantasy_league_members m JOIN users u ON u.id = m.user_id
+       WHERE m.league_id = ?1 AND m.user_id = ?2 AND u.is_bot = 1`,
+    )
+      .bind(leagueId, botUserId)
+      .first();
+    if (!target) return json({ error: "not a bot in this league" }, 404, cors);
+
+    await env.DB.prepare(`DELETE FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`)
+      .bind(leagueId, botUserId)
+      .run();
+    await sweepOrphanBots(env, leagueId);
+    await postLeagueEvent(env, leagueId, CHAT_EVENTS.BOT_REMOVED, {
+      actor: memberDisplayName(user),
+      bot: target.name,
+    });
+
+    return json({ league: await fantasyLeagueSummary(env, leagueId) }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// -- Public invite preview -------------------------------------------------------
+//
+// GET /fantasy/invite/:code. The only unauthenticated fantasy route.
+//
+// Why it is safe to serve this to a stranger: the invite code is already a
+// bearer capability worth strictly more than this payload. Anyone holding it
+// can sign in and JOIN, at which point they see the full member list, the feed
+// and every roster. Showing the league's name and its managers' display names
+// first therefore leaks nothing that the code did not already grant, and it is
+// what turns a shared link into a join instead of into a sign-in wall with no
+// explanation behind it.
+//
+// What it deliberately does NOT return: user ids, email addresses, the
+// commissioner's id, or the invite code echoed back. no-store because a shared
+// cache holding a semi-private league's roster is not worth the round trip it
+// saves.
+async function handleFantasyInvitePreview(env, rawCode, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const code = String(rawCode ?? "").trim().toUpperCase();
+  if (!code) return json({ error: "bad code" }, 400, cors);
+
+  try {
+    const league = await env.DB.prepare(
+      `SELECT id, name, draft_status, commissioner_user_id FROM fantasy_leagues WHERE invite_code = ?1`,
+    )
+      .bind(code)
+      .first();
+    if (!league) return json({ error: "unknown invite code" }, 404, cors);
+
+    const members = await env.DB.prepare(
+      `SELECT m.user_id, u.name, u.email, u.is_bot FROM fantasy_league_members m
+       JOIN users u ON u.id = m.user_id
+       WHERE m.league_id = ?1 ORDER BY m.joined_at`,
+    )
+      .bind(league.id)
+      .all();
+    const managers = (members.results ?? []).map((row) => ({
+      name: memberDisplayName(row),
+      isBot: Boolean(row.is_bot),
+      isCommissioner: row.user_id === league.commissioner_user_id,
+    }));
+
+    return json(
+      {
+        league: {
+          name: league.name,
+          draftStatus: league.draft_status,
+          // "joinable" is the server's answer, not something the client
+          // re-derives: the join route's own rule is pending-only, and two
+          // places computing "can I join this" would eventually disagree.
+          joinable: league.draft_status === "pending" && managers.length < MAX_LEAGUE_SIZE,
+          seats: seatSummary(managers, MAX_LEAGUE_SIZE),
+        },
+        managers,
+      },
+      200,
+      { ...cors, "Cache-Control": "no-store" },
+    );
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
 async function handleFantasyLeagueList(request, env, cors) {
   if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
   const user = await sessionUser(request, env);
@@ -1055,7 +1323,9 @@ async function handleFantasyLeagueList(request, env, cors) {
   try {
     const rows = await env.DB.prepare(
       `SELECT l.id, l.name, l.draft_status, l.commissioner_user_id,
-              (SELECT COUNT(*) FROM fantasy_league_members m WHERE m.league_id = l.id) AS member_count
+              (SELECT COUNT(*) FROM fantasy_league_members m WHERE m.league_id = l.id) AS member_count,
+              (SELECT COUNT(*) FROM fantasy_league_members m JOIN users u ON u.id = m.user_id
+                WHERE m.league_id = l.id AND u.is_bot = 1) AS bot_count
        FROM fantasy_leagues l
        JOIN fantasy_league_members mine ON mine.league_id = l.id AND mine.user_id = ?1
        ORDER BY l.created_at DESC`,
@@ -1069,6 +1339,7 @@ async function handleFantasyLeagueList(request, env, cors) {
           name: row.name,
           draftStatus: row.draft_status,
           memberCount: row.member_count,
+          botCount: row.bot_count ?? 0,
           isCommissioner: row.commissioner_user_id === user.id,
         })),
       },
@@ -1102,7 +1373,7 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
 
     const [members, picks, roster, currentGameweek, scheduleRow] = await Promise.all([
       env.DB.prepare(
-        `SELECT m.user_id, m.draft_position, u.name, u.email FROM fantasy_league_members m
+        `SELECT m.user_id, m.draft_position, u.name, u.email, u.is_bot FROM fantasy_league_members m
          JOIN users u ON u.id = m.user_id
          WHERE m.league_id = ?1 ORDER BY m.draft_position IS NULL, m.draft_position, m.joined_at`,
       )
@@ -1122,6 +1393,13 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
         .first(),
     ]);
 
+    const memberList = (members.results ?? []).map((row) => ({
+      userId: row.user_id,
+      name: memberDisplayName(row),
+      draftPosition: row.draft_position,
+      isBot: Boolean(row.is_bot),
+    }));
+
     return json(
       {
         // members[], picks[] and the draft room's onClockUserId are all keyed by
@@ -1136,11 +1414,12 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
           isCommissioner: league.commissioner_user_id === user.id,
           inviteCode: league.invite_code,
         },
-        members: (members.results ?? []).map((row) => ({
-          userId: row.user_id,
-          name: row.name || String(row.email ?? "").split("@")[0] || "Someone",
-          draftPosition: row.draft_position,
-        })),
+        members: memberList,
+        // Split rather than a single count: "6 managers" that silently counts
+        // four bots is exactly the implied-real-person number this feature
+        // must not produce, and every surface showing a total needs the split
+        // available rather than re-deriving it from the member array.
+        seats: seatSummary(memberList, MAX_LEAGUE_SIZE),
         picks: (picks.results ?? []).map((row) => ({
           round: row.round,
           pickInRound: row.pick_in_round,
@@ -1374,7 +1653,10 @@ async function fantasyLeagueSummary(env, leagueId, { includeInviteCode = false }
   )
     .bind(leagueId)
     .first();
-  const count = await env.DB.prepare(`SELECT COUNT(*) AS n FROM fantasy_league_members WHERE league_id = ?1`)
+  const count = await env.DB.prepare(
+    `SELECT COUNT(*) AS n, COALESCE(SUM(u.is_bot), 0) AS bots FROM fantasy_league_members m
+     JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
+  )
     .bind(leagueId)
     .first();
   const summary = {
@@ -1382,6 +1664,7 @@ async function fantasyLeagueSummary(env, leagueId, { includeInviteCode = false }
     name: league.name,
     draftStatus: league.draft_status,
     memberCount: count?.n ?? 0,
+    botCount: count?.bots ?? 0,
   };
   if (includeInviteCode) summary.inviteCode = league.invite_code;
   return summary;
@@ -2248,12 +2531,13 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
 
     const opponentId = fixture.home_user_id === user.id ? fixture.away_user_id : fixture.home_user_id;
     const [opponentRow, opponentScore] = await Promise.all([
-      env.DB.prepare(`SELECT name, email FROM users WHERE id = ?1`).bind(opponentId).first(),
+      env.DB.prepare(`SELECT name, email, is_bot FROM users WHERE id = ?1`).bind(opponentId).first(),
       fantasyGameweekScore(env, leagueId, opponentId, gameweek),
     ]);
     const opponent = {
       userId: opponentId,
-      name: opponentRow?.name || String(opponentRow?.email ?? "").split("@")[0] || "Someone",
+      name: memberDisplayName(opponentRow),
+      isBot: Boolean(opponentRow?.is_bot),
       score: opponentScore,
     };
 
@@ -2284,7 +2568,7 @@ async function handleFantasyStandings(request, env, leagueId, cors) {
 
     const [membersRows, fixtureRows] = await Promise.all([
       env.DB.prepare(
-        `SELECT m.user_id, u.name, u.email FROM fantasy_league_members m
+        `SELECT m.user_id, u.name, u.email, u.is_bot FROM fantasy_league_members m
          JOIN users u ON u.id = m.user_id
          WHERE m.league_id = ?1`,
       )
@@ -2302,7 +2586,8 @@ async function handleFantasyStandings(request, env, leagueId, cors) {
 
     const members = (membersRows.results ?? []).map((row) => ({
       userId: row.user_id,
-      name: row.name || String(row.email ?? "").split("@")[0] || "Someone",
+      name: memberDisplayName(row),
+      isBot: Boolean(row.is_bot),
     }));
     const fixtures = (fixtureRows.results ?? []).map((row) => ({
       gameweek: row.gameweek,
@@ -3158,6 +3443,16 @@ async function acquireWaiverLock(env, leagueId, gameweek) {
 // a claim is deferred rather than orphaned. It is written last so it can only
 // ever catch claims this run did not itself resolve (the earlier statements
 // have already moved those out of 'pending').
+// A bot manager submits NO waiver claim, and that is a deliberate scope line
+// rather than an oversight. Its squad is legal from the draft and stays legal
+// (nothing removes a player from a roster except its own manager acting), so a
+// bot that never touches the wire still fields eleven players every gameweek.
+// src/fantasyDemoWaiverBots.js has a "which player would a bot claim" brain,
+// but wiring it here means giving a bot a FAAB budget to spend and a bid size
+// to choose, which is a second set of decisions with real consequences for the
+// humans bidding against it; that is its own piece of work, not a rider on
+// filling empty seats. Until then a bot is a passive opponent after the draft,
+// which is the honest version of what it is.
 async function runLeagueWaiverRun(env, leagueId, settledGameweek, newCurrentGameweek) {
   // Cheap read-only pre-check, NOT the correctness guard: avoids redoing all
   // the work below on every subsequent cron tick once a gameweek's run has
@@ -3565,10 +3860,14 @@ async function sendDraftReminderPush(env, leagueId, kind) {
 async function sendLeaguePush(env, memberIds, { title, body, leagueId, tag, pref = "draft" }) {
   if (!pushConfigured(env) || !memberIds?.length) return;
   const placeholders = memberIds.map((_, i) => `?${i + 1}`).join(",");
+  // is_bot = 0 is belt and braces rather than load-bearing: a bot never signs
+  // in, so it never registers a device and can hold no push_subscriptions row.
+  // The clause is here so the exclusion is stated where the targeting happens
+  // instead of resting on a property of a different table.
   const subs = await env.DB.prepare(
     `SELECT s.endpoint, s.p256dh, s.auth, u.prefs FROM push_subscriptions s
      JOIN users u ON u.id = s.user_id
-     WHERE s.user_id IN (${placeholders})`,
+     WHERE s.user_id IN (${placeholders}) AND u.is_bot = 0`,
   )
     .bind(...memberIds)
     .all();
@@ -3649,7 +3948,7 @@ async function generateLeagueRecap(env, league, gameweek) {
 
   const [memberRows, fixtureRows, scoreRows] = await Promise.all([
     env.DB.prepare(
-      `SELECT m.user_id, u.name, u.email FROM fantasy_league_members m
+      `SELECT m.user_id, u.name, u.email, u.is_bot FROM fantasy_league_members m
        JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
     )
       .bind(leagueId)
@@ -3667,9 +3966,15 @@ async function generateLeagueRecap(env, league, gameweek) {
       .all(),
   ]);
 
+  // Bot managers stay IN the numbers: their results are real results and
+  // dropping them would make every ranking and every matchup in the recap
+  // disagree with the standings page. What they get instead is a flag the
+  // prompt carries through, so the model writes about a bot as an autopick
+  // placeholder rather than inventing a human's reasoning for it.
   const managers = (memberRows.results ?? []).map((row) => ({
     userId: row.user_id,
     name: memberDisplayName(row),
+    isBot: Boolean(row.is_bot),
   }));
   if (managers.length < 2) return; // nothing to recap in a league of one
 

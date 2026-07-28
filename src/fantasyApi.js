@@ -62,6 +62,33 @@ export async function loadLeague(id) {
   return api(`/fantasy/league/${id}`);
 }
 
+// Commissioner-only, pending-only: fills `count` empty seats with bot
+// managers so a league that never found ten people can still draft on the day
+// it planned to (see src/fantasyBots.js). Returns { league, added: [name] }.
+// Throws with error.status 403 for a non-commissioner, 400 for a bad count,
+// a full league, or a draft that has already started.
+export async function addLeagueBots(leagueId, count) {
+  return api(`/fantasy/league/${leagueId}/bots`, { method: "POST", body: JSON.stringify({ count }) });
+}
+
+// Commissioner-only, pending-only, and only ever a BOT: the Worker refuses a
+// target that is not flagged is_bot and a member of this same league, so this
+// can never become "evict a manager". Returns { league }.
+export async function removeLeagueBot(leagueId, botUserId) {
+  return api(`/fantasy/league/${leagueId}/bots/${botUserId}`, { method: "DELETE" });
+}
+
+// PUBLIC, unlike every other call in this module: what a shared invite link
+// shows someone BEFORE they are asked to sign in. Returns { league: { name,
+// draftStatus, joinable, seats }, managers: [{ name, isBot, isCommissioner }] }
+// with no ids and no email addresses. Throws with error.status 404 for an
+// unknown or expired code. Deliberately does not send the bearer header, since
+// the whole point is that it works signed out; api() adds one only when a
+// session exists, which is harmless either way.
+export async function loadInvitePreview(code) {
+  return api(`/fantasy/invite/${encodeURIComponent(code)}`);
+}
+
 export async function startDraft(id) {
   return (await api(`/fantasy/league/${id}/draft/start`, { method: "POST" })).league;
 }

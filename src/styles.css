@@ -1587,7 +1587,11 @@ button { font-family: inherit; cursor: pointer; }
   font-size: 13px;
 }
 
-.fantasy-invite__row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+/* Wraps rather than overflows: the invite LINK is far longer than the code
+   this row was built for, and at 375px it has to break onto its own line
+   instead of pushing the Copy button off the edge. */
+.fantasy-invite__row { display: flex; align-items: center; gap: 10px; margin: 6px 0; flex-wrap: wrap; }
+.fantasy-invite__row--code { margin-top: 14px; }
 .fantasy-invite__code {
   font-family: monospace;
   font-size: 16px;
@@ -1598,6 +1602,55 @@ button { font-family: inherit; cursor: pointer; }
   border-radius: var(--radius-sm);
   padding: 6px 12px;
 }
+.fantasy-invite__link {
+  flex: 1 1 220px;
+  min-width: 0;
+  font-family: monospace;
+  font-size: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  /* A URL has no spaces, so only anywhere-breaking keeps it inside the card. */
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+/* Bot manager label. Deliberately louder than the queue badge next to it: it
+   is an honesty marker, not provenance trivia, and it has to survive being
+   glanced past in a dense order strip. */
+.fantasy-chip--bot {
+  margin-left: 6px;
+  font-size: 9px;
+  padding: 1px 7px;
+  color: var(--bg);
+  background: var(--fantasy-accent, var(--accent));
+  border: 0;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  vertical-align: middle;
+}
+
+.fantasy-bots__form { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0 6px; }
+.fantasy-bots__select { flex: 0 1 160px; }
+.fantasy-bots__list { margin-top: 12px; display: grid; gap: 6px; }
+.fantasy-bots__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 0;
+  border-top: 1px solid var(--line-2);
+}
+
+/* Public invite preview (#join/<code>). Signed out, so it gets the same
+   centred hero treatment as the other standalone screens rather than the
+   in-league panel shell. */
+.fantasy-invitepage { max-width: 720px; }
+.fantasy-invitepage__cta { display: grid; gap: 10px; justify-items: start; }
+.fantasy-invitepage__signin { min-height: 44px; }
 
 /* Draft status card: eyebrow, and the Round/Pick headline INLINE with the order
    chip strip (headline left, chips right, wrapping below only at narrow

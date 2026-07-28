@@ -17,6 +17,17 @@ CREATE TABLE IF NOT EXISTS users (
   -- underneath whatever is stored so a missing key still reads as true rather
   -- than requiring a backfill.
   prefs TEXT NOT NULL DEFAULT '{"goals":true,"kickoff":true,"fulltime":true,"red":false,"analysis":false,"draft":true,"recap":true}',
+  -- 1 for a bot manager filling an empty league seat (see src/fantasyBots.js).
+  -- google_sub is the AUTHORITY on whether a row is a bot, not this column: a
+  -- bot's sub is "bot:<leagueId>:<random>", which is not a possible Google
+  -- subject (Google issues decimal digit strings), so a bot is unauthenticable
+  -- by construction. This flag exists so the surfaces that must exclude or
+  -- label a bot can do it with a plain predicate instead of a LIKE over
+  -- google_sub, and it is set once at insert and never updated.
+  --
+  -- See worker/migrations/003-bot-managers.sql for adding this to a database
+  -- created before bot managers shipped (fresh databases get it from here).
+  is_bot INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

@@ -33,7 +33,9 @@
 // Bumped when the system prompt or the payload shape changes meaningfully, the
 // same discipline as ANALYSIS_PROMPT_VERSION. Recorded on the recap ledger row
 // so it is possible to tell later which build wrote a given league's recap.
-export const RECAP_PROMPT_VERSION = 1;
+// 2: the managers block gained isBot, and the system prompt gained the rule
+// for how to write about one (bot managers, src/fantasyBots.js).
+export const RECAP_PROMPT_VERSION = 2;
 
 // A display name long enough for any real one and far too short to hide a
 // paragraph of instructions in. 40 characters is roughly a tweet's worth of
@@ -124,6 +126,7 @@ Rules:
 - Specifically: never invent a scoreline, a margin, a win or losing streak, a player's haul, a league position or a ranking movement. Every one of those is either in the payload or is not a fact. A recap that is plain and correct is worth far more here than one that is lively and wrong, and readers of this app have said so out loud about other products.
 - You know nothing about this season beyond this payload. Do not draw on any recollection of real Premier League results, form or transfers.
 - Refer to managers by the displayName in the "managers" block. Every other section identifies them by id; look the name up rather than guessing.
+- A manager with "isBot": true is not a person. It is an automated placeholder filling an empty seat: it autopicked its squad and it fields whatever lineup the app defaults it to. Write about its results exactly as normally as anyone else's, because they count the same, but never give it intent, a mood, a plan or a reaction, and never suggest it will do something differently next week.
 - Tone: sharp, warm, a little wry, the voice of a mate who watched every kick. Plain sentences, no bullet points, no markdown.
 - Never use em dashes.
 
@@ -166,6 +169,9 @@ export function buildRecapPrompt({
       .map((manager) => ({
         id: idFor(manager.userId),
         displayName: sanitizePromptText(manager.name, MAX_DISPLAY_NAME_LENGTH, idFor(manager.userId) ?? "a manager"),
+        // Server-set, unlike the displayName right above it: this one is a
+        // fact this Worker knows, not free text somebody chose.
+        isBot: Boolean(manager.isBot),
       })),
     matchups: (matchups ?? []).map((result) => ({
       home: idFor(result.homeUserId),

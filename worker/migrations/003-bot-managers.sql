@@ -1,0 +1,13 @@
+-- One-time migration for databases created before bot managers shipped.
+-- schema.sql's CREATE TABLE IF NOT EXISTS cannot retrofit a column onto an
+-- existing table, and ALTER TABLE is not idempotent in SQLite (a second run
+-- fails with "duplicate column name"), so this file exists separately and is
+-- meant to be applied exactly once. Same pattern as 001-waivers.sql.
+--
+-- Every existing users row is a real Google account, so the DEFAULT 0 is the
+-- correct backfill for all of them and no UPDATE is needed. Skip this file
+-- entirely for a database created after bot managers shipped.
+--
+-- Apply with:
+--   npx wrangler d1 execute squad-goals --remote --file=worker/migrations/003-bot-managers.sql
+ALTER TABLE users ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0;

@@ -74,6 +74,9 @@ const ROUTES = [
   ["GET", "/fantasy/league/1/waivers"],
   ["GET", "/fantasy/league/1/chat"],
   ["POST", "/fantasy/league/1/chat"],
+  ["GET", "/fantasy/invite/ABCDEF0123"],
+  ["POST", "/fantasy/league/1/bots"],
+  ["DELETE", "/fantasy/league/1/bots/2"],
   ["GET", "/analysis/12345"],
   ["GET", "/banter/12345"],
   ["GET", "/match/12345"],
@@ -114,6 +117,7 @@ test("POST routes reject cleanly without a session rather than throwing", async 
     "/fantasy/league/1/lineup",
     "/fantasy/league/1/draft/queue",
     "/fantasy/league/1/waivers/claim",
+    "/fantasy/league/1/bots",
   ];
   for (const path of posts) {
     const response = await call(path, {
@@ -249,6 +253,273 @@ test("the scheduled handler runs every cron pass without throwing, even with no 
   const ctx = { waitUntil: (promise) => pending.push(promise) };
   await worker.scheduled({ cron: "* * * * *" }, env, ctx);
   await assert.doesNotReject(Promise.all(pending));
+});
+
+// -- Bot managers and the public invite preview, actually executed ------------
+//
+// Same anti-short-circuit discipline as the feed block above: the ROUTES table
+// stops at the 401, so these carry a session and a DB stub that answers the
+// specific reads the bot routes make. What is being proved here is the
+// authorization pair (commissioner AND pending) and that the seat insert is the
+// same guarded INSERT the human join path uses, because the failure mode this
+// feature could have introduced is "anyone can add a member to any league".
+
+function botDb(seen, { commissionerUserId = 1, draftStatus = "pending", memberIsBot = true } = {}) {
+  const make = (sql) => {
+    const normalised = sql.replace(/\s+/g, " ").trim();
+    let bound = [];
+    const statement = {
+      bind: (...args) => {
+        bound = args;
+        return statement;
+      },
+      first: async () => {
+        if (normalised.includes("FROM sessions s")) {
+          return { id: 1, email: "ada@example.test", name: "Ada", prefs: "{}" };
+        }
+        if (normalised.includes("FROM fantasy_leagues WHERE id")) {
+          return { id: 1, name: "Test League", commissioner_user_id: commissionerUserId, draft_status: draftStatus, invite_code: "ABCDEF0123" };
+        }
+        if (normalised.includes("FROM fantasy_leagues WHERE invite_code")) {
+          return { id: 1, name: "Test League", draft_status: draftStatus, commissioner_user_id: commissionerUserId };
+        }
+        // The remove route's "is this actually a bot in this league" check.
+        if (normalised.includes("u.is_bot = 1")) {
+          return memberIsBot ? { id: bound[1], name: "Bot Alfie" } : null;
+        }
+        if (normalised.includes("COUNT(*) AS n")) return { n: 2, bots: 0 };
+        return { x: 1 };
+      },
+      all: async () => {
+        if (normalised.includes("FROM fantasy_league_members m JOIN users u")) {
+          return {
+            results: [
+              { user_id: 1, name: "Ada", email: "ada@example.test", is_bot: 0, draft_position: null },
+              { user_id: 2, name: "Bot Alfie", email: "x@bots.invalid", is_bot: 1, draft_position: null },
+            ],
+          };
+        }
+        return { results: [] };
+      },
+      run: async () => ({ success: true, meta: { changes: 1, last_row_id: 77 } }),
+    };
+    return statement;
+  };
+  return {
+    prepare: (sql) => {
+      seen.push(sql.replace(/\s+/g, " ").trim());
+      return make(sql);
+    },
+    batch: async () => [],
+  };
+}
+
+function botCall(path, init = {}, dbOptions) {
+  const seen = [];
+  const headers = { Authorization: `Bearer ${SESSION_TOKEN}`, ...(init.headers ?? {}) };
+  const response = worker.fetch(new Request(`https://example.test${path}`, { ...init, headers }), {
+    ...env,
+    DB: botDb(seen, dbOptions),
+  });
+  return { response, seen };
+}
+
+const addBots = (count, dbOptions) =>
+  botCall(
+    "/fantasy/league/1/bots",
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ count }) },
+    dbOptions,
+  );
+
+test("adding bots creates users rows and seats them with the same guarded insert a human join uses", async () => {
+  const { response, seen } = addBots(2);
+  const resolved = await response;
+  assert.equal(resolved.status, 200);
+
+  assert.ok(
+    seen.some((sql) => sql.startsWith("INSERT INTO users (google_sub, email, name, is_bot)")),
+    "no bot user was ever created, so this test proves nothing",
+  );
+  // The race guard, and the reason it is not a COUNT-then-INSERT: a real
+  // manager joining between the plan and the write must not be pushed out of
+  // their own league by a bot.
+  assert.ok(
+    seen.some(
+      (sql) =>
+        sql.startsWith("INSERT INTO fantasy_league_members (league_id, user_id) SELECT") &&
+        sql.includes("WHERE (SELECT COUNT(*) FROM fantasy_league_members WHERE league_id = ?1) < ?3"),
+    ),
+    "the seat insert was not guarded on the league size",
+  );
+  // Orphan sweep, scoped to this league's own bots and to rows with no seat.
+  assert.ok(
+    seen.some((sql) => sql.startsWith("DELETE FROM users WHERE is_bot = 1 AND google_sub LIKE ?1")),
+    "a lost seat race would leave an orphan users row behind",
+  );
+
+  const body = await resolved.json();
+  assert.equal(body.added.length, 2);
+  for (const name of body.added) assert.match(name, /^Bot /);
+});
+
+test("only the commissioner can add bots, and only before the draft starts", async () => {
+  // The whole security question for this feature: "a commissioner can add a
+  // bot" must never become "anyone can add a member to any league".
+  const notCommissioner = await addBots(1, { commissionerUserId: 999 }).response;
+  assert.equal(notCommissioner.status, 403);
+
+  const alreadyDrafting = await addBots(1, { draftStatus: "drafting" }).response;
+  assert.equal(alreadyDrafting.status, 400);
+
+  const { seen } = addBots(1, { commissionerUserId: 999 });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(
+    !seen.some((sql) => sql.startsWith("INSERT INTO users")),
+    "a non-commissioner reached the insert",
+  );
+});
+
+test("adding bots refuses a count that is not a sane integer", async () => {
+  // "3" is deliberately absent: Number("3") is a perfectly good 3, and
+  // rejecting a JSON string of digits would be pedantry rather than safety.
+  for (const count of [0, -1, 1.5, 999, "three", null]) {
+    const response = await addBots(count).response;
+    assert.equal(response.status, 400, `count ${String(count)} was accepted`);
+  }
+});
+
+test("removing a bot refuses a target that is not a bot in that league", async () => {
+  const ok = await botCall("/fantasy/league/1/bots/2", { method: "DELETE" }).response;
+  assert.equal(ok.status, 200);
+
+  // The check that stops this becoming "the commissioner can evict a manager".
+  const human = await botCall("/fantasy/league/1/bots/2", { method: "DELETE" }, { memberIsBot: false }).response;
+  assert.equal(human.status, 404);
+
+  const stranger = await botCall("/fantasy/league/1/bots/2", { method: "DELETE" }, { commissionerUserId: 999 })
+    .response;
+  assert.equal(stranger.status, 403);
+});
+
+test("the invite preview is readable with no session and leaks no ids or emails", async () => {
+  // The only unauthenticated fantasy route, and deliberately so: a shared link
+  // has to show what is being joined BEFORE asking for a sign-in.
+  const seen = [];
+  const response = await worker.fetch(new Request("https://example.test/fantasy/invite/ABCDEF0123"), {
+    ...env,
+    DB: botDb(seen),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+
+  const body = await response.json();
+  assert.equal(body.league.name, "Test League");
+  assert.equal(body.league.joinable, true);
+  assert.equal(body.league.seats.humans, 1);
+  assert.equal(body.league.seats.bots, 1);
+  // A bot in the preview is labelled, because somebody deciding whether to join
+  // must be able to see how much of the room is real.
+  assert.deepEqual(
+    body.managers.map((m) => m.isBot),
+    [false, true],
+  );
+
+  const serialised = JSON.stringify(body);
+  assert.ok(!serialised.includes("@example.test"), "an email address reached the public preview");
+  assert.ok(!serialised.includes("ABCDEF0123"), "the invite code was echoed back");
+  assert.ok(!serialised.includes("userId"), "a user id reached the public preview");
+});
+
+test("an unknown invite code is a 404, not an error", async () => {
+  const response = await worker.fetch(new Request("https://example.test/fantasy/invite/ZZZZZZZZZZ"), {
+    ...env,
+    DB: stubDb(), // every read answers null: no league carries that code
+  });
+  assert.equal(response.status, 404);
+});
+
+// -- A bot account cannot be signed in as -------------------------------------
+//
+// THE security-critical property of bot managers. A bot is a users row, and
+// handleGoogleAuth upserts on google_sub, so a sub that matched one would issue
+// a real bearer session for a bot and hand over its league membership. Google
+// cannot produce such a sub, which is exactly why that namespace was chosen,
+// but the gate is asserted here rather than assumed.
+
+function authDb(seen) {
+  const statement = {
+    bind: () => statement,
+    first: async () => ({ id: 1, email: "ada@example.test", name: "Ada", prefs: "{}" }),
+    all: async () => ({ results: [] }),
+    run: async () => ({ success: true, meta: { changes: 1, last_row_id: 1 } }),
+  };
+  return {
+    prepare: (sql) => {
+      seen.push(sql.replace(/\s+/g, " ").trim());
+      return statement;
+    },
+    batch: async () => [],
+  };
+}
+
+function stubTokeninfo(sub) {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        aud: "test-client-id",
+        iss: "https://accounts.google.com",
+        sub,
+        email: "someone@example.test",
+        email_verified: "true",
+        name: "Someone",
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  return () => {
+    globalThis.fetch = original;
+  };
+}
+
+async function signInWithSub(sub) {
+  const seen = [];
+  const restore = stubTokeninfo(sub);
+  try {
+    const response = await worker.fetch(
+      new Request("https://example.test/auth/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential: "x".repeat(64) }),
+      }),
+      { ...env, GOOGLE_CLIENT_ID: "test-client-id", DB: authDb(seen) },
+    );
+    return { response, seen };
+  } finally {
+    restore();
+  }
+}
+
+test("a bot account cannot be signed in as", async () => {
+  const { response, seen } = await signInWithSub("bot:1:deadbeef");
+  assert.equal(response.status, 401);
+  // Not just the status: nothing may have touched the users table or minted a
+  // session, or a later refactor could return 401 after already writing.
+  assert.ok(!seen.some((sql) => sql.startsWith("INSERT INTO users")), "the bot's users row was upserted");
+  assert.ok(!seen.some((sql) => sql.startsWith("INSERT INTO sessions")), "a session was minted for a bot");
+  const body = await response.json();
+  assert.ok(!body.token, "a bearer token was handed out");
+});
+
+test("the same gate rejects any subject outside Google's own digit namespace", async () => {
+  for (const sub of ["bot:99:aa", "admin", "1;DROP", " 42", "42 ", "4e2"]) {
+    const { response } = await signInWithSub(sub);
+    assert.equal(response.status, 401, `sub ${sub} was accepted`);
+  }
+  // And a real Google subject still gets through, so the gate is not simply
+  // refusing everything.
+  const { response, seen } = await signInWithSub("104283910938501928374");
+  assert.equal(response.status, 200);
+  assert.ok(seen.some((sql) => sql.startsWith("INSERT INTO users")));
 });
 
 // -- Waiver routes, actually executed -----------------------------------------

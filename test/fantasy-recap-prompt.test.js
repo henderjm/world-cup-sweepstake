@@ -318,3 +318,34 @@ test("mergeRecap degrades to our own numbers when the model returned nothing usa
   assert.equal(merged.rankings.length, 3);
   assert.equal(merged.results[0].home, "Ada");
 });
+
+// -- Bot managers in the recap -----------------------------------------------------
+
+test("a bot manager stays in the numbers but is flagged so the model cannot give it intent", () => {
+  // Dropping bots from the recap would make every ranking and matchup in it
+  // disagree with the standings page, since their results are real results.
+  // What they get instead is a server-set flag, right beside the one field in
+  // this payload that IS untrusted user input.
+  const payload = JSON.parse(
+    buildRecapPrompt(
+      baseArgs({ managers: [{ userId: 1, name: "Ada" }, { userId: 2, name: "Bot Bex", isBot: true }] }),
+    ),
+  );
+  assert.deepEqual(
+    payload.managers.map((manager) => [manager.displayName, manager.isBot]),
+    [
+      ["Ada", false],
+      ["Bot Bex", true],
+    ],
+  );
+  // Absent isBot reads as false rather than undefined, so a caller predating
+  // bots produces the same shape.
+  assert.equal(payload.managers[0].isBot, false);
+});
+
+test("the system prompt tells the model what a bot manager is and is not", () => {
+  assert.match(RECAP_SYSTEM_PROMPT, /"isBot": true is not a person/);
+  assert.match(RECAP_SYSTEM_PROMPT, /never give it intent/);
+  // The numbers still count: a bot's results must be written up normally.
+  assert.match(RECAP_SYSTEM_PROMPT, /exactly as normally as anyone else's/);
+});

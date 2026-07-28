@@ -127,3 +127,29 @@ test("isRecapEntry only accepts a system recap row that actually carries a recap
   assert.equal(isRecapEntry({ kind: "system", event: CHAT_EVENTS.RECAP, payload: {} }), false);
   assert.equal(isRecapEntry({ kind: "message", text: "recap" }), false);
 });
+
+// -- Bot seats in the permanent history -------------------------------------------
+
+test("filling seats with bots is announced in the feed, naming each one", () => {
+  // Never slipped in quietly: somebody scrolling back has to be able to see
+  // when the empty seats stopped being empty and who filled them.
+  const described = describeChatEvent({
+    kind: "system",
+    event: CHAT_EVENTS.BOTS_ADDED,
+    payload: { actor: "Alice", count: 2, bots: ["Bot Alfie", "Bot Bex"] },
+  });
+  assert.match(described.text, /Alice filled 2 empty seats with bot managers/);
+  assert.match(described.text, /Bot Alfie, Bot Bex/);
+  assert.match(described.text, /autopick/);
+});
+
+test("a bot announcement written by an older build still reads as English", () => {
+  // The feed is permanent, so a row missing the field its sentence wants must
+  // degrade rather than print "undefined".
+  const described = describeChatEvent({ kind: "system", event: CHAT_EVENTS.BOTS_ADDED, payload: { actor: "Alice" } });
+  assert.doesNotMatch(described.text, /undefined/);
+  assert.match(described.text, /Alice filled 0 empty seats/);
+
+  const removed = describeChatEvent({ kind: "system", event: CHAT_EVENTS.BOT_REMOVED, payload: {} });
+  assert.equal(removed.text, "Someone removed a bot manager from the league.");
+});

@@ -133,6 +133,11 @@ export function standingsFromFixtures(fixtures, members) {
       {
         userId: member.userId,
         name: member.name,
+        // Carried straight through, never derived here: a bot manager's row
+        // has to be labelled as one in the table it appears in, and only the
+        // caller knows which members are bots. Absent for a caller with no
+        // bots, which reads as false.
+        isBot: Boolean(member.isBot),
         played: 0,
         wins: 0,
         draws: 0,

@@ -27,9 +27,9 @@ import {
   validatePick,
 } from "../src/draftLogic.js";
 import { SQUAD_SIZE, SQUAD_SLOTS } from "../src/fantasy.js";
+import { pickClockMs } from "../src/fantasyBots.js";
 import { CHAT_EVENTS, cleanChatText } from "../src/fantasyChat.js";
 
-const PICK_CLOCK_MS = 60 * 1000;
 const PLAYER_POOL_PATH = "/data/PL/players.json";
 const PLAYER_POOL_STORAGE_KEY = "playerPool";
 
@@ -366,19 +366,26 @@ export class FantasyDraftRoom {
   }
 
   async scheduleClock() {
-    const deadline = Date.now() + PICK_CLOCK_MS;
+    const onClock = this.currentOnClockUserId();
+    // A bot's clock is deliberately short (see pickClockMs in
+    // src/fantasyBots.js). It cannot pick early and it will never pick late,
+    // so its window is pure waiting; at the human 60s an eight-bot league
+    // would take two hours to draft, which defeats the point of filling the
+    // seats at all.
+    const onClockIsBot = onClock != null && this.draft.botUserIds.has(onClock);
+    const deadline = Date.now() + pickClockMs(onClockIsBot);
     // Known, accepted rough edge: a DO eviction and rehydrate partway through a
-    // pick's 60s window does not reset this alarm (it is durable storage, kept
+    // pick's window does not reset this alarm (it is durable storage, kept
     // as-is across evictions), so it can fire a little ahead of a client's own
     // local countdown for that one pick. Self-healing (the broadcast right after
     // carries the true state) and cosmetic, so left as-is rather than tracked.
     await this.state.storage.setAlarm(deadline);
-    const onClock = this.currentOnClockUserId();
     const resolved = resolvePick(this.draft.memberIds, this.draft.overallPick, SQUAD_SIZE);
     this.broadcast({
       type: "clock",
       deadline,
       onClockUserId: onClock,
+      onClockIsBot,
       overallPick: this.draft.overallPick,
       round: resolved?.round ?? null,
       pickInRound: resolved?.pickInRound ?? null,
@@ -426,6 +433,9 @@ export class FantasyDraftRoom {
         leagueId: this.draft.leagueId,
         status: this.draft.status,
         memberIds: this.draft.memberIds,
+        // So a client that reconnects mid-draft can label the order strip and
+        // the pick feed without waiting for a league-detail fetch to land.
+        botUserIds: [...this.draft.botUserIds],
         overallPick: this.draft.overallPick,
         totalPicks: this.draft.totalPicks,
         onClockUserId: resolved?.userId ?? null,
@@ -461,7 +471,7 @@ export class FantasyDraftRoom {
     // verified user id, and the feed is a permanent history that must not
     // depend on a later join to stay legible.
     const members = await this.env.DB.prepare(
-      `SELECT m.user_id, u.name, u.email FROM fantasy_league_members m
+      `SELECT m.user_id, u.name, u.email, u.is_bot FROM fantasy_league_members m
        JOIN users u ON u.id = m.user_id
        WHERE m.league_id = ?1
        ORDER BY m.draft_position IS NULL, m.draft_position, m.joined_at`,
@@ -485,6 +495,13 @@ export class FantasyDraftRoom {
       .all();
 
     const memberIds = (members.results ?? []).map((row) => row.user_id);
+    // Read from D1 on every wake like everything else here, never cached in
+    // Durable Object storage: a commissioner can add or remove a bot right up
+    // until the draft starts, and this instance has no idea whether it was
+    // warm across that change.
+    const botUserIds = new Set(
+      (members.results ?? []).filter((row) => row.is_bot).map((row) => row.user_id),
+    );
     const memberNames = new Map(
       (members.results ?? []).map((row) => [
         row.user_id,
@@ -528,6 +545,7 @@ export class FantasyDraftRoom {
       leagueId,
       memberIds,
       memberNames,
+      botUserIds,
       status: league?.draft_status ?? "pending",
       totalPicks: memberIds.length * SQUAD_SIZE,
       overallPick: picks.length + 1,

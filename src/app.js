@@ -45,8 +45,11 @@ import { renderPaperRunPanel, updatePaperRunHud } from "./paperRunView.js";
 import { mountPaperRunGame } from "./paperRunGame.js";
 import {
   addFreeAgent as apiAddFreeAgent,
+  addLeagueBots as apiAddLeagueBots,
   cancelWaiverClaim as apiCancelWaiverClaim,
   createLeague as apiCreateLeague,
+  loadInvitePreview as apiLoadInvitePreview,
+  removeLeagueBot as apiRemoveLeagueBot,
   fantasyAvailable,
   getLineup as apiGetLineup,
   isFantasyNotDeployed,
@@ -96,6 +99,7 @@ import {
   renderFantasyDraftSide,
   renderFantasyEmptyState,
   renderFantasyError,
+  renderFantasyInvitePreview,
   renderFantasyFreeAgentRows,
   renderFantasyLeagueList,
   renderFantasyLeagueShell,
@@ -156,7 +160,27 @@ const SCORES_TABS = ["live", "tables", "knockout", "fixtures", "stats"];
 const HASH_ALIASES = { goldenboot: "stats", paperrun: "play" };
 const COMPETITION_STORAGE_KEY = "gs-competition";
 
-const NON_SCORES_SECTIONS = ["play", "you", "fantasy", "learn", "demo"];
+const NON_SCORES_SECTIONS = ["play", "you", "fantasy", "learn", "demo", "join"];
+
+// "#join/<code>" is what a shared invite link points at. It is its own section
+// rather than a state of the Fantasy one because it has to render with NO
+// session: the whole point is that a prospective manager sees the league
+// before being asked to sign in, so it cannot sit behind renderFantasy's
+// signed-out card. An empty or malformed code falls through to the normal
+// Fantasy section rather than rendering a broken invite.
+function resolveInitialJoinHash(rawHash) {
+  const match = /^join\/([A-Za-z0-9]{1,16})$/.exec(rawHash);
+  return match ? match[1].toUpperCase() : null;
+}
+
+// The link a commissioner shares. Built from the live location rather than a
+// hardcoded origin so a dev build produces a link into the dev server and a
+// non-root deploy path keeps working.
+function inviteUrlFor(code) {
+  if (!code) return "";
+  const { origin, pathname } = window.location;
+  return `${origin}${pathname}#join/${code}`;
+}
 
 // "#learn" alone opens the tutorials index; "#learn/<slug>" deep-links straight
 // into one. Parsed up front (mirroring how every other section reads its
@@ -171,7 +195,12 @@ function resolveInitialLearnHash(rawHash) {
 
 const rawInitialHash = window.location.hash.replace("#", "");
 const initialLearn = resolveInitialLearnHash(rawInitialHash);
-const initialHash = initialLearn.section === "learn" ? "learn" : (HASH_ALIASES[rawInitialHash] ?? rawInitialHash);
+const initialJoinCode = resolveInitialJoinHash(rawInitialHash);
+const initialHash = initialJoinCode
+  ? "join"
+  : initialLearn.section === "learn"
+    ? "learn"
+    : (HASH_ALIASES[rawInitialHash] ?? rawInitialHash);
 const state = {
   section: NON_SCORES_SECTIONS.includes(initialHash) ? initialHash : "scores",
   tab: SCORES_TABS.includes(initialHash) ? initialHash : "live",
@@ -186,6 +215,7 @@ const state = {
     mount: null,
   },
   fantasy: initialFantasyState(),
+  invite: initialInviteState(initialJoinCode),
   demo: initialDemoState(),
   learn: {
     slug: initialHash === "learn" ? initialLearn.slug : null,
@@ -225,6 +255,21 @@ function initialDemoState() {
     pendingWaiverPlayerName: null,
     desk: null, // { fromGw, toGw, waiverTarget, pendingDropId, waiverPick, lastWaiverResult, lastWaiverPlayerName, lineupEdit, drawerPlayerId }
     shareStatus: "",
+  };
+}
+
+// Public invite-link state (#join/<code>). Separate from state.fantasy because
+// it outlives a sign-in: `code` is what the auto-join in onAccountChange reads
+// once a session appears, which is what makes "sign in last" work without the
+// user re-finding the link afterwards.
+function initialInviteState(code = null) {
+  return {
+    code,
+    preview: null, // GET /fantasy/invite/:code response
+    loading: false,
+    error: "",
+    joining: false,
+    joinError: "",
   };
 }
 
@@ -268,6 +313,8 @@ function initialFantasyState() {
     waiverSettingsError: "",
     scheduleBusy: false, // draft-schedule save/clear in flight
     scheduleError: "",
+    botBusy: false, // bot seat add/remove in flight
+    botError: "",
     createBusy: false,
     createError: "",
     joinBusy: false,
@@ -349,6 +396,7 @@ async function start() {
       // instead of getting stuck on the same expired-session message forever.
       state.fantasy = initialFantasyState();
     }
+    if (state.section === "join") renderLayout();
     if (state.section === "fantasy") renderLayout();
   });
   restoreAccount().then(syncAccountButton);
@@ -457,6 +505,12 @@ function renderLayout() {
     return;
   }
   destroyPaperRunMount();
+
+  if (state.section === "join") {
+    elements.layout.className = "layout";
+    renderInvite();
+    return;
+  }
 
   if (state.section === "fantasy") {
     elements.layout.className = "layout";
@@ -630,6 +684,93 @@ function destroyPaperRunMount() {
   state.paperrun.mount = null;
 }
 
+// -- Public invite link (#join/<code>) -------------------------------------------
+//
+// Renders signed out, on purpose. Sign-in is the LAST step: the GIS button is
+// mounted into this screen's own slot rather than sending anyone off to the You
+// section, and the auto-join in onAccountChange picks the league up the moment
+// a session exists, so a new manager never has to come back and find the link
+// again.
+
+function renderInvite() {
+  const invite = state.invite;
+  if (!invite.code) {
+    // Somebody typed "#join" with no code. Nothing to preview, so fall back to
+    // the normal Fantasy section rather than an empty invite page.
+    setSection("fantasy");
+    return;
+  }
+  if (!fantasyAvailable()) {
+    elements.layout.innerHTML = renderFantasyNotConfigured();
+    return;
+  }
+  if (!invite.preview && !invite.loading && !invite.error) loadInvite(invite.code);
+
+  elements.layout.innerHTML = renderFantasyInvitePreview(invite.preview, {
+    loading: invite.loading,
+    error: invite.error,
+    signedIn: isSignedIn(),
+    joining: invite.joining,
+    joinError: invite.joinError,
+  });
+
+  if (!isSignedIn() && accountAvailable() && GOOGLE_CLIENT_ID) {
+    mountSignIn(document.getElementById("gisButton"), {
+      // Signing in FROM this button, on this screen, is the consent: it is the
+      // last step of a flow whose first step was reading what the league is.
+      // Deliberately NOT hooked to the generic account-change listener, which
+      // also fires on a session RESTORE at boot; a visitor who was already
+      // signed in when the link opened must still press Join, because merely
+      // opening a link is never consent to be added to somebody's league.
+      onSignedIn: () => acceptInvite(),
+      onError: () => {
+        const slot = document.getElementById("gisButton");
+        if (slot) slot.innerHTML = `<p class="note">Sign-in is unavailable right now. Try again shortly.</p>`;
+      },
+    });
+  }
+}
+
+async function loadInvite(code) {
+  const invite = state.invite;
+  invite.loading = true;
+  try {
+    invite.preview = await apiLoadInvitePreview(code);
+    invite.error = "";
+  } catch (error) {
+    invite.error =
+      error?.status === 404
+        ? "That invite code doesn't match any league. Ask whoever sent it for a fresh link."
+        : error.message || "Couldn't load that invite.";
+  } finally {
+    invite.loading = false;
+  }
+  if (state.section === "join") renderLayout();
+}
+
+// Joins the previewed league and lands the new manager inside it. Called both
+// by the explicit button (already signed in when the link was opened) and by
+// onAccountChange (signed in as the last step), so the two paths cannot drift.
+async function acceptInvite() {
+  const invite = state.invite;
+  if (!invite.code || invite.joining || !isSignedIn()) return;
+  invite.joining = true;
+  invite.joinError = "";
+  if (state.section === "join") renderLayout();
+  try {
+    const league = await apiJoinLeague(invite.code);
+    posthog.capture("fantasy_invite_accepted", { league_id: league.id });
+    state.invite = initialInviteState();
+    state.fantasy.leagues = null; // the list is now stale by one league
+    setSection("fantasy");
+    openFantasyLeague(league.id);
+  } catch (error) {
+    invite.joining = false;
+    invite.joinError = error.message || "Couldn't join that league.";
+    if (state.section === "join") renderLayout();
+  }
+}
+
 // -- Fantasy section -----------------------------------------------------------
 
 function renderFantasy() {
@@ -711,6 +852,10 @@ function renderFantasy() {
                   scheduleBusy: f.scheduleBusy,
                   scheduleError: f.scheduleError,
                   queuedIds: new Set(f.queue ?? []),
+                  seats: f.league.seats,
+                  inviteUrl: inviteUrlFor(league.inviteCode),
+                  botBusy: f.botBusy,
+                  botError: f.botError,
                 });
     elements.layout.innerHTML = renderFantasyLeagueShell(league, members, subTab, body);
     syncFantasyFeedPolling(subTab);
@@ -1734,6 +1879,43 @@ async function saveFantasyLeagueSchedule() {
   } catch (error) {
     f.scheduleBusy = false;
     f.scheduleError = error.message || "Couldn't schedule the draft.";
+    renderLayout();
+  }
+}
+
+// Both bot controls reload the whole league detail afterwards rather than
+// patching the member list locally: the seat split, the draft order and the
+// start button's own enablement all read from it, and a locally-patched copy
+// that disagreed with the server would be worse than a round trip.
+async function addFantasyBots(count) {
+  const f = state.fantasy;
+  f.botBusy = true;
+  f.botError = "";
+  renderLayout();
+  try {
+    const result = await apiAddLeagueBots(f.activeLeagueId, count);
+    posthog.capture("fantasy_bots_added", { league_id: f.activeLeagueId, count: result.added?.length ?? 0 });
+    f.botBusy = false;
+    await openFantasyLeague(f.activeLeagueId);
+  } catch (error) {
+    f.botBusy = false;
+    f.botError = error.message || "Couldn't add bot managers.";
+    renderLayout();
+  }
+}
+
+async function removeFantasyBot(botUserId) {
+  const f = state.fantasy;
+  f.botBusy = true;
+  f.botError = "";
+  renderLayout();
+  try {
+    await apiRemoveLeagueBot(f.activeLeagueId, botUserId);
+    f.botBusy = false;
+    await openFantasyLeague(f.activeLeagueId);
+  } catch (error) {
+    f.botBusy = false;
+    f.botError = error.message || "Couldn't remove that bot.";
     renderLayout();
   }
 }
@@ -2927,16 +3109,34 @@ function wireLayoutControls() {
     }
     const fantasyCopyButton = event.target.closest("[data-fantasy-copy-invite]");
     if (fantasyCopyButton) {
-      const code = fantasyCopyButton.dataset.fantasyCopyInvite ?? "";
+      const value = fantasyCopyButton.dataset.fantasyCopyInvite ?? "";
+      // Two of these now (link and code), with different labels, so the
+      // original is captured rather than assumed to be "Copy".
+      const label = fantasyCopyButton.textContent;
       navigator.clipboard
-        ?.writeText(code)
+        ?.writeText(value)
         .then(() => {
           fantasyCopyButton.textContent = "Copied";
           window.setTimeout(() => {
-            fantasyCopyButton.textContent = "Copy";
+            fantasyCopyButton.textContent = label;
           }, 2000);
         })
         .catch(() => {});
+      return;
+    }
+    const fantasyAddBotsButton = event.target.closest("[data-fantasy-add-bots]");
+    if (fantasyAddBotsButton && !fantasyAddBotsButton.disabled) {
+      const count = Number(elements.layout.querySelector("[data-fantasy-bot-count]")?.value ?? 1);
+      addFantasyBots(count);
+      return;
+    }
+    const fantasyRemoveBotButton = event.target.closest("[data-fantasy-remove-bot]");
+    if (fantasyRemoveBotButton && !fantasyRemoveBotButton.disabled) {
+      removeFantasyBot(Number(fantasyRemoveBotButton.dataset.fantasyRemoveBot));
+      return;
+    }
+    if (event.target.closest("[data-fantasy-invite-join]")) {
+      acceptInvite();
       return;
     }
     const fantasyStartButton = event.target.closest("[data-fantasy-start-draft]");
