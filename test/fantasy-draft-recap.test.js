@@ -3,7 +3,6 @@ import test from "node:test";
 
 import {
   GRADE_SCALE_FLOOR,
-  bestStartingXi,
   buildDraftRecap,
   composeDraftShareText,
   gradeFromZ,
@@ -13,6 +12,7 @@ import {
   positionVerdict,
 } from "../src/fantasyDraftRecap.js";
 import { STARTING_LIMITS, STARTING_SIZE } from "../src/fantasy.js";
+import { bestStartingXi } from "../src/fantasyLineups.js";
 import { PICK_VIA } from "../src/draftLogic.js";
 import { rankDraftPool } from "../src/fantasyDraftRank.js";
 

@@ -121,6 +121,18 @@ CREATE TABLE IF NOT EXISTS fantasy_league_members (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   draft_position INTEGER, -- this member's slot in the snake order, set when the draft starts
   joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+  -- Dead-team autopilot (ESPN's Auto Control). 1 means the bots are playing
+  -- this seat: setting its lineup, and permitted to make a conservative
+  -- same-position pickup. NEVER a trade (see AUTOPILOT_ACTIONS in
+  -- src/fantasyBots.js, an allowlist precisely so a future feature cannot be
+  -- silently inherited).
+  --
+  -- The seat keeps its real human owner throughout; this is not eviction and
+  -- users.is_bot is untouched. It is cleared the instant that owner touches
+  -- anything in the league, by the same request that proves they are back, so
+  -- the flag can never outlive the absence it stands for.
+  autopilot INTEGER NOT NULL DEFAULT 0,
+  autopilot_since TEXT, -- when the commissioner handed it over; NULL when off
   PRIMARY KEY (league_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS fantasy_league_members_user ON fantasy_league_members(user_id);

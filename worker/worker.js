@@ -54,8 +54,14 @@ import {
   sortLeaderboard,
   validateClientResult,
 } from "../src/paperRunModel.js";
-import { MAX_LEAGUE_SIZE, bucketPosition } from "../src/fantasy.js";
-import { defaultLineup, repairLineup, resolveEffectiveLineup, validateLineupSelection } from "../src/fantasyLineups.js";
+import { MAX_LEAGUE_SIZE, STARTING_SIZE, bucketPosition } from "../src/fantasy.js";
+import {
+  bestStartingXi,
+  defaultLineup,
+  repairLineup,
+  resolveEffectiveLineup,
+  validateLineupSelection,
+} from "../src/fantasyLineups.js";
 import { scoreMatchForPlayers } from "../src/fantasyScoring.js";
 import {
   currentGameweekFromMatches,
@@ -77,6 +83,8 @@ import {
 } from "../src/fantasyWaivers.js";
 import { lineupChangedPlayerIds, lockedPlayerIds, playerLockState } from "../src/fantasyLocks.js";
 import {
+  AUTOPILOT_PICKUPS_PER_RUN,
+  autopilotPickup,
   botSubPatternForLeague,
   isRealGoogleSub,
   planBotSeats,
@@ -304,6 +312,28 @@ export default {
         env,
         Number(fantasyBotRemoveRoute[1]),
         Number(fantasyBotRemoveRoute[2]),
+        cors,
+      );
+    }
+    // Dead-team autopilot. Enabling is commissioner-only; disabling is also
+    // allowed to the manager whose seat it is, because taking your own team
+    // back must never depend on the commissioner being reachable.
+    const fantasyAutopilotRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/autopilot\/(\d+)$/);
+    if (fantasyAutopilotRoute && request.method === "POST") {
+      return handleFantasyAutopilotOn(
+        request,
+        env,
+        Number(fantasyAutopilotRoute[1]),
+        Number(fantasyAutopilotRoute[2]),
+        cors,
+      );
+    }
+    if (fantasyAutopilotRoute && request.method === "DELETE") {
+      return handleFantasyAutopilotOff(
+        request,
+        env,
+        Number(fantasyAutopilotRoute[1]),
+        Number(fantasyAutopilotRoute[2]),
         cors,
       );
     }
@@ -535,6 +565,12 @@ export default {
         await runCronPass("waiver-runs", () => runScheduledWaiverRuns(env));
         await runCronPass("draft-reminders", () => runScheduledDraftReminders(env));
         await runCronPass("xp-blend", () => runScheduledFantasyXpBlend(env));
+        // After the xP blend, because the lineup it writes is chosen BY xP and
+        // should use this tick's figures rather than last tick's. Ahead of the
+        // recaps because those describe results, whereas this one still
+        // affects them: an abandoned team's XI has to be right before the
+        // gameweek scores, not after somebody has written about it.
+        await runCronPass("autopilot", () => runScheduledAutopilot(env));
         // Last on purpose. The recap is the only pass that spends money per
         // run and the only one nothing else depends on: a league that gets its
         // recap ten minutes late has lost nothing, whereas a scoring or waiver
@@ -1310,6 +1346,149 @@ async function handleFantasyBotRemove(request, env, leagueId, botUserId, cors) {
   }
 }
 
+// -- Dead-team autopilot ---------------------------------------------------------
+//
+// A commissioner hands an abandoned team to the bots (ESPN's Auto Control).
+// Damage control, not engagement: one abandoned roster hands free wins to
+// whoever plays it and quietly ruins the season for everyone else.
+//
+// The seat keeps its real owner. users.is_bot is NOT touched, nobody is
+// evicted, and the flag is cleared the instant that owner acts (see
+// clearAutopilot). The policy for what autopilot may do lives in the pure
+// src/fantasyBots.js; this half is only the plumbing.
+
+// Shared by both autopilot routes. Enabling is commissioner-only; DISABLING is
+// deliberately looser, because a manager taking their own team back must never
+// depend on the commissioner being reachable. Nobody can touch a third party's
+// seat either way.
+async function autopilotAuthorize(env, leagueId, targetUserId, user, { commissionerOnly }) {
+  const league = await env.DB.prepare(
+    `SELECT commissioner_user_id, draft_status FROM fantasy_leagues WHERE id = ?1`,
+  )
+    .bind(leagueId)
+    .first();
+  if (!league) return { error: { body: { error: "unknown league" }, status: 404 } };
+
+  const isCommissioner = league.commissioner_user_id === user.id;
+  const isSelf = targetUserId === user.id;
+  if (commissionerOnly ? !isCommissioner : !isCommissioner && !isSelf) {
+    return { error: { body: { error: "commissioner only" }, status: 403 } };
+  }
+  // Autopilot is about an absent manager during a SEASON. Before the draft an
+  // empty seat is filled with a real bot member instead (handleFantasyBotsAdd),
+  // which is a different mechanism with different consequences.
+  if (league.draft_status !== "complete") return { error: { body: { error: "draft not complete" }, status: 400 } };
+
+  // The target must be a real member of THIS league, and never a bot: a bot
+  // seat is already played by the bots, so flagging one would be a no-op that
+  // reads in the feed as though a person had gone missing.
+  const target = await env.DB.prepare(
+    `SELECT m.user_id, m.autopilot, u.name, u.email, u.is_bot
+     FROM fantasy_league_members m JOIN users u ON u.id = m.user_id
+     WHERE m.league_id = ?1 AND m.user_id = ?2`,
+  )
+    .bind(leagueId, targetUserId)
+    .first();
+  if (!target) return { error: { body: { error: "not a member of this league" }, status: 404 } };
+  if (target.is_bot) return { error: { body: { error: "that seat is already a bot manager" }, status: 400 } };
+
+  return { league, target, isCommissioner };
+}
+
+// POST /fantasy/league/:id/autopilot/:userId
+async function handleFantasyAutopilotOn(request, env, leagueId, targetUserId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const auth = await autopilotAuthorize(env, leagueId, targetUserId, user, { commissionerOnly: true });
+    if (auth.error) return json(auth.error.body, auth.error.status, cors);
+
+    await env.DB.prepare(
+      `UPDATE fantasy_league_members SET autopilot = 1, autopilot_since = datetime('now')
+       WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, targetUserId)
+      .run();
+
+    // Announced, never quiet. A team that starts playing itself must be
+    // visible to the whole league, and this is also how the absent manager
+    // finds out when they come back.
+    await postLeagueEvent(env, leagueId, CHAT_EVENTS.AUTOPILOT_ON, {
+      actor: memberDisplayName(user),
+      manager: memberDisplayName(auth.target),
+      userId: targetUserId,
+    });
+
+    return json({ ok: true, autopilot: true, userId: targetUserId }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// DELETE /fantasy/league/:id/autopilot/:userId
+async function handleFantasyAutopilotOff(request, env, leagueId, targetUserId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const auth = await autopilotAuthorize(env, leagueId, targetUserId, user, { commissionerOnly: false });
+    if (auth.error) return json(auth.error.body, auth.error.status, cors);
+
+    const cleared = await setAutopilotOff(env, leagueId, targetUserId);
+    if (cleared) {
+      await postLeagueEvent(env, leagueId, CHAT_EVENTS.AUTOPILOT_OFF, {
+        actor: memberDisplayName(user),
+        manager: memberDisplayName(auth.target),
+        userId: targetUserId,
+        returned: targetUserId === user.id,
+      });
+    }
+    return json({ ok: true, autopilot: false, userId: targetUserId }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// The write itself, guarded on the flag actually being set so the caller can
+// tell a real change from a no-op and only announce the former.
+async function setAutopilotOff(env, leagueId, userId) {
+  const result = await env.DB.prepare(
+    `UPDATE fantasy_league_members SET autopilot = 0, autopilot_since = NULL
+     WHERE league_id = ?1 AND user_id = ?2 AND autopilot = 1`,
+  )
+    .bind(leagueId, userId)
+    .run();
+  return (result.meta?.changes ?? 0) > 0;
+}
+
+// THE REVERSIBILITY RULE, enforced here: any action that proves the real
+// manager is back switches autopilot off, in the same request, before the app
+// can overwrite another of their decisions. Called from every route in
+// AUTOPILOT_RETURN_ACTIONS (src/fantasyBots.js).
+//
+// Deliberately swallows, exactly like postLeagueEvent: a manager's lineup save
+// must not fail because this UPDATE did. The next tick's autopilot pass would
+// then act once more, which is a far smaller harm than a rejected save, and
+// their next action clears it again.
+async function clearAutopilot(env, leagueId, userId, action) {
+  try {
+    if (!(await setAutopilotOff(env, leagueId, userId))) return;
+    const row = await env.DB.prepare(`SELECT name, email FROM users WHERE id = ?1`).bind(userId).first();
+    await postLeagueEvent(env, leagueId, CHAT_EVENTS.AUTOPILOT_OFF, {
+      actor: memberDisplayName(row),
+      manager: memberDisplayName(row),
+      userId,
+      returned: true,
+      action,
+    });
+  } catch (error) {
+    console.error("autopilot clear failed", action, error?.message ?? error);
+  }
+}
+
 // -- Public invite preview -------------------------------------------------------
 //
 // GET /fantasy/invite/:code. The only unauthenticated fantasy route.
@@ -1431,7 +1610,8 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
 
     const [members, picks, roster, currentGameweek, scheduleRow] = await Promise.all([
       env.DB.prepare(
-        `SELECT m.user_id, m.draft_position, u.name, u.email, u.is_bot FROM fantasy_league_members m
+        `SELECT m.user_id, m.draft_position, m.autopilot, m.autopilot_since, u.name, u.email, u.is_bot
+         FROM fantasy_league_members m
          JOIN users u ON u.id = m.user_id
          WHERE m.league_id = ?1 ORDER BY m.draft_position IS NULL, m.draft_position, m.joined_at`,
       )
@@ -1456,6 +1636,12 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
       name: memberDisplayName(row),
       draftPosition: row.draft_position,
       isBot: Boolean(row.is_bot),
+      // A team being played by the bots must be visibly labelled wherever it
+      // appears, exactly like a bot seat is. Separate from isBot on purpose:
+      // this seat still belongs to a real person who can take it back at any
+      // moment, and calling them a bot would be wrong.
+      autopilot: Boolean(row.autopilot),
+      autopilotSince: row.autopilot_since ?? null,
     }));
 
     return json(
@@ -2085,6 +2271,10 @@ async function handleFantasyLineupSet(request, env, leagueId, cors) {
       });
     }
 
+    // The manager set their own XI, so they are back: autopilot stops here,
+    // in the same request, before the next tick can overwrite this decision.
+    await clearAutopilot(env, leagueId, user.id, "lineup");
+
     return json({ gameweek, source: "set", starters: starterEntries, bench }, 200, cors);
   } catch {
     return json({ error: "fantasy unavailable" }, 502, cors);
@@ -2176,6 +2366,8 @@ async function handleFantasyDraftQueueSet(request, env, leagueId, cors) {
         ).bind(leagueId, user.id, playerId, index),
       ),
     ]);
+
+    await clearAutopilot(env, leagueId, user.id, "draft_queue");
 
     return json({ queue: deduped }, 200, cors);
   } catch {
@@ -2758,6 +2950,10 @@ async function handleFantasyChat(request, env, leagueId, cors) {
       )
         .bind(leagueId, user.id, text)
         .run();
+      // Typing in your own league is unambiguous presence, even though it moves
+      // no players. Autopilot is damage control for an absent manager, and this
+      // manager is plainly not absent.
+      await clearAutopilot(env, leagueId, user.id, "chat");
     } else if (body?.action === "react") {
       if (!CHAT_REACTIONS.includes(body.emoji)) return json({ error: "bad emoji" }, 400, cors);
       const messageId = Number(body.messageId);
@@ -3196,6 +3392,8 @@ async function handleFantasyWaiverClaimCreate(request, env, leagueId, cors) {
       }
     }
 
+    await clearAutopilot(env, leagueId, user.id, "waiver_claim");
+
     const window = waiverRunWindow({ matches, gameweek, now: Date.now() });
     return json(
       { claimId: result.meta.last_row_id, gameweek, deferred, runsAfter: window.earliestRunAt, status: "pending" },
@@ -3352,6 +3550,8 @@ async function handleFantasyFreeAgentAdd(request, env, leagueId, cors) {
       dropped: dropPlayer?.name ?? null,
       gameweek,
     });
+
+    await clearAutopilot(env, leagueId, user.id, "free_agent");
 
     return json({ ok: true, roster: await fantasyRosterFor(env, leagueId, user.id) }, 200, cors);
   } catch {
@@ -4355,6 +4555,189 @@ async function writeDraftRecapProse(env, args) {
     console.error(`draft recap generation failed league=${args.leagueId}`, error?.message ?? error);
     return null;
   }
+}
+
+// -- Autopilot cron pass -------------------------------------------------------
+//
+// Plays every seat a commissioner has handed over. Two jobs, in the order they
+// matter: field the best legal XI, then consider ONE conservative
+// same-position pickup.
+//
+// Why the lineup is WRITTEN rather than left to resolveEffectiveLineup's
+// read-time fallback: that fallback fills in roster order, which is legal but
+// not good, and it only applies to a manager who never set a lineup at all. An
+// abandoned team is usually the other case, a stale XI set weeks ago that is
+// inherited forward every gameweek. That stale XI is exactly the problem
+// autopilot exists to solve, so it has to write over it.
+//
+// Costs no API-Football calls of its own: currentFantasyMatches is the feed
+// the cron already holds this tick.
+async function runScheduledAutopilot(env) {
+  if (!env.DB) return;
+
+  const seats = await env.DB.prepare(
+    `SELECT m.league_id, m.user_id, l.name AS league_name, u.name, u.email
+     FROM fantasy_league_members m
+     JOIN fantasy_leagues l ON l.id = m.league_id
+     JOIN users u ON u.id = m.user_id
+     WHERE m.autopilot = 1 AND l.draft_status = 'complete'`,
+  ).all();
+  const rows = seats.results ?? [];
+  if (!rows.length) return; // the overwhelmingly common case, and it costs one SELECT
+
+  const gameweek = await currentFantasyGameweek(env);
+  // Read once for the whole tick rather than per seat. null (feed unavailable)
+  // means no pickup is attempted, because the kickoff lock cannot be evaluated.
+  const matches = await currentFantasyMatches(env);
+  const xpByPlayer = await fantasyXpMap(env);
+
+  for (const seat of rows) {
+    try {
+      await runAutopilotSeat(env, seat, gameweek, matches, xpByPlayer);
+    } catch (error) {
+      // One seat failing must not strand the others, and nothing here is
+      // load-bearing: the next tick retries from the same flag.
+      console.error(`autopilot failed league=${seat.league_id} user=${seat.user_id}`, error?.message ?? error);
+    }
+  }
+}
+
+async function fantasyXpMap(env) {
+  const rows = await env.DB.prepare(`SELECT player_id, xp FROM fantasy_player_xp WHERE xp IS NOT NULL`).all();
+  return new Map((rows.results ?? []).map((row) => [row.player_id, row.xp]));
+}
+
+async function runAutopilotSeat(env, seat, gameweek, matches, xpByPlayer) {
+  const leagueId = seat.league_id;
+  const userId = seat.user_id;
+  const withXp = (players) => players.map((player) => ({ ...player, xp: xpByPlayer.get(player.id) ?? null }));
+
+  const roster = withXp(await fantasyRosterFor(env, leagueId, userId));
+  if (roster.length < STARTING_SIZE) return; // cannot field a legal XI, nothing to write
+
+  await writeAutopilotLineup(env, leagueId, userId, gameweek, roster);
+
+  // The pickup is strictly secondary and is skipped whenever anything about
+  // the decision is uncertain. A wrong pickup churns a squad its owner may
+  // come back to, so "do nothing" is always the safe answer.
+  if (!matches) return;
+  await considerAutopilotPickup(env, seat, gameweek, matches, xpByPlayer, roster);
+}
+
+// Overwrites this gameweek's XI with the best legal one, captaining its top
+// scorer. The delete and the eleven inserts ride ONE batch, so the seat is
+// never left with a partial XI.
+async function writeAutopilotLineup(env, leagueId, userId, gameweek, roster) {
+  const { players, captainId } = bestStartingXi(roster);
+  if (players.length !== STARTING_SIZE) return;
+
+  // The same validator a manager's own save goes through. Autopilot writing an
+  // illegal XI would be worse than the stale one it replaces, so it gets no
+  // private path around the rules.
+  const validation = validateLineupSelection({
+    starters: players.map((player) => player.id),
+    captainId,
+    roster,
+  });
+  if (!validation.ok) return;
+
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM fantasy_lineups WHERE league_id = ?1 AND user_id = ?2 AND gameweek = ?3`).bind(
+      leagueId,
+      userId,
+      gameweek,
+    ),
+    ...players.map((player) =>
+      env.DB.prepare(
+        `INSERT INTO fantasy_lineups (league_id, user_id, gameweek, player_id, is_captain) VALUES (?1, ?2, ?3, ?4, ?5)`,
+      ).bind(leagueId, userId, gameweek, player.id, player.id === captainId ? 1 : 0),
+    ),
+  ]);
+}
+
+async function considerAutopilotPickup(env, seat, gameweek, matches, xpByPlayer, roster) {
+  const leagueId = seat.league_id;
+  const userId = seat.user_id;
+
+  const already = await autopilotMovesThisGameweek(env, leagueId, userId, gameweek);
+  if (already >= AUTOPILOT_PICKUPS_PER_RUN) return;
+
+  // Only genuine free agents. A player on the wire needs a waiver claim, and
+  // autopilot deliberately does not queue those: a claim spends FAAB budget an
+  // absent manager may want back, which is a decision rather than damage
+  // control.
+  const freeRows = await env.DB.prepare(
+    `SELECT p.id, p.name, p.team, p.position FROM fantasy_players p
+     WHERE NOT EXISTS (SELECT 1 FROM fantasy_rosters r WHERE r.league_id = ?1 AND r.player_id = p.id)
+       AND NOT EXISTS (SELECT 1 FROM fantasy_waiver_wire w WHERE w.league_id = ?1 AND w.player_id = p.id)`,
+  )
+    .bind(leagueId)
+    .all();
+  const freeAgents = (freeRows.results ?? []).map((row) => ({ ...row, xp: xpByPlayer.get(row.id) ?? null }));
+  if (!freeAgents.length) return;
+
+  // The kickoff lock applies to autopilot exactly as it does to a manager: a
+  // swap must not bank or dodge points that are already decided.
+  const now = Date.now();
+  const locked = new Set([
+    ...lockedPlayerIds(roster, matches, gameweek, now),
+    ...lockedPlayerIds(freeAgents, matches, gameweek, now),
+  ]);
+
+  const move = autopilotPickup({ roster, freeAgents, lockedPlayerIds: locked });
+  if (!move) return;
+
+  // The same guarded INSERT...SELECT the manager-facing free-agent route uses:
+  // a real manager claiming this player between the read above and this write
+  // must win, not be silently overwritten.
+  const insert = await env.DB.prepare(
+    `INSERT INTO fantasy_rosters (league_id, user_id, player_id, acquired_via)
+     SELECT ?1, ?2, ?3, 'free_agent'
+     WHERE NOT EXISTS (SELECT 1 FROM fantasy_rosters WHERE league_id = ?1 AND player_id = ?3)
+       AND NOT EXISTS (SELECT 1 FROM fantasy_waiver_wire w WHERE w.league_id = ?1 AND w.player_id = ?3)`,
+  )
+    .bind(leagueId, userId, move.add.id)
+    .run();
+  if ((insert.meta?.changes ?? 0) === 0) return;
+
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM fantasy_rosters WHERE league_id = ?1 AND user_id = ?2 AND player_id = ?3`).bind(
+      leagueId,
+      userId,
+      move.drop.id,
+    ),
+    env.DB.prepare(
+      `INSERT INTO fantasy_waiver_wire (league_id, player_id, clears_after_gameweek) VALUES (?1, ?2, ?3)
+       ON CONFLICT(league_id, player_id) DO UPDATE SET added_at = datetime('now'), clears_after_gameweek = ?3`,
+    ).bind(leagueId, move.drop.id, gameweek),
+    // The move's own feed row, which doubles as the per-gameweek ledger the
+    // cap above counts. Folded into the SAME batch as the swap, so a move can
+    // never happen unannounced nor be counted without having happened.
+    leagueEventStatement(env, leagueId, CHAT_EVENTS.AUTOPILOT_MOVE, {
+      manager: memberDisplayName(seat),
+      userId,
+      added: move.add.name,
+      dropped: move.drop.name,
+      gain: move.gain,
+      gameweek,
+    }),
+  ]);
+}
+
+// Counts this seat's autopilot moves in this gameweek, read straight off the
+// feed rows the moves themselves write rather than from a separate ledger
+// table: the feed is already the permanent, atomic record of every
+// transaction, so a second table would only be another thing to keep in step.
+async function autopilotMovesThisGameweek(env, leagueId, userId, gameweek) {
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM fantasy_chat_messages
+     WHERE league_id = ?1 AND kind = 'system' AND event = ?2
+       AND json_extract(payload, '$.userId') = ?3
+       AND json_extract(payload, '$.gameweek') = ?4`,
+  )
+    .bind(leagueId, CHAT_EVENTS.AUTOPILOT_MOVE, userId, gameweek)
+    .first();
+  return row?.n ?? 0;
 }
 
 // GET /fantasy/league/:id/draft/recap. Membership-checked like every other

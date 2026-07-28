@@ -54,6 +54,9 @@ export const CHAT_EVENTS = Object.freeze({
   WAIVER_RUN: "waiver_run",
   RECAP: "recap",
   DRAFT_RECAP: "draft_recap",
+  AUTOPILOT_ON: "autopilot_on",
+  AUTOPILOT_OFF: "autopilot_off",
+  AUTOPILOT_MOVE: "autopilot_move",
 });
 
 // Cleans a human message. Control characters become spaces (a newline in a
@@ -186,6 +189,28 @@ export function describeChatEvent(entry) {
       });
       return { icon: "📨", text: `Waivers ran for ${week}. ${lines.join("; ")}.` };
     }
+
+    // Autopilot is announced in the feed for the same reason bots being added
+    // is: a team that starts playing itself must never do so quietly. The
+    // manager whose seat it is reads this too, and it is how they find out.
+    case CHAT_EVENTS.AUTOPILOT_ON:
+      return {
+        icon: "🤖",
+        text: `${actor} put ${payload.manager || "a manager"}'s team on autopilot. The bots will set its lineup until ${payload.manager || "they"} next make a move.`,
+      };
+
+    case CHAT_EVENTS.AUTOPILOT_OFF:
+      // Two ways off, and they read differently on purpose: a manager coming
+      // back is the good outcome and should look like one.
+      return payload.returned
+        ? { icon: "🙌", text: `${payload.manager || "A manager"} is back. Autopilot is off.` }
+        : { icon: "🤖", text: `${actor} took ${payload.manager || "a manager"}'s team off autopilot.` };
+
+    case CHAT_EVENTS.AUTOPILOT_MOVE:
+      return {
+        icon: "🤖",
+        text: `Autopilot signed ${payload.added || "a player"} and dropped ${payload.dropped || "a player"} for ${payload.manager || "an absent manager"}.`,
+      };
 
     case CHAT_EVENTS.DRAFT_RECAP:
       // Like RECAP below, this has its own rich renderer (the payload carries

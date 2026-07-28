@@ -21,7 +21,7 @@
 // src/fantasy*.js.
 
 import { STARTING_LIMITS } from "./fantasy.js";
-import { defaultLineup } from "./fantasyLineups.js";
+import { bestStartingXi } from "./fantasyLineups.js";
 import { rankDraftPool } from "./fantasyDraftRank.js";
 import { median } from "./fantasyRecap.js";
 import { PICK_VIA } from "./draftLogic.js";
@@ -74,22 +74,6 @@ export function gradeFromZ(z) {
 export function pickDelta(overallPick, draftRank) {
   if (!Number.isFinite(draftRank) || !Number.isFinite(overallPick)) return null;
   return overallPick - draftRank;
-}
-
-// The best legal starting XI a roster can field, by expected points.
-//
-// Reuses defaultLineup rather than re-deriving the formation rules: feeding it
-// a roster pre-sorted by xP makes its own fill order (each position's
-// STARTING_LIMITS minimum first, then top up to STARTING_SIZE respecting the
-// maximums) pick the best player available at every step. Greedy is optimal
-// here because every slot past the minimums is a flex slot, so there is no
-// arrangement a swap could improve.
-export function bestStartingXi(roster) {
-  const ranked = [...(roster ?? [])].sort((a, b) => xpOf(b) - xpOf(a));
-  const byId = new Map(ranked.map((player) => [player.id, player]));
-  const { starters } = defaultLineup(ranked);
-  const players = starters.map((entry) => byId.get(entry.playerId)).filter(Boolean);
-  return { players, points: round1(players.reduce((sum, player) => sum + xpOf(player), 0)) };
 }
 
 // What a manager can actually put on the pitch at one position: the xP of the

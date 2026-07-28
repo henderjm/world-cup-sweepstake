@@ -178,3 +178,117 @@ export const BOT_PICK_CLOCK_MS = 4 * 1000;
 export function pickClockMs(onClockIsBot) {
   return onClockIsBot ? BOT_PICK_CLOCK_MS : HUMAN_PICK_CLOCK_MS;
 }
+
+// -- Dead-team autopilot ----------------------------------------------------
+//
+// ESPN ships this as Auto Control, and it is DAMAGE CONTROL, not engagement.
+// One abandoned roster fielding a stale XI does not just cost its own owner,
+// it hands free wins to whoever happens to play them and quietly ruins the
+// season for the other nine people. A commissioner needs a way to stop that
+// without evicting anybody.
+//
+// It lives in this module rather than in one of its own because a team on
+// autopilot IS a bot manager, temporarily: the seat keeps its real human
+// owner, its results still count, and what changes is only who makes the
+// decisions. Everything it does is something the bot machinery already did.
+// There is no second brain here, and there must not be one.
+//
+// THE REVERSIBILITY RULE, and it is the one that matters:
+//
+//   Autopilot is off the instant the real manager touches ANYTHING. Not on the
+//   next cron tick, not after a confirmation: the same request that shows they
+//   are back clears the flag. A manager who returns to find the app still
+//   playing their team for them would be right to leave, so the disengage is
+//   not a feature of autopilot, it is the price of being allowed to exist.
+
+// What autopilot may do, as an explicit allowlist rather than a list of
+// prohibitions. Written this way on purpose: the day trades ship, an autopilot
+// built on "everything except trades" silently gains the ability to trade an
+// absent manager's squad away, whereas this one has to be deliberately edited
+// to gain anything at all. Trading somebody's players without them is a
+// different product with different consequences, and it is never in here.
+export const AUTOPILOT_ACTIONS = Object.freeze(["lineup", "pickup"]);
+
+export function autopilotAllows(action) {
+  return AUTOPILOT_ACTIONS.includes(action);
+}
+
+// The manager actions that mean the real person is back, and therefore switch
+// autopilot off. Deliberately broad: posting in the feed is not a roster move,
+// but somebody typing in their league is unambiguously present, and the cost
+// of disengaging a fraction too eagerly is that a manager plays their own team
+// (which is the desired state) while the cost of disengaging too late is the
+// app overwriting a decision a real person just made.
+export const AUTOPILOT_RETURN_ACTIONS = Object.freeze([
+  "lineup",
+  "free_agent",
+  "waiver_claim",
+  "draft_queue",
+  "chat",
+]);
+
+export function autopilotDisengagesOn(action) {
+  return AUTOPILOT_RETURN_ACTIONS.includes(action);
+}
+
+// How much better a free agent has to be, in expected points, before autopilot
+// will swap him in for somebody the absent manager actually chose.
+//
+// Set high on purpose. Autopilot is standing in for an absent person, not
+// playing the waiver wire on their behalf, and a marginal upgrade churns a
+// squad its owner may come back to. A wrong pickup is worse than no pickup,
+// so the bar is "the manager would obviously have done this".
+export const AUTOPILOT_PICKUP_MARGIN = 15;
+
+// At most one swap per run, whatever the run finds. A bot that rebuilt an
+// abandoned squad wholesale in one tick would be indistinguishable from a bug.
+export const AUTOPILOT_PICKUPS_PER_RUN = 1;
+
+// The one same-position swap most worth making right now, or null.
+//
+// Same-position by construction, which is what keeps every roster bucket full
+// and the XI legal (see SQUAD_SLOTS and validateAcquisition in
+// fantasyWaivers.js). A locked player, on either side of the swap, is simply
+// not a candidate: the kickoff lock exists so a move cannot bank or dodge
+// points already decided, and autopilot gets no exemption from it.
+//
+// Pure: takes the roster, the available free agents and the locked set, and
+// returns a decision. It performs nothing and reads no clock.
+export function autopilotPickup({ roster, freeAgents, lockedPlayerIds, margin = AUTOPILOT_PICKUP_MARGIN } = {}) {
+  const locked = lockedPlayerIds instanceof Set ? lockedPlayerIds : new Set(lockedPlayerIds ?? []);
+  const eligible = (list) => (list ?? []).filter((player) => player && !locked.has(player.id));
+
+  const mine = eligible(roster);
+  const available = eligible(freeAgents);
+  if (!mine.length || !available.length) return null;
+
+  let best = null;
+  for (const position of new Set(mine.map((player) => player.position))) {
+    // The worst player I hold there, against the best one going spare.
+    const drop = lowestBy(mine.filter((player) => player.position === position));
+    const add = highestBy(available.filter((player) => player.position === position));
+    if (!drop || !add) continue;
+
+    const gain = xp(add) - xp(drop);
+    if (gain < margin) continue;
+    // Ties broken by player id so two ticks reading the same data always reach
+    // the same decision; nothing here may depend on array order.
+    if (!best || gain > best.gain || (gain === best.gain && add.id < best.add.id)) {
+      best = { add, drop, gain: Math.round(gain * 10) / 10 };
+    }
+  }
+  return best;
+}
+
+function xp(player) {
+  const value = Number(player?.xp);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function highestBy(players) {
+  return players.reduce((best, player) => (!best || xp(player) > xp(best) ? player : best), null);
+}
+
+function lowestBy(players) {
+  return players.reduce((worst, player) => (!worst || xp(player) < xp(worst) ? player : worst), null);
+}

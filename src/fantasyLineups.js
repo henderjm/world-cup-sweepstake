@@ -88,6 +88,42 @@ export function defaultLineup(roster) {
   };
 }
 
+// The best legal starting XI a roster can field, by expected points, plus that
+// XI's total. Used by the post-draft projection and by the dead-team autopilot,
+// which is why it lives here beside the formation rules rather than in either
+// caller.
+//
+// Reuses defaultLineup rather than re-deriving the formation rules: feeding it
+// a roster pre-sorted by xP makes its own fill order (each position's
+// STARTING_LIMITS minimum first, then top up to STARTING_SIZE respecting the
+// maximums) select the best player available at every step. Greedy is optimal
+// here because every slot past the minimums is a flex slot, so there is no
+// swap that could improve the total.
+//
+// A player with no xP counts as zero rather than being dropped: he is still a
+// legal body, and a roster short of xP data must still field eleven players.
+export function bestStartingXi(roster) {
+  const ranked = [...(roster ?? [])].sort((a, b) => xpValue(b) - xpValue(a));
+  const byId = new Map(ranked.map((player) => [player.id, player]));
+  const { starters } = defaultLineup(ranked);
+  const players = starters.map((entry) => byId.get(entry.playerId)).filter(Boolean);
+
+  // The captain is the XI's highest scorer, NOT defaultLineup's "first starter
+  // chosen". That rule is correct for a deterministic legal default, but
+  // fillLineup fills each position's minimum in GK, DEF, MID, FWD order, so
+  // its first starter is always the goalkeeper. A captain's points are
+  // doubled, so inheriting that here would quietly cost an absent manager
+  // points every single week, which is the opposite of what autopilot is for.
+  const captain = players.reduce((best, player) => (!best || xpValue(player) > xpValue(best) ? player : best), null);
+  const points = players.reduce((total, player) => total + xpValue(player), 0);
+  return { players, captainId: captain?.id ?? null, points: Math.round(points * 10) / 10 };
+}
+
+export function xpValue(player) {
+  const value = Number(player?.xp);
+  return Number.isFinite(value) ? value : 0;
+}
+
 // A manager's saved starters (set for this gameweek, or inherited from an
 // earlier one) can reference a player no longer on their roster: dropped via
 // free agency or a waiver claim since the lineup was last touched. Filters
