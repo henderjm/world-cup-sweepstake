@@ -1,5 +1,21 @@
 import { loadModel } from "./data.js";
-import { posthog } from "./telemetry.js";
+import { track, trackException } from "./telemetry.js";
+import {
+  FUNNEL_EVENTS,
+  PICK_SOURCES,
+  claimSubmittedProperties,
+  demoAbandonProperties,
+  demoDeskProperties,
+  demoDraftCompletedProperties,
+  demoDraftStartedProperties,
+  demoPickProperties,
+  demoReportProperties,
+  demoSetupProperties,
+  demoShareProperties,
+  lineupSavedProperties,
+  leagueProperties,
+  realDraftPickProperties,
+} from "./funnelEvents.js";
 import { COMPETITIONS, DEFAULT_COMPETITION_CODE } from "./competitions.js";
 import {
   knockoutMatches,
@@ -290,6 +306,19 @@ function storedCompetition() {
 
 let model = null;
 let appLoadMetricSent = false;
+// Whether this visitor actually played the sandbox in this browsing session.
+// It is the join between the two halves of the funnel: a real league created
+// by someone who has just finished a demo is precisely the conversion the
+// product is betting on, and it is only attributable if the real-league event
+// carries it. Module-level rather than on state.demo because restartDemo
+// replaces that object wholesale. In memory only: a page reload between the
+// demo and the league loses it, so this UNDERCOUNTS the link rather than
+// guessing at one, and it needs no storage and no consent banner.
+let demoPlayedThisSession = false;
+
+function demoWasPlayed() {
+  return demoPlayedThisSession;
+}
 let pollTimer = null;
 let lastSignature = "";
 let lastFetchAt = 0;
@@ -310,7 +339,7 @@ async function start() {
         window.location.reload();
       }
     } catch (error) {
-      posthog.captureException(error);
+      trackException(error);
     }
     return;
   }
@@ -569,7 +598,7 @@ async function loadPaperRun() {
     if (state.paperrun.date !== date) return;
     state.paperrun.day = day;
   } catch (error) {
-    posthog.captureException(error);
+    trackException(error);
   } finally {
     state.paperrun.loading = false;
   }
@@ -587,7 +616,7 @@ function mountPaperRun() {
     onTick: (snap) => updatePaperRunHud(host, snap),
     onStart: () => {
       metric("count", "paperrun_started", 1);
-      posthog.capture("paper_run_started", { date: state.paperrun.date });
+      track("paper_run_started", { date: state.paperrun.date });
     },
     onUnavailable: () => {
       const status = host.querySelector("[data-run-status]");
@@ -598,7 +627,7 @@ function mountPaperRun() {
       metric("count", "paperrun_completed", 1, {
         tags: { score: String(result.score), deliveries: String(result.deliveries), finished: String(result.finished) },
       });
-      posthog.capture("paper_run_completed", {
+      track("paper_run_completed", {
         date: state.paperrun.date,
         score: result.score,
         deliveries: result.deliveries,
@@ -1155,6 +1184,7 @@ async function submitFantasyWaiverFlow() {
     } else {
       await apiSubmitWaiverClaim(f.activeLeagueId, { addPlayerId: flow.addPlayer.id, dropPlayerId: flow.dropPlayerId, bid });
     }
+    track(FUNNEL_EVENTS.FANTASY_CLAIM_SUBMITTED, claimSubmittedProperties(f, flow));
     f.waiverFlow = null;
     await reloadFantasyWaivers();
   } catch (error) {
@@ -1296,7 +1326,13 @@ async function saveFantasyLineup() {
   renderLayout();
   try {
     const saved = await apiSetLineup(f.activeLeagueId, { starters: edit.starters, captainId: edit.captainId });
+    // Built before f.lineup is replaced, so `previous_source` reports what the
+    // manager was on BEFORE this save: "inherited"/"default" here is a manager
+    // taking control of their XI for the first time, which is a different and
+    // far more interesting event than a regular weekly tweak.
+    const lineupProperties = lineupSavedProperties(f, edit);
     f.lineup = saved;
+    track(FUNNEL_EVENTS.FANTASY_LINEUP_SAVED, lineupProperties);
     f.lineupEdit = null;
   } catch (error) {
     edit.saving = false;
@@ -1356,6 +1392,10 @@ async function createFantasyLeague(name) {
   renderLayout();
   try {
     const league = await apiCreateLeague(trimmed);
+    // Success only. A rejected create is a validation failure, not a
+    // conversion, and counting it would inflate the top of the real-league
+    // funnel exactly where it is being compared against the demo's.
+    track(FUNNEL_EVENTS.FANTASY_LEAGUE_CREATED, leagueProperties(league, { came_from_demo: demoWasPlayed() }));
     state.fantasy.createBusy = false;
     state.fantasy.leagues = null; // refetch next list view so isCommissioner etc. is consistent
     renderLayout();
@@ -1375,6 +1415,7 @@ async function joinFantasyLeague(code) {
   renderLayout();
   try {
     const league = await apiJoinLeague(trimmed);
+    track(FUNNEL_EVENTS.FANTASY_LEAGUE_JOINED, leagueProperties(league, { came_from_demo: demoWasPlayed() }));
     state.fantasy.joinBusy = false;
     state.fantasy.leagues = null;
     renderLayout();
@@ -1567,6 +1608,11 @@ function applyFantasyDraftMessage(message) {
     window.Sentry?.captureMessage?.(`fantasy draft error: ${message.error}`);
   }
   if (message.type === "complete") {
+    track(FUNNEL_EVENTS.FANTASY_DRAFT_COMPLETED, {
+      league_id: state.fantasy.activeLeagueId,
+      league_size: state.fantasy.league?.members?.length ?? null,
+      total_picks: room.state?.overallPick ?? null,
+    });
     // The normal teardown path (closedByCaller set, timers/backoff stopped) -
     // NOT teardownFantasyDraftRoom(), which would also null out room.state and
     // blank the complete view. openDraftRoom also treats a received "complete"
@@ -1706,6 +1752,11 @@ function refreshFantasyDraftRoomLive() {
 
 async function startFantasyDraft(id) {
   await apiStartDraft(id);
+  // The request succeeded, so the league is now drafting. Paired with
+  // fantasy_draft_completed this is the client-side view of the stall that
+  // 03-stalled-drafts.sql measures server-side; the two should agree, and a
+  // gap between them points at the draft room rather than at the manager.
+  track(FUNNEL_EVENTS.FANTASY_DRAFT_START_REQUESTED, { league_id: id });
   await openFantasyLeague(id);
 }
 
@@ -1937,10 +1988,24 @@ function renderDemoDeskStage() {
   }
 }
 
+// Called from renderLayout on EVERY paint where the section is not the demo,
+// so the abandonment report is latched behind `exitReported` rather than
+// fired here unconditionally; without the latch a single navigation away
+// would emit one event per subsequent render. demoAbandonProperties returns
+// null for the stages that are not an abandonment at all (never started, or
+// reached the report card), which is what keeps a bounce off the top of the
+// funnel from also being counted as a drop-out part-way down it.
 function teardownDemo() {
   clearDemoDraftTimers();
   if (state.demo.rollTimer) window.clearTimeout(state.demo.rollTimer);
   state.demo.rollTimer = null;
+  if (!state.demo.exitReported) {
+    const properties = demoAbandonProperties(state.demo);
+    if (properties) {
+      state.demo.exitReported = true;
+      track(FUNNEL_EVENTS.DEMO_ABANDONED, properties);
+    }
+  }
 }
 
 function clearDemoDraftTimers() {
@@ -1980,7 +2045,7 @@ async function startDemoDraft() {
       const raw = await loadPlFixtureData();
       d.fixtureData = { matches: raw.matches ?? [], standingsMap: standingsMapFromRawPayload(raw) };
     } catch (error) {
-      if (error?.status !== 404) posthog.captureException(error);
+      if (error?.status !== 404) trackException(error);
       d.fixtureData = null;
     }
   }
@@ -1995,7 +2060,9 @@ async function startDemoDraft() {
   d.queue = [];
   d.busy = false;
   d.stage = "drafting";
-  posthog.capture("demo_draft_started", { league_size: d.size, clock: d.clock });
+  d.exitReported = false; // a fresh attempt gets its own abandonment report
+  demoPlayedThisSession = true;
+  track(FUNNEL_EVENTS.DEMO_DRAFT_STARTED, demoDraftStartedProperties(d));
   // scheduleDemoTurn first, same reasoning as applyDemoPickAndAdvance: it
   // sets d.remainingMs (a real duration, or null for untimed) before the
   // first paint, so round 1 pick 1's on-clock card never flashes the
@@ -2019,7 +2086,7 @@ function scheduleDemoTurn() {
   if (manager.isBot) {
     d.botTimer = window.setTimeout(() => {
       const pick = autoPickForRoom(d.room, d.pool?.players ?? []);
-      if (pick) applyDemoPickAndAdvance(pick);
+      if (pick) applyDemoPickAndAdvance(pick, { source: PICK_SOURCES.BOT });
     }, DEMO_BOT_PICK_DELAY_MS);
   } else {
     const durationMs = demoClockDurationMs(d.clock);
@@ -2049,7 +2116,12 @@ function startDemoHumanClock(durationMs) {
       const draftedIds = draftedPlayerIds(d.room);
       const queuedPick = topQueuedPick(d.queue, d.pool?.players ?? [], myRoster, draftedIds);
       const pick = queuedPick ?? autoPickForRoom(d.room, d.pool?.players ?? []);
-      if (pick) applyDemoPickAndAdvance(pick, { viaQueue: queuedPick != null });
+      if (pick) {
+        applyDemoPickAndAdvance(pick, {
+          viaQueue: queuedPick != null,
+          source: queuedPick != null ? PICK_SOURCES.QUEUE_AUTOPICK : PICK_SOURCES.CLOCK_AUTOPICK,
+        });
+      }
     }
   }, 1000);
 }
@@ -2068,11 +2140,19 @@ function updateDemoClockDisplay(remainingMs) {
 // on-clock card's countdown/"No clock" already reflects the new picker by
 // the time refreshDemoDraftRoomLive/renderLayout actually paints it, rather
 // than showing the previous picker's stale number for one frame.
-function applyDemoPickAndAdvance(player, { viaQueue = false } = {}) {
+function applyDemoPickAndAdvance(player, { viaQueue = false, source = PICK_SOURCES.MANUAL } = {}) {
   const d = state.demo;
+  // Built BEFORE applyDemoPick advances the room, so round/pick/seconds-left
+  // describe the pick that was just made rather than the next one.
+  const pickProperties = demoPickProperties(d, player, source);
   clearDemoDraftTimers();
   d.room = applyDemoPick(d.room, player, { viaQueue });
+  // Bot picks are deliberately not tracked: they are three quarters of every
+  // board and nobody chose them, so sending them would bury the human picks
+  // that the funnel is actually about under their own volume.
+  if (source !== PICK_SOURCES.BOT) track(FUNNEL_EVENTS.DEMO_PICK_MADE, pickProperties);
   if (isDemoDraftComplete(d.room)) {
+    track(FUNNEL_EVENTS.DEMO_DRAFT_COMPLETED, demoDraftCompletedProperties(d));
     beginDemoSeason();
     return;
   }
@@ -2235,7 +2315,7 @@ function finishDemoSeason() {
   const season = { ...d.season, standings: finalStandings };
   d.reportCard = buildDemoReportCard({ humanId: d.humanId, members: d.members, season });
   d.stage = "report";
-  posthog.capture("demo_report_viewed", { position: d.reportCard.position, league_size: d.reportCard.leagueSize });
+  track(FUNNEL_EVENTS.DEMO_REPORT_VIEWED, demoReportProperties(d));
   renderLayout();
 }
 
@@ -2257,6 +2337,7 @@ function demoLineupForPanel(season, userId) {
 function openDemoDesk() {
   const d = state.demo;
   d.stage = "desk";
+  track(FUNNEL_EVENTS.DEMO_DESK_REACHED, demoDeskProperties(d, { from_gameweek: d.rollFromGw, to_gameweek: d.rollToGw }));
   d.desk = {
     fromGw: d.rollFromGw,
     toGw: d.rollToGw,
@@ -2366,6 +2447,12 @@ function saveDemoLineupEdit() {
   }
   d.season = result.season;
   d.desk.lineupEdit = null;
+  // Saved only, never attempted: a rejected formation is a UI problem, and
+  // counting it as engagement would hide that it was rejected.
+  track(
+    FUNNEL_EVENTS.DEMO_DESK_LINEUP_SAVED,
+    demoDeskProperties(d, { captain_changed: edit.captainId != null, starters: edit.starters?.length ?? 0 }),
+  );
   renderLayout();
 }
 
@@ -2408,6 +2495,9 @@ function confirmDemoWaiverClaim() {
   d.desk.waiverPick = { addPlayerId: target.id, dropPlayerId: d.desk.pendingDropId };
   d.desk.waiverTarget = null;
   d.desk.pendingDropId = null;
+  // The claim is queued here, not resolved: its outcome arrives at the next
+  // desk and rides on demo_desk_continued's claim_outcome instead.
+  track(FUNNEL_EVENTS.DEMO_DESK_CLAIM_MADE, demoDeskProperties(d, { position: target.position ?? null }));
   renderLayout();
 }
 
@@ -2425,7 +2515,10 @@ function continueDemoDesk() {
   d.pendingWaiverResult = humanResult;
   d.pendingWaiverPlayerName = humanClaim ? season.rosterById.get(humanClaim.addPlayerId)?.name ?? null : null;
   d.desk = null;
-  posthog.capture("demo_desk_continued", { made_waiver_claim: Boolean(humanClaim) });
+  track(
+    FUNNEL_EVENTS.DEMO_DESK_CONTINUED,
+    demoDeskProperties(d, { made_waiver_claim: Boolean(humanClaim), claim_outcome: humanResult?.status ?? null }),
+  );
   startDemoChunkRoll();
 }
 
@@ -2437,7 +2530,7 @@ function beginDemoSimToEnd() {
   const d = state.demo;
   const fromGw = d.season.simulatedThrough + 1;
   d.desk = null;
-  posthog.capture("demo_sim_to_end", { at_gameweek: d.season.simulatedThrough });
+  track(FUNNEL_EVENTS.DEMO_SIM_TO_END, demoDeskProperties(d, { at_gameweek: d.season.simulatedThrough }));
   d.season = simulateDemoSeasonToEnd(d.season, { humanId: d.humanId });
   startDemoRollFrom(fromGw, d.season.gameweeks);
 }
@@ -2457,10 +2550,19 @@ function shareDemoResult(button) {
             ? "Share your result"
             : "Copy unavailable";
     if (button) button.textContent = d.shareStatus;
+    // Tracked on the RESOLVED outcome, not on the click. The click already has
+    // its own demo_share_clicked metric, and the two together are what
+    // separate wanting to share from actually sharing: a dismissed share sheet
+    // resolves "cancelled" and must not be counted as a share.
+    track(FUNNEL_EVENTS.DEMO_RESULT_SHARED, demoShareProperties(d, status));
   });
 }
 
 function restartDemo() {
+  track(FUNNEL_EVENTS.DEMO_RESTARTED, demoReportProperties(state.demo));
+  // Latched before teardown so replaying from the report card is recorded as a
+  // restart and never as an abandonment.
+  state.demo.exitReported = true;
   teardownDemo();
   const name = state.demo.name;
   const size = state.demo.size;
@@ -2494,7 +2596,7 @@ function openTutorial(slug) {
   state.learn.slug = slug;
   state.learn.resolverMode = "faab";
   window.history.replaceState(null, "", `#learn/${slug}`);
-  posthog.capture("tutorial_opened", { slug });
+  track("tutorial_opened", { slug });
   if (changingSection) renderAll();
   else renderLayout();
 }
@@ -2537,13 +2639,19 @@ function syncNav() {
 
 function setSection(section) {
   if (state.section === section) return;
+  const previous = state.section;
   state.section = section;
   // A nav click always lands on that section's own default view: Learn's is
   // the tutorials index, not wherever a previous visit left off.
   if (section === "learn") state.learn.slug = null;
   window.history.replaceState(null, "", `#${section === "scores" ? state.tab : section}`);
   metric("count", "section_view", 1, { tags: { section } });
-  posthog.capture("section_viewed", { section });
+  track("section_viewed", { section });
+  // The sandbox is the top of the acquisition funnel and has no nav button of
+  // its own, so it is only ever reached from a specific call to action.
+  // `from_section` is which one, which is the only way to tell a demo entered
+  // off the Fantasy gate from one entered off a Learn page.
+  if (section === "demo") track(FUNNEL_EVENTS.DEMO_ENTERED, { from_section: previous ?? null });
   renderAll();
 }
 
@@ -2571,14 +2679,28 @@ function setTab(tab) {
   state.tab = tab;
   window.history.replaceState(null, "", `#${tab}`);
   metric("count", "tab_view", 1, { tags: { tab } });
-  posthog.capture("tab_viewed", { tab });
+  track("tab_viewed", { tab });
   renderAll();
 }
 
 function wireNav() {
   document.addEventListener("click", (event) => {
     const button = event.target.closest("[data-section-nav]");
-    if (button && !button.disabled) setSection(button.dataset.sectionNav);
+    if (!button || button.disabled) return;
+    // The demo report card's "Create a real league" button navigates through
+    // the ordinary section nav, so without this marker it was indistinguishable
+    // from someone tapping Fantasy in the tab bar - the single most important
+    // click in the funnel, invisible. Tracked BEFORE setSection so the ordering
+    // in PostHog reads cause then effect.
+    const destination = button.dataset.demoRealLeague;
+    if (destination) {
+      track(FUNNEL_EVENTS.DEMO_REAL_LEAGUE_CLICKED, {
+        ...demoReportProperties(state.demo),
+        destination,
+        signed_in: destination === "fantasy",
+      });
+    }
+    setSection(button.dataset.sectionNav);
   });
 }
 
@@ -2591,7 +2713,7 @@ async function switchCompetition(code) {
     // storage may be blocked; the switch still applies for this visit
   }
   metric("count", "competition_switch", 1, { tags: { competition: code } });
-  posthog.capture("competition_switched", { competition: code });
+  track("competition_switched", { competition: code });
 
   const fresh = await loadModel(code);
   if (state.competition !== code) return; // switched again while loading
@@ -2836,7 +2958,7 @@ function wireLayoutControls() {
       metric("count", "push_enable", 1);
       enablePush()
         .then(() => {
-          posthog.capture("push_notifications_enabled");
+          track("push_notifications_enabled");
           updatePushControls();
         })
         .catch((error) => updatePushControls(String(error.message).includes("permission") ? "Permission was not granted." : "Couldn't enable. Try again."));
@@ -2893,6 +3015,9 @@ function wireLayoutControls() {
       return;
     }
     const fantasyLeagueCard = event.target.closest("[data-fantasy-league]");
+    if (fantasyLeagueCard && !fantasyLeagueCard.disabled) {
+      track(FUNNEL_EVENTS.FANTASY_LEAGUE_OPENED, { league_id: Number(fantasyLeagueCard.dataset.fantasyLeague) });
+    }
     if (fantasyLeagueCard) {
       openFantasyLeague(Number(fantasyLeagueCard.dataset.fantasyLeague));
       return;
@@ -2906,7 +3031,7 @@ function wireLayoutControls() {
       const messageId = Number(feedReactButton.dataset.feedMessage);
       const emoji = feedReactButton.dataset.feedReact;
       applyOptimisticFeedReaction(messageId, emoji);
-      posthog.capture("fantasy_feed_reaction_sent", { league_id: state.fantasy.activeLeagueId, emoji });
+      track("fantasy_feed_reaction_sent", { league_id: state.fantasy.activeLeagueId, emoji });
       postFantasyFeed({ action: "react", messageId, emoji });
       return;
     }
@@ -2928,6 +3053,8 @@ function wireLayoutControls() {
     const fantasyCopyButton = event.target.closest("[data-fantasy-copy-invite]");
     if (fantasyCopyButton) {
       const code = fantasyCopyButton.dataset.fantasyCopyInvite ?? "";
+      // The code itself is the join credential and must never be a property.
+      track(FUNNEL_EVENTS.FANTASY_INVITE_COPIED, { league_id: state.fantasy.activeLeagueId });
       navigator.clipboard
         ?.writeText(code)
         .then(() => {
@@ -2951,6 +3078,10 @@ function wireLayoutControls() {
     }
     const fantasyScheduleSaveButton = event.target.closest("[data-fantasy-schedule-save]");
     if (fantasyScheduleSaveButton && !fantasyScheduleSaveButton.disabled) {
+      track(FUNNEL_EVENTS.FANTASY_DRAFT_SCHEDULED, {
+        league_id: state.fantasy.activeLeagueId,
+        league_size: state.fantasy.league?.members?.length ?? null,
+      });
       saveFantasyLeagueSchedule();
       return;
     }
@@ -3026,7 +3157,19 @@ function wireLayoutControls() {
     const fantasyDraftButton = event.target.closest("[data-fantasy-draft-player]");
     if (fantasyDraftButton) {
       fantasyDraftButton.disabled = true;
-      state.fantasy.draftRoom?.controller.sendPick(Number(fantasyDraftButton.dataset.fantasyDraftPlayer));
+      const draftPlayerId = Number(fantasyDraftButton.dataset.fantasyDraftPlayer);
+      // Only a MANUAL pick reaches this handler. A real autopick happens in
+      // the Durable Object's alarm and never touches this browser, so unlike
+      // the sandbox there is no clock-expiry source to record here; the
+      // server-side gap that leaves is written up in scripts/metrics/README.md.
+      track(
+        FUNNEL_EVENTS.FANTASY_DRAFT_PICK_MADE,
+        realDraftPickProperties(
+          state.fantasy,
+          state.fantasy.playerPool?.players?.find((player) => player.id === draftPlayerId),
+        ),
+      );
+      state.fantasy.draftRoom?.controller.sendPick(draftPlayerId);
       return;
     }
     const lineupEditButton = event.target.closest("[data-fantasy-lineup-edit]");
@@ -3224,7 +3367,7 @@ function wireLayoutControls() {
     if (!text) return;
     input.value = "";
     appendOptimisticFeedMessage(text);
-    posthog.capture("fantasy_feed_message_sent", { league_id: state.fantasy.activeLeagueId });
+    track("fantasy_feed_message_sent", { league_id: state.fantasy.activeLeagueId });
     postFantasyFeed({ action: "message", text });
   });
   elements.layout.addEventListener("input", (event) => {
@@ -3288,7 +3431,7 @@ function openMatchRow(row) {
   if (!id) return;
   const match = model.matches.find((item) => String(item.id) === id);
   if (match) {
-    posthog.capture("match_opened", {
+    track("match_opened", {
       match_id: match.id,
       home_team: match.homeTeam,
       away_team: match.awayTeam,
@@ -3315,19 +3458,11 @@ function wireViewportChange() {
 // a capture event carrying its value and tags as properties, distinguishable
 // by metric_kind for anyone building an insight off it later.
 function metric(kind, name, value, options) {
-  try {
-    posthog.capture(name, { metric_kind: kind, value, ...(options?.tags ?? {}), ...(options?.unit ? { unit: options.unit } : {}) });
-  } catch {
-    /* telemetry must never break the app */
-  }
+  track(name, { metric_kind: kind, value, ...(options?.tags ?? {}), ...(options?.unit ? { unit: options.unit } : {}) });
 }
 
 function log(level, message, attributes) {
-  try {
-    posthog.capture("log", { level, message, ...attributes });
-  } catch {
-    /* telemetry must never break the app */
-  }
+  track("log", { level, message, ...attributes });
 }
 
 // App-load instrumentation.

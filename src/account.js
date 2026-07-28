@@ -1,5 +1,5 @@
 import { DATA_API } from "./data.js";
-import { posthog } from "./telemetry.js";
+import { track, identifyUser, resetIdentity } from "./telemetry.js";
 
 // Accounts: Google sign-in via Google Identity Services, an opaque bearer session
 // from the Worker kept in localStorage, followed clubs and notification prefs.
@@ -90,7 +90,7 @@ export async function restoreAccount() {
     // The Worker's publicUser() never hands the client the internal numeric user
     // id (see worker/worker.js), so email is the stable identity to key on here,
     // and it is also the identity the product wants users assigned by.
-    posthog.identify(account.user.email, { name: account.user.name, email: account.user.email });
+    identifyUser(account.user.email, { name: account.user.name, email: account.user.email });
     emit();
     return account;
   } catch (error) {
@@ -132,8 +132,8 @@ export async function mountSignIn(container, { onSignedIn, onError }) {
           });
           storeSession(result.token);
           account = { user: result.user, follows: result.follows };
-          posthog.identify(result.user.email, { name: result.user.name, email: result.user.email });
-          posthog.capture("user_signed_in", { method: "google" });
+          identifyUser(result.user.email, { name: result.user.name, email: result.user.email });
+          track("user_signed_in", { method: "google" });
           emit();
           onSignedIn?.(account);
         } catch (error) {
@@ -159,8 +159,8 @@ export async function signOut() {
   } catch {
     // best-effort; the local session is dropped regardless
   }
-  posthog.capture("user_signed_out");
-  posthog.reset();
+  track("user_signed_out");
+  resetIdentity();
   storeSession(null);
   account = null;
   emit();
@@ -173,7 +173,7 @@ export async function toggleFollow(competition, team) {
   });
   if (account) account.follows = result.follows;
   const nowFollowed = result.follows.some((f) => f.competition === competition && f.team === team);
-  posthog.capture("team_followed", { competition, team, following: nowFollowed });
+  track("team_followed", { competition, team, following: nowFollowed });
   emit();
   return result.follows;
 }

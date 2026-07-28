@@ -93,6 +93,47 @@ function breadcrumbs(items) {
   };
 }
 
+// -- Analytics beacon ------------------------------------------------------------
+
+/**
+ * A single anonymous pageview beacon for the pre-rendered Learn pages, and
+ * deliberately NOT the app's PostHog bundle.
+ *
+ * These pages are the site's entire organic-search surface and they load no
+ * application JavaScript at all, by design, so until now their traffic was
+ * completely unmeasured: the SEO work could be succeeding or failing and
+ * nothing would say which. Mounting posthog-js here would undo the thing that
+ * makes the pages fast and crawlable, so this sends one request instead.
+ *
+ * Three properties of this beacon are deliberate and should not be "improved"
+ * into a real analytics client:
+ *
+ * - `$process_person_profile: false` means PostHog records the event but
+ *   creates no person. Person-level tracking would need an identifier that
+ *   persists across pages, which means a cookie, which means a consent banner
+ *   on a static article page. The question these pages have to answer is "is
+ *   anyone reading them", and event counts answer it without any of that.
+ * - `distinct_id` is therefore random per pageview and never stored anywhere.
+ *   Person counts from this source are meaningless and must not be used;
+ *   pageview counts are the number.
+ * - The URL is sent as origin plus pathname with any query string dropped, so
+ *   a campaign tag or anything else a referrer appended cannot ride along.
+ *
+ * Returns "" when either config value is missing, so a build without PostHog
+ * configured emits exactly the markup it always did.
+ */
+export function renderLearnBeacon({ key, host } = {}) {
+  if (!key || !host) return "";
+  // Inlined rather than a separate file: it is smaller than the request that
+  // would fetch it, and it must not become a bundle the pages depend on.
+  const script = `try{
+      var u=location.origin+location.pathname;
+      var b=new Blob([JSON.stringify({api_key:${JSON.stringify(key)},event:"$pageview",properties:{distinct_id:"anon-"+Math.random().toString(36).slice(2)+Date.now().toString(36),$process_person_profile:false,$current_url:u,$referrer:document.referrer||"$direct",surface:"learn_static"}})],{type:"text/plain"});
+      navigator.sendBeacon(${JSON.stringify(`${String(host).replace(/\/+$/, "")}/e/`)},b);
+    }catch(e){}`;
+  return `<script>${script}</script>`;
+}
+
 // -- Document shell -------------------------------------------------------------
 
 /**
@@ -100,7 +141,7 @@ function breadcrumbs(items) {
  * ("../" or "../../"); every asset and internal link is built from it, so the
  * pages carry no assumption about being served from a domain root.
  */
-function renderDocument({ title, description, canonical, prefix, cssFile, structuredData, body, origin, ogType = "article" }) {
+function renderDocument({ title, description, canonical, prefix, cssFile, structuredData, body, origin, ogType = "article", analytics }) {
   const ogImage = absoluteUrl(OG_IMAGE_PATH, origin);
   const blocks = structuredData.map(jsonLd).join("\n    ");
   return `<!doctype html>
@@ -147,6 +188,7 @@ function renderDocument({ title, description, canonical, prefix, cssFile, struct
   </head>
   <body>
 ${body}
+    ${renderLearnBeacon(analytics)}
   </body>
 </html>
 `;
@@ -283,7 +325,7 @@ function renderMoreTutorials(pages, currentSlug, learnHref) {
  * has no single outcome. Google also dropped HowTo rich results, so choosing it
  * would be inaccurate markup bought for nothing.
  */
-export function renderLearnArticlePage({ page, pages = [], origin = SITE_ORIGIN, cssFile, lastmod } = {}) {
+export function renderLearnArticlePage({ page, pages = [], origin = SITE_ORIGIN, cssFile, lastmod, analytics } = {}) {
   const { tutorial, slug, path } = page;
   const canonical = absoluteUrl(path, origin);
   const title = pageTitle(tutorial);
@@ -346,11 +388,12 @@ ${renderFooter(prefix)}
     structuredData: [article, trail],
     body,
     origin,
+    analytics,
   });
 }
 
 /** The /learn/ hub: the crawl path from the home page to every tutorial. */
-export function renderLearnIndexPage({ pages = [], origin = SITE_ORIGIN, cssFile, lastmod } = {}) {
+export function renderLearnIndexPage({ pages = [], origin = SITE_ORIGIN, cssFile, lastmod, analytics } = {}) {
   const path = `/${LEARN_SEGMENT}/`;
   const canonical = absoluteUrl(path, origin);
   const title = `${INDEX_TITLE} | ${SITE_NAME}`;
@@ -427,6 +470,7 @@ ${renderFooter(prefix)}
     structuredData: [collection, trail],
     body,
     origin,
+    analytics,
     // The hub is a listing, not an article.
     ogType: "website",
   });
