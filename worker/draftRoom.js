@@ -19,9 +19,11 @@
 // client-supplied token.
 
 import {
+  PICK_VIA,
   autoPick,
   isUniqueConstraintError,
   resolvePick,
+  resolvePickVia,
   roundRobinSchedule,
   topQueuedPick,
   validatePick,
@@ -131,7 +133,15 @@ export class FantasyDraftRoom {
       });
       if (!validation.valid) return this.sendError(ws, validation.error);
 
-      const result = await this.commitPick(attachment.userId, player);
+      // A socket message is somebody at the keyboard, which is the whole
+      // point of recording it. onClockIsBot is threaded through rather than
+      // hardcoded false so resolvePickVia stays the single decision point;
+      // a bot can never actually reach here (it holds no session, so the
+      // Worker edge can never mint it a socket), so this only ever answers
+      // "manual".
+      const result = await this.commitPick(attachment.userId, player, {
+        via: resolvePickVia({ onClockIsBot: this.draft.botUserIds.has(attachment.userId) }),
+      });
       if (!result.ok) this.sendError(ws, result.error);
     });
   }
@@ -223,7 +233,13 @@ export class FantasyDraftRoom {
         return;
       }
 
-      const result = await this.commitPick(onClock, player, { viaQueue: queuedPlayer != null });
+      const result = await this.commitPick(onClock, player, {
+        via: resolvePickVia({
+          onClockIsBot: this.draft.botUserIds.has(onClock),
+          fromClock: true,
+          fromQueue: queuedPlayer != null,
+        }),
+      });
       if (!result.ok) {
         // Lost the race to a human pick that landed a moment earlier (or, in
         // theory, another instance's write). commitPick already rehydrated;
@@ -241,27 +257,33 @@ export class FantasyDraftRoom {
   // in-memory overallPick could otherwise agree and both write the same slot.
   // The fantasy_draft_picks(league_id, overall_pick) unique index makes the
   // second write fail instead of silently duplicating a pick.
-  async commitPick(userId, player, { viaQueue = false } = {}) {
+  async commitPick(userId, player, { via = PICK_VIA.MANUAL } = {}) {
     const leagueId = this.draft.leagueId;
     const overallPick = this.draft.overallPick;
+    const viaQueue = via === PICK_VIA.QUEUE;
     const resolved = resolvePick(this.draft.memberIds, overallPick, SQUAD_SIZE);
     if (!resolved) return { ok: false, error: "draft is already complete" };
 
     try {
       await this.env.DB.batch([
         this.env.DB.prepare(
-          `INSERT INTO fantasy_draft_picks (league_id, round, pick_in_round, overall_pick, user_id, player_id)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
-        ).bind(leagueId, resolved.round, resolved.pickInRound, overallPick, userId, player.id),
+          `INSERT INTO fantasy_draft_picks (league_id, round, pick_in_round, overall_pick, user_id, player_id, via)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
+        ).bind(leagueId, resolved.round, resolved.pickInRound, overallPick, userId, player.id, via),
         this.env.DB.prepare(
           `INSERT INTO fantasy_rosters (league_id, user_id, player_id, acquired_via) VALUES (?1, ?2, ?3, 'draft')`,
         ).bind(leagueId, userId, player.id),
         // The league feed's announcement of this pick, in the SAME batch as
         // the pick itself. A duplicate-slot write loses the whole batch on the
         // unique index below, so the feed can never carry a pick that did not
-        // actually happen, and viaQueue (which D1's pick log has no column
-        // for) is preserved here permanently rather than only in this one
-        // broadcast.
+        // actually happen.
+        //
+        // The payload stores `via` and NOT the older `viaQueue` boolean it
+        // replaces: viaQueue is derivable from via, and the feed is permanent
+        // history, so storing a derived field forever is how two copies of one
+        // fact start disagreeing. describeChatEvent (src/fantasyChat.js) reads
+        // `via` and falls back to `viaQueue` for rows written before this
+        // column existed, so both dialects keep rendering correctly.
         this.env.DB.prepare(
           `INSERT INTO fantasy_chat_messages (league_id, user_id, kind, event, payload) VALUES (?1, NULL, 'system', ?2, ?3)`,
         ).bind(
@@ -275,7 +297,7 @@ export class FantasyDraftRoom {
             round: resolved.round,
             pickInRound: resolved.pickInRound,
             overallPick,
-            viaQueue,
+            via,
           }),
         ),
       ]);
@@ -297,16 +319,20 @@ export class FantasyDraftRoom {
     this.draft.overallPick = overallPick + 1;
     // Keep the in-memory picks log current (not just rosters/draftedPlayerIds
     // above) so a client that joins/reconnects between now and this
-    // instance's next actual eviction still gets an accurate sendState feed,
-    // including whether this particular pick came from the manager's queue -
-    // D1 itself has no via_queue column, so this in-memory copy is the only
-    // place that survives past this one broadcast.
+    // instance's next actual eviction still gets an accurate sendState feed.
+    //
+    // Both `via` and the older `viaQueue` ride the wire, unlike the persisted
+    // payload above which stores only `via`. These messages are ephemeral, so
+    // carrying the derived boolean costs nothing and keeps every existing
+    // reader working unchanged (reduceDraftMessage in src/fantasyDraft.js and
+    // the pick feed's Queue chip in src/fantasyView.js both read viaQueue).
     this.draft.picks.push({
       round: resolved.round,
       pickInRound: resolved.pickInRound,
       overallPick,
       userId,
       player: publicPlayer(player),
+      via,
       viaQueue,
     });
 
@@ -317,6 +343,7 @@ export class FantasyDraftRoom {
       overallPick,
       userId,
       player: publicPlayer(player),
+      via,
       viaQueue,
     });
 
@@ -479,7 +506,7 @@ export class FantasyDraftRoom {
       .bind(leagueId)
       .all();
     const pickRows = await this.env.DB.prepare(
-      `SELECT round, pick_in_round, overall_pick, user_id, player_id FROM fantasy_draft_picks
+      `SELECT round, pick_in_round, overall_pick, user_id, player_id, via FROM fantasy_draft_picks
        WHERE league_id = ?1 ORDER BY overall_pick`,
     )
       .bind(leagueId)
@@ -526,11 +553,16 @@ export class FantasyDraftRoom {
         overallPick: row.overall_pick,
         userId: row.user_id,
         player: player ? publicPlayer(player) : { id: row.player_id },
-        // fantasy_draft_picks carries no via_queue column, so a pick
-        // rebuilt from D1 (after a genuine eviction) can never say whether it
-        // came from a queue - false rather than an undefined field, so every
-        // picks entry has the same shape regardless of how it was built.
-        viaQueue: false,
+        // A rehydrated pick now reports how it was made, because the pick log
+        // carries it. Before the `via` column this was hardcoded false, so a
+        // Durable Object eviction mid-draft silently relabelled every earlier
+        // queue autopick as an ordinary pick in the room's own feed.
+        //
+        // null (a row written before the column existed) stays null rather
+        // than being coerced to a value, and viaQueue keeps its old
+        // false-when-unknown shape so no existing reader sees undefined.
+        via: row.via ?? null,
+        viaQueue: row.via === PICK_VIA.QUEUE,
       });
     }
 

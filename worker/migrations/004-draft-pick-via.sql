@@ -1,0 +1,17 @@
+-- One-time migration for databases created before a draft pick recorded HOW it
+-- was made. schema.sql's CREATE TABLE IF NOT EXISTS cannot retrofit a column
+-- onto an existing table, and ALTER TABLE is not idempotent in SQLite (a second
+-- run fails with "duplicate column name"), so this file exists separately and
+-- is meant to be applied exactly once. Same pattern as 003-bot-managers.sql.
+--
+-- No backfill, and that is the point. The column is nullable precisely so the
+-- rows that predate it stay honestly unknown rather than being stamped
+-- 'manual', which would claim every historical pick was a considered one. The
+-- metrics query (scripts/metrics/13-draft-engagement.sql) reports those rows in
+-- their own bucket for the same reason.
+--
+-- Skip this file entirely for a database created after this shipped.
+--
+-- Apply with:
+--   npx wrangler d1 execute squad-goals --remote --file=worker/migrations/004-draft-pick-via.sql
+ALTER TABLE fantasy_draft_picks ADD COLUMN via TEXT;

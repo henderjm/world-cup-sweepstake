@@ -53,6 +53,10 @@ export const CHAT_EVENTS = Object.freeze({
   FREE_AGENT_ADD: "free_agent_add",
   WAIVER_RUN: "waiver_run",
   RECAP: "recap",
+  DRAFT_RECAP: "draft_recap",
+  AUTOPILOT_ON: "autopilot_on",
+  AUTOPILOT_OFF: "autopilot_off",
+  AUTOPILOT_MOVE: "autopilot_move",
 });
 
 // Cleans a human message. Control characters become spaces (a newline in a
@@ -142,11 +146,18 @@ export function describeChatEvent(entry) {
       const pick = payload.overallPick ? `Pick ${payload.overallPick}` : "Pick";
       const player = payload.player || "a player";
       const club = payload.team ? ` (${payload.team})` : "";
-      // viaQueue is the one thing the draft room knows that D1's pick log does
-      // not (see worker/draftRoom.js), so it is worth saying out loud: an
-      // autopick off a manager's own shortlist reads very differently from a
-      // manager actually being at the keyboard.
-      const how = payload.viaQueue ? " from their queue" : "";
+      // How the pick was made is worth saying out loud: an autopick off a
+      // manager's own shortlist reads very differently from a manager actually
+      // being at the keyboard, and a clock expiring with an empty queue reads
+      // differently again.
+      //
+      // `viaQueue` is the older boolean this replaced (see PICK_VIA in
+      // src/draftLogic.js). Rows written before `via` existed carry only that,
+      // and the feed is permanent history, so it stays as the fallback rather
+      // than leaving old picks reading as if nobody knows how they happened.
+      // A bot's seat says nothing here: its name already labels it, and
+      // "autopicked" on every one of its fifteen picks is noise.
+      const how = describePickVia(payload.via, payload.viaQueue);
       return { icon: "📋", text: `${pick}: ${actor} took ${player}${club}${how}.` };
     }
 
@@ -179,6 +190,37 @@ export function describeChatEvent(entry) {
       return { icon: "📨", text: `Waivers ran for ${week}. ${lines.join("; ")}.` };
     }
 
+    // Autopilot is announced in the feed for the same reason bots being added
+    // is: a team that starts playing itself must never do so quietly. The
+    // manager whose seat it is reads this too, and it is how they find out.
+    case CHAT_EVENTS.AUTOPILOT_ON:
+      return {
+        icon: "🤖",
+        text: `${actor} put ${payload.manager || "a manager"}'s team on autopilot. The bots will set its lineup until ${payload.manager || "they"} next make a move.`,
+      };
+
+    case CHAT_EVENTS.AUTOPILOT_OFF:
+      // Two ways off, and they read differently on purpose: a manager coming
+      // back is the good outcome and should look like one.
+      return payload.returned
+        ? { icon: "🙌", text: `${payload.manager || "A manager"} is back. Autopilot is off.` }
+        : { icon: "🤖", text: `${actor} took ${payload.manager || "a manager"}'s team off autopilot.` };
+
+    case CHAT_EVENTS.AUTOPILOT_MOVE:
+      return {
+        icon: "🤖",
+        text: `Autopilot signed ${payload.added || "a player"} and dropped ${payload.dropped || "a player"} for ${payload.manager || "an absent manager"}.`,
+      };
+
+    case CHAT_EVENTS.DRAFT_RECAP:
+      // Like RECAP below, this has its own rich renderer (the payload carries
+      // every team's grade, highlights and projection), so this is only the
+      // one-line summary a compact view falls back to.
+      return {
+        icon: "🎓",
+        text: payload.recap?.headline || "The draft grades are in.",
+      };
+
     case CHAT_EVENTS.RECAP:
       // The recap has its own rich renderer (the payload carries rankings,
       // awards and the model's prose), so this is only the one-line summary a
@@ -193,9 +235,38 @@ export function describeChatEvent(entry) {
   }
 }
 
+// The trailing clause on a draft-pick line. Kept beside describeChatEvent
+// rather than imported from draftLogic.js so the feed's vocabulary stays in
+// one file; the string values themselves are PICK_VIA's and are matched, never
+// re-derived.
+function describePickVia(via, legacyViaQueue) {
+  switch (via) {
+    case "queue":
+      return " from their queue";
+    case "autopick":
+      return ", autopicked on the clock";
+    case "manual":
+    case "bot":
+      return "";
+    default:
+      // No `via` at all: a row from before the column existed. Only the old
+      // boolean is knowable, and only in one direction - false meant "not from
+      // a queue", which covered manual and autopick alike, so it cannot be
+      // reported as either.
+      return legacyViaQueue ? " from their queue" : "";
+  }
+}
+
 // True when an entry should render through the full recap card rather than as
 // a one-line system row. Kept here (not in the view) so the Worker's own
 // notion of "this is a recap" and the renderer's cannot drift.
 export function isRecapEntry(entry) {
   return entry?.kind === "system" && entry?.event === CHAT_EVENTS.RECAP && Boolean(entry?.payload?.recap);
+}
+
+// The same test for the post-draft recap, which renders through its own card
+// rather than the weekly one: the payloads carry different shapes (grades and
+// projections, not rankings and awards) and a renderer must never guess.
+export function isDraftRecapEntry(entry) {
+  return entry?.kind === "system" && entry?.event === CHAT_EVENTS.DRAFT_RECAP && Boolean(entry?.payload?.recap);
 }
