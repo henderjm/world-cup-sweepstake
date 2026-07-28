@@ -100,7 +100,7 @@ function breadcrumbs(items) {
  * ("../" or "../../"); every asset and internal link is built from it, so the
  * pages carry no assumption about being served from a domain root.
  */
-function renderDocument({ title, description, canonical, prefix, cssFile, structuredData, body, origin }) {
+function renderDocument({ title, description, canonical, prefix, cssFile, structuredData, body, origin, ogType = "article" }) {
   const ogImage = absoluteUrl(OG_IMAGE_PATH, origin);
   const blocks = structuredData.map(jsonLd).join("\n    ");
   return `<!doctype html>
@@ -114,7 +114,7 @@ function renderDocument({ title, description, canonical, prefix, cssFile, struct
     <meta name="theme-color" content="#0A0E14" />
 
     <!-- Open Graph -->
-    <meta property="og:type" content="article" />
+    <meta property="og:type" content="${ogType}" />
     <meta property="og:site_name" content="${esc(SITE_NAME)}" />
     <meta property="og:title" content="${esc(title)}" />
     <meta property="og:description" content="${esc(description)}" />
@@ -427,6 +427,8 @@ ${renderFooter(prefix)}
     structuredData: [collection, trail],
     body,
     origin,
+    // The hub is a listing, not an article.
+    ogType: "website",
   });
 }
 

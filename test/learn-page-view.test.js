@@ -83,6 +83,11 @@ test("the learn index links assets one level up, not two", () => {
   assert.match(html, /<link rel="canonical" href="https:\/\/kickoffdraft\.com\/learn\/" \/>/);
 });
 
+test("the hub is og:type website and an article page is og:type article", () => {
+  assert.match(renderLearnIndexPage({ pages: PAGES, cssFile: CSS }), /<meta property="og:type" content="website" \/>/);
+  assert.match(articleFor("waivers").html, /<meta property="og:type" content="article" \/>/);
+});
+
 // -- Structured data ----------------------------------------------------------------
 
 function jsonLdBlocks(html) {
