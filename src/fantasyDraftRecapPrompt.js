@@ -12,7 +12,8 @@
 //      author one.
 //
 //   2. INJECTION IS HANDLED STRUCTURALLY. League and manager names are free
-//      text their owners chose. They appear in exactly ONE labelled block;
+//      text their owners chose. They appear in exactly TWO labelled fields,
+//      `league.displayName` and `managers[].displayName`, and nowhere else;
 //      every other section refers to a manager by a stable server-assigned id
 //      ("m1"). sanitizePromptText flattens control characters and caps length,
 //      so a newline cannot impersonate a new prompt section. The output schema
@@ -111,7 +112,8 @@ export function buildDraftRecapPrompt({ leagueId, leagueName, managers, recap })
       displayName: sanitizePromptText(leagueName, MAX_DISPLAY_NAME_LENGTH, `League ${leagueId}`),
       managers: recap?.leagueSize ?? 0,
     },
-    // The ONLY place a user-supplied name appears in this payload.
+    // The second and last place a user-supplied name appears; league.displayName
+    // above is the other. Everything else in this payload is a server id.
     managers: [...(managers ?? [])]
       .sort((a, b) => a.userId - b.userId)
       .map((manager) => ({

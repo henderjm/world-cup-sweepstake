@@ -242,12 +242,12 @@ export const AUTOPILOT_PICKUP_MARGIN = 15;
 
 // At most one swap per run, whatever the run finds. A bot that rebuilt an
 // abandoned squad wholesale in one tick would be indistinguishable from a bug.
-export const AUTOPILOT_PICKUPS_PER_RUN = 1;
+export const AUTOPILOT_PICKUPS_PER_GAMEWEEK = 1;
 
 // The one same-position swap most worth making right now, or null.
 //
 // Same-position by construction, which is what keeps every roster bucket full
-// and the XI legal (see SQUAD_SLOTS and validateAcquisition in
+// and the XI legal (SQUAD_SLOTS lives in fantasy.js, validateAcquisition in
 // fantasyWaivers.js). A locked player, on either side of the swap, is simply
 // not a candidate: the kickoff lock exists so a move cannot bank or dodge
 // points already decided, and autopilot gets no exemption from it.

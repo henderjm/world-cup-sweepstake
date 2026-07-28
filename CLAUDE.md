@@ -26,7 +26,7 @@ The app began as a World Cup 2026 sweepstake hub; the sweepstake (entrants, pot,
 Two delivery paths for the same raw shape (`{ source, lastUpdated, competition, season, matches, standings }`):
 
 1. Cloudflare Worker (`worker/worker.js`) proxies API-Football with the key kept server-side and edge-caches each upstream call, so many pollers collapse into roughly one upstream call per window. The site polls it live.
-2. GitHub Action (`.github/workflows/pages.yml`, hourly from 11:00–22:00 UTC) bakes `data/live.json` into each deploy as the static fallback.
+2. GitHub Action (`.github/workflows/pages.yml`, hourly from 11:00 to 22:00 UTC) bakes `data/live.json` into each deploy as the static fallback.
 
 `src/data.js` picks the source: `loadModel(comp)` tries the `DATA_API` Worker origin first (`/:comp/live`) and falls back to static `data/<comp>/live.json` if the Worker is unreachable. Match-scoped routes carry no competition segment because API-Football fixture ids are globally unique; the Worker validates ids against configured competitions.
 

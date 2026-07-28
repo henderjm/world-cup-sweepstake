@@ -83,7 +83,8 @@ import {
 } from "../src/fantasyWaivers.js";
 import { lineupChangedPlayerIds, lockedPlayerIds, playerLockState } from "../src/fantasyLocks.js";
 import {
-  AUTOPILOT_PICKUPS_PER_RUN,
+  AUTOPILOT_PICKUPS_PER_GAMEWEEK,
+  autopilotAllows,
   autopilotPickup,
   botSubPatternForLeague,
   isRealGoogleSub,
@@ -582,9 +583,9 @@ export default {
         // Behind the weekly recap for the same reasons and one more. It is
         // discretionary (nothing depends on it), it spends money, and it is
         // strictly once per league for the whole season, so it is the pass
-        // that can most afford to be last of the ones that matter. It reads
-        // only the pick log and the xP table, so it needs nothing the passes
-        // above produce.
+        // that can most afford to be last of the ones that matter. Its only
+        // ordering dependency is the xP blend above, whose table it reads; it
+        // needs nothing from the scoring, waiver or recap passes.
         await runCronPass("draft-recaps", () => runScheduledDraftRecaps(env));
         // Dead last, after the recap. Every pass above spends API-Football
         // calls, so running the flush behind all of them is what lets one tick
@@ -4467,8 +4468,9 @@ async function generateDraftRecap(env, league) {
     via: row.via ?? null,
   }));
   // A league flipped to 'complete' with no picks behind it cannot be graded.
-  // Skipping WITHOUT marking the ledger is what lets a later tick try again,
-  // the same reason the weekly recap writes its ledger row last.
+  // Skipping WITHOUT marking the ledger is what lets a later tick try again.
+  // The weekly recap follows the same rule: its ledger row and its feed message
+  // ride one atomic batch, and a skip marks neither.
   if (!picks.length) return;
 
   const players = (playerRows.results ?? []).map((row) => ({
@@ -4615,12 +4617,21 @@ async function runAutopilotSeat(env, seat, gameweek, matches, xpByPlayer) {
   const roster = withXp(await fantasyRosterFor(env, leagueId, userId));
   if (roster.length < STARTING_SIZE) return; // cannot field a legal XI, nothing to write
 
-  await writeAutopilotLineup(env, leagueId, userId, gameweek, roster);
+  // Each action is GATED on the allowlist, not merely described by it.
+  // AUTOPILOT_ACTIONS previously lived only in a comment and a test, so the
+  // promise it makes (a future feature cannot be silently inherited) was not
+  // enforced anywhere: adding a trade path here would have picked up autopilot
+  // for free, which is exactly the failure the allowlist was written to
+  // prevent. Consulting it at the call site is what makes that a property of
+  // the code rather than of the documentation.
+  if (autopilotAllows("lineup")) {
+    await writeAutopilotLineup(env, leagueId, userId, gameweek, roster);
+  }
 
   // The pickup is strictly secondary and is skipped whenever anything about
   // the decision is uncertain. A wrong pickup churns a squad its owner may
   // come back to, so "do nothing" is always the safe answer.
-  if (!matches) return;
+  if (!matches || !autopilotAllows("pickup")) return;
   await considerAutopilotPickup(env, seat, gameweek, matches, xpByPlayer, roster);
 }
 
@@ -4660,7 +4671,7 @@ async function considerAutopilotPickup(env, seat, gameweek, matches, xpByPlayer,
   const userId = seat.user_id;
 
   const already = await autopilotMovesThisGameweek(env, leagueId, userId, gameweek);
-  if (already >= AUTOPILOT_PICKUPS_PER_RUN) return;
+  if (already >= AUTOPILOT_PICKUPS_PER_GAMEWEEK) return;
 
   // Only genuine free agents. A player on the wire needs a waiver claim, and
   // autopilot deliberately does not queue those: a claim spends FAAB budget an

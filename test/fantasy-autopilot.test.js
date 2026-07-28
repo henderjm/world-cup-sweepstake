@@ -3,7 +3,7 @@ import test from "node:test";
 
 import {
   AUTOPILOT_ACTIONS,
-  AUTOPILOT_PICKUPS_PER_RUN,
+  AUTOPILOT_PICKUPS_PER_GAMEWEEK,
   AUTOPILOT_PICKUP_MARGIN,
   AUTOPILOT_RETURN_ACTIONS,
   autopilotAllows,
@@ -121,7 +121,7 @@ test("autopilot picks the single biggest upgrade and is deterministic about ties
 
   const move = autopilotPickup({ roster: mine, freeAgents, lockedPlayerIds: new Set() });
   assert.equal(move.add.id, 901, "autopilot took the smaller of two upgrades");
-  assert.equal(AUTOPILOT_PICKUPS_PER_RUN, 1);
+  assert.equal(AUTOPILOT_PICKUPS_PER_GAMEWEEK, 1);
 
   // Same inputs in the opposite array order must reach the same decision.
   const reversed = autopilotPickup({ roster: [...mine].reverse(), freeAgents: [...freeAgents].reverse(), lockedPlayerIds: new Set() });
