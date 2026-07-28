@@ -2146,6 +2146,27 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-standings__footnote { margin-top: 10px; }
 .fantasy-standings-empty { text-align: left; }
 
+/* Playoff odds (src/fantasyPlayoffOddsView.js, exported but not yet wired into
+   navigation): one stacked column per manager rather than the Standings
+   tab's wide P/W/D/L/PF/PA grid, so it needs no horizontal scroll container
+   even at 375px. */
+.fantasy-playoff-odds__rows { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.fantasy-playoff-row { padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.fantasy-playoff-row.is-me { background: var(--fantasy-soft); box-shadow: inset 0 0 0 1px var(--fantasy-line); }
+.fantasy-playoff-row__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fantasy-playoff-row__name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fantasy-playoff-row.is-me .fantasy-playoff-row__name { color: var(--fantasy-accent); }
+.fantasy-playoff-row__status { font-size: 10px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+.fantasy-playoff-row__status--clinched { color: var(--fantasy-accent); }
+.fantasy-playoff-row__status--eliminated { color: var(--faint); }
+.fantasy-playoff-row__status--contention { color: var(--muted); }
+.fantasy-playoff-row__barwrap { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.fantasy-playoff-row__bar { flex: 1; min-width: 0; height: 6px; border-radius: 3px; background: rgb(255 255 255 / 0.08); overflow: hidden; }
+.fantasy-playoff-row__bar-fill { display: block; height: 100%; border-radius: 3px; background: var(--fantasy-accent); }
+.fantasy-playoff-row__bar-fill--eliminated { background: var(--faint); }
+.fantasy-playoff-row__pct { flex: none; width: 38px; text-align: right; font-size: 12px; font-weight: 900; color: var(--fantasy-accent); font-variant-numeric: tabular-nums; }
+.fantasy-playoff-row--eliminated .fantasy-playoff-row__pct { color: var(--faint); }
+
 /* Waivers tab (Phase 4.4): status header, free agents / wire lists (leaner
    variant of the draft pool's sticky-filter shell), claim flow, my claims,
    league priority table, commissioner settings, last run summary. -------- */
