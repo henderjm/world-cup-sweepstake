@@ -62,6 +62,7 @@ const DEGRADED = new Set([501, 502, 503]);
 const ROUTES = [
   ["GET", "/health"],
   ["GET", "/health/draft-ready"],
+  ["GET", "/health/quota"],
   ["GET", "/"],
   ["GET", "/me"],
   ["GET", "/fantasy/leagues"],
@@ -450,4 +451,281 @@ test("a waiver run takes a lease, and its batch rolls late claims forward before
     runBatch[rollForward].includes("AND gameweek = ?2 AND status = 'pending'"),
     "the roll-forward must be scoped to still-pending claims for the settled gameweek only",
   );
+});
+
+// -- API-Football quota analytics, end to end ---------------------------------
+//
+// Same anti-short-circuit discipline as the blocks above, and it needs more
+// than a route entry: /health/quota returns 501 on its first line without a DB
+// binding, so the ROUTES table alone would prove nothing about whether a single
+// upstream call is ever counted.
+//
+// So this block stubs the upstream instead of the database, drives real
+// requests through the Worker's own fetchJson, and then reads the analytics
+// route back through a D1 stub that actually stores what the flush writes. That
+// is the only way to prove the whole chain: response headers -> buffer ->
+// flushed counts -> the rollup a dashboard reads.
+const UPSTREAM = "https://v3.football.api-sports.io";
+const UPCOMING_ID = 1557367;
+
+function apiResponse(body, { cacheStatus = "MISS", remaining = 149000 } = {}) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: {
+      "content-type": "application/json",
+      "cf-cache-status": cacheStatus,
+      "x-ratelimit-requests-limit": "150000",
+      "x-ratelimit-requests-remaining": String(remaining),
+    },
+  });
+}
+
+// A fixture three weeks out: no lineups, no events, no player stats, which is
+// exactly the state the 502 used to be reported for.
+const upcomingFixture = () => ({
+  fixture: {
+    id: UPCOMING_ID,
+    date: new Date(Date.now() + 21 * 24 * 3600 * 1000).toISOString(),
+    status: { short: "NS", elapsed: null },
+    venue: { name: "Emirates Stadium", city: "London" },
+    referee: null,
+  },
+  league: { round: "Regular Season - 2" },
+  teams: {
+    home: { id: 42, name: "Arsenal", logo: "h.png" },
+    away: { id: 1076, name: "Coventry City", logo: "a.png" },
+  },
+  goals: { home: null, away: null },
+  score: { halftime: { home: null, away: null }, penalty: { home: null, away: null } },
+});
+
+const emptyPayload = { errors: [], results: 0, paging: { current: 1, total: 1 }, response: [] };
+
+// `broken` maps a path prefix to the Response that path should give instead.
+function stubUpstream(broken = {}) {
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const path = String(input).replace(UPSTREAM, "");
+    for (const [prefix, make] of Object.entries(broken)) {
+      if (path.startsWith(prefix)) return make();
+    }
+    if (path.startsWith("/fixtures/")) return apiResponse(emptyPayload);
+    if (path.startsWith("/standings")) return apiResponse({ errors: [], response: [] });
+    if (path.startsWith("/fixtures")) return apiResponse({ errors: [], results: 1, response: [upcomingFixture()] });
+    throw new Error(`unstubbed upstream ${path}`);
+  };
+  return () => {
+    globalThis.fetch = original;
+  };
+}
+
+// A D1 stub that really stores the two analytics tables, because the assertion
+// worth making is about the numbers that come back out, not about SQL strings.
+function usageDb(seen = []) {
+  const daily = new Map();
+  let quota = null;
+  const make = (sql) => {
+    const normalised = sql.replace(/\s+/g, " ").trim();
+    const statement = {
+      sql: normalised,
+      bound: [],
+      bind: (...args) => {
+        statement.bound = args;
+        return statement;
+      },
+      first: async () => (normalised.startsWith("SELECT daily_limit") ? quota : null),
+      all: async () => {
+        if (!normalised.startsWith("SELECT endpoint")) return { results: [] };
+        return { results: [...daily.values()] };
+      },
+      run: async () => ({ success: true }),
+    };
+    return statement;
+  };
+  const apply = (statement) => {
+    const [a, b, c, d] = statement.bound;
+    if (statement.sql.startsWith("INSERT INTO api_usage_daily")) {
+      const key = `${a}|${b}|${c}`;
+      const row = daily.get(key) ?? { endpoint: b, upstream: c, calls: 0 };
+      row.calls += d;
+      daily.set(key, row);
+    } else if (statement.sql.startsWith("INSERT INTO api_usage_quota")) {
+      quota = { daily_limit: b, daily_remaining: Math.min(quota?.daily_remaining ?? c, c) };
+    }
+  };
+  return {
+    prepare: (sql) => {
+      const statement = make(sql);
+      seen.push(statement.sql);
+      return statement;
+    },
+    batch: async (statements) => {
+      for (const statement of statements) apply(statement);
+      return [];
+    },
+  };
+}
+
+// waitUntil work is collected so a test can await the flush rather than race it.
+function usageCall(path, db, pending) {
+  return worker.fetch(new Request(`https://example.test${path}`), { ...env, DB: db }, {
+    waitUntil: (promise) => pending.push(promise),
+  });
+}
+
+test("the analytics route degrades to 501 rather than erroring when D1 is absent", async () => {
+  const { DB, ...noDb } = env;
+  const response = await worker.fetch(new Request("https://example.test/health/quota"), noDb);
+  assert.equal(response.status, 501);
+});
+
+test("upstream calls are counted at the chokepoint and read back as a rollup", async () => {
+  const restore = stubUpstream();
+  try {
+    // Whatever earlier tests in this file left in the isolate's buffer is
+    // flushed into a throwaway database first, so the counts asserted below
+    // belong to this test and not to the route smoke tests above.
+    await usageCall("/health/quota", usageDb(), []);
+
+    const pending = [];
+    const detail = await usageCall(`/match/${UPCOMING_ID}`, usageDb(), pending);
+    assert.equal(detail.status, 200);
+
+    const seen = [];
+    const db = usageDb(seen);
+    const report = await (await usageCall("/health/quota", db, pending)).json();
+    await Promise.all(pending);
+
+    assert.ok(
+      seen.some((sql) => sql.startsWith("INSERT INTO api_usage_daily")),
+      "nothing was ever flushed, so this test proves nothing",
+    );
+    assert.ok(
+      seen.some((sql) => sql.startsWith("SELECT endpoint, upstream, calls FROM api_usage_daily")),
+      "the rollup read never ran",
+    );
+
+    // The four detail payloads plus the live feed the id validation needs all
+    // went through fetchJson, so every one of them has to appear as spend.
+    const spent = report.endpoints.filter((entry) => entry.upstream > 0).map((entry) => entry.endpoint);
+    for (const endpoint of ["/fixtures", "/fixtures/lineups", "/fixtures/events", "/fixtures/players"]) {
+      assert.ok(spent.includes(endpoint), `${endpoint} was not counted as spend`);
+    }
+    assert.ok(report.upstreamCalls > 0);
+    assert.equal(report.quota.dailyLimit, 150000);
+    // The provider's own figure wins over our count: the same key is spent by
+    // the Pages bake too.
+    assert.equal(report.quota.usedSource, "provider");
+    assert.equal(report.quota.used, 1000);
+    assert.ok(["ok", "tight", "over", "unknown"].includes(report.projection.verdict));
+  } finally {
+    restore();
+  }
+});
+
+test("a cache-served response is counted, but never as spend", async () => {
+  // The whole reason src/apiQuota.js exists: cacheEverything means a cached
+  // response REPLAYS the stored rate-limit headers, so believing them would
+  // both overstate usage and make the remaining gauge jump backwards.
+  const restore = stubUpstream({
+    "/fixtures/events": () => apiResponse(emptyPayload, { cacheStatus: "HIT", remaining: 900 }),
+  });
+  try {
+    await usageCall("/health/quota", usageDb(), []);
+    const pending = [];
+    await usageCall(`/match/${UPCOMING_ID}`, usageDb(), pending);
+    const report = await (await usageCall("/health/quota", usageDb(), pending)).json();
+    await Promise.all(pending);
+
+    const events = report.endpoints.find((entry) => entry.endpoint === "/fixtures/events");
+    assert.ok(events.cached > 0, "the cache hit was not counted at all");
+    assert.equal(events.upstream, 0, "a cache hit must never be charged to the allowance");
+    assert.ok(report.cacheHitRate > 0 && report.cacheHitRate < 1);
+    assert.notEqual(report.quota.dailyRemaining, 900, "a replayed remaining header was believed");
+  } finally {
+    restore();
+  }
+});
+
+// -- /match/:id on a fixture that has not been played -------------------------
+
+test("an unplayed fixture returns its pre-match detail instead of a 502", async () => {
+  const restore = stubUpstream();
+  try {
+    const response = await usageCall(`/match/${UPCOMING_ID}`, usageDb(), []);
+    assert.equal(response.status, 200);
+    const detail = await response.json();
+    assert.equal(detail.home.name, "Arsenal");
+    assert.equal(detail.away.name, "Coventry City");
+    assert.equal(detail.venue, "Emirates Stadium");
+    assert.deepEqual(detail.goals, []);
+    assert.deepEqual(detail.home.lineup, []);
+    // A healthy read keeps exactly the shape the baked static match files
+    // carry, so the drawer cannot tell the two sources apart.
+    assert.equal(detail.degraded, undefined);
+  } finally {
+    restore();
+  }
+});
+
+test("one failing supplementary payload no longer throws away the three that worked", async () => {
+  // This is the actual defect behind the reported 502: any single upstream
+  // hiccup on lineups, events or player stats discarded the fixture payload
+  // that had already arrived.
+  const restore = stubUpstream({
+    "/fixtures/players": () => new Response("upstream is having a moment", { status: 500 }),
+  });
+  try {
+    const response = await usageCall(`/match/${UPCOMING_ID}`, usageDb(), []);
+    assert.equal(response.status, 200);
+    const detail = await response.json();
+    assert.equal(detail.home.name, "Arsenal");
+    assert.deepEqual(detail.playerStats, []);
+    // Named, not a bare flag: not knowing WHICH of the four was failing is what
+    // made this hard to diagnose from the outside.
+    assert.deepEqual(detail.degraded, ["/fixtures/players"]);
+    // And cached briefly, so the blip cannot outlive itself in every reader's
+    // browser.
+    assert.equal(response.headers.get("Cache-Control"), "public, max-age=30");
+  } finally {
+    restore();
+  }
+});
+
+test("a failure on the fixture payload itself is still an honest 502", async () => {
+  // Fail-soft must not become fail-silent. Without the fixture payload there
+  // are no teams, no kickoff and no venue, so there is no match to describe and
+  // a real upstream outage must still read as one.
+  const restore = stubUpstream({ "/fixtures?id=": () => new Response("down", { status: 500 }) });
+  try {
+    const response = await usageCall(`/match/${UPCOMING_ID}`, usageDb(), []);
+    assert.equal(response.status, 502);
+  } finally {
+    restore();
+  }
+});
+
+test("the per-IP detail limiter answers 429 once its window is spent", async () => {
+  // The binding itself is Cloudflare's; what is testable here is that the
+  // route consults it before doing any upstream work and turns a refusal into
+  // a 429 with a Retry-After rather than falling through to the fetch.
+  const restore = stubUpstream();
+  let calls = 0;
+  const DETAIL_LIMITER = { limit: async () => ({ success: ++calls <= 20 }) };
+  try {
+    const statuses = [];
+    for (let i = 0; i < 22; i += 1) {
+      const response = await worker.fetch(
+        new Request(`https://example.test/match/${UPCOMING_ID}`),
+        { ...env, DB: usageDb(), DETAIL_LIMITER },
+        { waitUntil: () => {} },
+      );
+      statuses.push(response.status);
+    }
+    assert.equal(statuses.filter((status) => status === 429).length, 2);
+    assert.equal(statuses[19], 200);
+    assert.equal(statuses[20], 429);
+  } finally {
+    restore();
+  }
 });

@@ -455,3 +455,38 @@ CREATE TABLE IF NOT EXISTS fantasy_league_recaps (
   generated_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (league_id, gameweek)
 );
+
+-- API-Football quota analytics. The Worker proxies a paid plan and until now
+-- measured nothing, so the daily allowance could be half gone by lunchtime and
+-- the first anyone knew was a 429 during a live match.
+--
+-- Counts, never one row per request. fetchJson is the single chokepoint for
+-- every upstream call and runs on every proxied poll, so a row per request
+-- would put a D1 write in front of a live match's traffic. Isolates accumulate
+-- in memory (src/apiQuotaStore.js) and flush counts here, which collapses
+-- thousands of requests into at most a handful of rows a day.
+--
+-- upstream is 0/1 rather than a status string on purpose: the one number worth
+-- watching is the share of demand the edge absorbed, and a cached response
+-- REPLAYS the stored rate-limit headers, so "was this real spend" is the only
+-- distinction the maths needs (see isUpstreamHit in src/apiQuota.js).
+CREATE TABLE IF NOT EXISTS api_usage_daily (
+  day TEXT NOT NULL,          -- UTC date; the provider's allowance resets at UTC midnight
+  endpoint TEXT NOT NULL,     -- endpointFamily(), query string stripped, so ids do not fan out
+  upstream INTEGER NOT NULL,  -- 1 = a real call against the allowance, 0 = served from the edge
+  calls INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, endpoint, upstream)
+);
+
+-- The provider's own view of the day, kept beside our counts because it is the
+-- more trustworthy of the two: the same key is also spent by the hourly Pages
+-- bake and the player-pool script, neither of which passes through the Worker.
+-- daily_remaining only ever falls within a UTC day, so the flush takes MIN of
+-- what is stored and what it saw; that way an out-of-order flush from another
+-- isolate can never make the gauge appear to refill mid-day.
+CREATE TABLE IF NOT EXISTS api_usage_quota (
+  day TEXT PRIMARY KEY,
+  daily_limit INTEGER,
+  daily_remaining INTEGER,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

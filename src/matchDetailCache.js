@@ -54,3 +54,21 @@ export function matchDetailCacheProfile(match, now = Date.now()) {
 
   return kickoff - now <= MATCH_DETAIL_IMMINENT_MS ? MATCH_DETAIL_LIVE : MATCH_DETAIL_UPCOMING;
 }
+
+// How long the BROWSER may hold a match-detail response, which is a different
+// question from the edge windows above: the edge is protecting the upstream
+// allowance, this is protecting what the reader sees.
+export const MATCH_DETAIL_LIVE_MAX_AGE = 25;
+export const MATCH_DETAIL_RESTING_MAX_AGE = 300;
+// A degraded read is one where a supplementary payload (lineups, events or
+// player stats) could not be fetched and came back empty, so the body is
+// truthful but incomplete. Caching that for five minutes would make a blip
+// during upstream trouble outlast the trouble itself, and the reader would sit
+// looking at an empty timeline long after the data came back. Short enough to
+// self-heal, long enough that a genuinely broken upstream is not hammered.
+export const MATCH_DETAIL_DEGRADED_MAX_AGE = 30;
+
+export function matchDetailBrowserMaxAge(profile, degraded = false) {
+  const full = profile === MATCH_DETAIL_LIVE ? MATCH_DETAIL_LIVE_MAX_AGE : MATCH_DETAIL_RESTING_MAX_AGE;
+  return degraded ? Math.min(full, MATCH_DETAIL_DEGRADED_MAX_AGE) : full;
+}
