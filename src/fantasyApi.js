@@ -171,6 +171,21 @@ export async function loadMatchup(leagueId) {
   return api(`/fantasy/league/${leagueId}/matchup`);
 }
 
+// GET the league's WHOLE head-to-head season: { currentGameweek, preseason,
+// seasonStart, members: [{ userId, name, isBot }], gameweeks: [{ gameweek,
+// kickoff, deadline, fixtures: [{ homeUserId, awayUserId, homeScore,
+// awayScore }], byeUserIds }] }. Every gameweek the league has fixtures for,
+// not just the current one.
+//
+// `byeUserIds` is derived server-side rather than stored: round-robin
+// scheduling drops the bye slot entirely, so a byed manager has no row, and
+// the schedule has to say who sat out or that manager sees nothing at all.
+// Scores are the settled ones (null until that gameweek is rolled up), never
+// the live rollup, which is what loadMatchup is for. Member-only (401/403).
+export async function loadLeagueSchedule(leagueId) {
+  return api(`/fantasy/league/${leagueId}/schedule`);
+}
+
 // GET the league table through the last completed gameweek: { throughGameweek,
 // standings: [{ userId, name, played, wins, draws, losses, pointsFor,
 // pointsAgainst, recordPoints }, ...] }, already sorted by the Worker

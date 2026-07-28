@@ -70,7 +70,7 @@ import {
   standingsFromFixtures,
   sumPlayerPoints,
 } from "../src/fantasyGameweek.js";
-import { assignGameweeks, clubFixtureCounts, gameweekOf } from "../src/fantasyCalendar.js";
+import { assignGameweeks, clubFixtureCounts, firstKickoffInGameweek, gameweekOf } from "../src/fantasyCalendar.js";
 import {
   DEFAULT_FAAB_BUDGET,
   WAIVER_MODES,
@@ -81,7 +81,15 @@ import {
   waiverRunReady,
   waiverRunWindow,
 } from "../src/fantasyWaivers.js";
-import { lineupChangedPlayerIds, lockedPlayerIds, playerLockState } from "../src/fantasyLocks.js";
+import { lineupChangedPlayerIds } from "../src/fantasyLocks.js";
+import {
+  gameweekTimetable,
+  lockedSquadPlayerIds,
+  playerSquadLock,
+  seasonPhase,
+  squadDeadline,
+  squadLockState,
+} from "../src/fantasyDeadlines.js";
 import {
   AUTOPILOT_PICKUPS_PER_GAMEWEEK,
   autopilotAllows,
@@ -391,6 +399,10 @@ export default {
     const fantasyMatchupRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/matchup$/);
     if (fantasyMatchupRoute && request.method === "GET") {
       return handleFantasyMatchup(request, env, Number(fantasyMatchupRoute[1]), cors);
+    }
+    const fantasyScheduleRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/schedule$/);
+    if (fantasyScheduleRoute && request.method === "GET") {
+      return handleFantasyLeagueSchedule(request, env, Number(fantasyScheduleRoute[1]), cors);
     }
     const fantasyStandingsRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/standings$/);
     if (fantasyStandingsRoute && request.method === "GET") {
@@ -2155,7 +2167,29 @@ async function handleFantasyLineupGet(request, env, leagueId, cors) {
     const matches = await currentFantasyMatches(env);
     const clubFixtures = matches ? Object.fromEntries(clubFixtureCounts(matches, gameweek)) : null;
 
-    return json({ gameweek, source, starters, bench, clubFixtures }, 200, cors);
+    // The squad deadline and the season phase travel with the lineup because
+    // they are what the pitch view has to say BEFORE a manager tries to edit:
+    // a countdown they can act on, or an honest "locked" instead of a save
+    // that fails at the Worker. Both null when the feed is unreadable, which
+    // the client renders as "no deadline known" rather than "no deadline".
+    const squad = matches ? squadLockState({ matches, gameweek, now: Date.now() }) : null;
+    const season = matches ? seasonPhase({ matches, now: Date.now() }) : null;
+
+    return json(
+      {
+        gameweek,
+        source,
+        starters,
+        bench,
+        clubFixtures,
+        deadline: squad?.deadline ?? null,
+        locked: squad?.locked ?? false,
+        preseason: season?.preseason ?? false,
+        seasonStart: season?.seasonStart ?? null,
+      },
+      200,
+      cors,
+    );
   } catch {
     return json({ error: "fantasy unavailable" }, 502, cors);
   }
@@ -2198,26 +2232,35 @@ async function handleFantasyLineupSet(request, env, leagueId, cors) {
 
     const gameweek = await currentFantasyGameweek(env);
 
-    // Kickoff lock. Writing to the server-derived current gameweek stops a
+    // Squad deadline. Writing to the server-derived current gameweek stops a
     // manager rewriting a gameweek that has already SETTLED, but not one that
     // is still in progress, and a Premier League gameweek stays current until
     // its last fixture finishes. Without this check a manager could wait until
     // Saturday's matches were done, then start the players who scored, bench
     // the ones who blanked and captain the hat-trick, and the Monday-night
-    // rollup would score the rewritten XI. That is the exact exploit
-    // src/fantasyLocks.js exists to close, and it was wired into free agency
-    // and waivers but never into the lineup route itself.
+    // rollup would score the rewritten XI.
     //
-    // Only players whose status actually changes are checked, so a manager can
-    // still freely reshuffle team-mates who have not kicked off.
+    // The rule is now the league-wide deadline (this gameweek's first kickoff
+    // minus two hours, src/fantasyDeadlines.js) rather than each player's own
+    // club kickoff, so the whole XI freezes at one announced instant instead of
+    // decaying player by player through a Saturday. Past the deadline the save
+    // is refused outright: there is no such thing as a legal lineup edit for a
+    // gameweek that has closed, so checking which players moved would only
+    // change the wording of the rejection.
+    //
+    // The per-player kickoff check is KEPT underneath it as a backstop (see
+    // playerSquadLock), scoped as before to only the players this edit actually
+    // moves, so a manager can still freely reshuffle team-mates who have not
+    // kicked off. It only ever fires where the deadline could not: a window
+    // with no derivable kickoff, or a fixture brought forward after the fact.
     //
     // Fails OPEN when the feed is unavailable, deliberately and identically to
     // the free-agent path: freezing every manager's team on a feed blip is
     // worse than the rare window it would leave open.
-    // Resolved unconditionally, not only on the locked path: the same diff
-    // decides whether this save is worth announcing in the league feed below.
-    // A manager nudging their XI six times before kickoff should produce one
-    // feed line, not six.
+    // The diff is resolved unconditionally, not only on the locked path: it
+    // also decides whether this save is worth announcing in the league feed
+    // below. A manager nudging their XI six times before kickoff should produce
+    // one feed line, not six.
     const previous = await resolveManagerLineup(env, leagueId, user.id, gameweek);
     const changed = lineupChangedPlayerIds({
       previousStarterIds: previous.starters.map((entry) => entry.playerId),
@@ -2228,11 +2271,24 @@ async function handleFantasyLineupSet(request, env, leagueId, cors) {
 
     const matches = await currentFantasyMatches(env);
     if (matches) {
+      const squad = squadLockState({ matches, gameweek, now: Date.now() });
+      if (squad.locked) {
+        return json(
+          {
+            error: `Gameweek ${gameweek} is locked: the squad deadline passed two hours before the first kickoff.`,
+            deadline: squad.deadline,
+            locked: true,
+          },
+          400,
+          cors,
+        );
+      }
+
       const rosterById = new Map(roster.map((player) => [player.id, player]));
       for (const playerId of changed) {
         const player = rosterById.get(playerId);
         if (!player) continue;
-        const lock = playerLockState({ team: player.team, matches, gameweek, now: Date.now() });
+        const lock = playerSquadLock({ team: player.team, matches, gameweek, now: Date.now() });
         if (lock.locked) {
           return json(
             { error: `${player.name} is locked: ${player.team} have already kicked off this gameweek` },
@@ -2759,18 +2815,18 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
 
     const gameweek = await currentFantasyGameweek(env);
 
-    let status = "scheduled";
-    try {
-      if (env.API_FOOTBALL_KEY) {
-        const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
-        if (comp) {
-          const live = await getLive(comp, env.API_FOOTBALL_KEY);
-          status = gameweekStatus(live.matches, gameweek);
-        }
-      }
-    } catch {
-      // feed unavailable this tick; "scheduled" is the safe, non-alarming default
-    }
+    // One feed read, reused for the status, the timetable and the season phase.
+    // currentFantasyMatches is the same edge-cached getLive every other fantasy
+    // handler calls, so this route still costs no upstream call of its own.
+    const matches = await currentFantasyMatches(env);
+    const status = matches ? gameweekStatus(matches, gameweek) : "scheduled";
+
+    // What turns a pre-season 0-0 into an honest "upcoming": when the gameweek
+    // actually starts, when the squad locks, and whether the season has begun
+    // at all. All null when the feed is unreadable, which the client renders as
+    // "no date known" rather than inventing one.
+    const timetable = matches ? gameweekTimetable({ matches, gameweek, now: Date.now() }) : null;
+    const season = matches ? seasonPhase({ matches, now: Date.now() }) : null;
 
     const fixture = await env.DB.prepare(
       `SELECT home_user_id, away_user_id FROM fantasy_h2h_fixtures
@@ -2781,9 +2837,16 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
 
     const meScore = await fantasyGameweekScore(env, leagueId, user.id, gameweek);
     const me = { userId: user.id, name: user.name || "You", score: meScore };
+    const timing = {
+      kickoff: timetable?.firstKickoff ?? null,
+      deadline: timetable?.squad.deadline ?? null,
+      locked: timetable?.squad.locked ?? false,
+      preseason: season?.preseason ?? false,
+      seasonStart: season?.seasonStart ?? null,
+    };
 
     if (!fixture) {
-      return json({ gameweek, status, me, opponent: null }, 200, cors);
+      return json({ gameweek, status, me, opponent: null, ...timing }, 200, cors);
     }
 
     const opponentId = fixture.home_user_id === user.id ? fixture.away_user_id : fixture.home_user_id;
@@ -2798,7 +2861,108 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
       score: opponentScore,
     };
 
-    return json({ gameweek, status, me, opponent }, 200, cors);
+    return json({ gameweek, status, me, opponent, ...timing }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// GET /fantasy/league/:id/schedule: the league's WHOLE head-to-head season,
+// every gameweek from 1 to 38, so a manager can look ahead and back instead of
+// only ever seeing the current week. Thirty-eight fixtures already existed in
+// fantasy_h2h_fixtures from the moment the draft completed and there was
+// nowhere in the product to read them.
+//
+// A BYE is derived here rather than stored: round-robin scheduling drops the
+// bye slot entirely (see roundRobinSchedule in src/draftLogic.js), so a manager
+// with no fixture in a gameweek has no row at all, which is indistinguishable
+// from a bug unless someone says so out loud. Every gameweek therefore reports
+// the member ids that have no fixture in it, and an odd-sized league byes
+// exactly one manager per week.
+//
+// Scores come from the settled fantasy_h2h_fixtures row, not the live rollup:
+// this is the season at a glance, and the current gameweek's live score is what
+// the matchup route is for. A null score means that gameweek has not been
+// scored yet, which the client renders as upcoming rather than 0-0.
+async function handleFantasyLeagueSchedule(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+
+    const [fixtureRows, memberRows] = await Promise.all([
+      env.DB.prepare(
+        `SELECT gameweek, home_user_id, away_user_id, home_score, away_score FROM fantasy_h2h_fixtures
+         WHERE league_id = ?1 ORDER BY gameweek, home_user_id`,
+      )
+        .bind(leagueId)
+        .all(),
+      env.DB.prepare(
+        `SELECT m.user_id, u.name, u.email, u.is_bot FROM fantasy_league_members m
+         JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
+      )
+        .bind(leagueId)
+        .all(),
+    ]);
+
+    const members = (memberRows.results ?? []).map((row) => ({
+      userId: row.user_id,
+      name: memberDisplayName(row),
+      isBot: Boolean(row.is_bot),
+    }));
+    const memberIds = members.map((member) => member.userId);
+
+    const byGameweek = new Map();
+    for (const row of fixtureRows.results ?? []) {
+      if (!byGameweek.has(row.gameweek)) byGameweek.set(row.gameweek, []);
+      byGameweek.get(row.gameweek).push({
+        homeUserId: row.home_user_id,
+        awayUserId: row.away_user_id,
+        homeScore: row.home_score,
+        awayScore: row.away_score,
+      });
+    }
+
+    const gameweek = await currentFantasyGameweek(env);
+    const matches = await currentFantasyMatches(env);
+    const season = matches ? seasonPhase({ matches, now: Date.now() }) : null;
+
+    const gameweeks = [...byGameweek.keys()].sort((a, b) => a - b).map((week) => {
+      const fixtures = byGameweek.get(week);
+      const playing = new Set();
+      for (const fixture of fixtures) {
+        playing.add(fixture.homeUserId);
+        playing.add(fixture.awayUserId);
+      }
+      return {
+        gameweek: week,
+        // Derived from the calendar, so a rescheduled round moves its own
+        // header date without anything here being rewritten.
+        kickoff: matches ? firstKickoffInGameweek(matches, week) : null,
+        deadline: matches ? squadDeadline(matches, week) : null,
+        fixtures,
+        byeUserIds: memberIds.filter((id) => !playing.has(id)),
+      };
+    });
+
+    return json(
+      {
+        currentGameweek: gameweek,
+        preseason: season?.preseason ?? false,
+        seasonStart: season?.seasonStart ?? null,
+        members,
+        gameweeks,
+      },
+      200,
+      cors,
+    );
   } catch {
     return json({ error: "fantasy unavailable" }, 502, cors);
   }
@@ -3184,19 +3348,49 @@ async function handleFantasyWaiversView(request, env, leagueId, cors) {
       (player) => !ownedIds.has(player.id) && !wireIds.has(player.id),
     );
 
-    // Kickoff lock (src/fantasyLocks.js), computed over every active player so
-    // the client can mark a free agent OR a roster player as locked without a
+    // Squad lock (src/fantasyDeadlines.js), the same composed rule the
+    // instant-add route enforces, computed over every active player so the
+    // client can mark a free agent OR a roster player as locked without a
     // second round trip. A null match list (feed unavailable) means nothing
     // can be checked, so nothing is reported locked here either, matching the
     // instant-add route's own fail-open behavior rather than disagreeing with it.
     const matches = await currentFantasyMatches(env);
-    const locked = matches ? lockedPlayerIds(allPlayers.results ?? [], matches, currentGameweek, Date.now()) : new Set();
+    const locked = matches
+      ? lockedSquadPlayerIds(allPlayers.results ?? [], matches, currentGameweek, Date.now())
+      : new Set();
 
     // The claim timetable, so the panel can state which run a claim submitted
     // right now would land in instead of leaving the manager to guess when the
     // gameweek turns over.
     const claimTarget = claimGameweek({ matches, currentGameweek, now: Date.now() });
     const currentWindow = waiverRunWindow({ matches, gameweek: currentGameweek, now: Date.now() });
+
+    // The squad deadline and the season phase travel alongside the claim
+    // timetable precisely because they are DIFFERENT instants (see the
+    // reconciliation note in fantasyDeadlines.js): the panel has to be able to
+    // say "your squad is locked" and "claims are still open for the next run"
+    // in the same breath without either sentence contradicting the other.
+    // Pre-season it says neither, and names the season start instead.
+    const squad = matches ? squadLockState({ matches, gameweek: currentGameweek, now: Date.now() }) : null;
+    const season = matches ? seasonPhase({ matches, now: Date.now() }) : null;
+
+    // Season points so far, so a free-agent row can show what a player has
+    // actually produced rather than only what he is projected to. Summed in
+    // SQL because points are stored per MATCH, never per gameweek, and a
+    // double gameweek must add rather than overwrite (see the per-match
+    // invariant in CLAUDE.md and sumPlayerPoints).
+    //
+    // Pre-season this table is empty and the map comes back empty, which is
+    // exactly right: the client shows nothing rather than a 0, because a zero
+    // reads as "this player is worthless" when the truth is "no games played".
+    const seasonPointsRows = await env.DB.prepare(
+      `SELECT player_id, SUM(points) AS points FROM fantasy_player_match_scores GROUP BY player_id`,
+    ).all();
+    const seasonPoints = {};
+    for (const row of seasonPointsRows.results ?? []) {
+      if (row?.player_id == null) continue;
+      seasonPoints[row.player_id] = row.points;
+    }
 
     const mine = (stateRows.results ?? []).find((row) => row.user_id === user.id);
 
@@ -3237,6 +3431,11 @@ async function handleFantasyWaiversView(request, env, leagueId, cors) {
           quietFrom: currentWindow.quietFrom,
           runsAfter: claimTarget.runsAfter,
         },
+        squadDeadline: squad?.deadline ?? null,
+        squadLocked: squad?.locked ?? false,
+        preseason: season?.preseason ?? false,
+        seasonStart: season?.seasonStart ?? null,
+        seasonPoints,
         priorities: (stateRows.results ?? []).map((row) => ({
           userId: row.user_id,
           name: row.name || String(row.email ?? "").split("@")[0] || "Someone",
@@ -3485,23 +3684,42 @@ async function handleFantasyFreeAgentAdd(request, env, leagueId, cors) {
 
     const gameweek = await currentFantasyGameweek(env);
 
-    // Kickoff lock (see src/fantasyLocks.js): reject the swap if EITHER side's
-    // club has already kicked off this gameweek, closing the exploit where an
-    // instant add/drop could bank (or dodge) points that have already been
-    // decided. Only the instant path needs this - a queued waiver claim
-    // resolves at the gameweek boundary, by which point every match in the
-    // settling gameweek is already terminal by construction, so the same
-    // check there would reject every processed claim (see runLeagueWaiverRun
-    // and CLAUDE.md). If the live feed is unavailable (no API key locally,
-    // upstream down), currentFantasyMatches returns null and this fails OPEN,
-    // allowing the move: freezing every free-agent transaction league-wide on
-    // a feed blip is worse than the rare window where a manager could exploit
-    // that specific outage, and a genuine feed error is never swallowed
-    // silently, it is a deliberate null the lock check treats as "nothing to
-    // check against" (see currentFantasyMatches's own comment).
+    // Squad deadline, then the kickoff backstop (see src/fantasyDeadlines.js).
+    // An instant add changes THIS gameweek's squad, so it closes when the squad
+    // closes: at the league-wide deadline, two hours before the gameweek's
+    // first kickoff. Past it the swap is refused whichever side it touches,
+    // which is a stronger and much easier-to-explain rule than the per-club one
+    // it replaces.
+    //
+    // Only the instant path is gated this way. A queued waiver claim resolves
+    // after this gameweek has settled and therefore changes the NEXT gameweek's
+    // squad, so the deadline has nothing to say about it; what governs a claim
+    // is the waiver timetable's own quiet period, which is provably later than
+    // this deadline (see the reconciliation note in fantasyDeadlines.js and
+    // runLeagueWaiverRun).
+    //
+    // If the live feed is unavailable (no API key locally, upstream down),
+    // currentFantasyMatches returns null and this fails OPEN, allowing the
+    // move: freezing every free-agent transaction league-wide on a feed blip is
+    // worse than the rare window where a manager could exploit that specific
+    // outage, and a genuine feed error is never swallowed silently, it is a
+    // deliberate null the lock check treats as "nothing to check against" (see
+    // currentFantasyMatches's own comment).
     const matches = await currentFantasyMatches(env);
     if (matches) {
-      const addLock = playerLockState({ team: addPlayer.team, matches, gameweek, now: Date.now() });
+      const squad = squadLockState({ matches, gameweek, now: Date.now() });
+      if (squad.locked) {
+        return json(
+          {
+            error: `Gameweek ${gameweek} is locked: the squad deadline passed two hours before the first kickoff.`,
+            deadline: squad.deadline,
+            locked: true,
+          },
+          400,
+          cors,
+        );
+      }
+      const addLock = playerSquadLock({ team: addPlayer.team, matches, gameweek, now: Date.now() });
       if (addLock.locked) {
         return json(
           { error: `${addPlayer.name} is locked: ${addPlayer.team} have already kicked off this gameweek` },
@@ -3509,7 +3727,7 @@ async function handleFantasyFreeAgentAdd(request, env, leagueId, cors) {
           cors,
         );
       }
-      const dropLock = playerLockState({ team: dropPlayer.team, matches, gameweek, now: Date.now() });
+      const dropLock = playerSquadLock({ team: dropPlayer.team, matches, gameweek, now: Date.now() });
       if (dropLock.locked) {
         return json(
           { error: `${dropPlayer.name} is locked: ${dropPlayer.team} have already kicked off this gameweek` },
@@ -4687,12 +4905,15 @@ async function considerAutopilotPickup(env, seat, gameweek, matches, xpByPlayer,
   const freeAgents = (freeRows.results ?? []).map((row) => ({ ...row, xp: xpByPlayer.get(row.id) ?? null }));
   if (!freeAgents.length) return;
 
-  // The kickoff lock applies to autopilot exactly as it does to a manager: a
-  // swap must not bank or dodge points that are already decided.
+  // The squad deadline applies to autopilot exactly as it does to a manager: a
+  // swap must not bank or dodge points that are already decided, and autopilot
+  // does not get a longer window than the person whose team it is playing.
+  // Past the deadline this locks everything, so autopilot simply makes no
+  // pickup that gameweek, which is the correct damage-control behaviour.
   const now = Date.now();
   const locked = new Set([
-    ...lockedPlayerIds(roster, matches, gameweek, now),
-    ...lockedPlayerIds(freeAgents, matches, gameweek, now),
+    ...lockedSquadPlayerIds(roster, matches, gameweek, now),
+    ...lockedSquadPlayerIds(freeAgents, matches, gameweek, now),
   ]);
 
   const move = autopilotPickup({ roster, freeAgents, lockedPlayerIds: locked });

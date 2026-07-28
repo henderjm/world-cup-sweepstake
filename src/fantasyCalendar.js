@@ -159,10 +159,34 @@ export function squadGameweekShape(players, counts) {
 // waiverRunWindow in fantasyWaivers.js). Null for a gameweek with no fixture
 // at all, or one whose fixtures carry no parseable kickoff.
 export function lastKickoffInGameweek(matches, gameweek) {
-  const kickoffs = gameweekFixtures(matches, gameweek)
+  const kickoffs = gameweekKickoffs(matches, gameweek);
+  return kickoffs.length ? Math.max(...kickoffs) : null;
+}
+
+// The FIRST kickoff inside a gameweek window: the instant the gameweek starts
+// happening, and therefore the anchor for anything that must happen "before
+// the gameweek begins" (see squadDeadline in fantasyDeadlines.js). The mirror
+// of lastKickoffInGameweek above, and deliberately its neighbour: the two
+// anchor the two different deadlines this app has, and a reader comparing them
+// should not have to go looking. Null on the same conditions.
+export function firstKickoffInGameweek(matches, gameweek) {
+  const kickoffs = gameweekKickoffs(matches, gameweek);
+  return kickoffs.length ? Math.min(...kickoffs) : null;
+}
+
+// The earliest kickoff anywhere in the schedule: the moment the season itself
+// starts. Derived from the feed like everything else here, never a hardcoded
+// date, so a rescheduled opening fixture moves it. Null for a schedule with no
+// parseable kickoff at all.
+export function seasonFirstKickoff(matches) {
+  const kickoffs = (matches ?? []).map((match) => toEpochMs(match?.utcDate)).filter((value) => Number.isFinite(value));
+  return kickoffs.length ? Math.min(...kickoffs) : null;
+}
+
+function gameweekKickoffs(matches, gameweek) {
+  return gameweekFixtures(matches, gameweek)
     .map((match) => toEpochMs(match.utcDate))
     .filter((value) => Number.isFinite(value));
-  return kickoffs.length ? Math.max(...kickoffs) : null;
 }
 
 function median(values) {

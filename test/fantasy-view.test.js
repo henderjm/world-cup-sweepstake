@@ -1089,11 +1089,17 @@ test("renderFantasyMatchupPanel shows a loading note before the matchup has load
   assert.match(failed, /data-fantasy-matchup-retry/);
 });
 
-test("renderFantasyMatchupPanel explains a bye week plainly when opponent is null", () => {
-  const html = renderFantasyMatchupPanel({ gameweek: 7, status: "scheduled", me: { userId: 1, name: "Alex", score: 0 }, opponent: null });
-  assert.match(html, /Bye week/);
-  assert.match(html, /No fixture for you this gameweek/);
-  assert.doesNotMatch(html, /vs/);
+test("renderFantasyMatchupPanel explains a bye plainly when opponent is null", () => {
+  const html = renderFantasyMatchupPanel(
+    { gameweek: 7, status: "scheduled", me: { userId: 1, name: "Alex", score: 0 }, opponent: null },
+    { leagueSize: 3 },
+  );
+  assert.match(html, /You have a bye/);
+  // Names WHY, not just that it happened: an odd-sized league byes somebody
+  // every week and the manager it happens to has to be told that.
+  assert.match(html, /3 managers/);
+  assert.match(html, /back in the schedule/);
+  assert.doesNotMatch(html, /fantasy-matchup__vs/);
 });
 
 test("renderFantasyMatchupPanel shows a pending score (not a bare 0-0) while the matchup is scheduled", () => {
@@ -1103,9 +1109,79 @@ test("renderFantasyMatchupPanel shows a pending score (not a bare 0-0) while the
     me: { userId: 1, name: "Alex", score: 0 },
     opponent: { userId: 2, name: "Sam", score: 0 },
   });
-  assert.match(html, /Not started yet/);
+  assert.match(html, /has not been played yet/);
   assert.doesNotMatch(html, /fantasy-matchup__bar-me/);
   assert.match(html, /fantasy-stat--empty/);
+});
+
+test("a pre-season matchup reads as upcoming and names the season start, with no countdown", () => {
+  // The owner's first complaint: pre-season, an unplayed fixture rendered as a
+  // 0-0 scoreline with in-season deadline language wrapped around it.
+  const seasonStart = Date.parse("2026-08-21T19:00:00Z");
+  const html = renderFantasyMatchupPanel(
+    {
+      gameweek: 1,
+      status: "scheduled",
+      me: { userId: 1, name: "Mark", score: 0 },
+      opponent: { userId: 2, name: "Rory", score: 0 },
+      kickoff: seasonStart,
+      deadline: seasonStart - 2 * 60 * 60 * 1000,
+      locked: false,
+      preseason: true,
+      seasonStart,
+    },
+    { now: Date.parse("2026-07-28T21:00:00Z") },
+  );
+
+  assert.match(html, /Season starts/);
+  assert.match(html, /fantasy-deadline--preseason/);
+  assert.match(html, /fantasy-stat--empty/, "no scoreline before a ball is kicked");
+  assert.doesNotMatch(html, /fantasy-deadline__countdown/, "a countdown three weeks out is the reported bug");
+  assert.doesNotMatch(html, /waiver run/i);
+});
+
+test("an in-season matchup carries a live deadline countdown", () => {
+  const kickoff = Date.parse("2026-10-24T14:00:00Z");
+  const deadline = kickoff - 2 * 60 * 60 * 1000;
+  const html = renderFantasyMatchupPanel(
+    {
+      gameweek: 9,
+      status: "scheduled",
+      me: { userId: 1, name: "Mark", score: 0 },
+      opponent: { userId: 2, name: "Rory", score: 0 },
+      kickoff,
+      deadline,
+      locked: false,
+      preseason: false,
+    },
+    { now: deadline - 3 * 60 * 60 * 1000 },
+  );
+  assert.match(html, /fantasy-deadline__countdown/);
+  assert.match(html, /3h 0m/);
+  // The raw instant rides on the banner so app.js can re-tick it in place
+  // without a full re-render.
+  assert.match(html, new RegExp(`data-fantasy-deadline="${deadline}"`));
+});
+
+test("a locked matchup says the squad is locked and stops counting down", () => {
+  const kickoff = Date.parse("2026-10-24T14:00:00Z");
+  const deadline = kickoff - 2 * 60 * 60 * 1000;
+  const html = renderFantasyMatchupPanel(
+    {
+      gameweek: 9,
+      status: "scheduled",
+      me: { userId: 1, name: "Mark", score: 0 },
+      opponent: { userId: 2, name: "Rory", score: 0 },
+      kickoff,
+      deadline,
+      locked: true,
+      preseason: false,
+    },
+    { now: deadline + 60 * 1000 },
+  );
+  assert.match(html, /fantasy-deadline--locked/);
+  assert.match(html, /squad locked/i);
+  assert.doesNotMatch(html, /fantasy-deadline__countdown/);
 });
 
 test("renderFantasyMatchupPanel highlights the leading side once the matchup has started", () => {
@@ -1346,6 +1422,116 @@ test("renderFantasyFreeAgentRows shows an Add action, not Locked, when no locked
   const html = renderFantasyFreeAgentRows([waiverPlayer(1, "MID")], { position: "All", search: "" });
   assert.doesNotMatch(html, /fantasy-chip--locked/);
   assert.match(html, /data-fantasy-fa-add="1"/);
+});
+
+// -- Free-agent decision stats ------------------------------------------------
+//
+// The panel used to carry a crest, a name, a club, a position pill and a
+// button, and nothing a transfer decision could be made from.
+
+const FA_CONTEXT = {
+  statsById: new Map([
+    [1, { id: 1, xp: 4.6, xpBasis: "history" }],
+    [2, { id: 2, xp: 3.2, xpBasis: "estimate" }],
+    // Player 3 deliberately absent: no xP at all.
+  ]),
+  starters: [
+    { position: "MID", xp: 5.4 },
+    { position: "MID", xp: 3.1 },
+  ],
+  seasonPoints: new Map([[1, 82]]),
+  // `seasons` is a list of season-start years (see xpSeasonsLabel), not a count.
+  xpStats: { seasons: [2025, 2024, 2023] },
+};
+
+test("a free-agent row quotes xP the same way the draft board does", () => {
+  const html = renderFantasyFreeAgentRows([waiverPlayer(1, "MID")], { position: "All", search: "" }, null, FA_CONTEXT);
+  assert.match(html, /xP 4\.6/);
+  assert.match(html, /fantasy-fa-row__xp/);
+  // A measured figure is NOT marked as an estimate.
+  assert.doesNotMatch(html, /fantasy-fa-row__xp is-estimate/);
+});
+
+test("a cohort-derived xP keeps its is-estimate treatment on the free-agent row", () => {
+  const html = renderFantasyFreeAgentRows([waiverPlayer(2, "MID")], { position: "All", search: "" }, null, FA_CONTEXT);
+  assert.match(html, /xP 3\.2/);
+  assert.match(html, /is-estimate/, "an estimate must never read as this player's own record");
+});
+
+test("a player with no xP gets the existing dim placeholder, never a fabricated zero", () => {
+  const html = renderFantasyFreeAgentRows([waiverPlayer(3, "MID")], { position: "All", search: "" }, null, FA_CONTEXT);
+  assert.match(html, /xP •/);
+  assert.match(html, /is-empty/);
+  assert.doesNotMatch(html, /xP 0/);
+  // With no xP there is no honest upgrade figure either.
+  assert.doesNotMatch(html, /fantasy-fa-row__delta/);
+});
+
+test("the row shows the gain over the manager's own worst starter at that position", () => {
+  // Worst starting MID is 3.1; this free agent is 4.6, so +1.5.
+  const html = renderFantasyFreeAgentRows([waiverPlayer(1, "MID")], { position: "All", search: "" }, null, FA_CONTEXT);
+  assert.match(html, /\+1\.5/);
+  assert.match(html, /is-up/);
+  assert.match(html, /worst starting MID/);
+});
+
+test("a downgrade is shown as negative rather than hidden", () => {
+  const context = { ...FA_CONTEXT, statsById: new Map([[1, { id: 1, xp: 2.0, xpBasis: "history" }]]) };
+  const html = renderFantasyFreeAgentRows([waiverPlayer(1, "MID")], { position: "All", search: "" }, null, context);
+  assert.match(html, /-1\.1/);
+  assert.match(html, /is-down/);
+});
+
+test("with no lineup loaded there is no upgrade figure at all, not one on another basis", () => {
+  const context = { ...FA_CONTEXT, starters: [] };
+  const html = renderFantasyFreeAgentRows([waiverPlayer(1, "MID")], { position: "All", search: "" }, null, context);
+  assert.match(html, /xP 4\.6/, "xP still shows; it does not depend on the lineup");
+  assert.doesNotMatch(html, /fantasy-fa-row__delta/);
+});
+
+test("REGRESSION: the free-agent panel never says 'nothing is locked' above locked rows", () => {
+  // Pre-season and locked overlap for the two hours between gameweek 1's
+  // deadline and the opening kickoff. Branching the lock sentence on pre-season
+  // alone put "Pre-season, so nothing is locked" directly above fifteen rows
+  // each showing a Locked chip. Caught by driving the real app, not by a test.
+  const waivers = {
+    mode: "faab",
+    faabBudget: 100,
+    myBudgetRemaining: 100,
+    currentGameweek: 1,
+    priorities: [],
+    freeAgents: [waiverPlayer(1, "MID", "Someone")],
+    wire: [],
+    myClaims: [],
+    lastRun: null,
+    lockedPlayerIds: [1],
+    preseason: true,
+    squadLocked: true,
+    seasonStart: Date.parse("2026-08-21T19:00:00Z"),
+    squadDeadline: Date.parse("2026-08-21T17:00:00Z"),
+    seasonPoints: {},
+  };
+  const html = renderFantasyWaiversPanel(waivers, { myUserId: 1, roster: [], now: Date.parse("2026-08-21T18:00:00Z") });
+
+  assert.match(html, /fantasy-chip--locked/, "the row is locked");
+  assert.doesNotMatch(html, /nothing is locked/, "the panel must not contradict its own rows");
+  assert.match(html, /squad deadline has passed/);
+});
+
+test("season points show once played and are omitted entirely before any match", () => {
+  const played = renderFantasyFreeAgentRows([waiverPlayer(1, "MID")], { position: "All", search: "" }, null, FA_CONTEXT);
+  assert.match(played, /82 pts/);
+
+  // Pre-season: the table is empty, so the map is empty. A 0 here would read
+  // as "this player is worthless" rather than "no games played yet".
+  const preseason = renderFantasyFreeAgentRows(
+    [waiverPlayer(1, "MID")],
+    { position: "All", search: "" },
+    null,
+    { ...FA_CONTEXT, seasonPoints: new Map() },
+  );
+  assert.doesNotMatch(preseason, /pts</);
+  assert.doesNotMatch(preseason, /0 pts/);
 });
 
 test("renderFantasyWireRows filters by position and shows a Claim action per row", () => {

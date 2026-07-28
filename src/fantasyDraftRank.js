@@ -59,6 +59,53 @@ export function valueOverReplacement(player, replacementLevels_) {
   return Number(player.xp) - replacement;
 }
 
+// -- Value against YOUR team, for the free-agent decision ----------------------
+//
+// The draft-board question is "who is worth the most to anybody" and its answer
+// is valueOverReplacement above. The free-agency question is a different one:
+// "does adding this player make MY team better this week", and the answer
+// depends on who you already have. A forward two points clear of replacement is
+// a great draft pick and a pointless add if your own worst starting forward is
+// three points better than him.
+//
+// This lives here, beside valueOverReplacement, deliberately: both are notions
+// of player value, and the module comment above is the one place the app is
+// allowed to define what value means. A second module quietly inventing a
+// competing definition is how two numbers end up claiming the same meaning.
+//
+// The comparison is against the worst STARTER at that position, not the worst
+// squad member, because that is the player a new arrival would actually
+// displace in the XI. `starters` is [{ position, xp }, ...]; a starter with no
+// xP is skipped rather than counted as zero, which would fabricate a huge
+// upgrade out of a missing number.
+export function worstStarterXp(starters, position) {
+  let worst = null;
+  for (const starter of starters ?? []) {
+    if (starter?.position !== position) continue;
+    const xp = typeof starter.xp === "number" && Number.isFinite(starter.xp) ? starter.xp : null;
+    if (xp == null) continue;
+    if (worst == null || xp < worst) worst = xp;
+  }
+  return worst;
+}
+
+// The points-per-gameweek a manager would gain by starting `player` in place of
+// their own worst starter at that position. Positive is an upgrade, negative
+// means their current starter is better and the add would only deepen the
+// bench, which is worth saying out loud rather than hiding.
+//
+// Null (never zero) whenever the comparison cannot honestly be made: the player
+// has no xP, or the manager has no startable xP at that position to compare
+// against. Zero would read as "no difference", which is a claim; null is the
+// absence of one, and the view renders it as the same dim placeholder every
+// other missing figure uses.
+export function startingUpgrade(player, starters) {
+  if (player?.xp == null) return null;
+  const worst = worstStarterXp(starters, player.position);
+  if (worst == null) return null;
+  return Number(player.xp) - worst;
+}
+
 // Which round a given overall rank is likely to go in, for the board's "R3"
 // style hint. One-indexed, and only a guide: it assumes managers draft roughly
 // in board order, which they never quite do.
