@@ -105,6 +105,14 @@ import {
   buildRecapPrompt,
   mergeRecap,
 } from "../src/fantasyRecapPrompt.js";
+import { buildDraftRecap } from "../src/fantasyDraftRecap.js";
+import {
+  DRAFT_RECAP_PROMPT_VERSION,
+  DRAFT_RECAP_SCHEMA,
+  DRAFT_RECAP_SYSTEM_PROMPT,
+  buildDraftRecapPrompt,
+  mergeDraftRecap,
+} from "../src/fantasyDraftRecapPrompt.js";
 import { endpointFamily } from "../src/apiQuota.js";
 import {
   bufferSize,
@@ -306,6 +314,12 @@ export default {
     const fantasyDraftStartRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/draft\/start$/);
     if (fantasyDraftStartRoute && request.method === "POST") {
       return handleFantasyDraftStart(request, env, Number(fantasyDraftStartRoute[1]), cors);
+    }
+    // The post-draft grades. Read-only and membership-checked; generated once
+    // per league on the cron (runScheduledDraftRecaps), never on this request.
+    const fantasyDraftRecapRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/draft\/recap$/);
+    if (fantasyDraftRecapRoute && request.method === "GET") {
+      return handleFantasyDraftRecap(request, env, Number(fantasyDraftRecapRoute[1]), cors);
     }
     const fantasyDraftScheduleRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/draft\/schedule$/);
     if (fantasyDraftScheduleRoute && request.method === "POST") {
@@ -529,6 +543,13 @@ export default {
         // have written, so trailing it is what lets a recap describe the
         // gameweek that settled this very tick.
         await runCronPass("league-recaps", () => runScheduledLeagueRecaps(env));
+        // Behind the weekly recap for the same reasons and one more. It is
+        // discretionary (nothing depends on it), it spends money, and it is
+        // strictly once per league for the whole season, so it is the pass
+        // that can most afford to be last of the ones that matter. It reads
+        // only the pick log and the xP table, so it needs nothing the passes
+        // above produce.
+        await runCronPass("draft-recaps", () => runScheduledDraftRecaps(env));
         // Dead last, after the recap. Every pass above spends API-Football
         // calls, so running the flush behind all of them is what lets one tick
         // record its own spend instead of leaving it for the next one. It is
@@ -4168,6 +4189,215 @@ async function writeRecapProse(env, args) {
   } catch (error) {
     console.error(`recap generation failed league=${args.leagueId} gw=${args.gameweek}`, error?.message ?? error);
     return null;
+  }
+}
+
+// -- Post-draft recap ----------------------------------------------------------
+//
+// One per league, ever, generated on the cron rather than on a user's visit
+// (the same rule as the AI match analysis and the weekly recap: a browser can
+// never trigger an Anthropic call). The whole point is that it is waiting for
+// managers the moment the draft ends, so it rides the one-minute tick.
+//
+// Every figure in it comes from src/fantasyDraftRecap.js, graded against the
+// SAME draft board (src/fantasyDraftRank.js) the managers were looking at while
+// they picked; the model contributes prose and cannot author a number.
+async function runScheduledDraftRecaps(env) {
+  if (!env.DB || !env.ANTHROPIC_API_KEY) return;
+
+  // The ledger check is folded into the league query rather than run per
+  // league. A draft recap is written once and then never again for the life of
+  // that league, so after the first tick this pass costs exactly one SELECT
+  // that returns nothing, for the rest of the season.
+  const leagues = await env.DB.prepare(
+    `SELECT l.id, l.name FROM fantasy_leagues l
+     WHERE l.draft_status = 'complete'
+       AND NOT EXISTS (SELECT 1 FROM fantasy_league_draft_recaps r WHERE r.league_id = l.id)`,
+  ).all();
+
+  for (const league of leagues.results ?? []) {
+    try {
+      await generateDraftRecap(env, league);
+    } catch (error) {
+      // One league failing must not block the others, and this recap is never
+      // load-bearing: the next tick retries from the same unmarked ledger.
+      console.error(`draft recap failed for league ${league.id}`, error?.message ?? error);
+    }
+  }
+}
+
+async function generateDraftRecap(env, league) {
+  const leagueId = league.id;
+
+  const [memberRows, pickRows, playerRows] = await Promise.all([
+    env.DB.prepare(
+      `SELECT m.user_id, u.name, u.email, u.is_bot FROM fantasy_league_members m
+       JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
+    )
+      .bind(leagueId)
+      .all(),
+    env.DB.prepare(
+      `SELECT round, pick_in_round, overall_pick, user_id, player_id, via
+       FROM fantasy_draft_picks WHERE league_id = ?1 ORDER BY overall_pick`,
+    )
+      .bind(leagueId)
+      .all(),
+    // The WHOLE pool, not just the drafted players: replacement level is a
+    // property of what was still available, so grading against only the 150
+    // players who went would make every pick look like value.
+    env.DB.prepare(
+      `SELECT p.id, p.name, p.team, p.position, x.xp FROM fantasy_players p
+       LEFT JOIN fantasy_player_xp x ON x.player_id = p.id`,
+    ).all(),
+  ]);
+
+  const managers = (memberRows.results ?? []).map((row) => ({
+    userId: row.user_id,
+    name: memberDisplayName(row),
+    isBot: Boolean(row.is_bot),
+  }));
+  if (managers.length < 2) return; // nothing to grade against in a league of one
+
+  const picks = (pickRows.results ?? []).map((row) => ({
+    round: row.round,
+    pickInRound: row.pick_in_round,
+    overallPick: row.overall_pick,
+    userId: row.user_id,
+    playerId: row.player_id,
+    via: row.via ?? null,
+  }));
+  // A league flipped to 'complete' with no picks behind it cannot be graded.
+  // Skipping WITHOUT marking the ledger is what lets a later tick try again,
+  // the same reason the weekly recap writes its ledger row last.
+  if (!picks.length) return;
+
+  const players = (playerRows.results ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    team: row.team,
+    position: row.position,
+    xp: row.xp,
+  }));
+
+  const numbers = buildDraftRecap({ managers, picks, players });
+  if (!numbers.teams.length) return;
+
+  const recap = mergeDraftRecap({
+    managers,
+    recap: numbers,
+    generated: await writeDraftRecapProse(env, {
+      leagueId,
+      leagueName: league.name,
+      managers,
+      recap: numbers,
+    }),
+  });
+
+  try {
+    // Ledger row and feed message in ONE batch, so two overlapping ticks that
+    // both generated cannot both post: D1 runs a batch in a single
+    // transaction, the primary key rejects the loser, and its feed message
+    // rolls back with it.
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO fantasy_league_draft_recaps (league_id, prompt_version) VALUES (?1, ?2)`,
+      ).bind(leagueId, DRAFT_RECAP_PROMPT_VERSION),
+      leagueEventStatement(env, leagueId, CHAT_EVENTS.DRAFT_RECAP, { recap }),
+    ]);
+  } catch {
+    // Lost the race (or a genuine D1 error): nothing committed, so there is no
+    // duplicate to clean up and nothing to push about.
+    return;
+  }
+
+  await sendLeaguePush(
+    env,
+    managers.map((manager) => manager.userId),
+    {
+      leagueId,
+      tag: `draft-recap-${leagueId}`,
+      // The "draft" preference rather than "recap": this lands seconds after
+      // the draft ends and is part of that moment, not part of the weekly
+      // rhythm somebody may have opted out of separately.
+      pref: "draft",
+      title: `Draft grades are in: ${league.name}`,
+      body: recap.headline,
+    },
+  );
+}
+
+// The one model call. Returns null on any failure, and mergeDraftRecap then
+// produces a recap of pure numbers with empty prose rather than nothing at
+// all: the grades and projections are the part readers actually came for.
+async function writeDraftRecapProse(env, args) {
+  const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 60_000 });
+  try {
+    const response = await anthropic.messages.create({
+      model: env.ANTHROPIC_MODEL || "claude-sonnet-5",
+      max_tokens: 4000,
+      thinking: { type: "adaptive" },
+      output_config: {
+        effort: "low",
+        format: { type: "json_schema", schema: DRAFT_RECAP_SCHEMA },
+      },
+      system: DRAFT_RECAP_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: buildDraftRecapPrompt(args) }],
+    });
+
+    console.log(
+      `draft recap generated league=${args.leagueId} in=${response.usage?.input_tokens ?? "?"} out=${response.usage?.output_tokens ?? "?"}`,
+    );
+
+    if (response.stop_reason === "refusal") return null;
+    const text = response.content.find((block) => block.type === "text")?.text ?? "";
+    return JSON.parse(text); // schema-constrained
+  } catch (error) {
+    console.error(`draft recap generation failed league=${args.leagueId}`, error?.message ?? error);
+    return null;
+  }
+}
+
+// GET /fantasy/league/:id/draft/recap. Membership-checked like every other
+// league route: a private league's squads and grades are nobody else's
+// business, and this payload names every manager in it.
+//
+// Reads the recap out of its own feed row rather than a second copy, so the
+// card in the feed and this endpoint can never disagree. 404 rather than an
+// empty body while the cron has not written one yet, so the client can tell
+// "not yet" from "there is nothing here".
+async function handleFantasyDraftRecap(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+
+    const row = await env.DB.prepare(
+      `SELECT payload FROM fantasy_chat_messages
+       WHERE league_id = ?1 AND kind = 'system' AND event = ?2
+       ORDER BY id DESC LIMIT 1`,
+    )
+      .bind(leagueId, CHAT_EVENTS.DRAFT_RECAP)
+      .first();
+    if (!row) return json({ error: "no draft recap yet" }, 404, cors);
+
+    let payload;
+    try {
+      payload = JSON.parse(row.payload ?? "{}");
+    } catch {
+      return json({ error: "no draft recap yet" }, 404, cors);
+    }
+    if (!payload?.recap) return json({ error: "no draft recap yet" }, 404, cors);
+
+    return json({ viewerUserId: user.id, recap: payload.recap }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
   }
 }
 

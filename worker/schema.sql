@@ -477,6 +477,25 @@ CREATE TABLE IF NOT EXISTS fantasy_league_recaps (
   PRIMARY KEY (league_id, gameweek)
 );
 
+-- Dedup ledger for the AI POST-DRAFT recap: exactly one per league, ever. A
+-- draft happens once, so unlike the weekly recap above there is no gameweek in
+-- the key and league_id is the whole primary key.
+--
+-- Same "check cheaply, then commit the ledger row and the recap's own feed
+-- message in ONE batch" discipline as fantasy_league_recaps: the primary key is
+-- the real gate and rejects the loser of two overlapping ticks atomically,
+-- feed message included.
+--
+-- The recap itself is NOT stored here. It lives in its fantasy_chat_messages
+-- payload, which is the same single copy every other league event keeps, so
+-- there is no second copy to drift. This table only answers "has it been
+-- written yet".
+CREATE TABLE IF NOT EXISTS fantasy_league_draft_recaps (
+  league_id INTEGER PRIMARY KEY REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  prompt_version INTEGER NOT NULL DEFAULT 1,
+  generated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- API-Football quota analytics. The Worker proxies a paid plan and until now
 -- measured nothing, so the daily allowance could be half gone by lunchtime and
 -- the first anyone knew was a 429 during a live match.

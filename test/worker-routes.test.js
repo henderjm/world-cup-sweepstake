@@ -181,6 +181,7 @@ const ROUTES = [
   ["GET", "/fantasy/league/1"],
   ["GET", "/fantasy/league/1/lineup"],
   ["GET", "/fantasy/league/1/draft/queue"],
+  ["GET", "/fantasy/league/1/draft/recap"],
   ["GET", "/fantasy/league/1/matchup"],
   ["GET", "/fantasy/league/1/standings"],
   ["GET", "/fantasy/league/1/waivers"],
@@ -350,6 +351,93 @@ test("the feed rejects a bad action and an emoji outside the allowlist", async (
     body: JSON.stringify({ action: "react", messageId: 5, emoji: "🦄" }),
   }).response;
   assert.equal(emoji.status, 400);
+});
+
+// -- The post-draft recap route, actually executed ----------------------------
+//
+// Same anti-short-circuit discipline as the feed block above: the ROUTES entry
+// for this path stops at the 401, so on its own it proves only that the route
+// is dispatched. These carry a session and a stub that answers the two reads
+// the handler makes, so the membership gate and the feed lookup both run.
+
+function draftRecapDb(seen, { member = true, payload } = {}) {
+  const make = (sql) => {
+    const normalised = sql.replace(/\s+/g, " ").trim();
+    const statement = {
+      bind: () => statement,
+      first: async () => {
+        if (normalised.includes("FROM sessions s")) {
+          return { id: 1, email: "ada@example.test", name: "Ada", prefs: "{}" };
+        }
+        if (normalised.includes("FROM fantasy_league_members WHERE league_id")) {
+          return member ? { x: 1 } : null;
+        }
+        if (normalised.includes("FROM fantasy_chat_messages")) {
+          return payload === undefined ? null : { payload };
+        }
+        return null;
+      },
+      all: async () => ({ results: [] }),
+      run: async () => ({ success: true, meta: { changes: 1 } }),
+    };
+    return statement;
+  };
+  return {
+    prepare: (sql) => {
+      seen.push(sql.replace(/\s+/g, " ").trim());
+      return make(sql);
+    },
+    batch: async () => [],
+  };
+}
+
+function draftRecapCall(options) {
+  const seen = [];
+  const response = worker.fetch(
+    new Request("https://example.test/fantasy/league/1/draft/recap", {
+      headers: { Authorization: `Bearer ${SESSION_TOKEN}` },
+    }),
+    { ...env, DB: draftRecapDb(seen, options) },
+  );
+  return { response, seen };
+}
+
+test("the draft recap route reads the stored recap out of the league feed", async () => {
+  const recap = { version: 1, headline: "Bo ran the room", leagueSize: 2, teams: [{ userId: 1, grade: "A" }] };
+  const { response, seen } = draftRecapCall({ payload: JSON.stringify({ recap }) });
+  const resolved = await response;
+
+  assert.equal(resolved.status, 200);
+  // The anti-short-circuit assertion: the feed lookup has to have run, not
+  // just the session and membership checks.
+  assert.ok(
+    seen.some((sql) => sql.includes("FROM fantasy_chat_messages") && sql.includes("event = ?2")),
+    "the recap lookup never ran, so this test proves nothing",
+  );
+  const body = await resolved.json();
+  assert.equal(body.recap.headline, "Bo ran the room");
+  assert.equal(body.viewerUserId, 1);
+});
+
+test("the draft recap route refuses a non-member before reading anything", async () => {
+  const { response, seen } = draftRecapCall({ member: false, payload: JSON.stringify({ recap: { headline: "x" } }) });
+  assert.equal((await response).status, 403);
+  // A private league's grades name every manager in it, so the membership gate
+  // must sit in front of the read rather than beside it.
+  assert.equal(
+    seen.some((sql) => sql.includes("FROM fantasy_chat_messages")),
+    false,
+    "a non-member's request still read the recap",
+  );
+});
+
+test("the draft recap route says 404 until the cron has written one", async () => {
+  // Distinguishable from "there is nothing here": the client needs to tell
+  // "not yet" from an error, and an empty 200 would not.
+  assert.equal((await draftRecapCall({}).response).status, 404);
+  // A row whose payload cannot be parsed is the same answer, never a 500.
+  assert.equal((await draftRecapCall({ payload: "{not json" }).response).status, 404);
+  assert.equal((await draftRecapCall({ payload: JSON.stringify({}) }).response).status, 404);
 });
 
 test("an OPTIONS preflight is answered without touching any binding", async () => {

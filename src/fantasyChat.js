@@ -53,6 +53,7 @@ export const CHAT_EVENTS = Object.freeze({
   FREE_AGENT_ADD: "free_agent_add",
   WAIVER_RUN: "waiver_run",
   RECAP: "recap",
+  DRAFT_RECAP: "draft_recap",
 });
 
 // Cleans a human message. Control characters become spaces (a newline in a
@@ -186,6 +187,15 @@ export function describeChatEvent(entry) {
       return { icon: "📨", text: `Waivers ran for ${week}. ${lines.join("; ")}.` };
     }
 
+    case CHAT_EVENTS.DRAFT_RECAP:
+      // Like RECAP below, this has its own rich renderer (the payload carries
+      // every team's grade, highlights and projection), so this is only the
+      // one-line summary a compact view falls back to.
+      return {
+        icon: "🎓",
+        text: payload.recap?.headline || "The draft grades are in.",
+      };
+
     case CHAT_EVENTS.RECAP:
       // The recap has its own rich renderer (the payload carries rankings,
       // awards and the model's prose), so this is only the one-line summary a
@@ -227,4 +237,11 @@ function describePickVia(via, legacyViaQueue) {
 // notion of "this is a recap" and the renderer's cannot drift.
 export function isRecapEntry(entry) {
   return entry?.kind === "system" && entry?.event === CHAT_EVENTS.RECAP && Boolean(entry?.payload?.recap);
+}
+
+// The same test for the post-draft recap, which renders through its own card
+// rather than the weekly one: the payloads carry different shapes (grades and
+// projections, not rankings and awards) and a renderer must never guess.
+export function isDraftRecapEntry(entry) {
+  return entry?.kind === "system" && entry?.event === CHAT_EVENTS.DRAFT_RECAP && Boolean(entry?.payload?.recap);
 }
