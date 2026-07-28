@@ -16,10 +16,98 @@
 // only at claim-submit time, because resolveWaiverRun re-validates against a
 // working copy of state that can have shifted since a claim was queued.
 
+import { lastKickoffInGameweek, toEpochMs } from "./fantasyCalendar.js";
 import { SQUAD_SLOTS } from "./fantasy.js";
 
 export const WAIVER_MODES = ["faab", "rolling", "reverse_standings"];
 export const DEFAULT_FAAB_BUDGET = 100;
+
+// -- The settlement buffer ----------------------------------------------------
+//
+// A waiver run resolves every pending claim for the gameweek that just
+// settled. Without a buffer, "just settled" is the same instant the final
+// whistle blows, so a claim submitted seconds earlier is genuinely ambiguous:
+// the manager cannot know whether it made this run or the next one, and the
+// cron's own read-then-write window means it might make neither.
+//
+// So each gameweek gets two data-derived instants, both hung off the LAST
+// KICKOFF in that gameweek's calendar window (fantasyCalendar.js) rather than
+// off an assumed weekly schedule, because the real fixture list has midweek
+// rounds, international breaks and a winter break:
+//
+//   quietFrom     = lastKickoff - WAIVER_QUIET_PERIOD_MS
+//   earliestRunAt = lastKickoff + WAIVER_SETTLE_BUFFER_MS
+//
+// A claim submitted at or after quietFrom is accepted but explicitly tagged
+// with the NEXT gameweek, and the API says so, so a manager is never left
+// guessing. The run itself refuses to execute before earliestRunAt. Between
+// them there is a guaranteed four-hour gap between the last claim this run can
+// possibly contain and the moment it reads the claim set, which is what turns
+// a millisecond race into an impossibility rather than an unlikely event.
+//
+// These are liveness numbers, not correctness ones. Correctness comes from the
+// unique index on fantasy_waiver_runs(league_id, gameweek) plus the single
+// atomic batch, and from the run's trailing "roll any still-pending claim
+// forward" statement inside that same batch (see runLeagueWaiverRun): even if
+// both constants were zero, no claim could be double-applied or orphaned.
+export const WAIVER_QUIET_PERIOD_MS = 60 * 60 * 1000;
+export const WAIVER_SETTLE_BUFFER_MS = 3 * 60 * 60 * 1000;
+
+// One gameweek's waiver timetable. `matches` is the mapped match list, ideally
+// already run through assignGameweeks so a replayed fixture counts towards the
+// window it was actually played in; `now` is injected so this stays pure.
+//
+// phase is what the UI shows and what the claim route branches on:
+//   "open"   claims submitted now belong to THIS gameweek's run.
+//   "quiet"  the run is imminent; claims are accepted but belong to the NEXT
+//            gameweek's run.
+//   "closed" the settlement buffer has elapsed, so the run may execute.
+//
+// A gameweek with no fixture carrying a parseable kickoff (a fully blank
+// window, or a feed without dates) has no timetable at all: every instant is
+// null and the phase stays "open", which fails open to the pre-buffer
+// behaviour rather than freezing claims on missing data.
+export function waiverRunWindow({ matches, gameweek, now } = {}) {
+  const deadline = lastKickoffInGameweek(matches, gameweek);
+  if (deadline == null) {
+    return { gameweek, deadline: null, quietFrom: null, earliestRunAt: null, phase: "open" };
+  }
+  const quietFrom = deadline - WAIVER_QUIET_PERIOD_MS;
+  const earliestRunAt = deadline + WAIVER_SETTLE_BUFFER_MS;
+  const at = toEpochMs(now);
+  let phase = "open";
+  if (Number.isFinite(at)) {
+    if (at >= earliestRunAt) phase = "closed";
+    else if (at >= quietFrom) phase = "quiet";
+  }
+  return { gameweek, deadline, quietFrom, earliestRunAt, phase };
+}
+
+// Which run a claim submitted right now belongs to, and everything the client
+// needs to say so out loud. `deferred` is true exactly when the quiet period
+// has pushed the claim into the next gameweek's run; `runsAfter` is the
+// earliest instant that run can execute, so the UI can name a time rather than
+// "soon".
+export function claimGameweek({ matches, currentGameweek, now } = {}) {
+  const current = waiverRunWindow({ matches, gameweek: currentGameweek, now });
+  if (current.phase === "open") {
+    return { gameweek: currentGameweek, deferred: false, runsAfter: current.earliestRunAt, phase: current.phase };
+  }
+  const next = waiverRunWindow({ matches, gameweek: currentGameweek + 1, now });
+  return { gameweek: currentGameweek + 1, deferred: true, runsAfter: next.earliestRunAt, phase: current.phase };
+}
+
+// Whether the run for an already-settled gameweek may execute yet. Separate
+// from "has the gameweek settled" (the caller's own gate): a gameweek can be
+// fully terminal minutes after its last final whistle, while this stays false
+// until the settlement buffer has elapsed.
+export function waiverRunReady({ matches, settledGameweek, now } = {}) {
+  const window = waiverRunWindow({ matches, gameweek: settledGameweek, now });
+  if (window.earliestRunAt == null) return true;
+  const at = toEpochMs(now);
+  if (!Number.isFinite(at)) return true;
+  return at >= window.earliestRunAt;
+}
 
 // Classifies one player's availability for a league. `ownedIds`/`wireIds`
 // accept a Set or a plain array (the same leniency draftLogic.js's

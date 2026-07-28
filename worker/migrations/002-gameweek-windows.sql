@@ -1,0 +1,25 @@
+-- One-time migration for databases created before a fantasy gameweek became a
+-- calendar WINDOW rather than the provider's matchday label (see
+-- src/fantasyCalendar.js and worker/schema.sql).
+--
+-- Two changes, and neither can be expressed as an idempotent CREATE TABLE IF
+-- NOT EXISTS against the old shape:
+--
+-- 1. fantasy_player_scores is replaced by fantasy_player_match_scores. The old
+--    table was keyed on (gameweek, player_id) and written with INSERT OR
+--    REPLACE, so a player featuring twice inside one gameweek (a double
+--    gameweek, when a postponed fixture is replayed later in the season) had
+--    his first match silently overwritten by his second. The replacement is
+--    keyed on (match_id, player_id) and gameweek totals are SUM(points).
+--    fantasy_player_scores was verified EMPTY in production at the time this
+--    was written (zero scored matches), so there is nothing to migrate; the
+--    table is simply dropped. Do NOT apply this file to a database that has
+--    real rows in it without backfilling first, because the old rows carry no
+--    match_id and cannot be split back apart.
+--
+-- 2. fantasy_waiver_locks is new, so schema.sql creates it on its own. Nothing
+--    to do here.
+--
+-- Apply with:
+--   npx wrangler d1 execute squad-goals --remote --file=worker/migrations/002-gameweek-windows.sql
+DROP TABLE IF EXISTS fantasy_player_scores;

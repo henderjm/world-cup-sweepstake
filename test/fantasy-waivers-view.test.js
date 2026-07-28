@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildWaiverPlayerLookup,
   claimStatusLabel,
+  claimWindowNote,
   dropCandidates,
   isLegalDropCandidate,
   partitionWaiverClaims,
@@ -150,4 +151,27 @@ test("claimStatusLabel names processed/rejected/pending in plain English", () =>
 
 test("claimStatusLabel falls back to the raw status for anything unexpected", () => {
   assert.equal(claimStatusLabel("mystery"), "mystery");
+});
+
+// -- claimWindowNote -----------------------------------------------------------
+
+test("claimWindowNote names the run an open-window claim lands in", () => {
+  assert.equal(
+    claimWindowNote({ gameweek: 12, deferred: false }),
+    "A claim submitted now is resolved by the gameweek 12 run.",
+  );
+});
+
+test("claimWindowNote says plainly that a deferred claim has moved to the next run", () => {
+  // Being told is the entire reason deferring beats silently including a late
+  // claim, and beats rejecting it.
+  assert.equal(
+    claimWindowNote({ gameweek: 13, deferred: true }),
+    "Gameweek 12's run is closing. A claim submitted now is queued for the gameweek 13 run instead.",
+  );
+});
+
+test("claimWindowNote renders nothing rather than a half-sentence when there is no window", () => {
+  assert.equal(claimWindowNote(null), "");
+  assert.equal(claimWindowNote({}), "");
 });

@@ -31,6 +31,21 @@ export function waiverModeExplanation(mode) {
   return MODE_EXPLANATIONS[mode] ?? "";
 }
 
+// Which run a claim submitted right now would land in, said out loud. A claim
+// must never be ambiguous about which run it belongs to, and the quiet period
+// before a run (WAIVER_QUIET_PERIOD_MS in fantasyWaivers.js) is exactly the
+// window where a manager would otherwise assume the wrong one: the claim is
+// still accepted, but it is deferred, and being told that is the whole reason
+// deferring beats silently including it or silently rejecting it.
+export function claimWindowNote(claimWindow) {
+  const gameweek = claimWindow?.gameweek;
+  if (!Number.isFinite(gameweek)) return "";
+  if (claimWindow.deferred) {
+    return `Gameweek ${gameweek - 1}'s run is closing. A claim submitted now is queued for the gameweek ${gameweek} run instead.`;
+  }
+  return `A claim submitted now is resolved by the gameweek ${gameweek} run.`;
+}
+
 // "3rd of 4" for the rolling/reverse_standings status line. A null priority (a
 // manager the league state hasn't seeded yet) or a non-positive total renders
 // nothing rather than a nonsensical ordinal.

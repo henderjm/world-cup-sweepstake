@@ -1,6 +1,7 @@
 import { abbrFor, badgeFor } from "./badges.js";
 import { dateLabel } from "./format.js";
 import { MAX_LEAGUE_SIZE } from "./fantasy.js";
+import { squadGameweekShape } from "./fantasyCalendar.js";
 import { WAIVER_MODES } from "./fantasyWaivers.js";
 import {
   canDraftPlayer,
@@ -27,6 +28,7 @@ import { DEFAULT_POOL_SORT, POOL_SORTS, rankDraftPool, sortPoolBy } from "./fant
 import {
   buildWaiverPlayerLookup,
   claimStatusLabel,
+  claimWindowNote,
   dropCandidates,
   partitionWaiverClaims,
   priorityOrdinalLabel,
@@ -849,7 +851,22 @@ function renderLineupSourceNote(lineup) {
   return "";
 }
 
-function renderPitchHead(currentGameweek, lineup, editState) {
+// A gameweek is a window of time, so a club can play twice inside it (a
+// postponed fixture replayed on top of the week's own) or not at all. Both are
+// normal fantasy football, and both look like a bug to a manager who is not
+// told: a blank club's players simply return zero. Named at squad level rather
+// than per tile, since the fact is about the CLUB and repeating it on eleven
+// player badges would say nothing extra.
+function renderFixtureShapeNote(roster, clubFixtures) {
+  const { blankTeams, doubleTeams } = squadGameweekShape(roster, clubFixtures);
+  const parts = [];
+  if (doubleTeams.length) parts.push(`${doubleTeams.map((team) => esc(team)).join(", ")} play twice`);
+  if (blankTeams.length) parts.push(`${blankTeams.map((team) => esc(team)).join(", ")} have no fixture`);
+  if (!parts.length) return "";
+  return `<p class="note fantasy-lineup-note">This gameweek: ${parts.join("; ")}.</p>`;
+}
+
+function renderPitchHead(currentGameweek, lineup, editState, roster) {
   const editing = Boolean(editState);
   const controls = editing
     ? `<div class="fantasy-pitch__editcontrols">
@@ -862,6 +879,7 @@ function renderPitchHead(currentGameweek, lineup, editState) {
       <div>
         <p class="fantasy-eyebrow">Gameweek ${currentGameweek ?? "?"}</p>
         ${renderLineupSourceNote(lineup)}
+        ${renderFixtureShapeNote(roster, lineup?.clubFixtures)}
       </div>
       ${controls}
     </div>
@@ -1058,7 +1076,7 @@ export function renderFantasyRosterPanel({
 
   const pitchCard = `
     <section class="card fantasy-pitch">
-      ${renderPitchHead(currentGameweek, lineup, editState)}
+      ${renderPitchHead(currentGameweek, lineup, editState, roster)}
       ${renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats })}
     </section>`;
 
@@ -1341,17 +1359,22 @@ export function renderFantasyComplete(members, picks) {
 // rather than silently hiding every other position.
 
 function renderFantasyWaiversStatus(waivers) {
-  const { mode, faabBudget, myBudgetRemaining, myPriority, priorities, currentGameweek } = waivers;
+  const { mode, faabBudget, myBudgetRemaining, myPriority, priorities, currentGameweek, claimWindow } = waivers;
   const total = (priorities ?? []).length;
   const detail =
     mode === "faab"
       ? `<p class="fantasy-waivers-status__detail"><strong>${esc(myBudgetRemaining)}</strong> credits left <span class="note--dim">(league budget ${esc(faabBudget)})</span></p>`
       : `<p class="fantasy-waivers-status__detail">Your priority: <strong>${esc(priorityOrdinalLabel(myPriority, total) || "-")}</strong></p>`;
+  // Names the run a claim submitted right now belongs to, rather than the
+  // current gameweek: inside the quiet period before a run those are different
+  // numbers, and that difference is exactly what a manager needs to know.
+  const windowNote =
+    claimWindowNote(claimWindow) || `Next run resolves at gameweek ${esc(currentGameweek)}.`;
   return `
     <section class="card fantasy-waivers-status">
       <div class="fantasy-waivers-status__head">
         <span class="chip fantasy-waivers-mode-chip fantasy-waivers-mode-chip--${esc(mode)}">${esc(waiverModeLabel(mode))}</span>
-        <p class="note">Next run resolves at gameweek ${esc(currentGameweek)}.</p>
+        <p class="note ${claimWindow?.deferred ? "fantasy-waivers-status__deferred" : ""}">${esc(windowNote)}</p>
       </div>
       <p class="note">${esc(waiverModeExplanation(mode))}</p>
       ${detail}
