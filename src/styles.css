@@ -2199,10 +2199,10 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-standings__footnote { margin-top: 10px; }
 .fantasy-standings-empty { text-align: left; }
 
-/* Playoff odds (src/fantasyPlayoffOddsView.js, exported but not yet wired into
-   navigation): one stacked column per manager rather than the Standings
-   tab's wide P/W/D/L/PF/PA grid, so it needs no horizontal scroll container
-   even at 375px. */
+/* Playoff odds (src/fantasyPlayoffOddsView.js, under the Standings table):
+   one stacked column per manager rather than the Standings tab's wide
+   P/W/D/L/PF/PA grid, so it needs no horizontal scroll container even at
+   375px. */
 .fantasy-playoff-odds__rows { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .fantasy-playoff-row { padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-2); }
 .fantasy-playoff-row.is-me { background: var(--fantasy-soft); box-shadow: inset 0 0 0 1px var(--fantasy-line); }
@@ -2219,6 +2219,92 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-playoff-row__bar-fill--eliminated { background: var(--faint); }
 .fantasy-playoff-row__pct { flex: none; width: 38px; text-align: right; font-size: 12px; font-weight: 900; color: var(--fantasy-accent); font-variant-numeric: tabular-nums; }
 .fantasy-playoff-row--eliminated .fantasy-playoff-row__pct { color: var(--faint); }
+
+/* Draft board (src/fantasyDraftBoardView.js): the My board sub-tab and the
+   compact card in the live draft room's side column, both the same markup.
+
+   EVERY rule here is flex with min-width: 0 on the shrinkable parts, never a
+   fixed grid with a min-width the way the player pool's table is: this card
+   renders at 300px in the desktop side column AND full-bleed at 375px, and
+   unlike the pool it has no horizontal scroll container of its own to absorb
+   an overflow. Anything added below must keep shrinking rather than push. */
+
+.fantasy-board__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.fantasy-board__now { flex: none; color: var(--fantasy-accent); border-color: var(--fantasy-line); background: var(--fantasy-soft); }
+.fantasy-board__controls { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.fantasy-board__filters { margin-top: 10px; }
+.fantasy-board__rows { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+/* The full board is the whole pool, so the sub-tab's list scrolls inside the
+   card rather than making the page thousands of rows long; the compact card
+   is already windowed and needs a much shorter cap. */
+.fantasy-board:not(.fantasy-board--compact) .fantasy-board__rows { max-height: 62vh; overflow-y: auto; }
+.fantasy-board--compact .fantasy-board__rows { max-height: 340px; overflow-y: auto; }
+.fantasy-board__more { margin-top: 8px; }
+
+.fantasy-board-tier {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 8px;
+  margin: 8px 0 2px;
+  padding: 4px 2px;
+  border-top: 1px solid var(--line);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.fantasy-board-tier:first-child { margin-top: 0; border-top: none; }
+.fantasy-board-tier__label { color: var(--fantasy-accent); }
+/* Three or fewer left is the moment a tier stops being a grouping and starts
+   being a deadline, which is the whole reason to draw tiers at all. */
+.fantasy-board-tier.is-cliff .fantasy-board-tier__count { color: var(--gold); }
+
+.fantasy-board-row { padding: 6px 8px; border-radius: var(--radius-sm); background: var(--surface-2); }
+/* Wraps rather than squeezes. Five icon buttons plus a rank, a crest, a
+   position chip and a "Gone" marker leave a name about 80px inside a 313px
+   column, which turns most players into "C. Pa…". The name therefore keeps a
+   real minimum and the action group drops to its own line when the row cannot
+   hold both - a taller row on a phone, but a legible one, and the board is
+   worthless if you cannot read the names on it. */
+.fantasy-board-row__main { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; font-size: 12px; }
+.fantasy-board-row__rank { flex: none; width: 22px; text-align: right; font-variant-numeric: tabular-nums; color: var(--faint); font-weight: 800; }
+.fantasy-board-row__name { display: flex; flex-direction: column; min-width: 110px; flex: 1; }
+.fantasy-board-row__name strong { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fantasy-board-row__status { flex: none; font-size: 10px; font-weight: 800; text-transform: uppercase; color: var(--faint); }
+.fantasy-board-row__actions { display: flex; align-items: center; gap: 1px; flex: none; margin-left: auto; }
+/* A drafted player is dimmed and struck through, never removed: the plan has
+   to stay readable, and "who went just above me" is context for the pick. */
+.fantasy-board-row.is-taken { opacity: 0.45; }
+.fantasy-board-row.is-taken .fantasy-board-row__name strong { text-decoration: line-through; }
+.fantasy-board-row__note { margin: 4px 0 0 30px; font-size: 11px; color: var(--fantasy-accent-2); }
+.fantasy-board-note-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.fantasy-board-note-edit .fantasy-input { flex: 1; min-width: 120px; }
+
+/* Board markers inside the player pool's existing name cell: no new grid
+   column, so the pool table's width (and its fit inside its own horizontal
+   scroll on a phone) is untouched. */
+.fantasy-board-chip {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--fantasy-soft);
+  color: var(--fantasy-accent);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+.fantasy-board-note-mark { color: var(--fantasy-accent-2); }
+.fantasy-suggest__note { margin: 6px 0 0; font-size: 12px; color: var(--fantasy-accent-2); }
+
+.fantasy-board-import { margin-top: 10px; }
+.fantasy-board-import__text { width: 100%; margin-top: 8px; font-family: var(--ff); resize: vertical; }
+.fantasy-board-import__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.fantasy-board-import__result { margin-top: 10px; }
+.fantasy-board-import__unmatched { margin-top: 8px; }
+.fantasy-board-import__list { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: var(--muted); max-height: 160px; overflow-y: auto; }
 
 /* Waivers tab (Phase 4.4): status header, free agents / wire lists (leaner
    variant of the draft pool's sticky-filter shell), claim flow, my claims,

@@ -63,7 +63,8 @@
 // required so the number does not jitter between page loads.
 
 import { hashSeed, mulberry32 } from "./seededRandom.js";
-import { standingsFromFixtures } from "./fantasyGameweek.js";
+import { rosterGameweekPoints, standingsFromFixtures } from "./fantasyGameweek.js";
+import { defaultLineup } from "./fantasyLineups.js";
 import { STARTING_SIZE } from "./fantasy.js";
 
 // Top-level knobs -------------------------------------------------------------
@@ -210,6 +211,106 @@ function sampleWeeklyScore(rng, projection) {
   return Math.max(0, Math.round(sampleNormal(rng, mean, stddev)));
 }
 
+// -- Combining two disjoint halves of a season -------------------------------
+//
+// standingsFromFixtures is ADDITIVE over disjoint fixture sets: a manager's
+// played/wins/draws/losses/pointsFor/pointsAgainst over (A union B) is the
+// componentwise sum of their totals over A and over B, and recordPoints is a
+// function of wins and draws alone. So ranking the decided half and one
+// sampled future half separately and summing them here is not an
+// approximation of `standingsFromFixtures(decided.concat(sampled))`; it is
+// exactly equal to it, re-sorted by the same comparator.
+//
+// That identity is what lets a caller who only has the SERVER'S already-
+// computed table (GET /fantasy/league/:id/standings returns the rolled-up
+// rows, not the fixture log they came from) project the rest of the season
+// without inventing a fake result history to stand in for the real one.
+export function mergeStandings(base, extra) {
+  const rows = new Map();
+  for (const source of [base ?? [], extra ?? []]) {
+    for (const row of source) {
+      const existing = rows.get(row.userId);
+      if (!existing) {
+        rows.set(row.userId, {
+          userId: row.userId,
+          name: row.name,
+          isBot: Boolean(row.isBot),
+          played: row.played ?? 0,
+          wins: row.wins ?? 0,
+          draws: row.draws ?? 0,
+          losses: row.losses ?? 0,
+          pointsFor: row.pointsFor ?? 0,
+          pointsAgainst: row.pointsAgainst ?? 0,
+        });
+        continue;
+      }
+      existing.played += row.played ?? 0;
+      existing.wins += row.wins ?? 0;
+      existing.draws += row.draws ?? 0;
+      existing.losses += row.losses ?? 0;
+      existing.pointsFor += row.pointsFor ?? 0;
+      existing.pointsAgainst += row.pointsAgainst ?? 0;
+      // A name only present on the later source (a member the base table did
+      // not carry) still has to reach the row, or the sort's name tie-break
+      // would compare against undefined.
+      if (existing.name == null) existing.name = row.name;
+      existing.isBot = existing.isBot || Boolean(row.isBot);
+    }
+  }
+
+  return [...rows.values()]
+    .map((row) => ({ ...row, recordPoints: row.wins * 3 + row.draws }))
+    .sort(
+      (a, b) =>
+        b.recordPoints - a.recordPoints ||
+        b.pointsFor - a.pointsFor ||
+        String(a.name).localeCompare(String(b.name)),
+    );
+}
+
+// -- Projecting a manager's weekly mean from their squad ----------------------
+//
+// An OPTIONAL adapter, not part of the projection itself: simulatePlayoffOdds
+// deliberately takes meanWeeklyPoints as given (see the module header) so it
+// stays decoupled from the player pool, and a caller that already knows each
+// manager's mean by some other route should skip this entirely.
+//
+// The mean is "the best legal XI this squad can field, captained on its
+// highest-xP starter". Both halves of that are the codebase's existing rules
+// rather than a new definition of a squad's worth: sorting the roster by xP
+// and handing it to defaultLineup (src/fantasyLineups.js) yields the best XI
+// its own formation-fill can build, and rosterGameweekPoints
+// (src/fantasyGameweek.js) applies the captain doubling exactly as the real
+// weekly scoring pass does. A squad with no xP anywhere projects to 0, which
+// simulatePlayoffOdds already treats as "no signal" rather than "will score
+// nothing".
+//
+// `rostersByUser` is Map<userId, player[]> (players carrying `id`, `position`
+// and optionally `xp`).
+export function managerWeeklyMeans(members, rostersByUser) {
+  return (members ?? []).map((member) => {
+    const roster = rostersByUser?.get?.(member.userId) ?? [];
+    const xpOf = (player) => (Number.isFinite(Number(player?.xp)) ? Number(player.xp) : 0);
+    const byXp = [...roster].sort((a, b) => xpOf(b) - xpOf(a));
+    const { starters } = defaultLineup(byXp);
+    if (!starters.length) return { userId: member.userId, meanWeeklyPoints: 0 };
+
+    const xpById = new Map(byXp.map((player) => [player.id, xpOf(player)]));
+    // starters is already in defaultLineup's fill order (GK first), so the
+    // captain it picked is whichever keeper led that fill. Re-captaining on
+    // the highest-xP starter is the difference between modelling a manager
+    // who never touches their lineup and modelling one who plays to win.
+    const captainId = starters.reduce(
+      (best, starter) => ((xpById.get(starter.playerId) ?? 0) > (xpById.get(best) ?? 0) ? starter.playerId : best),
+      starters[0].playerId,
+    );
+    const lineup = {
+      starters: starters.map((starter) => ({ playerId: starter.playerId, isCaptain: starter.playerId === captainId })),
+    };
+    return { userId: member.userId, meanWeeklyPoints: rosterGameweekPoints(lineup, xpById).points };
+  });
+}
+
 // -- The projection --------------------------------------------------------------
 
 function standingsRowShape(row, bounds) {
@@ -242,10 +343,21 @@ function standingsRowShape(row, bounds) {
 // no meaningful cut to project at all (everyone already qualifies by
 // definition), so that case is reported as `tooSmallForPlayoffs` with every
 // manager `clinched` at probability 1, and the simulation never runs.
+//
+// `decidedStandings` is OPTIONAL and exists for one caller shape: a client
+// that can see the season's already-banked table but not the fixture log
+// behind it. The browser is exactly that caller (GET /fantasy/league/:id/
+// standings returns rolled-up rows; no route returns fantasy_h2h_fixtures),
+// and the alternative would be fabricating a result history to reproduce a
+// table we were handed correct in the first place. When supplied it replaces
+// the table derived from `fixtures`' decided entries, and the caller should
+// pass only the REMAINING fixtures; see mergeStandings for why the two paths
+// give byte-identical answers on the same season.
 export function simulatePlayoffOdds({
   members,
   fixtures,
   managers = [],
+  decidedStandings = null,
   playoffSpots = DEFAULT_PLAYOFF_SPOTS,
   iterations = DEFAULT_ITERATIONS,
   seed = "playoff-odds",
@@ -265,7 +377,9 @@ export function simulatePlayoffOdds({
   const decided = allFixtures.filter(isDecidedFixture);
   const remaining = allFixtures.filter((fixture) => !isDecidedFixture(fixture));
 
-  const currentStandings = standingsFromFixtures(decided, roster);
+  const currentStandings = decidedStandings
+    ? mergeStandings(decidedStandings, standingsFromFixtures([], roster))
+    : standingsFromFixtures(decided, roster);
   const remainingByUser = remainingGamesByUser(remaining);
   const bounds = pointsBoundsByUser({ standings: currentStandings, remainingByUser });
 
@@ -299,14 +413,16 @@ export function simulatePlayoffOdds({
   if (hasContenders && iterations > 0) {
     const rng = mulberry32(hashSeed(seed, "fantasyPlayoffOdds:v1"));
     for (let i = 0; i < iterations; i++) {
-      const simulated = decided.concat(
-        remaining.map((fixture) => ({
-          ...fixture,
-          homeScore: sampleWeeklyScore(rng, projectionByUser.get(fixture.homeUserId)),
-          awayScore: sampleWeeklyScore(rng, projectionByUser.get(fixture.awayUserId)),
-        })),
-      );
-      const finalStandings = standingsFromFixtures(simulated, roster);
+      const simulated = remaining.map((fixture) => ({
+        ...fixture,
+        homeScore: sampleWeeklyScore(rng, projectionByUser.get(fixture.homeUserId)),
+        awayScore: sampleWeeklyScore(rng, projectionByUser.get(fixture.awayUserId)),
+      }));
+      // Not decided.concat(simulated) through standingsFromFixtures: summing
+      // the two halves is the same table (see mergeStandings) and is the one
+      // form that also works when the decided half arrived as a table rather
+      // than as fixtures.
+      const finalStandings = mergeStandings(currentStandings, standingsFromFixtures(simulated, roster));
       for (let rank = 0; rank < spots && rank < finalStandings.length; rank++) {
         const userId = finalStandings[rank].userId;
         makeCounts.set(userId, (makeCounts.get(userId) ?? 0) + 1);

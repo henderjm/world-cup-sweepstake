@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 
 import { roundRobinSchedule } from "../src/draftLogic.js";
 import { STARTING_SIZE } from "../src/fantasy.js";
+import { standingsFromFixtures } from "../src/fantasyGameweek.js";
 import {
   DEFAULT_ITERATIONS,
   DEFAULT_PLAYOFF_SPOTS,
   MIN_REALISED_SAMPLES_FOR_SPREAD,
   SQUAD_SPREAD_COEFFICIENT_OF_VARIATION,
   clinchStatus,
+  managerWeeklyMeans,
+  mergeStandings,
   pointsBoundsByUser,
   projectedWeeklySpread,
   remainingGamesByUser,
@@ -301,4 +304,110 @@ test("a fully decided season needs no sampling: standings alone resolve everyone
   assert.equal(byId.get("A").probability, 1);
   assert.equal(byId.get("B").status, "eliminated");
   assert.equal(byId.get("C").status, "eliminated");
+});
+
+// -- mergeStandings ------------------------------------------------------------
+
+test("mergeStandings is standingsFromFixtures over the union of two disjoint halves", () => {
+  const members = [
+    { userId: "A", name: "A" },
+    { userId: "B", name: "B" },
+    { userId: "C", name: "C" },
+  ];
+  const first = [
+    { gameweek: 1, homeUserId: "A", awayUserId: "B", homeScore: 60, awayScore: 40 },
+    { gameweek: 2, homeUserId: "B", awayUserId: "C", homeScore: 50, awayScore: 50 },
+  ];
+  const second = [
+    { gameweek: 3, homeUserId: "A", awayUserId: "C", homeScore: 30, awayScore: 70 },
+    { gameweek: 4, homeUserId: "C", awayUserId: "B", homeScore: 20, awayScore: 44 },
+  ];
+
+  const merged = mergeStandings(standingsFromFixtures(first, members), standingsFromFixtures(second, members));
+  const direct = standingsFromFixtures([...first, ...second], members);
+  assert.deepEqual(merged, direct);
+});
+
+test("mergeStandings keeps a member the base table never listed", () => {
+  const merged = mergeStandings(
+    [{ userId: "A", name: "A", played: 2, wins: 2, draws: 0, losses: 0, pointsFor: 100, pointsAgainst: 60 }],
+    [{ userId: "B", name: "B", played: 0, wins: 0, draws: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 }],
+  );
+  assert.deepEqual(merged.map((row) => row.userId), ["A", "B"]);
+  assert.equal(merged[0].recordPoints, 6);
+  assert.equal(merged[1].recordPoints, 0);
+});
+
+// -- decidedStandings: the browser's "table without the fixture log" path -------
+
+test("decidedStandings + remaining fixtures gives the same odds as the full fixture log", () => {
+  const members = [1, 2, 3, 4, 5, 6].map((id) => ({ userId: id, name: `M${id}` }));
+  const all = roundRobinSchedule(members.map((m) => m.userId), 38);
+  // Settle everything up to gameweek 10 with a lopsided but deterministic
+  // result, so the two paths are compared on a season that actually has a
+  // banked record rather than an empty one.
+  const withResults = all.map((fixture) =>
+    fixture.gameweek <= 10
+      ? { ...fixture, homeScore: 40 + fixture.homeUserId, awayScore: 40 + fixture.awayUserId }
+      : fixture,
+  );
+  const managers = symmetricManagers(members, 50);
+
+  const fromFixtures = simulatePlayoffOdds({
+    members,
+    fixtures: withResults,
+    managers,
+    playoffSpots: 4,
+    iterations: 400,
+    seed: "parity",
+  });
+  const decided = withResults.filter((fixture) => fixture.gameweek <= 10);
+  const remaining = withResults.filter((fixture) => fixture.gameweek > 10);
+  const fromTable = simulatePlayoffOdds({
+    members,
+    fixtures: remaining,
+    decidedStandings: standingsFromFixtures(decided, members),
+    managers,
+    playoffSpots: 4,
+    iterations: 400,
+    seed: "parity",
+  });
+
+  assert.deepEqual(fromTable.standings, fromFixtures.standings);
+});
+
+// -- managerWeeklyMeans --------------------------------------------------------
+
+function squad(prefix, xps) {
+  // 2 GK / 5 DEF / 5 MID / 3 FWD, matching SQUAD_SLOTS, so defaultLineup can
+  // always build a legal XI out of it.
+  const shape = ["GK", "GK", "DEF", "DEF", "DEF", "DEF", "DEF", "MID", "MID", "MID", "MID", "MID", "FWD", "FWD", "FWD"];
+  return shape.map((position, index) => ({
+    id: `${prefix}${index}`,
+    position,
+    xp: xps?.[index] ?? 4,
+  }));
+}
+
+test("managerWeeklyMeans doubles the highest-xP starter, never the fill order's first keeper", () => {
+  const members = [{ userId: "A", name: "A" }];
+  // One standout forward: he must be the captain, not the goalkeeper that
+  // defaultLineup's GK-first fill order happens to place first.
+  const roster = squad("a");
+  roster[12] = { id: "a12", position: "FWD", xp: 12 };
+  const [projection] = managerWeeklyMeans(members, new Map([["A", roster]]));
+
+  const flat = managerWeeklyMeans(members, new Map([["A", squad("b")]]))[0];
+  // The XI is 11 players at 4 with one at 12 replacing a 4, and the captain
+  // doubling lands on the 12.
+  assert.equal(flat.meanWeeklyPoints, 4 * 11 + 4);
+  assert.equal(projection.meanWeeklyPoints, 4 * 10 + 12 + 12);
+});
+
+test("managerWeeklyMeans projects an empty or unknown roster to zero rather than throwing", () => {
+  const means = managerWeeklyMeans([{ userId: "A" }, { userId: "B" }], new Map([["A", []]]));
+  assert.deepEqual(means, [
+    { userId: "A", meanWeeklyPoints: 0 },
+    { userId: "B", meanWeeklyPoints: 0 },
+  ]);
 });
