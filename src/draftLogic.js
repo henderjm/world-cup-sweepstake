@@ -39,6 +39,58 @@ function countByPosition(roster) {
   return counts;
 }
 
+// HOW a pick came to be made, recorded on every row of the append-only pick log.
+//
+// Without this the two drafts that matter most to tell apart are byte-for-byte
+// identical in D1: one where every manager showed up, and one where three of
+// four sleepwalked through on the clock. "Did the draft happen" was answerable
+// and "did the draft WORK" was not, which is the only question worth asking of
+// a product whose completed-draft count is zero.
+//
+// The four values are exhaustive over the two independent facts the draft room
+// already knows at commit time (was this manager a bot, and did the pick come
+// from a socket message or from the clock alarm):
+//
+//   manual   a human sent a pick message. Somebody was at the keyboard.
+//   queue    a human's clock expired and their OWN shortlist supplied the pick.
+//            Engaged with the product, absent from the room. A real middle
+//            state, and the reason a boolean here would not have been enough.
+//   autopick a human's clock expired with nothing legal in their queue, so the
+//            generic scarcest-bucket heuristic chose. Nobody chose this player.
+//   bot      a bot manager's seat. Its clock ALWAYS expires by design, so this
+//            is never a signal about engagement and must not be counted as
+//            one - a bot-filled league would otherwise read as a league full
+//            of absentees.
+export const PICK_VIA = Object.freeze({
+  MANUAL: "manual",
+  QUEUE: "queue",
+  AUTOPICK: "autopick",
+  BOT: "bot",
+});
+
+// The one place the taxonomy above is decided, so the socket path and the alarm
+// path cannot drift into disagreeing about what a pick was.
+//
+// A bot outranks the queue/autopick split deliberately. A bot cannot hold a
+// draft queue at all (it has no session, by construction - see
+// isRealGoogleSub in src/fantasyBots.js - and the queue route writes only
+// user.id from a session), so there is no mechanism detail being discarded
+// here; what "bot" buys instead is that no bot seat can ever be mistaken for
+// an absent human.
+export function resolvePickVia({ onClockIsBot = false, fromClock = false, fromQueue = false } = {}) {
+  if (onClockIsBot) return PICK_VIA.BOT;
+  if (!fromClock) return PICK_VIA.MANUAL;
+  return fromQueue ? PICK_VIA.QUEUE : PICK_VIA.AUTOPICK;
+}
+
+// Whether a pick reflects a HUMAN decision, of either kind. Bot seats answer
+// false because they are not a person's engagement either way, so a caller
+// measuring attendance must exclude them from the denominator rather than
+// count them as absent (see draftEngagement in src/fantasyDraftRecap.js).
+export function isHumanChoicePick(via) {
+  return via === PICK_VIA.MANUAL || via === PICK_VIA.QUEUE;
+}
+
 // D1 surfaces a UNIQUE constraint violation as a rejected promise whose message
 // names the failure; there is no distinct error class to catch. Pulled out as a
 // pure predicate so the Durable Object's lost-race handling (a D1-level backstop

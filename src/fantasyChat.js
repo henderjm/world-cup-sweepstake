@@ -142,11 +142,18 @@ export function describeChatEvent(entry) {
       const pick = payload.overallPick ? `Pick ${payload.overallPick}` : "Pick";
       const player = payload.player || "a player";
       const club = payload.team ? ` (${payload.team})` : "";
-      // viaQueue is the one thing the draft room knows that D1's pick log does
-      // not (see worker/draftRoom.js), so it is worth saying out loud: an
-      // autopick off a manager's own shortlist reads very differently from a
-      // manager actually being at the keyboard.
-      const how = payload.viaQueue ? " from their queue" : "";
+      // How the pick was made is worth saying out loud: an autopick off a
+      // manager's own shortlist reads very differently from a manager actually
+      // being at the keyboard, and a clock expiring with an empty queue reads
+      // differently again.
+      //
+      // `viaQueue` is the older boolean this replaced (see PICK_VIA in
+      // src/draftLogic.js). Rows written before `via` existed carry only that,
+      // and the feed is permanent history, so it stays as the fallback rather
+      // than leaving old picks reading as if nobody knows how they happened.
+      // A bot's seat says nothing here: its name already labels it, and
+      // "autopicked" on every one of its fifteen picks is noise.
+      const how = describePickVia(payload.via, payload.viaQueue);
       return { icon: "📋", text: `${pick}: ${actor} took ${player}${club}${how}.` };
     }
 
@@ -190,6 +197,28 @@ export function describeChatEvent(entry) {
 
     default:
       return { icon: "•", text: "Something happened in this league." };
+  }
+}
+
+// The trailing clause on a draft-pick line. Kept beside describeChatEvent
+// rather than imported from draftLogic.js so the feed's vocabulary stays in
+// one file; the string values themselves are PICK_VIA's and are matched, never
+// re-derived.
+function describePickVia(via, legacyViaQueue) {
+  switch (via) {
+    case "queue":
+      return " from their queue";
+    case "autopick":
+      return ", autopicked on the clock";
+    case "manual":
+    case "bot":
+      return "";
+    default:
+      // No `via` at all: a row from before the column existed. Only the old
+      // boolean is knowable, and only in one direction - false meant "not from
+      // a queue", which covered manual and autopick alike, so it cannot be
+      // reported as either.
+      return legacyViaQueue ? " from their queue" : "";
   }
 }
 

@@ -82,6 +82,7 @@ import {
   planBotSeats,
   seatSummary,
 } from "../src/fantasyBots.js";
+import { PICK_VIA } from "../src/draftLogic.js";
 import { dueDraftReminder, validateDraftSchedule } from "../src/fantasyScheduling.js";
 import { blendWithCurrentSeason } from "../src/fantasyExpectedPoints.js";
 import {
@@ -1416,7 +1417,7 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
         .bind(leagueId)
         .all(),
       env.DB.prepare(
-        `SELECT p.round, p.pick_in_round, p.overall_pick, p.user_id, p.player_id, pl.name, pl.team, pl.position
+        `SELECT p.round, p.pick_in_round, p.overall_pick, p.user_id, p.player_id, p.via, pl.name, pl.team, pl.position
          FROM fantasy_draft_picks p JOIN fantasy_players pl ON pl.id = p.player_id
          WHERE p.league_id = ?1 ORDER BY p.overall_pick`,
       )
@@ -1462,6 +1463,12 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
           overallPick: row.overall_pick,
           userId: row.user_id,
           player: { id: row.player_id, name: row.name, team: row.team, position: row.position },
+          // How the pick was made (PICK_VIA in src/draftLogic.js). null for a
+          // pick made before the column existed, never coerced to a value.
+          // viaQueue rides along so the roster board and pick feed keep
+          // reading the same field the live draft-room socket sends them.
+          via: row.via ?? null,
+          viaQueue: row.via === PICK_VIA.QUEUE,
         })),
         roster,
         // null means "not scheduled yet" (renderFantasyLobby's pre-existing

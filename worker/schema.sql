@@ -135,6 +135,16 @@ CREATE TABLE IF NOT EXISTS fantasy_draft_picks (
   overall_pick INTEGER NOT NULL,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   player_id INTEGER NOT NULL REFERENCES fantasy_players(id),
+  -- HOW the pick was made: manual | queue | autopick | bot. See PICK_VIA in
+  -- src/draftLogic.js for what each value means and why a boolean was not
+  -- enough. FantasyDraftRoom.commitPick is the only writer.
+  --
+  -- Deliberately NULLABLE with no default. Every row written from now on sets
+  -- it, so NULL means exactly one thing: "picked before this column existed".
+  -- A NOT NULL DEFAULT 'manual' would have been easier and would have quietly
+  -- asserted that every historical pick was a considered one, which is the
+  -- confidently-wrong kind of number this schema avoids everywhere else.
+  via TEXT,
   picked_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS fantasy_draft_picks_league ON fantasy_draft_picks(league_id, overall_pick);

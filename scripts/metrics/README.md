@@ -1,6 +1,6 @@
 # Business metrics, straight from D1
 
-Twelve read-only SQL queries answering "is this product working", without
+Thirteen read-only SQL queries answering "is this product working", without
 needing access to PostHog. Nearly everything that proves the product works is
 already in the database: users, leagues, members, draft picks, rosters,
 gameweek scores, head-to-head fixtures, waivers, and the chat and recap tables.
@@ -47,6 +47,7 @@ answers and how to read the result.
 | `10-feed-engagement.sql` | Whether the league feed is a conversation or just the app talking. |
 | `11-waiver-activity.sql` | Whether the mid-season habit loop is being used, and whether runs work. |
 | `12-league-health.sql` | Per running league: is scoring, the H2H season and the recap cron actually working. |
+| `13-draft-engagement.sql` | Whether anyone was actually AT the draft. Bot seats excluded from every percentage. |
 
 ### Two numbers to read carefully
 
@@ -71,10 +72,17 @@ sqlite3 /tmp/metrics.db < worker/schema.sql
 for f in scripts/metrics/*.sql; do sqlite3 /tmp/metrics.db < "$f"; done
 ```
 
-All twelve parse, run and return correct results against that fixture. **None
+All thirteen parse, run and return correct results against that fixture. **None
 of them has been run against production**, deliberately. Column names and
 types were checked against `worker/schema.sql`, including the columns added by
 `worker/migrations/001-waivers.sql` (`fantasy_waivers.bid`, `.reason`).
+
+`13-draft-engagement.sql` was additionally checked against a fixture built for
+the three readings it has to get right: a league mixing manual, queue and bot
+picks (100% engaged, the bot excluded), a league where one manager autopicked
+every turn (33.3% engaged, one sleepwalker) and a league of pre-migration rows
+(`engaged_pct` null and `unknown_picks` populated, rather than a fabricated
+zero).
 
 One coupling to keep in step: `03-stalled-drafts.sql` hardcodes a 15-man squad
 when computing `picks_expected`. That is `SQUAD_SLOTS` in `src/fantasy.js`. If
@@ -85,19 +93,22 @@ the squad size ever changes, change the `15` there too.
 These are real gaps, not query bugs. Each needs a schema change, and the schema
 is owned elsewhere right now, so none of them has been made.
 
-**1. An autopicked draft pick is indistinguishable from an engaged one.**
-This is the most valuable missing column by a distance. When a manager's
-60-second clock expires, `FantasyDraftRoom`'s alarm autopicks for them
-(`worker/draftRoom.js`), and the row it writes to `fantasy_draft_picks` is
-byte-for-byte identical to one a manager chose deliberately. The `viaQueue`
-flag does survive, in the `fantasy_chat_messages` payload JSON, but it only
-distinguishes "came from my shortlist" from everything else: an autopick with
-an empty queue records `viaQueue: false`, exactly like a manual pick. So a
-draft where every manager was present and a draft where three of four
-sleepwalked through on the clock look the same, and "did the draft go well" is
-unanswerable.
-*Minimal fix:* one column, `fantasy_draft_picks.via TEXT` (`manual` | `queue` |
-`autopick`), written where `commitPick` already knows the answer.
+**1. ~~An autopicked draft pick is indistinguishable from an engaged one.~~ FIXED.**
+`fantasy_draft_picks.via` now records how every pick was made: `manual`,
+`queue`, `autopick` or `bot` (see `PICK_VIA` in `src/draftLogic.js`), written by
+`commitPick` where the draft room already knew the answer.
+`13-draft-engagement.sql` is the query that reads it.
+
+Two things to know before quoting it. The column is **nullable and was not
+backfilled**, on purpose: `NULL` means "picked before the column existed", and
+stamping those rows `manual` would have asserted that every historical pick was
+a considered one. And **bot seats are excluded from every percentage**, because
+a bot's clock always expires by design, so counting it would make a bot-filled
+league read as a league full of absentees.
+
+Requires `worker/migrations/004-draft-pick-via.sql` to have been applied to the
+database being queried; before that the column does not exist and the query
+errors rather than returning zeros.
 
 **2. Lineup saves have no timestamp, only a gameweek.**
 `fantasy_lineups` is keyed on `(league_id, user_id, gameweek, player_id)` with
