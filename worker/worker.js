@@ -34,6 +34,10 @@ import {
 } from "../src/mapApiFootball.js";
 import { isLive } from "../src/format.js";
 import {
+  MATCH_DETAIL_LIVE,
+  matchDetailCacheProfile,
+} from "../src/matchDetailCache.js";
+import {
   ANALYSIS_SCHEMA,
   ANALYSIS_SYSTEM_PROMPT,
   analysisCacheSignature,
@@ -64,9 +68,29 @@ import {
   resolveWaiverRun,
   validateAcquisition,
 } from "../src/fantasyWaivers.js";
-import { lockedPlayerIds, playerLockState } from "../src/fantasyLocks.js";
+import { lineupChangedPlayerIds, lockedPlayerIds, playerLockState } from "../src/fantasyLocks.js";
 import { dueDraftReminder, validateDraftSchedule } from "../src/fantasyScheduling.js";
 import { blendWithCurrentSeason } from "../src/fantasyExpectedPoints.js";
+import {
+  CHAT_EVENTS,
+  CHAT_PAGE_SIZE,
+  CHAT_REACTIONS,
+  MAX_CHAT_MESSAGES_PER_LEAGUE,
+  cleanChatText,
+} from "../src/fantasyChat.js";
+import {
+  attachRankMovement,
+  buildPowerRankings,
+  gameweekAwards,
+  matchupResults,
+} from "../src/fantasyRecap.js";
+import {
+  RECAP_PROMPT_VERSION,
+  RECAP_SCHEMA,
+  RECAP_SYSTEM_PROMPT,
+  buildRecapPrompt,
+  mergeRecap,
+} from "../src/fantasyRecapPrompt.js";
 
 export { FantasyDraftRoom } from "./draftRoom.js";
 
@@ -116,20 +140,24 @@ function parseCompetitions(env) {
     .filter((comp) => /^[A-Z0-9]{2,6}$/.test(comp.code) && Number.isInteger(comp.leagueId));
 }
 
-// Is this match id in any configured competition's fixture list? Each getLive is
-// edge-cached, so checking the union costs at most one upstream call per competition
-// per cache window.
-async function matchKnown(competitions, id, token) {
+// Returns the known fixture summary, or null if the id belongs to no configured
+// competition. Each getLive is edge-cached, so checking the union costs at most
+// one upstream call per competition per cache window. Returning the match
+// rather than a boolean is what lets the caller choose cache windows from its
+// status (see matchDetailCacheProfile) at no extra cost.
+async function findKnownMatch(competitions, id, token) {
   for (const comp of competitions) {
     try {
       const live = await getLive(comp, token);
-      if (live.matches.some((match) => match.id === id)) return true;
+      const match = live.matches.find((entry) => entry.id === id);
+      if (match) return match;
     } catch {
       // one competition's feed being down must not 404 the others
     }
   }
-  return false;
+  return null;
 }
+
 
 export default {
   async fetch(request, env) {
@@ -209,6 +237,28 @@ export default {
     }
     if (fantasyDraftScheduleRoute && request.method === "DELETE") {
       return handleFantasyDraftScheduleClear(request, env, Number(fantasyDraftScheduleRoute[1]), cors);
+    }
+    // A manager's own draft-pick shortlist. Plain D1 read/write, never routed
+    // through the FantasyDraftRoom Durable Object: there is no turn-order
+    // race to arbitrate here (a manager only ever touches their own row), so
+    // this is exactly like the lineup routes below rather than the pick
+    // itself. The Durable Object's alarm autopick (worker/draftRoom.js) reads
+    // this same table straight from D1 on every wake.
+    const fantasyDraftQueueRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/draft\/queue$/);
+    if (fantasyDraftQueueRoute && request.method === "GET") {
+      return handleFantasyDraftQueueGet(request, env, Number(fantasyDraftQueueRoute[1]), cors);
+    }
+    if (fantasyDraftQueueRoute && request.method === "POST") {
+      return handleFantasyDraftQueueSet(request, env, Number(fantasyDraftQueueRoute[1]), cors);
+    }
+    // The league feed: one stream carrying both the app's own events (picks,
+    // waiver runs, free-agent adds, the weekly recap) and managers' messages
+    // about them. Member-only in BOTH directions, unlike match banter which is
+    // publicly readable: a private league's transactions are nobody else's
+    // business.
+    const fantasyChatRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/chat$/);
+    if (fantasyChatRoute && (request.method === "GET" || request.method === "POST")) {
+      return handleFantasyChat(request, env, Number(fantasyChatRoute[1]), cors);
     }
     const fantasyLineupRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/lineup$/);
     if (fantasyLineupRoute && request.method === "GET") {
@@ -300,12 +350,32 @@ export default {
 
       const detailRoute = url.pathname.match(/^\/match\/(\d{1,12})$/);
       if (detailRoute) {
+        // A second, much tighter limit on top of the general per-IP one. This
+        // route is the only unauthenticated path that can cost four upstream
+        // calls, so the 200/min that is generous for polling /live is far too
+        // loose here. Keyed per IP and separate from LIMITER so hammering the
+        // drawer cannot also lock a user out of the rest of the API. No-ops if
+        // the binding is absent, same convention as LIMITER.
+        if (env.DETAIL_LIMITER) {
+          const ip = request.headers.get("CF-Connecting-IP") || "anon";
+          try {
+            const { success } = await env.DETAIL_LIMITER.limit({ key: ip });
+            if (!success) return json({ error: "rate limited" }, 429, { ...cors, "Retry-After": "30" });
+          } catch {
+            // limiter unavailable, fail open
+          }
+        }
         const id = Number(detailRoute[1]);
-        if (!(await matchKnown(competitions, id, token))) {
+        const known = await findKnownMatch(competitions, id, token);
+        if (!known) {
           return json({ error: "unknown match" }, 404, cors);
         }
-        const detail = await fetchMatchDetail(id, token);
-        return json(detail, 200, { ...cors, "Cache-Control": "public, max-age=25" });
+        const profile = matchDetailCacheProfile(known);
+        const detail = await fetchMatchDetail(id, token, profile);
+        // The browser cache window follows the same reasoning as the edge one:
+        // a finished match does not need re-fetching every 25 seconds.
+        const browserMaxAge = profile === MATCH_DETAIL_LIVE ? 25 : 300;
+        return json(detail, 200, { ...cors, "Cache-Control": `public, max-age=${browserMaxAge}` });
       }
 
       const analysisRoute = url.pathname.match(/^\/analysis\/(\d{1,12})$/);
@@ -332,26 +402,55 @@ export default {
   async scheduled(controller, env, ctx) {
     ctx.waitUntil(
       (async () => {
-        // First, deliberately. These are unguarded sequential awaits, so any
-        // pass that throws skips everything after it, and the four below all
-        // touch the network. The pool seed is a COUNT that costs nothing on
-        // the overwhelmingly common already-seeded tick, and a draft that
-        // cannot start is a worse failure than a missed analysis, so it must
-        // not sit downstream of them.
-        await ensureFantasyPlayerPool(env);
-        await runScheduledAnalysis(env);
-        await runScheduledNotifications(env);
-        await runScheduledFantasyScoring(env);
-        await runScheduledWaiverRuns(env);
-        await runScheduledDraftReminders(env);
-        // Last, deliberately: this only refreshes a display figure (xP), so a
-        // bug here must never sit upstream of scoring/waivers/reminders the
-        // way an early throw would otherwise skip everything after it.
-        await runScheduledFantasyXpBlend(env);
+        // Each pass is isolated. They used to be bare sequential awaits, which
+        // meant any one of them throwing silently skipped every pass behind it
+        // for as long as the fault lasted. That was not hypothetical: an
+        // unchunked IN clause in the scoring pass (see fantasyScoredMatchIds)
+        // would have started throwing every tick around gameweek 11 and taken
+        // waivers, draft reminders and the xP blend down with it for the rest
+        // of the season, with nothing in the product to show anything was
+        // wrong. Isolation is what makes the ordering below a preference
+        // rather than a dependency chain.
+        //
+        // Order still matters for cache warmth and for priority: the passes
+        // share the same upstream fetches, and a sequential order lets each
+        // later one land on the edge cache an earlier one just warmed. The
+        // pool seed leads because a draft that cannot start is the worst
+        // failure here and its check is a COUNT that costs nothing; the xP
+        // blend trails because it only refreshes a display figure.
+        await runCronPass("player-pool", () => ensureFantasyPlayerPool(env));
+        await runCronPass("analysis", () => runScheduledAnalysis(env));
+        await runCronPass("notifications", () => runScheduledNotifications(env));
+        await runCronPass("fantasy-scoring", () => runScheduledFantasyScoring(env));
+        await runCronPass("waiver-runs", () => runScheduledWaiverRuns(env));
+        await runCronPass("draft-reminders", () => runScheduledDraftReminders(env));
+        await runCronPass("xp-blend", () => runScheduledFantasyXpBlend(env));
+        // Last on purpose. The recap is the only pass that spends money per
+        // run and the only one nothing else depends on: a league that gets its
+        // recap ten minutes late has lost nothing, whereas a scoring or waiver
+        // pass starved behind it would corrupt a season. It also reads
+        // fantasy_gameweek_scores, which the scoring pass above may only just
+        // have written, so trailing it is what lets a recap describe the
+        // gameweek that settled this very tick.
+        await runCronPass("league-recaps", () => runScheduledLeagueRecaps(env));
       })(),
     );
   },
 };
+
+// Runs one cron pass so a fault in it cannot reach its neighbours. Every pass
+// is already internally idempotent and retried by the next minute's tick, so
+// swallowing here loses nothing that the next tick will not redo. The name is
+// logged rather than discarded: a pass that fails every minute for a season
+// must be findable in the Worker's logs, since none of this is visible in the
+// product until something a user cares about has already stopped working.
+async function runCronPass(name, run) {
+  try {
+    await run();
+  } catch (error) {
+    console.error(`cron pass failed: ${name}`, error?.message ?? error);
+  }
+}
 
 async function getLive(comp, token) {
   try {
@@ -704,7 +803,7 @@ async function handleFollowToggle(request, env, cors) {
 // "draft" (draft-day reminders, Phase 4.5) defaults true - see DEFAULT_PREFS
 // and publicUser's merge below for why an account created before this key
 // existed still reads it as on rather than off.
-const PREF_KEYS = new Set(["goals", "kickoff", "fulltime", "red", "analysis", "draft"]);
+const PREF_KEYS = new Set(["goals", "kickoff", "fulltime", "red", "analysis", "draft", "recap"]);
 
 async function handlePrefs(request, env, cors) {
   if (!env.DB) return json({ error: "accounts not configured" }, 501, cors);
@@ -849,6 +948,7 @@ async function handleFantasyLeagueCreate(request, env, cors) {
     await env.DB.prepare(`INSERT INTO fantasy_league_members (league_id, user_id) VALUES (?1, ?2)`)
       .bind(leagueId, user.id)
       .run();
+    await postLeagueEvent(env, leagueId, CHAT_EVENTS.LEAGUE_CREATED, { actor: memberDisplayName(user) });
     return json({ league: await fantasyLeagueSummary(env, leagueId, { includeInviteCode: true }) }, 200, cors);
   } catch {
     return json({ error: "fantasy unavailable" }, 502, cors);
@@ -895,6 +995,9 @@ async function handleFantasyLeagueJoin(request, env, cors) {
         .bind(league.id, user.id, MAX_LEAGUE_SIZE)
         .run();
       if ((insert.meta?.changes ?? 0) === 0) return json({ error: "league is full" }, 400, cors);
+      // Only on an actual join. Re-opening a league you are already in must
+      // not announce you again on every visit.
+      await postLeagueEvent(env, league.id, CHAT_EVENTS.MEMBER_JOINED, { actor: memberDisplayName(user) });
     }
     return json({ league: await fantasyLeagueSummary(env, league.id, { includeInviteCode: true }) }, 200, cors);
   } catch {
@@ -1037,6 +1140,8 @@ async function startFantasyDraft(env, leagueId, memberIds) {
     ),
     env.DB.prepare(`UPDATE fantasy_leagues SET draft_status = 'drafting' WHERE id = ?1`).bind(leagueId),
   ]);
+
+  await postLeagueEvent(env, leagueId, CHAT_EVENTS.DRAFT_STARTED, { managers: order.length });
 
   try {
     const id = env.DRAFT_ROOM.idFromName(String(leagueId));
@@ -1500,6 +1605,52 @@ async function handleFantasyLineupSet(request, env, leagueId, cors) {
     if (!validation.ok) return json({ error: validation.error }, 400, cors);
 
     const gameweek = await currentFantasyGameweek(env);
+
+    // Kickoff lock. Writing to the server-derived current gameweek stops a
+    // manager rewriting a gameweek that has already SETTLED, but not one that
+    // is still in progress, and a Premier League gameweek stays current until
+    // its last fixture finishes. Without this check a manager could wait until
+    // Saturday's matches were done, then start the players who scored, bench
+    // the ones who blanked and captain the hat-trick, and the Monday-night
+    // rollup would score the rewritten XI. That is the exact exploit
+    // src/fantasyLocks.js exists to close, and it was wired into free agency
+    // and waivers but never into the lineup route itself.
+    //
+    // Only players whose status actually changes are checked, so a manager can
+    // still freely reshuffle team-mates who have not kicked off.
+    //
+    // Fails OPEN when the feed is unavailable, deliberately and identically to
+    // the free-agent path: freezing every manager's team on a feed blip is
+    // worse than the rare window it would leave open.
+    // Resolved unconditionally, not only on the locked path: the same diff
+    // decides whether this save is worth announcing in the league feed below.
+    // A manager nudging their XI six times before kickoff should produce one
+    // feed line, not six.
+    const previous = await resolveManagerLineup(env, leagueId, user.id, gameweek);
+    const changed = lineupChangedPlayerIds({
+      previousStarterIds: previous.starters.map((entry) => entry.playerId),
+      previousCaptainId: previous.starters.find((entry) => entry.isCaptain)?.playerId ?? null,
+      nextStarterIds: starters,
+      nextCaptainId: captainId,
+    });
+
+    const matches = await currentFantasyMatches(env);
+    if (matches) {
+      const rosterById = new Map(roster.map((player) => [player.id, player]));
+      for (const playerId of changed) {
+        const player = rosterById.get(playerId);
+        if (!player) continue;
+        const lock = playerLockState({ team: player.team, matches, gameweek, now: Date.now() });
+        if (lock.locked) {
+          return json(
+            { error: `${player.name} is locked: ${player.team} have already kicked off this gameweek` },
+            400,
+            cors,
+          );
+        }
+      }
+    }
+
     await env.DB.batch([
       env.DB.prepare(`DELETE FROM fantasy_lineups WHERE league_id = ?1 AND user_id = ?2 AND gameweek = ?3`).bind(
         leagueId,
@@ -1517,7 +1668,111 @@ async function handleFantasyLineupSet(request, env, leagueId, cors) {
     const starterIds = new Set(starters);
     const bench = roster.filter((player) => !starterIds.has(player.id)).map((player) => player.id);
 
+    // Only when something actually moved (see `changed` above), and only the
+    // captain by name: the full eleven would drown the feed, and the armband
+    // is the part of an XI a league argues about. `changed` is a Set, so this
+    // is .size and not .length.
+    if (changed.size) {
+      await postLeagueEvent(env, leagueId, CHAT_EVENTS.LINEUP_SET, {
+        actor: memberDisplayName(user),
+        gameweek,
+        captain: roster.find((player) => player.id === captainId)?.name ?? null,
+      });
+    }
+
     return json({ gameweek, source: "set", starters: starterEntries, bench }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// A shortlist longer than the draftable pool is meaningless, and the pool is
+// roughly 550. This is the ceiling the write route enforces, sized well above
+// any real shortlist so it never inconveniences a manager, and well below a
+// number that would make one request expensive to serve.
+const MAX_DRAFT_QUEUE_LENGTH = 600;
+
+// GET the caller's own draft-pick shortlist: { queue: [playerId, ...] } in
+// queue order, or an empty array if they have never saved one. Member-only,
+// same 401/403/501 shape as the lineup routes above.
+async function handleFantasyDraftQueueGet(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+
+    const rows = await env.DB.prepare(
+      `SELECT player_id FROM fantasy_draft_queue WHERE league_id = ?1 AND user_id = ?2 ORDER BY position`,
+    )
+      .bind(leagueId, user.id)
+      .all();
+    return json({ queue: (rows.results ?? []).map((row) => row.player_id) }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// POST replaces the caller's own shortlist wholesale (delete-then-insert for
+// this league+user, same pattern as handleFantasyLineupSet above) - the
+// client always sends the whole ordered list, never a single mutation, so
+// there is nothing to diff. Never routed through FantasyDraftRoom: a manager
+// only ever writes their own row, so there is no turn-order race to
+// arbitrate, unlike an actual pick. The Durable Object's alarm autopick
+// (worker/draftRoom.js) reads this table directly on every wake.
+async function handleFantasyDraftQueueSet(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "bad body" }, 400, cors);
+  }
+  const queue = Array.isArray(body?.queue) ? body.queue.map(Number) : null;
+  if (!queue || queue.some((id) => !Number.isInteger(id))) {
+    return json({ error: "bad queue" }, 400, cors);
+  }
+  // Defensive de-dup: the client-side queue helpers (src/fantasyDraft.js)
+  // already prevent duplicates, but a stale/replayed save must not trip the
+  // (league_id, user_id, player_id) primary key.
+  const deduped = [...new Set(queue)];
+  // Hard cap. The UI can only queue players that exist in the pool (roughly
+  // 550), but this route trusts nothing from the client: without a ceiling one
+  // authenticated member could post an arbitrarily long list and have us write
+  // a row per entry, in a single batch, on every request. Rejected outright
+  // rather than truncated, so a client that somehow built an oversized queue
+  // is told instead of quietly losing the tail.
+  if (deduped.length > MAX_DRAFT_QUEUE_LENGTH) {
+    return json({ error: "queue too long" }, 400, cors);
+  }
+
+  try {
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+
+    await env.DB.batch([
+      env.DB.prepare(`DELETE FROM fantasy_draft_queue WHERE league_id = ?1 AND user_id = ?2`).bind(leagueId, user.id),
+      ...deduped.map((playerId, index) =>
+        env.DB.prepare(
+          `INSERT INTO fantasy_draft_queue (league_id, user_id, player_id, position) VALUES (?1, ?2, ?3, ?4)`,
+        ).bind(leagueId, user.id, playerId, index),
+      ),
+    ]);
+
+    return json({ queue: deduped }, 200, cors);
   } catch {
     return json({ error: "fantasy unavailable" }, 502, cors);
   }
@@ -1602,13 +1857,34 @@ async function runScheduledFantasyScoring(env) {
   }
 }
 
+// D1 caps a query at 100 bound parameters. The caller passes every FINISHED
+// fixture in the season (getLive returns the whole schedule, so that set only
+// grows), which means an unchunked IN clause silently works all pre-season and
+// then throws from the moment the 101st match finishes, around gameweek 11.
+// Worse, the throw used to escape the whole scoring pass and, because the cron
+// awaits its passes sequentially without guards, took waivers, draft reminders
+// and the xP blend down with it for the rest of the season.
+//
+// Chunked well under the cap rather than exactly at it: the limit applies to
+// bound parameters, and leaving headroom means a future caller adding one more
+// bound value to this query cannot quietly reintroduce the same cliff.
+const D1_MAX_BOUND_PARAMS = 100;
+const SCORED_MATCH_ID_CHUNK = 50;
+
 async function fantasyScoredMatchIds(env, ids) {
   if (!ids.length) return new Set();
-  const placeholders = ids.map((_, index) => `?${index + 1}`).join(",");
-  const rows = await env.DB.prepare(`SELECT match_id FROM fantasy_scored_matches WHERE match_id IN (${placeholders})`)
-    .bind(...ids)
-    .all();
-  return new Set((rows.results ?? []).map((row) => row.match_id));
+  const scored = new Set();
+  for (let i = 0; i < ids.length; i += SCORED_MATCH_ID_CHUNK) {
+    const chunk = ids.slice(i, i + SCORED_MATCH_ID_CHUNK);
+    const placeholders = chunk.map((_, index) => `?${index + 1}`).join(",");
+    const rows = await env.DB.prepare(
+      `SELECT match_id FROM fantasy_scored_matches WHERE match_id IN (${placeholders})`,
+    )
+      .bind(...chunk)
+      .all();
+    for (const row of rows.results ?? []) scored.add(row.match_id);
+  }
+  return scored;
 }
 
 async function upsertFantasyPlayersFromDetail(env, detail, extraIds = []) {
@@ -1952,6 +2228,201 @@ async function handleFantasyStandings(request, env, leagueId, cors) {
     return json({ throughGameweek, standings: standingsFromFixtures(fixtures, members) }, 200, cors);
   } catch {
     return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// -- League feed: chat + auto-posted system events (Phase 4.6) ----------------
+//
+// ONE stream per league carrying both what the app did and what managers said
+// about it, never two surfaces. Built-in league chat is abandoned on ESPN and
+// Yahoo and heavily used on Sleeper, and the difference managers describe is
+// exactly this: the moves and the conversation about the moves are the same
+// timeline, so a waiver run clearing at 9am produces a conversation instead of
+// a notification nobody opens. A chat tab beside a separate transaction log
+// would rebuild the version that fails.
+//
+// The pure half (validation, caps, the event vocabulary, and turning a stored
+// event back into a sentence at READ time so a copy change never leaves old
+// rows speaking an older dialect) lives in src/fantasyChat.js, the same split
+// as fantasyWaivers.js and draftLogic.js.
+
+// A member's display name, with the same fallback chain the rest of the
+// fantasy routes already use. System-event payloads store the result rather
+// than a user id: the feed is a permanent history and must keep reading
+// correctly after a rename or a deleted account.
+function memberDisplayName(row) {
+  return row?.name || String(row?.email ?? "").split("@")[0] || "Someone";
+}
+
+// The prepared statement for one system event, so a caller can fold it into
+// the same env.DB.batch as the change it describes and get atomicity for free
+// (see the recap pass and the draft room's commitPick). Payload is JSON: facts
+// only, never pre-rendered prose.
+function leagueEventStatement(env, leagueId, event, payload) {
+  return env.DB.prepare(
+    `INSERT INTO fantasy_chat_messages (league_id, user_id, kind, event, payload) VALUES (?1, NULL, 'system', ?2, ?3)`,
+  ).bind(leagueId, event, JSON.stringify(payload ?? {}));
+}
+
+// Fire-and-forget variant for the routes where the change has already
+// committed and the feed row is commentary on it. Deliberately swallows: a
+// manager's lineup save must not fail because the feed insert did, and the
+// worst case is one missing line in a chat log.
+async function postLeagueEvent(env, leagueId, event, payload) {
+  try {
+    await leagueEventStatement(env, leagueId, event, payload).run();
+  } catch (error) {
+    console.error("league feed event failed", event, error?.message ?? error);
+  }
+}
+
+async function handleFantasyChat(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    // Membership is checked on reads as well as writes, unlike match banter
+    // which is public: a private league's transactions and trash talk are not
+    // for anyone who can guess a league id.
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+
+    if (request.method === "GET") {
+      return json(await readLeagueChat(env, leagueId, user.id), 200, cors);
+    }
+
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return json({ error: "bad body" }, 400, cors);
+    }
+
+    if (body?.action === "message") {
+      const text = cleanChatText(body.text);
+      if (!text) return json({ error: "empty message" }, 400, cors);
+      // Counts human messages only. A league that talked its way to the cap
+      // must still be told that its waiver run happened, and the app's own
+      // output is bounded by the season anyway.
+      const count = await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM fantasy_chat_messages WHERE league_id = ?1 AND kind = 'message'`,
+      )
+        .bind(leagueId)
+        .first();
+      if ((count?.n ?? 0) >= MAX_CHAT_MESSAGES_PER_LEAGUE) {
+        return json({ error: "this league's feed is full" }, 400, cors);
+      }
+      await env.DB.prepare(
+        `INSERT INTO fantasy_chat_messages (league_id, user_id, kind, text) VALUES (?1, ?2, 'message', ?3)`,
+      )
+        .bind(leagueId, user.id, text)
+        .run();
+    } else if (body?.action === "react") {
+      if (!CHAT_REACTIONS.includes(body.emoji)) return json({ error: "bad emoji" }, 400, cors);
+      const messageId = Number(body.messageId);
+      if (!Number.isInteger(messageId)) return json({ error: "bad message" }, 400, cors);
+      // The message must belong to THIS league. Message ids are globally
+      // sequential, so without this check a member of one league could react
+      // to (and by the response, learn the content of) another league's feed.
+      const target = await env.DB.prepare(`SELECT 1 AS x FROM fantasy_chat_messages WHERE id = ?1 AND league_id = ?2`)
+        .bind(messageId, leagueId)
+        .first();
+      if (!target) return json({ error: "unknown message" }, 404, cors);
+
+      // Toggle: delete wins if the row exists, otherwise insert. Two
+      // statements, but the primary key makes a lost race harmless, the same
+      // reasoning as banter's reaction toggle.
+      const deleted = await env.DB.prepare(
+        `DELETE FROM fantasy_chat_reactions WHERE message_id = ?1 AND user_id = ?2 AND emoji = ?3`,
+      )
+        .bind(messageId, user.id, body.emoji)
+        .run();
+      if ((deleted.meta?.changes ?? 0) === 0) {
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO fantasy_chat_reactions (message_id, user_id, emoji) VALUES (?1, ?2, ?3)`,
+        )
+          .bind(messageId, user.id, body.emoji)
+          .run();
+      }
+    } else {
+      return json({ error: "bad action" }, 400, cors);
+    }
+
+    // D1 is strongly consistent, so the state returned here always includes
+    // this very write and the optimistic UI reconciles without flicker (the
+    // same contract banter.js relies on).
+    return json(await readLeagueChat(env, leagueId, user.id), 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+async function readLeagueChat(env, leagueId, userId) {
+  const rows = await env.DB.prepare(
+    `SELECT m.id, m.kind, m.event, m.payload, m.text, m.created_at, m.user_id, u.name, u.email
+     FROM fantasy_chat_messages m
+     LEFT JOIN users u ON u.id = m.user_id
+     WHERE m.league_id = ?1 ORDER BY m.id DESC LIMIT ?2`,
+  )
+    .bind(leagueId, CHAT_PAGE_SIZE)
+    .all();
+
+  const window = (rows.results ?? []).slice().reverse();
+  const oldestId = window.length ? window[0].id : 0;
+
+  // Reactions for exactly the window just read, joined through the messages
+  // table rather than bound as one parameter per message id: CHAT_PAGE_SIZE
+  // ids would sit right against D1's 100-bound-parameter ceiling, and this
+  // costs two parameters regardless of page size.
+  const reactionRows = await env.DB.prepare(
+    `SELECT r.message_id, r.user_id, r.emoji FROM fantasy_chat_reactions r
+     JOIN fantasy_chat_messages m ON m.id = r.message_id
+     WHERE m.league_id = ?1 AND m.id >= ?2`,
+  )
+    .bind(leagueId, oldestId)
+    .all();
+
+  const reactions = new Map();
+  for (const row of reactionRows.results ?? []) {
+    if (!CHAT_REACTIONS.includes(row.emoji)) continue; // a row from an older allowlist
+    let entry = reactions.get(row.message_id);
+    if (!entry) {
+      entry = { counts: {}, mine: [] };
+      reactions.set(row.message_id, entry);
+    }
+    entry.counts[row.emoji] = (entry.counts[row.emoji] ?? 0) + 1;
+    if (row.user_id === userId) entry.mine.push(row.emoji);
+  }
+
+  return {
+    entries: window.map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      // A human message's author name is read from the account live (this is a
+      // conversation, so a rename should apply); a system event's actor comes
+      // from its own frozen payload, because that is history.
+      userId: row.user_id ?? null,
+      name: row.kind === "message" ? memberDisplayName(row) : null,
+      text: row.kind === "message" ? row.text : null,
+      event: row.event ?? null,
+      payload: row.kind === "system" ? safeJson(row.payload) : null,
+      ts: row.created_at,
+      reactions: reactions.get(row.id) ?? { counts: {}, mine: [] },
+    })),
+    viewerUserId: userId,
+  };
+}
+
+function safeJson(raw) {
+  try {
+    return JSON.parse(raw ?? "{}");
+  } catch {
+    return {};
   }
 }
 
@@ -2390,6 +2861,13 @@ async function handleFantasyFreeAgentAdd(request, env, leagueId, cors) {
       ).bind(leagueId, dropPlayerId, gameweek),
     ]);
 
+    await postLeagueEvent(env, leagueId, CHAT_EVENTS.FREE_AGENT_ADD, {
+      actor: memberDisplayName(user),
+      added: addPlayer.name,
+      dropped: dropPlayer?.name ?? null,
+      gameweek,
+    });
+
     return json({ ok: true, roster: await fantasyRosterFor(env, leagueId, user.id) }, 200, cors);
   } catch {
     return json({ error: "fantasy unavailable" }, 502, cors);
@@ -2550,8 +3028,10 @@ async function runLeagueWaiverRun(env, leagueId, settledGameweek, newCurrentGame
       env.DB.prepare(`SELECT user_id, faab_remaining, priority FROM fantasy_waiver_state WHERE league_id = ?1`)
         .bind(leagueId)
         .all(),
+      // `name` is only for the league feed's announcement below; the run
+      // itself decides nothing from it.
       env.DB.prepare(
-        `SELECT id, position FROM fantasy_players WHERE id IN (${playerIds.map((_, i) => `?${i + 1}`).join(",")})`,
+        `SELECT id, position, name FROM fantasy_players WHERE id IN (${playerIds.map((_, i) => `?${i + 1}`).join(",")})`,
       )
         .bind(...playerIds)
         .all(),
@@ -2563,7 +3043,9 @@ async function runLeagueWaiverRun(env, leagueId, settledGameweek, newCurrentGame
     const ownedBy = new Map((rosterRows.results ?? []).map((row) => [row.player_id, row.user_id]));
     const budgets = new Map((stateRows.results ?? []).map((row) => [row.user_id, row.faab_remaining]));
     const priorities = (stateRows.results ?? []).map((row) => ({ userId: row.user_id, priority: row.priority }));
-    const players = new Map((playerRows.results ?? []).map((row) => [row.id, { position: row.position }]));
+    const players = new Map(
+      (playerRows.results ?? []).map((row) => [row.id, { position: row.position, name: row.name }]),
+    );
 
     // reverse_standings orders the whole run worst-record-first, and faab uses
     // the same table purely to break ties between equal bids, so both need it
@@ -2660,6 +3142,33 @@ async function runLeagueWaiverRun(env, leagueId, settledGameweek, newCurrentGame
         );
       }
     }
+
+    // The league feed's announcement rides the SAME batch as the run itself,
+    // so it commits with the moves or not at all. A feed claiming a player was
+    // won by a run that then rolled back would be worse than silence, and this
+    // is the moment leagues actually talk to each other: waivers clear, then
+    // everyone argues about who got what.
+    //
+    // Built from run.results rather than run.rosterChanges because only the
+    // results carry the winning bid, which is the number a faab league cares
+    // about most.
+    const processed = run.results.filter((result) => result.status === "processed");
+    const winnerNames = await waiverWinnerNames(env, processed);
+    writes.push(
+      leagueEventStatement(env, leagueId, CHAT_EVENTS.WAIVER_RUN, {
+        gameweek: settledGameweek,
+        mode: settings.mode,
+        moves: processed.map((result) => ({
+          actor: winnerNames.get(result.userId) ?? "Someone",
+          added: players.get(result.addPlayerId)?.name ?? null,
+          dropped: players.get(result.dropPlayerId)?.name ?? null,
+          // Only faab has a meaningful bid; in the other modes it would print
+          // as "for null", so they carry none at all.
+          bid: settings.mode === "faab" ? (result.bid ?? null) : null,
+        })),
+        rejected: run.results.length - processed.length,
+      }),
+    );
   }
 
   try {
@@ -2674,6 +3183,21 @@ async function runLeagueWaiverRun(env, leagueId, settledGameweek, newCurrentGame
     // the run is left exactly as unprocessed as before and the next tick
     // retries it from scratch.
   }
+}
+
+// Display names for the managers who won something in a run, for the feed
+// announcement only. Bounded by MAX_LEAGUE_SIZE (a manager appears once
+// however many claims they won), so the IN clause stays far below D1's
+// 100-bound-parameter cap without chunking.
+async function waiverWinnerNames(env, processedResults) {
+  const userIds = [...new Set((processedResults ?? []).map((result) => result.userId))];
+  if (!userIds.length) return new Map();
+  const rows = await env.DB.prepare(
+    `SELECT id, name, email FROM users WHERE id IN (${userIds.map((_, i) => `?${i + 1}`).join(",")})`,
+  )
+    .bind(...userIds)
+    .all();
+  return new Map((rows.results ?? []).map((row) => [row.id, memberDisplayName(row)]));
 }
 
 // -- Fantasy draft scheduling and reminders -----------------------------------
@@ -2748,7 +3272,7 @@ async function autoStartOrNotifyLeague(env, row) {
   if (!league || league.draft_status !== "pending") return; // already started manually; nothing to do
 
   if (!env.DRAFT_ROOM) {
-    await sendDraftPush(env, [row.commissioner_user_id], {
+    await sendLeaguePush(env, [row.commissioner_user_id], {
       leagueId,
       tag: "cannot-start",
       title: "Draft could not start automatically",
@@ -2763,7 +3287,7 @@ async function autoStartOrNotifyLeague(env, row) {
   const memberIds = (members.results ?? []).map((r) => r.user_id);
 
   if (memberIds.length < 2) {
-    await sendDraftPush(env, [row.commissioner_user_id], {
+    await sendLeaguePush(env, [row.commissioner_user_id], {
       leagueId,
       tag: "cannot-start",
       title: "Draft could not start automatically",
@@ -2773,7 +3297,7 @@ async function autoStartOrNotifyLeague(env, row) {
   }
 
   await startFantasyDraft(env, leagueId, memberIds);
-  await sendDraftPush(env, memberIds, {
+  await sendLeaguePush(env, memberIds, {
     leagueId,
     tag: "start",
     title: "Your draft is starting now",
@@ -2790,16 +3314,19 @@ async function sendDraftReminderPush(env, leagueId, kind) {
     kind === "24h"
       ? { title: "Your draft is tomorrow", body: "Your fantasy draft kicks off in about 24 hours. Get your shortlist ready." }
       : { title: "Your draft starts in an hour", body: "The draft room opens in about an hour. Don't miss your picks." };
-  await sendDraftPush(env, memberIds, { ...copy, leagueId, tag: kind });
+  await sendLeaguePush(env, memberIds, { ...copy, leagueId, tag: kind });
 }
 
-// Draft-specific push send: targets league members directly by user id
-// (unlike sendMatchEvents, which targets the follows table), gated on each
-// recipient's own "draft" preference the same way sendMatchEvents gates on
-// its own pref keys - defaulting to true (DEFAULT_PREFS.draft) since joining
-// a league is itself an active opt-in, unlike a followed club's optional
-// match alerts.
-async function sendDraftPush(env, memberIds, { title, body, leagueId, tag }) {
+// League-scoped push send: targets league members directly by user id (unlike
+// sendMatchEvents, which targets the follows table), gated on each recipient's
+// own preference the same way sendMatchEvents gates on its own pref keys. The
+// league-scoped keys ("draft", "recap") default to true since joining a league
+// is itself an active opt-in, unlike a followed club's optional match alerts.
+//
+// MAX_LEAGUE_SIZE caps memberIds well under D1's 100-bound-parameter limit, so
+// the IN clause below needs no chunking (see fantasyScoredMatchIds for the
+// case that does).
+async function sendLeaguePush(env, memberIds, { title, body, leagueId, tag, pref = "draft" }) {
   if (!pushConfigured(env) || !memberIds?.length) return;
   const placeholders = memberIds.map((_, i) => `?${i + 1}`).join(",");
   const subs = await env.DB.prepare(
@@ -2811,7 +3338,7 @@ async function sendDraftPush(env, memberIds, { title, body, leagueId, tag }) {
     .all();
   const recipients = (subs.results ?? []).filter((sub) => {
     const prefs = safePrefs(sub.prefs);
-    return prefs.draft ?? DEFAULT_PREFS.draft;
+    return prefs[pref] ?? DEFAULT_PREFS[pref] ?? false;
   });
   if (!recipients.length) return;
   const payload = {
@@ -2822,9 +3349,243 @@ async function sendDraftPush(env, memberIds, { title, body, leagueId, tag }) {
     // useful landing spot, since a signed-in manager only has their own
     // leagues to open from there.
     url: `${env.SITE_ORIGIN ?? ""}/#fantasy`,
-    tag: `draft-${leagueId}-${tag}`,
+    tag: `league-${leagueId}-${tag}`,
   };
   await Promise.all(recipients.map((sub) => sendPush(env, sub, payload)));
+}
+
+// -- AI weekly league recap (Phase 4.6) ---------------------------------------
+//
+// One Claude-written recap per league per settled gameweek, posted into that
+// league's feed as a system message and pushed to its managers. Cron-generated
+// only, never on a user visit, the same hard rule as the match analysis pass:
+// a browser can reach the stored recap through the feed and can never reach an
+// Anthropic call.
+//
+// EVERY NUMBER IS OURS. src/fantasyRecap.js computes the rankings, the awards,
+// the matchup results and the movement from real D1 rows;
+// src/fantasyRecapPrompt.js hands them to the model as data and takes back
+// prose alone, then mergeRecap joins that prose onto our own numbers. Users of
+// competing products say plainly that they forgive a bland AI recap and do not
+// forgive a confidently wrong one, so the model is structurally unable to
+// author a figure here: its schema has no numeric field at all.
+//
+// Cost: exactly one model call per league per gameweek. The ledger check below
+// is the first thing that happens, so a minute-by-minute cron that finds
+// nothing new spends one cheap D1 read per complete-draft league and nothing
+// else.
+
+async function runScheduledLeagueRecaps(env) {
+  if (!env.DB || !env.ANTHROPIC_API_KEY) return;
+
+  const currentGameweek = await currentFantasyGameweek(env);
+  const settledGameweek = currentGameweek - 1;
+  if (settledGameweek < 1) return; // nothing has settled yet this season
+
+  const leagues = await env.DB.prepare(
+    `SELECT id, name FROM fantasy_leagues WHERE draft_status = 'complete'`,
+  ).all();
+  for (const league of leagues.results ?? []) {
+    try {
+      await generateLeagueRecap(env, league, settledGameweek);
+    } catch (error) {
+      // One league's recap failing must not block the others, and a recap is
+      // never load-bearing: the next tick retries from the ledger check, which
+      // is still unmarked.
+      console.error(`recap failed for league ${league.id}`, error?.message ?? error);
+    }
+  }
+}
+
+async function generateLeagueRecap(env, league, gameweek) {
+  const leagueId = league.id;
+
+  // Cheap read-only pre-check. Not the correctness guard (two overlapping
+  // ticks could both pass it), just what stops every subsequent tick redoing
+  // the work once a recap has landed. The real gate is the ledger's primary
+  // key inside the atomic batch at the end.
+  const already = await env.DB.prepare(
+    `SELECT 1 AS x FROM fantasy_league_recaps WHERE league_id = ?1 AND gameweek = ?2`,
+  )
+    .bind(leagueId, gameweek)
+    .first();
+  if (already) return;
+
+  const [memberRows, fixtureRows, scoreRows] = await Promise.all([
+    env.DB.prepare(
+      `SELECT m.user_id, u.name, u.email FROM fantasy_league_members m
+       JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
+    )
+      .bind(leagueId)
+      .all(),
+    env.DB.prepare(
+      `SELECT gameweek, home_user_id, away_user_id, home_score, away_score
+       FROM fantasy_h2h_fixtures WHERE league_id = ?1 AND gameweek <= ?2`,
+    )
+      .bind(leagueId, gameweek + 1)
+      .all(),
+    env.DB.prepare(
+      `SELECT user_id, gameweek, points FROM fantasy_gameweek_scores WHERE league_id = ?1 AND gameweek <= ?2`,
+    )
+      .bind(leagueId, gameweek)
+      .all(),
+  ]);
+
+  const managers = (memberRows.results ?? []).map((row) => ({
+    userId: row.user_id,
+    name: memberDisplayName(row),
+  }));
+  if (managers.length < 2) return; // nothing to recap in a league of one
+
+  const fixtures = (fixtureRows.results ?? []).map((row) => ({
+    gameweek: row.gameweek,
+    homeUserId: row.home_user_id,
+    awayUserId: row.away_user_id,
+    homeScore: row.home_score,
+    awayScore: row.away_score,
+  }));
+  const scores = (scoreRows.results ?? []).map((row) => ({
+    userId: row.user_id,
+    gameweek: row.gameweek,
+    points: row.points,
+  }));
+
+  const results = matchupResults({ fixtures, gameweek });
+  // A settled gameweek with no decided fixture means the scoring pass has not
+  // rolled this league up yet (or the league joined mid-season). Skipping
+  // without marking the ledger leaves the next tick free to try again once the
+  // scores are actually in, which is the whole reason the ledger is written
+  // last rather than first.
+  if (!results.length) return;
+
+  // Movement is measured against the same ranking run one gameweek earlier.
+  // For gameweek 1 there is no earlier run at all: ranking an empty season
+  // would produce an alphabetical baseline and every manager would show a
+  // meaningless arrow against it, so they are all correctly "new" instead.
+  const rankings = attachRankMovement(
+    buildPowerRankings({ managers, fixtures, scores, throughGameweek: gameweek }),
+    gameweek > 1 ? buildPowerRankings({ managers, fixtures, scores, throughGameweek: gameweek - 1 }) : [],
+  );
+
+  const awards = await leagueGameweekAwards(env, leagueId, gameweek, managers, results, scores);
+
+  const nextFixtures = fixtures.filter((fixture) => fixture.gameweek === gameweek + 1);
+
+  const recap = mergeRecap({
+    gameweek,
+    managers,
+    rankings,
+    matchups: results,
+    awards,
+    generated: await writeRecapProse(env, {
+      leagueId,
+      leagueName: league.name,
+      gameweek,
+      managers,
+      rankings,
+      matchups: results,
+      awards,
+      nextFixtures,
+    }),
+  });
+
+  try {
+    // Ledger row and feed message in ONE batch, so two overlapping ticks that
+    // both generated cannot both post: D1 runs a batch in a single
+    // transaction, the primary key rejects the loser, and its feed message
+    // rolls back with it. "Check, act, then mark" as the analysis pass does,
+    // but with the mark and the effect made atomic, which is strictly safer
+    // and costs nothing here.
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO fantasy_league_recaps (league_id, gameweek, prompt_version) VALUES (?1, ?2, ?3)`,
+      ).bind(leagueId, gameweek, RECAP_PROMPT_VERSION),
+      leagueEventStatement(env, leagueId, CHAT_EVENTS.RECAP, { gameweek, recap }),
+    ]);
+  } catch {
+    // Lost the race (or a genuine D1 error): nothing committed, so there is no
+    // duplicate to clean up and nothing to push about.
+    return;
+  }
+
+  await sendLeaguePush(
+    env,
+    managers.map((manager) => manager.userId),
+    {
+      leagueId,
+      tag: `recap-${gameweek}`,
+      pref: "recap",
+      title: `Gameweek ${gameweek} recap: ${league.name}`,
+      body: recap.headline,
+    },
+  );
+}
+
+// Bench points, captain calls and the luckiest win all need each manager's
+// resolved XI plus that gameweek's player scores. The lineup resolution is the
+// same read-time walk the scoring pass uses (resolveManagerLineup), so a
+// manager who inherited last week's XI is judged on the XI that actually
+// scored, not on an empty row.
+async function leagueGameweekAwards(env, leagueId, gameweek, managers, results, scores) {
+  const [playerScoreRows, playerRows] = await Promise.all([
+    env.DB.prepare(`SELECT player_id, points FROM fantasy_player_scores WHERE gameweek = ?1`).bind(gameweek).all(),
+    env.DB.prepare(
+      `SELECT p.id, p.name, p.team FROM fantasy_players p
+       JOIN fantasy_rosters r ON r.player_id = p.id AND r.league_id = ?1`,
+    )
+      .bind(leagueId)
+      .all(),
+  ]);
+  const playerPoints = new Map((playerScoreRows.results ?? []).map((row) => [row.player_id, row.points]));
+  const players = new Map((playerRows.results ?? []).map((row) => [row.id, { name: row.name, team: row.team }]));
+
+  const lineups = [];
+  for (const manager of managers) {
+    const { roster, starters } = await resolveManagerLineup(env, leagueId, manager.userId, gameweek);
+    const starterIds = new Set(starters.map((entry) => entry.playerId));
+    lineups.push({
+      userId: manager.userId,
+      starters,
+      bench: roster.filter((player) => !starterIds.has(player.id)).map((player) => player.id),
+    });
+  }
+
+  const gameweekScores = scores.filter((score) => score.gameweek === gameweek);
+  return gameweekAwards({ managers, lineups, playerPoints, players, results, scores: gameweekScores });
+}
+
+// The one model call. Returns null on any failure, and mergeRecap then
+// produces a recap of pure numbers with empty prose rather than nothing at
+// all: the rankings and awards are the part readers actually trust.
+async function writeRecapProse(env, args) {
+  const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 60_000 });
+  try {
+    const response = await anthropic.messages.create({
+      model: env.ANTHROPIC_MODEL || "claude-sonnet-5",
+      max_tokens: 4000,
+      thinking: { type: "adaptive" },
+      output_config: {
+        effort: "low",
+        format: { type: "json_schema", schema: RECAP_SCHEMA },
+      },
+      system: RECAP_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: buildRecapPrompt(args) }],
+    });
+
+    // Logged rather than discarded: this is the only pass in the cron that
+    // spends money, and a per-league-per-gameweek cost is the number to watch
+    // if it ever stops being one call a week.
+    console.log(
+      `recap generated league=${args.leagueId} gw=${args.gameweek} in=${response.usage?.input_tokens ?? "?"} out=${response.usage?.output_tokens ?? "?"}`,
+    );
+
+    if (response.stop_reason === "refusal") return null;
+    const text = response.content.find((block) => block.type === "text")?.text ?? "";
+    return JSON.parse(text); // schema-constrained
+  } catch (error) {
+    console.error(`recap generation failed league=${args.leagueId} gw=${args.gameweek}`, error?.message ?? error);
+    return null;
+  }
 }
 
 // -- Web Push (Phase 3) --------------------------------------------------------
@@ -2835,10 +3596,19 @@ async function sendDraftPush(env, memberIds, { title, body, leagueId, tag }) {
 // endpoint (404/410 from the push service) is pruned on send.
 
 const NOTIFY_WINDOW_MS = 3 * 60 * 60 * 1000; // matches within this window of kickoff/full-time get diffed
-// "draft" defaults true, unlike every match-alert key here: joining a league
-// is itself an active opt-in (see PREF_KEYS' comment and schema.sql), so a
-// manager should hear about their own draft unless they turn it off.
-const DEFAULT_PREFS = { goals: true, kickoff: true, fulltime: true, red: false, analysis: false, draft: true };
+// "draft" and "recap" default true, unlike every match-alert key here:
+// joining a league is itself an active opt-in (see PREF_KEYS' comment and
+// schema.sql), so a manager should hear about their own draft and their own
+// league's weekly recap unless they turn it off.
+const DEFAULT_PREFS = {
+  goals: true,
+  kickoff: true,
+  fulltime: true,
+  red: false,
+  analysis: false,
+  draft: true,
+  recap: true,
+};
 
 function pushConfigured(env) {
   return Boolean(env.DB && env.VAPID_PRIVATE_JWK && env.VAPID_PUBLIC_KEY);
@@ -3103,7 +3873,7 @@ const MAX_BANTER_MESSAGES_PER_MATCH = 500;
 
 async function handleBanter(request, env, id, competitions, token, cors) {
   if (!env.DB) return json({ error: "banter not configured" }, 503, cors);
-  if (!(await matchKnown(competitions, id, token))) {
+  if (!(await findKnownMatch(competitions, id, token))) {
     return json({ error: "unknown match" }, 404, cors);
   }
 
@@ -3349,14 +4119,17 @@ function corsHeaders(request) {
   };
 }
 
-async function fetchMatchDetail(id, token) {
+// `profile` is a matchDetailCacheProfile result: how long each payload may sit
+// in the edge cache, chosen from the fixture's state rather than fixed. Defaults
+// to the live windows so any caller that has not classified the match gets the
+// safe-but-expensive behaviour rather than accidentally serving stale scores.
+async function fetchMatchDetail(id, token, profile = MATCH_DETAIL_LIVE) {
   // Interactive detail reads include the fixture endpoint for half-time scores and
-  // referee data. Slow-changing payloads keep longer cache windows so opening the
-  // drawer cannot multiply upstream usage.
-  const fixture = await fetchJson(`/fixtures?id=${id}`, token, 60);
-  const lineups = await fetchJson(`/fixtures/lineups?fixture=${id}`, token, 15 * 60);
-  const events = await fetchJson(`/fixtures/events?fixture=${id}`, token, 60);
-  const players = await fetchJson(`/fixtures/players?fixture=${id}`, token, 5 * 60);
+  // referee data.
+  const fixture = await fetchJson(`/fixtures?id=${id}`, token, profile.fixture);
+  const lineups = await fetchJson(`/fixtures/lineups?fixture=${id}`, token, profile.lineups);
+  const events = await fetchJson(`/fixtures/events?fixture=${id}`, token, profile.events);
+  const players = await fetchJson(`/fixtures/players?fixture=${id}`, token, profile.players);
   return mapApiFootballMatchDetail(fixture, lineups, events, players);
 }
 

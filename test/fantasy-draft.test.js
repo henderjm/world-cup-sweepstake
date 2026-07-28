@@ -206,6 +206,23 @@ test("reduceDraftMessage appends to existing rosters rather than replacing them"
   );
 });
 
+test("reduceDraftMessage carries a pick's viaQueue flag onto its picks entry, defaulting false when the server never set it", () => {
+  let room = reduceDraftMessage(null, stateMessage());
+  room = reduceDraftMessage(room, {
+    type: "pick",
+    round: 1,
+    pickInRound: 1,
+    overallPick: 1,
+    userId: 1,
+    player: player(1, "GK"),
+    viaQueue: true,
+  });
+  room = reduceDraftMessage(room, { type: "clock", onClockUserId: 2, overallPick: 2, round: 1, pickInRound: 2 });
+  room = reduceDraftMessage(room, { type: "pick", round: 1, pickInRound: 2, overallPick: 2, userId: 2, player: player(2, "DEF") });
+  assert.equal(room.picks[0].viaQueue, true, "the queue-driven autopick must be flagged");
+  assert.equal(room.picks[1].viaQueue, false, "a normal pick (no viaQueue on the message) must default to false, not undefined");
+});
+
 test("reduceDraftMessage stashes an error and clears it on the next pick", () => {
   let room = reduceDraftMessage(null, stateMessage());
   room = reduceDraftMessage(room, { type: "error", error: "not your turn" });

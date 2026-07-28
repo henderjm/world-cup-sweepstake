@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { lockedPlayerIds, playerLockState } from "../src/fantasyLocks.js";
+import { lineupChangedPlayerIds, lockedPlayerIds, playerLockState } from "../src/fantasyLocks.js";
 
 const NOW = new Date("2026-08-16T15:00:00Z").getTime();
 
@@ -120,4 +120,79 @@ test("lockedPlayerIds returns an empty set for an empty or missing player list",
   const matches = [match({ status: "FINISHED" })];
   assert.deepEqual(lockedPlayerIds([], matches, 3, NOW), new Set());
   assert.deepEqual(lockedPlayerIds(undefined, matches, 3, NOW), new Set());
+});
+
+// -- lineupChangedPlayerIds: what a lineup edit actually touches --------------
+//
+// These guard the retroactive-lineup exploit: after Saturday's fixtures settle
+// but before Monday's, a manager could rewrite their XI to start whoever
+// already scored. Only players whose status changes need a lock check, and
+// crucially that includes players being taken OUT, not just put in.
+
+test("lineupChangedPlayerIds flags a player being added to the XI", () => {
+  const changed = lineupChangedPlayerIds({
+    previousStarterIds: [1, 2],
+    nextStarterIds: [1, 2, 3],
+    previousCaptainId: 1,
+    nextCaptainId: 1,
+  });
+  assert.deepEqual([...changed], [3]);
+});
+
+test("lineupChangedPlayerIds flags a player being benched, since benching a blank is equally retroactive", () => {
+  const changed = lineupChangedPlayerIds({
+    previousStarterIds: [1, 2, 3],
+    nextStarterIds: [1, 2],
+    previousCaptainId: 1,
+    nextCaptainId: 1,
+  });
+  assert.deepEqual([...changed], [3]);
+});
+
+test("lineupChangedPlayerIds flags both sides of a swap", () => {
+  const changed = lineupChangedPlayerIds({
+    previousStarterIds: [1, 2],
+    nextStarterIds: [1, 3],
+    previousCaptainId: 1,
+    nextCaptainId: 1,
+  });
+  assert.deepEqual([...changed].sort((a, b) => a - b), [2, 3]);
+});
+
+test("lineupChangedPlayerIds flags both the old and new captain when the armband moves", () => {
+  // Moving the armband onto a hat-trick already on the board is its own cheat,
+  // even when the XI itself is untouched.
+  const changed = lineupChangedPlayerIds({
+    previousStarterIds: [1, 2],
+    nextStarterIds: [1, 2],
+    previousCaptainId: 1,
+    nextCaptainId: 2,
+  });
+  assert.deepEqual([...changed].sort((a, b) => a - b), [1, 2]);
+});
+
+test("lineupChangedPlayerIds flags nobody when nothing actually changed", () => {
+  // A no-op save must not be blocked just because someone in the XI has
+  // already kicked off, or a manager could be locked out of their own team.
+  const changed = lineupChangedPlayerIds({
+    previousStarterIds: [1, 2, 3],
+    nextStarterIds: [3, 2, 1],
+    previousCaptainId: 2,
+    nextCaptainId: 2,
+  });
+  assert.equal(changed.size, 0);
+});
+
+test("lineupChangedPlayerIds handles a first-ever lineup with no previous captain", () => {
+  const changed = lineupChangedPlayerIds({
+    previousStarterIds: [],
+    previousCaptainId: null,
+    nextStarterIds: [7],
+    nextCaptainId: 7,
+  });
+  assert.deepEqual([...changed], [7]);
+});
+
+test("lineupChangedPlayerIds tolerates being called with nothing at all", () => {
+  assert.equal(lineupChangedPlayerIds().size, 0);
 });

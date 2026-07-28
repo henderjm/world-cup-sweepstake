@@ -98,6 +98,34 @@ export function autoPick(available, roster, squadSlots = SQUAD_SLOTS) {
   return null;
 }
 
+// The best pick from a manager's own queue (an ordered array of player ids -
+// see src/fantasyDraft.js's addToQueue/toggleQueue/moveQueueItem) right now:
+// the first entry (in queue order) that is both still available AND still a
+// legal pick against `roster` (its position bucket not already full) - a
+// taken player, or one whose bucket has since filled up from other picks, is
+// skipped rather than offered. Returns null once nothing in the queue clears
+// both bars, so the caller falls back to the generic scarcest-bucket autoPick
+// above.
+//
+// Lives here (not fantasyDraft.js, where it originated) so the server-side
+// FantasyDraftRoom Durable Object can consult a manager's own queue for its
+// alarm autopick without importing any browser-only module: fantasyDraft.js
+// pulls in fantasyApi.js (fetch/WebSocket) and fantasyLineups.js, neither of
+// which can run in the Durable Object. fantasyDraft.js re-exports this
+// unchanged so its existing callers/tests keep working without modification.
+export function topQueuedPick(queue, playerPool, roster, draftedIds, squadSlots = SQUAD_SLOTS) {
+  const byId = new Map((playerPool ?? []).map((player) => [player.id, player]));
+  const drafted = draftedIds ?? new Set();
+  for (const playerId of queue ?? []) {
+    if (drafted.has(playerId)) continue;
+    const player = byId.get(playerId);
+    if (!player) continue;
+    const validation = validatePick({ roster, draftedIds: drafted, player, squadSlots });
+    if (validation.valid) return player;
+  }
+  return null;
+}
+
 // Round-robin H2H schedule via the circle method: fix the first id, rotate the
 // rest by one each round. One cycle covers every pair exactly once in
 // memberIds.length - 1 rounds (or memberIds.length rounds with a bye if the

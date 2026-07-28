@@ -110,6 +110,30 @@ export async function setLineup(leagueId, { starters, captainId }) {
   });
 }
 
+// GET the caller's own draft-pick shortlist for this league: { queue:
+// [playerId, ...] } in queue order, empty once they have never saved one.
+// Member-only (401/403), 404/501 if the league or the fantasy routes
+// themselves don't exist yet - same isFantasyNotDeployed handling as the
+// rest of this module.
+export async function loadDraftQueue(leagueId) {
+  return (await api(`/fantasy/league/${leagueId}/draft/queue`)).queue;
+}
+
+// POSTs a full replacement of the caller's own shortlist (never a single
+// mutation - the client always sends the whole ordered list of player ids).
+// Persisted server-side so a clock expiring autopicks from it even if this
+// tab has since closed (see worker/draftRoom.js's alarm, which reads the
+// fantasy_draft_queue table directly). Returns { queue } echoing what was
+// saved (de-duplicated server-side).
+export async function saveDraftQueue(leagueId, queue) {
+  return (
+    await api(`/fantasy/league/${leagueId}/draft/queue`, {
+      method: "POST",
+      body: JSON.stringify({ queue }),
+    })
+  ).queue;
+}
+
 // GET the caller's current-gameweek head-to-head: { gameweek, status: "scheduled"
 // | "live" | "final", me: { userId, name, score }, opponent: { userId, name,
 // score } | null }. A null opponent is a bye week (round-robin scheduling can
@@ -182,6 +206,26 @@ export async function saveWaiverSettings(leagueId, body) {
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+// GET the league feed: { entries: [...], viewerUserId }. One timeline
+// carrying both the app's own events (draft picks, waiver runs, free-agent
+// adds, lineup changes, the weekly AI recap) and managers' own messages, so a
+// move and the conversation about it are never on separate surfaces.
+// Member-only in BOTH directions, unlike match banter which is publicly
+// readable: a private league's transactions are nobody else's business.
+export async function loadLeagueFeed(leagueId) {
+  return api(`/fantasy/league/${leagueId}/chat`);
+}
+
+// Posts to the feed: { action: "message", text } or { action: "react",
+// messageId, emoji }. Returns the WHOLE refreshed feed rather than just the
+// new row, because D1 is strongly consistent and the response therefore
+// always includes this very write, which is what lets the optimistic UI
+// reconcile against it without flicker (see src/banter.js for the original of
+// this pattern).
+export async function postLeagueFeed(leagueId, body) {
+  return api(`/fantasy/league/${leagueId}/chat`, { method: "POST", body: JSON.stringify(body) });
 }
 
 // Browsers cannot set an Authorization header on a WebSocket handshake, so the

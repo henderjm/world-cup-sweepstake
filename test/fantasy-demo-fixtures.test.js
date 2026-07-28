@@ -8,6 +8,7 @@ import {
   deriveClubStrength,
   fixtureDifficultyMultiplier,
   HOME_ADVANTAGE,
+  NEUTRAL_CLUB_STRENGTH,
   standingsMapFromRawPayload,
 } from "../src/fantasyDemoFixtures.js";
 
@@ -56,22 +57,66 @@ test("deriveClubStrength uses the real table once games have been played", () =>
   assert.ok(strength.get("Arsenal") > strength.get("Chelsea"), "the top-of-table club should be strongest");
 });
 
-test("deriveClubStrength falls back to the player-tier proxy when nobody has played yet (preseason)", () => {
+// The four tests below replace one that asserted a preseason tier-average
+// proxy ranked a squad of starters above a squad of fringe players. That proxy
+// was removed deliberately, not weakened: averaged over a whole squad it
+// measured continuity rather than quality, and against the real July 2026 pool
+// it made Man United the toughest fixture in the league and Leeds third. Tier
+// cannot stand in either, having only four levels, so every established club
+// ties at the top. Expected points is the signal now, and absent it the model
+// says nothing rather than something wrong.
+
+test("deriveClubStrength ranks preseason clubs by their best XI's expected points", () => {
   const standingsMap = new Map([
     ["Arsenal", { team: "Arsenal", position: 1, played: 0 }],
     ["Chelsea", { team: "Chelsea", position: 2, played: 0 }],
   ]);
   const players = [
-    { team: "Arsenal", tier: "starter" },
-    { team: "Arsenal", tier: "starter" },
-    { team: "Chelsea", tier: "fringe" },
-    { team: "Chelsea", tier: "unknown" },
+    { team: "Arsenal", tier: "starter", xp: 6 },
+    { team: "Arsenal", tier: "starter", xp: 5 },
+    { team: "Chelsea", tier: "starter", xp: 2 },
+    { team: "Chelsea", tier: "starter", xp: 1 },
   ];
   const strength = deriveClubStrength({ standingsMap, players });
-  assert.ok(
-    strength.get("Arsenal") > strength.get("Chelsea"),
-    "a squad of starters should be derived as stronger than a squad of fringe/unknown players",
-  );
+  assert.ok(strength.get("Arsenal") > strength.get("Chelsea"), "the higher-xP squad should be stronger");
+});
+
+test("deriveClubStrength judges a club on its best XI, not on how deep its squad list is", () => {
+  // Squad depth must not be a penalty. Both clubs field an identical best XI;
+  // one merely has extra low-value players listed behind it, which is exactly
+  // what the old whole-squad average punished.
+  const eleven = (team, xp) => Array.from({ length: 11 }, () => ({ team, tier: "starter", xp }));
+  const players = [
+    ...eleven("Arsenal", 5),
+    ...eleven("Chelsea", 5),
+    { team: "Chelsea", tier: "fringe", xp: 0.1 },
+    { team: "Chelsea", tier: "fringe", xp: 0.1 },
+    { team: "Chelsea", tier: "fringe", xp: 0.1 },
+  ];
+  const strength = deriveClubStrength({ players });
+  assert.equal(strength.get("Arsenal"), strength.get("Chelsea"), "extra squad players must not weaken a club");
+});
+
+test("deriveClubStrength goes neutral rather than inventing a pecking order when no xP exists", () => {
+  // The shipped pool has xp null for every player until a bake runs, so this
+  // is today's real path. A confidently wrong difficulty model is worse than
+  // an openly neutral one: a user checks it against their own knowledge of the
+  // league and then stops believing the rest of the app.
+  const players = [
+    { team: "Arsenal", tier: "starter" },
+    { team: "Chelsea", tier: "fringe" },
+    { team: "Ipswich Town", tier: "unknown" },
+  ];
+  const strength = deriveClubStrength({ players });
+  const values = [...strength.values()];
+  assert.equal(new Set(values).size, 1, "every club should be equally strong when we know nothing");
+  assert.equal(values[0], NEUTRAL_CLUB_STRENGTH);
+});
+
+test("a neutral strength model leaves home advantage as the only fixture signal", () => {
+  const home = fixtureDifficultyMultiplier(NEUTRAL_CLUB_STRENGTH, true);
+  const away = fixtureDifficultyMultiplier(NEUTRAL_CLUB_STRENGTH, false);
+  assert.ok(home > away, "home should still beat away when opponents are indistinguishable");
 });
 
 test("deriveClubStrength normalizes player team names before grouping (Coventry vs Coventry City)", () => {

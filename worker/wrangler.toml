@@ -49,6 +49,18 @@ type = "ratelimit"
 namespace_id = "1001"
 simple = { limit = 200, period = 60 }
 
+# A second, much tighter limit for GET /match/:id only. That route is the one
+# unauthenticated path that can cost four upstream API-Football calls, so the
+# 200/min above (generous for polling /live) is far too loose for it. Kept as a
+# separate namespace so exhausting the drawer budget never locks a user out of
+# the rest of the API. 20/min still allows opening a lot of match drawers by
+# hand while making id-enumeration pointless.
+[[unsafe.bindings]]
+name = "DETAIL_LIMITER"
+type = "ratelimit"
+namespace_id = "1002"
+simple = { limit = 20, period = 60 }
+
 # Accounts (users, sessions, follows). Created with:
 #   npx wrangler d1 create squad-goals
 #   npx wrangler d1 execute squad-goals --remote --file=schema.sql

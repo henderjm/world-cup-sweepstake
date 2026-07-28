@@ -4,11 +4,12 @@ import { compareByGoals, compareByInvolvements } from "./scorers.js";
 import { dateLabel, dayLabel, formatStage, isFinished, isLive, statusLabel } from "./format.js";
 
 function esc(value) {
-  return String(value ?? "").replace(/[&<>"]/g, (char) => ({
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
     '"': "&quot;",
+    "'": "&#39;",
   })[char]);
 }
 
@@ -538,6 +539,7 @@ const PREF_LABELS = [
   ["red", "Red cards"],
   ["analysis", "Match analysis ready"],
   ["draft", "Draft reminders"],
+  ["recap", "Weekly league recap"],
 ];
 
 // Signed-out: the design's sign-in card. GIS renders the real Google button into

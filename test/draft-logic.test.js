@@ -7,6 +7,7 @@ import {
   resolvePick,
   roundRobinSchedule,
   snakePickOrder,
+  topQueuedPick,
   validatePick,
 } from "../src/draftLogic.js";
 import { SQUAD_SIZE, SQUAD_SLOTS } from "../src/fantasy.js";
@@ -233,4 +234,59 @@ test("roundRobinSchedule flips home/away on the cycle repeat for fairness", () =
 test("roundRobinSchedule returns no fixtures for fewer than two members", () => {
   assert.deepEqual(roundRobinSchedule([], 38), []);
   assert.deepEqual(roundRobinSchedule([1], 38), []);
+});
+
+// -- topQueuedPick -------------------------------------------------------------
+//
+// Lives here (moved from src/fantasyDraft.js) so worker/draftRoom.js's alarm
+// autopick can consult a manager's own shortlist without importing any
+// browser-only module. Covered directly here (not just via fantasyDraft.js's
+// re-export, which test/fantasy-draft.test.js already exercises) since this
+// is now the function's real home and what the Durable Object actually calls.
+
+test("topQueuedPick returns the first queued player who is both available and legal", () => {
+  const pool = [
+    { id: 1, name: "a", position: "MID" },
+    { id: 2, name: "b", position: "FWD" },
+  ];
+  const pick = topQueuedPick([1, 2], pool, [], new Set());
+  assert.equal(pick.id, 1);
+});
+
+test("topQueuedPick skips a queued player already drafted by someone else in the league", () => {
+  const pool = [
+    { id: 1, name: "a", position: "MID" },
+    { id: 2, name: "b", position: "FWD" },
+  ];
+  const pick = topQueuedPick([1, 2], pool, [], new Set([1]));
+  assert.equal(pick.id, 2);
+});
+
+test("topQueuedPick skips a queued player whose position bucket is already full on the roster", () => {
+  const pool = [
+    { id: 1, name: "a", position: "GK" },
+    { id: 2, name: "b", position: "MID" },
+  ];
+  const fullGkRoster = [{ position: "GK" }, { position: "GK" }]; // SQUAD_SLOTS.GK is 2
+  const pick = topQueuedPick([1, 2], pool, fullGkRoster, new Set());
+  assert.equal(pick.id, 2);
+});
+
+test("topQueuedPick returns null once nothing in the queue is both available and legal - the caller's signal to fall back to autoPick", () => {
+  const pool = [{ id: 1, name: "a", position: "GK" }];
+  const fullGkRoster = [{ position: "GK" }, { position: "GK" }];
+  assert.equal(topQueuedPick([1], pool, fullGkRoster, new Set()), null);
+});
+
+test("topQueuedPick returns null for an empty or unset queue rather than throwing", () => {
+  const pool = [{ id: 1, name: "a", position: "MID" }];
+  assert.equal(topQueuedPick([], pool, [], new Set()), null);
+  assert.equal(topQueuedPick(undefined, pool, [], new Set()), null);
+});
+
+test("topQueuedPick accepts draftedIds as a Set, exactly what worker/draftRoom.js's this.draft.draftedPlayerIds is", () => {
+  const pool = [{ id: 1, name: "a", position: "MID" }];
+  const draftedIds = new Set();
+  draftedIds.add(1);
+  assert.equal(topQueuedPick([1], pool, [], draftedIds), null);
 });

@@ -23,9 +23,11 @@ import {
   isUniqueConstraintError,
   resolvePick,
   roundRobinSchedule,
+  topQueuedPick,
   validatePick,
 } from "../src/draftLogic.js";
 import { SQUAD_SIZE, SQUAD_SLOTS } from "../src/fantasy.js";
+import { CHAT_EVENTS, cleanChatText } from "../src/fantasyChat.js";
 
 const PICK_CLOCK_MS = 60 * 1000;
 const PLAYER_POOL_PATH = "/data/PL/players.json";
@@ -87,10 +89,18 @@ export class FantasyDraftRoom {
     } catch {
       return this.sendError(ws, "bad message");
     }
-    if (data?.type !== "pick") return this.sendError(ws, "unknown message type");
+    if (data?.type !== "pick" && data?.type !== "chat") return this.sendError(ws, "unknown message type");
 
     const attachment = ws.deserializeAttachment() ?? {};
     if (!Number.isInteger(attachment.userId)) return this.sendError(ws, "not authenticated");
+
+    // Chat is not a pick: it takes no turn, needs no clock and must never
+    // queue behind blockConcurrencyWhile, which exists purely to serialise
+    // writes to the one contended resource (the next pick slot). Persisted to
+    // the same fantasy_chat_messages table the league feed reads, so the
+    // conversation is continuous after the draft ends rather than evaporating
+    // with the socket.
+    if (data.type === "chat") return this.handleChat(ws, attachment, data.text);
 
     // The whole validate-then-write sequence runs inside blockConcurrencyWhile,
     // which suspends every other incoming event (another socket's pick message,
@@ -126,6 +136,40 @@ export class FantasyDraftRoom {
     });
   }
 
+  // Draft-room chat. The sender's identity comes from the socket attachment
+  // the Worker edge already verified (see handleFantasyDraftWs), never from
+  // the message, so a client cannot post as somebody else. The display name
+  // comes from the hydrated member list rather than from the client for the
+  // same reason.
+  async handleChat(ws, attachment, rawText) {
+    const text = cleanChatText(rawText);
+    if (!text) return; // nothing to say; not worth an error round trip
+    await this.ensureHydrated(attachment.leagueId);
+
+    let messageId = null;
+    try {
+      const result = await this.env.DB.prepare(
+        `INSERT INTO fantasy_chat_messages (league_id, user_id, kind, text) VALUES (?1, ?2, 'message', ?3)`,
+      )
+        .bind(attachment.leagueId, attachment.userId, text)
+        .run();
+      messageId = result.meta?.last_row_id ?? null;
+    } catch {
+      // The feed row is the durable copy; if D1 rejects it there is nothing
+      // worth broadcasting, since a message everyone saw but nobody can scroll
+      // back to is worse than one that never appeared.
+      return this.sendError(ws, "message could not be sent");
+    }
+
+    this.broadcast({
+      type: "chat",
+      id: messageId,
+      userId: attachment.userId,
+      name: this.draft.memberNames?.get(attachment.userId) ?? "Someone",
+      text,
+    });
+  }
+
   async webSocketClose(ws) {
     try {
       ws.close();
@@ -155,7 +199,20 @@ export class FantasyDraftRoom {
       if (onClock == null) return;
       const roster = this.draft.rosters.get(onClock) ?? [];
       const available = this.availablePlayers();
-      const player = autoPick(available, roster, SQUAD_SLOTS);
+      // The manager's own shortlist beats the generic scarcest-bucket
+      // autopick: a manager who ranked players before their clock expired
+      // gets THEIR pick, not a stranger's heuristic. topQueuedPick already
+      // skips a queued player who was sniped or whose bucket has since
+      // filled, and returns null (falling through to autoPick below) once
+      // nothing in the queue is still legal.
+      const queuedPlayer = topQueuedPick(
+        this.draft.queues.get(onClock) ?? [],
+        this.playerPoolOrder,
+        roster,
+        this.draft.draftedPlayerIds,
+        SQUAD_SLOTS,
+      );
+      const player = queuedPlayer ?? autoPick(available, roster, SQUAD_SLOTS);
       if (!player) {
         // Every open bucket has run out of legal candidates in the pool. This
         // should not happen (the pool is far larger than a squad) but must not
@@ -166,7 +223,7 @@ export class FantasyDraftRoom {
         return;
       }
 
-      const result = await this.commitPick(onClock, player);
+      const result = await this.commitPick(onClock, player, { viaQueue: queuedPlayer != null });
       if (!result.ok) {
         // Lost the race to a human pick that landed a moment earlier (or, in
         // theory, another instance's write). commitPick already rehydrated;
@@ -184,7 +241,7 @@ export class FantasyDraftRoom {
   // in-memory overallPick could otherwise agree and both write the same slot.
   // The fantasy_draft_picks(league_id, overall_pick) unique index makes the
   // second write fail instead of silently duplicating a pick.
-  async commitPick(userId, player) {
+  async commitPick(userId, player, { viaQueue = false } = {}) {
     const leagueId = this.draft.leagueId;
     const overallPick = this.draft.overallPick;
     const resolved = resolvePick(this.draft.memberIds, overallPick, SQUAD_SIZE);
@@ -199,6 +256,28 @@ export class FantasyDraftRoom {
         this.env.DB.prepare(
           `INSERT INTO fantasy_rosters (league_id, user_id, player_id, acquired_via) VALUES (?1, ?2, ?3, 'draft')`,
         ).bind(leagueId, userId, player.id),
+        // The league feed's announcement of this pick, in the SAME batch as
+        // the pick itself. A duplicate-slot write loses the whole batch on the
+        // unique index below, so the feed can never carry a pick that did not
+        // actually happen, and viaQueue (which D1's pick log has no column
+        // for) is preserved here permanently rather than only in this one
+        // broadcast.
+        this.env.DB.prepare(
+          `INSERT INTO fantasy_chat_messages (league_id, user_id, kind, event, payload) VALUES (?1, NULL, 'system', ?2, ?3)`,
+        ).bind(
+          leagueId,
+          CHAT_EVENTS.DRAFT_PICK,
+          JSON.stringify({
+            actor: this.draft.memberNames?.get(userId) ?? "Someone",
+            player: player.name,
+            team: player.team,
+            position: player.position,
+            round: resolved.round,
+            pickInRound: resolved.pickInRound,
+            overallPick,
+            viaQueue,
+          }),
+        ),
       ]);
     } catch (error) {
       if (!isUniqueConstraintError(error)) throw error;
@@ -216,6 +295,20 @@ export class FantasyDraftRoom {
     roster.push(player);
     this.draft.rosters.set(userId, roster);
     this.draft.overallPick = overallPick + 1;
+    // Keep the in-memory picks log current (not just rosters/draftedPlayerIds
+    // above) so a client that joins/reconnects between now and this
+    // instance's next actual eviction still gets an accurate sendState feed,
+    // including whether this particular pick came from the manager's queue -
+    // D1 itself has no via_queue column, so this in-memory copy is the only
+    // place that survives past this one broadcast.
+    this.draft.picks.push({
+      round: resolved.round,
+      pickInRound: resolved.pickInRound,
+      overallPick,
+      userId,
+      player: publicPlayer(player),
+      viaQueue,
+    });
 
     this.broadcast({
       type: "pick",
@@ -224,6 +317,7 @@ export class FantasyDraftRoom {
       overallPick,
       userId,
       player: publicPlayer(player),
+      viaQueue,
     });
 
     if (this.draft.overallPick > this.draft.totalPicks) {
@@ -248,9 +342,18 @@ export class FantasyDraftRoom {
         ),
       );
     }
-    await this.env.DB.prepare(`UPDATE fantasy_leagues SET draft_status = 'complete' WHERE id = ?1`)
-      .bind(this.draft.leagueId)
-      .run();
+    await this.env.DB.batch([
+      this.env.DB.prepare(`UPDATE fantasy_leagues SET draft_status = 'complete' WHERE id = ?1`).bind(
+        this.draft.leagueId,
+      ),
+      this.env.DB.prepare(
+        `INSERT INTO fantasy_chat_messages (league_id, user_id, kind, event, payload) VALUES (?1, NULL, 'system', ?2, ?3)`,
+      ).bind(
+        this.draft.leagueId,
+        CHAT_EVENTS.DRAFT_COMPLETED,
+        JSON.stringify({ picks: this.draft.picks.length, managers: this.draft.memberIds.length }),
+      ),
+    ]);
     await this.state.storage.deleteAlarm();
     this.broadcast({ type: "complete", leagueId: this.draft.leagueId });
     for (const ws of this.state.getWebSockets()) {
@@ -353,9 +456,15 @@ export class FantasyDraftRoom {
     const league = await this.env.DB.prepare(`SELECT draft_status FROM fantasy_leagues WHERE id = ?1`)
       .bind(leagueId)
       .first();
+    // name/email joined in purely so a pick's league-feed row and a chat
+    // message can name their author: the Durable Object only ever sees a
+    // verified user id, and the feed is a permanent history that must not
+    // depend on a later join to stay legible.
     const members = await this.env.DB.prepare(
-      `SELECT user_id FROM fantasy_league_members WHERE league_id = ?1
-       ORDER BY draft_position IS NULL, draft_position, joined_at`,
+      `SELECT m.user_id, u.name, u.email FROM fantasy_league_members m
+       JOIN users u ON u.id = m.user_id
+       WHERE m.league_id = ?1
+       ORDER BY m.draft_position IS NULL, m.draft_position, m.joined_at`,
     )
       .bind(leagueId)
       .all();
@@ -365,8 +474,23 @@ export class FantasyDraftRoom {
     )
       .bind(leagueId)
       .all();
+    // Every member's own shortlist, queue order. Read fresh on every wake
+    // (never cached beyond this instance's own commitPick/alarm lifetime), so
+    // a manager's most recent save always wins - this table has no idea which
+    // Durable Object instance is currently warm, and shouldn't need to.
+    const queueRows = await this.env.DB.prepare(
+      `SELECT user_id, player_id FROM fantasy_draft_queue WHERE league_id = ?1 ORDER BY user_id, position`,
+    )
+      .bind(leagueId)
+      .all();
 
     const memberIds = (members.results ?? []).map((row) => row.user_id);
+    const memberNames = new Map(
+      (members.results ?? []).map((row) => [
+        row.user_id,
+        row.name || String(row.email ?? "").split("@")[0] || "Someone",
+      ]),
+    );
     const rosters = new Map(memberIds.map((id) => [id, []]));
     const draftedPlayerIds = new Set();
     const picks = [];
@@ -385,18 +509,32 @@ export class FantasyDraftRoom {
         overallPick: row.overall_pick,
         userId: row.user_id,
         player: player ? publicPlayer(player) : { id: row.player_id },
+        // fantasy_draft_picks carries no via_queue column, so a pick
+        // rebuilt from D1 (after a genuine eviction) can never say whether it
+        // came from a queue - false rather than an undefined field, so every
+        // picks entry has the same shape regardless of how it was built.
+        viaQueue: false,
       });
+    }
+
+    const queues = new Map(memberIds.map((id) => [id, []]));
+    for (const row of queueRows.results ?? []) {
+      const list = queues.get(row.user_id) ?? [];
+      list.push(row.player_id);
+      queues.set(row.user_id, list);
     }
 
     this.draft = {
       leagueId,
       memberIds,
+      memberNames,
       status: league?.draft_status ?? "pending",
       totalPicks: memberIds.length * SQUAD_SIZE,
       overallPick: picks.length + 1,
       picks,
       rosters,
       draftedPlayerIds,
+      queues,
     };
   }
 

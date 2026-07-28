@@ -25,11 +25,12 @@ let unsubscribeAccount = null;
 let inflight = 0; // posts in the air; refreshes are dropped while > 0
 
 function esc(value) {
-  return String(value ?? "").replace(/[&<>"]/g, (char) => ({
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
     '"': "&quot;",
+    "'": "&#39;",
   })[char]);
 }
 
