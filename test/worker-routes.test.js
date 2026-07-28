@@ -249,3 +249,205 @@ test("the scheduled handler runs every cron pass without throwing, even with no 
   await worker.scheduled({ cron: "* * * * *" }, env, ctx);
   await assert.doesNotReject(Promise.all(pending));
 });
+
+// -- Waiver routes, actually executed -----------------------------------------
+//
+// Same reasoning as the feed block above, but these routes need more than a
+// session to get past their guards: the league has to read as draft-complete,
+// the add target has to read as ON_WAIVERS and the drop has to read as owned.
+// The one-row-fits-all stub cannot express that (the same generic row would
+// make a player simultaneously owned and on the wire), so this stub dispatches
+// on the SQL and on the bound parameters. Deliberately still dumb: it answers
+// the handful of specific reads these two routes make and nothing else, since
+// the rules themselves are covered by the pure modules under src/.
+const ADD_PLAYER_ID = 7;
+const DROP_PLAYER_ID = 8;
+
+function waiverDb(seen) {
+  const makeStatement = (sql) => {
+    const normalised = sql.replace(/\s+/g, " ").trim();
+    let bound = [];
+    const statement = {
+      bind: (...args) => {
+        bound = args;
+        return statement;
+      },
+      first: async () => {
+        if (normalised.includes("FROM sessions s")) return { id: 1, email: "ada@example.test", name: "Ada", prefs: "{}" };
+        if (normalised.includes("FROM fantasy_leagues WHERE id")) {
+          return { draft_status: "complete", commissioner_user_id: 1 };
+        }
+        // Availability: the add target is on the wire and owned by nobody, the
+        // only combination the claim path accepts.
+        if (normalised.includes("FROM fantasy_rosters WHERE league_id = ?1 AND player_id = ?2")) return null;
+        if (normalised.includes("FROM fantasy_waiver_wire WHERE league_id = ?1 AND player_id = ?2")) return { x: 1 };
+        if (normalised.includes("FROM fantasy_players WHERE id = ?1")) {
+          return { id: bound[0], name: `Player ${bound[0]}`, team: "Chelsea", position: "MID" };
+        }
+        if (normalised.includes("faab_remaining FROM fantasy_waiver_state")) return { faab_remaining: 50 };
+        if (normalised.includes("COUNT(*) AS n")) return { n: 0 };
+        return { x: 1 };
+      },
+      all: async () => {
+        if (normalised.includes("FROM fantasy_rosters r")) {
+          return { results: [{ id: DROP_PLAYER_ID, name: "Player 8", team: "Everton", position: "MID" }] };
+        }
+        return { results: [] };
+      },
+      run: async () => ({ success: true, meta: { changes: 1, last_row_id: 42 } }),
+    };
+    return statement;
+  };
+  return {
+    prepare: (sql) => {
+      seen.push(sql.replace(/\s+/g, " ").trim());
+      return makeStatement(sql);
+    },
+    batch: async () => [],
+  };
+}
+
+function waiverCall(path, init = {}) {
+  const seen = [];
+  const headers = { Authorization: `Bearer ${SESSION_TOKEN}`, ...(init.headers ?? {}) };
+  const response = worker.fetch(new Request(`https://example.test${path}`, { ...init, headers }), {
+    ...env,
+    DB: waiverDb(seen),
+  });
+  return { response, seen };
+}
+
+test("GET the waivers view executes its body and reports which run a claim would land in", async () => {
+  const { response, seen } = waiverCall("/fantasy/league/1/waivers");
+  const resolved = await response;
+  assert.equal(resolved.status, 200);
+  assert.ok(
+    seen.some((sql) => sql.includes("FROM fantasy_waiver_state s")),
+    "the waiver-state read never ran, so this test proves nothing",
+  );
+
+  const body = await resolved.json();
+  // A claim must never be ambiguous about which run it belongs to, so the
+  // panel is handed the answer rather than inferring it from currentGameweek.
+  assert.equal(typeof body.claimWindow.gameweek, "number");
+  assert.equal(typeof body.claimWindow.deferred, "boolean");
+  assert.ok(["open", "quiet", "closed"].includes(body.claimWindow.phase));
+});
+
+test("submitting a waiver claim inserts it guarded on that gameweek's run not having happened", async () => {
+  const { response, seen } = waiverCall("/fantasy/league/1/waivers/claim", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ addPlayerId: ADD_PLAYER_ID, dropPlayerId: DROP_PLAYER_ID, bid: 5 }),
+  });
+  const resolved = await response;
+  assert.equal(resolved.status, 200);
+  // The write-time half of the anti-orphan defence: without this guard a claim
+  // could land on a gameweek whose run had already committed, and no later
+  // tick would ever look at it again.
+  assert.ok(
+    seen.some(
+      (sql) =>
+        sql.startsWith("INSERT INTO fantasy_waivers") &&
+        sql.includes("WHERE NOT EXISTS (SELECT 1 FROM fantasy_waiver_runs WHERE league_id = ?1 AND gameweek = ?6)"),
+    ),
+    "the claim insert was not guarded on the run ledger",
+  );
+
+  const body = await resolved.json();
+  assert.equal(body.status, "pending");
+  assert.equal(typeof body.gameweek, "number");
+  assert.equal(typeof body.deferred, "boolean");
+});
+
+test("GET the lineup reports each club's fixture count so a blank or double gameweek is visible", async () => {
+  const { response } = waiverCall("/fantasy/league/1/lineup");
+  const resolved = await response;
+  assert.equal(resolved.status, 200);
+  const body = await resolved.json();
+  // null (not {}) with no reachable feed: "we could not look" and "no club has
+  // a fixture" must not render as the same thing.
+  assert.ok(Object.hasOwn(body, "clubFixtures"));
+});
+
+// -- The waiver run's lock and roll-forward, actually executed ----------------
+//
+// runLeagueWaiverRun is not exported, and with no bindings the cron's waiver
+// pass exits at "no gameweek has settled yet", so nothing in this file reached
+// it. FANTASY_GAMEWEEK_OVERRIDE (the existing dev escape hatch, see
+// currentFantasyGameweek) walks the clock forward to a settled gameweek without
+// needing a real feed, which is enough to run the pass end to end against a
+// recording stub. Without this the lease and the roll-forward, the two pieces
+// of the boundary-race fix, would ship with no test entering them at all.
+function cronDb(seen, batches) {
+  const make = (sql) => {
+    const normalised = sql.replace(/\s+/g, " ").trim();
+    const statement = {
+      sql: normalised,
+      bind: (...args) => {
+        statement.bound = args;
+        return statement;
+      },
+      // No run marker for this gameweek yet, and no stored waiver settings, so
+      // the pass takes its full path rather than short-circuiting.
+      first: async () => null,
+      all: async () => {
+        if (normalised.includes("FROM fantasy_leagues WHERE draft_status = 'complete'")) {
+          return { results: [{ id: 1 }] };
+        }
+        if (normalised.includes("FROM fantasy_league_members WHERE league_id")) {
+          return { results: [{ user_id: 1, draft_position: 1 }] };
+        }
+        return { results: [] };
+      },
+      run: async () => ({ success: true, meta: { changes: 1, last_row_id: 1 } }),
+    };
+    return statement;
+  };
+  return {
+    prepare: (sql) => {
+      const statement = make(sql);
+      seen.push(statement.sql);
+      return statement;
+    },
+    batch: async (statements) => {
+      batches.push(statements.map((statement) => statement.sql));
+      return [];
+    },
+  };
+}
+
+test("a waiver run takes a lease, and its batch rolls late claims forward before releasing it", async () => {
+  const seen = [];
+  const batches = [];
+  const pending = [];
+  await worker.scheduled(
+    { cron: "* * * * *" },
+    { ...env, FANTASY_GAMEWEEK_OVERRIDE: "12", DB: cronDb(seen, batches) },
+    { waitUntil: (promise) => pending.push(promise) },
+  );
+  await Promise.all(pending);
+
+  assert.ok(
+    seen.some((sql) => sql.startsWith("INSERT INTO fantasy_waiver_locks")),
+    "the run never tried to take a lease, so two overlapping ticks would both do the work",
+  );
+
+  const runBatch = batches.find((sqls) => sqls.some((sql) => sql.startsWith("INSERT INTO fantasy_waiver_runs")));
+  assert.ok(runBatch, "the run never built its committing batch");
+  assert.equal(runBatch[0], "INSERT INTO fantasy_waiver_runs (league_id, gameweek) VALUES (?1, ?2)");
+
+  // Order is the whole point of these two. The roll-forward must come after
+  // every per-claim status update, so it can only catch claims the run never
+  // saw; the lease release must be inside the committing transaction, so the
+  // lock is given up exactly when the run becomes visible.
+  const rollForward = runBatch.findIndex((sql) => sql.startsWith("UPDATE fantasy_waivers SET gameweek"));
+  const release = runBatch.findIndex((sql) => sql.startsWith("DELETE FROM fantasy_waiver_locks"));
+  assert.ok(rollForward >= 0, "a claim landing mid-run would be orphaned pending forever");
+  assert.equal(release, runBatch.length - 1);
+  assert.ok(rollForward < release);
+  assert.ok(
+    runBatch[rollForward].includes("AND gameweek = ?2 AND status = 'pending'"),
+    "the roll-forward must be scoped to still-pending claims for the settled gameweek only",
+  );
+});

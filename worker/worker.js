@@ -60,13 +60,18 @@ import {
   gameweekStatus,
   rosterGameweekPoints,
   standingsFromFixtures,
+  sumPlayerPoints,
 } from "../src/fantasyGameweek.js";
+import { assignGameweeks, clubFixtureCounts, gameweekOf } from "../src/fantasyCalendar.js";
 import {
   DEFAULT_FAAB_BUDGET,
   WAIVER_MODES,
+  claimGameweek,
   playerAvailability,
   resolveWaiverRun,
   validateAcquisition,
+  waiverRunReady,
+  waiverRunWindow,
 } from "../src/fantasyWaivers.js";
 import { lineupChangedPlayerIds, lockedPlayerIds, playerLockState } from "../src/fantasyLocks.js";
 import { dueDraftReminder, validateDraftSchedule } from "../src/fantasyScheduling.js";
@@ -1451,10 +1456,12 @@ async function upsertFantasyPlayerPool(env) {
 
 // PL is the only fantasy competition (see schema.sql's fantasy_lineups comment
 // on why the 38-matchday PL season maps 1:1 onto weekly gameweeks), so this is
-// unconditionally the PL feed. The smallest matchday still in play is "now";
-// once every match is finished the season's final matchday holds until the
-// next one opens. Any failure (feed down, PL not configured, local dev with a
-// dummy API key) falls back to gameweek 1 rather than erroring the route.
+// unconditionally the PL feed. A gameweek is a WINDOW of wall-clock time, not
+// the provider's matchday label (see src/fantasyCalendar.js): the earliest
+// window still holding an unsettled fixture is "now", floored by whichever
+// window the clock is actually in so the answer can never move backwards when
+// a fixture is rescheduled. Any failure (feed down, PL not configured, local
+// dev with a dummy API key) falls back to gameweek 1 rather than erroring.
 async function currentFantasyGameweek(env) {
   try {
     // Local development only: the gameweek is normally derived from live match
@@ -1468,26 +1475,31 @@ async function currentFantasyGameweek(env) {
     const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
     if (!comp || !env.API_FOOTBALL_KEY) return 1;
     const live = await getLive(comp, env.API_FOOTBALL_KEY);
-    return currentGameweekFromMatches(live.matches);
+    return currentGameweekFromMatches(live.matches, Date.now());
   } catch {
     return 1;
   }
 }
 
-// The PL match list for kickoff-lock checks (src/fantasyLocks.js), read off
-// the same edge-cached getLive() every other fantasy handler already calls
-// for gameweek status. Returns null, not an empty array, when the feed is
-// unavailable (no API key locally, upstream down, PL not configured), so a
-// caller can tell "nothing to check against" apart from "checked, nothing is
-// locked" and choose to fail open rather than block every free-agent move on
-// a feed blip.
+// The PL match list for kickoff-lock checks (src/fantasyLocks.js), gameweek
+// status and the waiver timetable, read off the same edge-cached getLive()
+// every other fantasy handler already calls. Returns null, not an empty array,
+// when the feed is unavailable (no API key locally, upstream down, PL not
+// configured), so a caller can tell "nothing to check against" apart from
+// "checked, nothing is locked" and choose to fail open rather than block every
+// free-agent move on a feed blip.
+//
+// Stamped with calendar gameweeks HERE, once per call, so every consumer sees
+// a fixture in the window it was actually played in rather than the window its
+// provider matchday label claims. A consumer that re-derived this for itself
+// would be one postponement away from disagreeing with the others.
 async function currentFantasyMatches(env) {
   try {
     if (!env.API_FOOTBALL_KEY) return null;
     const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
     if (!comp) return null;
     const live = await getLive(comp, env.API_FOOTBALL_KEY);
-    return live.matches ?? [];
+    return assignGameweeks(live.matches ?? []);
   } catch {
     return null;
   }
@@ -1563,7 +1575,16 @@ async function handleFantasyLineupGet(request, env, leagueId, cors) {
     const starterIds = new Set(starters.map((entry) => entry.playerId));
     const bench = roster.filter((player) => !starterIds.has(player.id)).map((player) => player.id);
 
-    return json({ gameweek, source, starters, bench }, 200, cors);
+    // How many times each club plays inside this gameweek's window, so the
+    // pitch view can label a blank (a club absent from this map plays no match
+    // and scores nothing) or a double (2) instead of showing a manager an XI
+    // that silently returns zero and looks broken. A missing feed sends no map
+    // at all rather than an empty one, so the client can tell "no fixtures"
+    // apart from "we could not look".
+    const matches = await currentFantasyMatches(env);
+    const clubFixtures = matches ? Object.fromEntries(clubFixtureCounts(matches, gameweek)) : null;
+
+    return json({ gameweek, source, starters, bench, clubFixtures }, 200, cors);
   } catch {
     return json({ error: "fantasy unavailable" }, 502, cors);
   }
@@ -1779,9 +1800,11 @@ async function handleFantasyDraftQueueSet(request, env, leagueId, cors) {
 }
 
 // -- Fantasy gameweek scoring (Phase 4.3) -------------------------------------
-// PL-only, same reasoning as everywhere else in fantasy: the 38-matchday PL
-// season is what "gameweek" means here, so a match's own matchday IS the
-// fantasy gameweek it scores into, no separate mapping table required.
+// PL-only, same reasoning as everywhere else in fantasy. A match scores into
+// the gameweek WINDOW its kickoff falls in (src/fantasyCalendar.js), which is
+// not always the window its provider matchday label names: a postponed fixture
+// replayed months later scores into the week it was actually played, which is
+// what produces a correct double gameweek for the two clubs involved.
 //
 // The minute cron finds newly-FINISHED PL matches, scores each one exactly
 // once via scoreMatchForPlayers, and only then rolls the affected gameweek(s)
@@ -1790,13 +1813,15 @@ async function handleFantasyDraftQueueSet(request, env, leagueId, cors) {
 //   - fantasy_scored_matches is a dedup ledger checked BEFORE a match is
 //     processed, so a match already scored on an earlier tick is never
 //     refetched or rescored (mirrors notify_state's "first sighting" pattern).
-//   - fantasy_player_scores is keyed on (gameweek, player_id) and written with
-//     INSERT OR REPLACE, so even a rare retry (e.g. this tick dies after
+//   - fantasy_player_match_scores is keyed on (match_id, player_id) and written
+//     with INSERT OR REPLACE, so even a rare retry (e.g. this tick dies after
 //     writing scores but before the match makes it into the dedup ledger)
-//     lands the same values again rather than summing them twice. Gameweek
-//     totals are always recomputed by resumming fantasy_player_scores, never
-//     incremented, so the same idempotency extends to fantasy_gameweek_scores
-//     and fantasy_h2h_fixtures.
+//     lands the same values again rather than summing them twice. The key is
+//     per MATCH and not per gameweek precisely because a player can feature
+//     twice inside one window; keying on (gameweek, player_id) silently threw
+//     the first of his two matches away. Gameweek totals are always recomputed
+//     by resumming this table, never incremented, so the same idempotency
+//     extends to fantasy_gameweek_scores and fantasy_h2h_fixtures.
 
 async function runScheduledFantasyScoring(env) {
   if (!env.DB || !env.API_FOOTBALL_KEY) return;
@@ -1810,7 +1835,8 @@ async function runScheduledFantasyScoring(env) {
     return; // feed down; the next tick retries
   }
 
-  const candidates = live.matches.filter((match) => isMatchFinished(match) && Number.isInteger(match.matchday));
+  const matches = assignGameweeks(live.matches ?? []);
+  const candidates = matches.filter((match) => isMatchFinished(match) && Number.isInteger(gameweekOf(match)));
   if (!candidates.length) return;
 
   const alreadyScored = await fantasyScoredMatchIds(
@@ -1828,19 +1854,19 @@ async function runScheduledFantasyScoring(env) {
       const scores = scoreMatchForPlayers(detail);
       // Players never in the baked squad pool (a late loan, a call-up who
       // missed the fetch:fantasy-players bake) still need a fantasy_players
-      // row before fantasy_player_scores/fantasy_rosters can reference them.
-      // OR IGNORE so the curated pool is never clobbered for a player already
-      // known good. scoreMatchForPlayers can credit a goal/assist/card id that
-      // never appears in the lineup or bench (an events/lineups discrepancy
-      // upstream), so every scored id gets a placeholder row too, not just
-      // the lineup+bench ids, or that match's whole score write would fail
-      // its foreign key and retry forever on every future tick.
+      // row before fantasy_player_match_scores/fantasy_rosters can reference
+      // them. OR IGNORE so the curated pool is never clobbered for a player
+      // already known good. scoreMatchForPlayers can credit a goal/assist/card
+      // id that never appears in the lineup or bench (an events/lineups
+      // discrepancy upstream), so every scored id gets a placeholder row too,
+      // not just the lineup+bench ids, or that match's whole score write would
+      // fail its foreign key and retry forever on every future tick.
       await upsertFantasyPlayersFromDetail(env, detail, scores.keys());
-      await writeFantasyPlayerScores(env, match.matchday, scores);
+      await writeFantasyPlayerScores(env, match.id, gameweekOf(match), scores);
       await env.DB.prepare(`INSERT OR IGNORE INTO fantasy_scored_matches (match_id) VALUES (?1)`)
         .bind(match.id)
         .run();
-      touchedGameweeks.add(match.matchday);
+      touchedGameweeks.add(gameweekOf(match));
     } catch {
       // one broken match must not block the others; since it never reaches
       // fantasy_scored_matches, the next tick retries it from scratch
@@ -1923,26 +1949,41 @@ async function upsertFantasyPlayersFromDetail(env, detail, extraIds = []) {
   );
 }
 
-async function writeFantasyPlayerScores(env, gameweek, scores) {
+// One row per player per MATCH, tagged with the gameweek window that match was
+// played in. A squad is roughly 30 players, well inside D1's 100-bound-
+// parameter cap for a single batch of one-row inserts.
+async function writeFantasyPlayerScores(env, matchId, gameweek, scores) {
   const entries = [...scores.entries()];
   if (!entries.length) return;
   await env.DB.batch(
     entries.map(([playerId, entry]) =>
       env.DB.prepare(
-        `INSERT OR REPLACE INTO fantasy_player_scores (gameweek, player_id, points, breakdown, computed_at)
-         VALUES (?1, ?2, ?3, ?4, datetime('now'))`,
-      ).bind(gameweek, playerId, entry.points, JSON.stringify(entry.breakdown)),
+        `INSERT OR REPLACE INTO fantasy_player_match_scores (match_id, player_id, gameweek, points, breakdown, computed_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))`,
+      ).bind(matchId, playerId, gameweek, entry.points, JSON.stringify(entry.breakdown)),
     ),
   );
+}
+
+// Every player's total for one gameweek, summed across every match they
+// featured in inside that window. sumPlayerPoints rather than the SQL SUM so
+// the accumulation is the same unit-tested pure function the rest of the
+// fantasy rules use, and so a caller can never accidentally rebuild the map
+// with `new Map(rows.map(...))` and drop the second match of a double
+// gameweek on the floor.
+async function fantasyPlayerPointsForGameweek(env, gameweek) {
+  const rows = await env.DB.prepare(
+    `SELECT player_id, points FROM fantasy_player_match_scores WHERE gameweek = ?1`,
+  )
+    .bind(gameweek)
+    .all();
+  return sumPlayerPoints((rows.results ?? []).map((row) => ({ playerId: row.player_id, points: row.points })));
 }
 
 // Rolls one gameweek's freshly-scored players up into every complete-draft
 // league's totals and head-to-head fixtures.
 async function recomputeFantasyGameweek(env, gameweek) {
-  const scoreRows = await env.DB.prepare(`SELECT player_id, points FROM fantasy_player_scores WHERE gameweek = ?1`)
-    .bind(gameweek)
-    .all();
-  const playerPoints = new Map((scoreRows.results ?? []).map((row) => [row.player_id, row.points]));
+  const playerPoints = await fantasyPlayerPointsForGameweek(env, gameweek);
 
   const leagues = await env.DB.prepare(`SELECT id FROM fantasy_leagues WHERE draft_status = 'complete'`).all();
   for (const league of leagues.results ?? []) {
@@ -2030,7 +2071,7 @@ async function runScheduledFantasyXpBlend(env) {
     // own docstring on why these passes run sequentially rather than in
     // parallel).
     const live = await getLive(comp, env.API_FOOTBALL_KEY);
-    const currentGameweek = currentGameweekFromMatches(live.matches);
+    const currentGameweek = currentGameweekFromMatches(live.matches, Date.now());
     const latestCompleted = currentGameweek - 1;
     if (latestCompleted < 1) return; // season hasn't produced a completed gameweek yet
 
@@ -2039,7 +2080,16 @@ async function runScheduledFantasyXpBlend(env) {
 
     const [playersResult, scoresResult] = await Promise.all([
       env.DB.prepare(`SELECT id, historical_xp, historical_basis FROM fantasy_players WHERE active = 1`).all(),
-      env.DB.prepare(`SELECT player_id, points FROM fantasy_player_scores WHERE gameweek <= ?1`)
+      // Aggregated in SQL rather than row by row: the underlying table is one
+      // row per player per MATCH, and blendWithCurrentSeason divides by
+      // gameweeks played, so a double gameweek's two matches must count as one
+      // gameweek (COUNT(DISTINCT gameweek)) while contributing both scores
+      // (SUM(points)). Counting rows would quietly halve such a player's
+      // per-gameweek average.
+      env.DB.prepare(
+        `SELECT player_id, SUM(points) AS points, COUNT(DISTINCT gameweek) AS gameweeks
+         FROM fantasy_player_match_scores WHERE gameweek <= ?1 GROUP BY player_id`,
+      )
         .bind(latestCompleted)
         .all(),
     ]);
@@ -2047,8 +2097,8 @@ async function runScheduledFantasyXpBlend(env) {
     const pointsByPlayer = new Map();
     const gameweeksByPlayer = new Map();
     for (const row of scoresResult.results ?? []) {
-      pointsByPlayer.set(row.player_id, (pointsByPlayer.get(row.player_id) ?? 0) + row.points);
-      gameweeksByPlayer.set(row.player_id, (gameweeksByPlayer.get(row.player_id) ?? 0) + 1);
+      pointsByPlayer.set(row.player_id, row.points);
+      gameweeksByPlayer.set(row.player_id, row.gameweeks);
     }
 
     const CHUNK = 100;
@@ -2559,6 +2609,12 @@ async function handleFantasyWaiversView(request, env, leagueId, cors) {
     const matches = await currentFantasyMatches(env);
     const locked = matches ? lockedPlayerIds(allPlayers.results ?? [], matches, currentGameweek, Date.now()) : new Set();
 
+    // The claim timetable, so the panel can state which run a claim submitted
+    // right now would land in instead of leaving the manager to guess when the
+    // gameweek turns over.
+    const claimTarget = claimGameweek({ matches, currentGameweek, now: Date.now() });
+    const currentWindow = waiverRunWindow({ matches, gameweek: currentGameweek, now: Date.now() });
+
     const mine = (stateRows.results ?? []).find((row) => row.user_id === user.id);
 
     let lastRun = null;
@@ -2591,6 +2647,13 @@ async function handleFantasyWaiversView(request, env, leagueId, cors) {
         myBudgetRemaining: mine?.faab_remaining ?? settings.faabBudget,
         myPriority: mine?.priority ?? null,
         currentGameweek,
+        claimWindow: {
+          gameweek: claimTarget.gameweek,
+          deferred: claimTarget.deferred,
+          phase: currentWindow.phase,
+          quietFrom: currentWindow.quietFrom,
+          runsAfter: claimTarget.runsAfter,
+        },
         priorities: (stateRows.results ?? []).map((row) => ({
           userId: row.user_id,
           name: row.name || String(row.email ?? "").split("@")[0] || "Someone",
@@ -2685,7 +2748,14 @@ async function handleFantasyWaiverClaimCreate(request, env, leagueId, cors) {
     });
     if (!validation.ok) return json({ error: validation.error }, 400, cors);
 
-    const gameweek = await currentFantasyGameweek(env);
+    const currentGameweek = await currentFantasyGameweek(env);
+    // Which run this claim belongs to. Inside the quiet period before a run
+    // (src/fantasyWaivers.js) the answer is the NEXT gameweek, and `deferred`
+    // is returned to the client so the manager is told which run their claim
+    // is in rather than being silently included, silently excluded, or
+    // rejected outright for being a minute late.
+    const matches = await currentFantasyMatches(env);
+    const target = claimGameweek({ matches, currentGameweek, now: Date.now() });
     // priority here is the claimant's OWN ranking among their own pending
     // claims (fantasy_waivers.priority, repurposed for exactly this, distinct
     // from the league-wide waiver order in fantasy_waiver_state). A caller
@@ -2701,22 +2771,51 @@ async function handleFantasyWaiverClaimCreate(request, env, leagueId, cors) {
       ownClaimPriority = (pendingCount?.n ?? 0) + 1;
     }
 
-    const result = await env.DB.prepare(
-      `INSERT INTO fantasy_waivers (league_id, user_id, add_player_id, drop_player_id, priority, gameweek, bid)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
-    )
-      .bind(
-        leagueId,
-        user.id,
-        addPlayerId,
-        dropPlayerId,
-        ownClaimPriority,
-        gameweek,
-        settings.mode === "faab" ? bid ?? 0 : null,
+    const insert = (gameweek) =>
+      env.DB.prepare(
+        // Guarded on that gameweek's run not having committed yet, the same
+        // INSERT...SELECT...WHERE NOT EXISTS pattern the free-agent path uses
+        // for the roster slot. The quiet period already keeps a claim well
+        // clear of its run, but only a write-time guard can rule out the last
+        // interleaving: this route reading the timetable, the run committing,
+        // and only then this INSERT landing on a gameweek nobody will ever
+        // look at again.
+        `INSERT INTO fantasy_waivers (league_id, user_id, add_player_id, drop_player_id, priority, gameweek, bid)
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
+         WHERE NOT EXISTS (SELECT 1 FROM fantasy_waiver_runs WHERE league_id = ?1 AND gameweek = ?6)`,
       )
-      .run();
+        .bind(
+          leagueId,
+          user.id,
+          addPlayerId,
+          dropPlayerId,
+          ownClaimPriority,
+          gameweek,
+          settings.mode === "faab" ? bid ?? 0 : null,
+        )
+        .run();
 
-    return json({ claimId: result.meta.last_row_id, gameweek, status: "pending" }, 200, cors);
+    let gameweek = target.gameweek;
+    let deferred = target.deferred;
+    let result = await insert(gameweek);
+    if ((result.meta?.changes ?? 0) === 0) {
+      // That gameweek's run committed underneath us. One retry is enough: runs
+      // are strictly sequential per league, so the next gameweek's run cannot
+      // also have happened already.
+      gameweek += 1;
+      deferred = true;
+      result = await insert(gameweek);
+      if ((result.meta?.changes ?? 0) === 0) {
+        return json({ error: "waivers are processing right now, please try again in a moment" }, 409, cors);
+      }
+    }
+
+    const window = waiverRunWindow({ matches, gameweek, now: Date.now() });
+    return json(
+      { claimId: result.meta.last_row_id, gameweek, deferred, runsAfter: window.earliestRunAt, status: "pending" },
+      200,
+      cors,
+    );
   } catch {
     return json({ error: "fantasy unavailable" }, 502, cors);
   }
@@ -2945,6 +3044,17 @@ async function runScheduledWaiverRuns(env) {
   const settledGameweek = currentGameweek - 1;
   if (settledGameweek < 1) return; // nothing has settled yet this season
 
+  // The settlement buffer (src/fantasyWaivers.js). The gameweek being settled
+  // is already terminal by the time we get here, but "terminal" and "safe to
+  // resolve" are not the same instant: claims stop counting towards this run
+  // an hour before its last kickoff, and the run waits three hours past that
+  // kickoff before reading the claim set, so there is a guaranteed multi-hour
+  // gap rather than a millisecond race between the last claim and the run.
+  // A feed we cannot read leaves the buffer undecidable, in which case
+  // waiverRunReady fails open to the pre-buffer behaviour.
+  const matches = await currentFantasyMatches(env);
+  if (!waiverRunReady({ matches, settledGameweek, now: Date.now() })) return;
+
   const leagues = await env.DB.prepare(`SELECT id FROM fantasy_leagues WHERE draft_status = 'complete'`).all();
   for (const league of leagues.results ?? []) {
     try {
@@ -2955,6 +3065,31 @@ async function runScheduledWaiverRuns(env) {
       // the next tick rather than half-applied
     }
   }
+}
+
+// How long a waiver-run lease is held before another tick may break it. Long
+// enough that a genuinely slow run is never interrupted, short enough that a
+// tick killed mid-run does not wedge a league's waivers until someone notices.
+// Nothing about correctness depends on this number (see the schema comment on
+// fantasy_waiver_locks): it only decides how much duplicated work happens.
+const WAIVER_LOCK_LEASE_MS = 5 * 60 * 1000;
+
+// Single guarded upsert, so exactly one of two racing ticks comes away with
+// the lease: SQLite applies the ON CONFLICT ... WHERE atomically, and the
+// loser's statement reports zero changes rather than overwriting the holder.
+async function acquireWaiverLock(env, leagueId, gameweek) {
+  const holder = crypto.randomUUID();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + WAIVER_LOCK_LEASE_MS).toISOString();
+  const result = await env.DB.prepare(
+    `INSERT INTO fantasy_waiver_locks (league_id, gameweek, holder, acquired_at, expires_at)
+     VALUES (?1, ?2, ?3, ?4, ?5)
+     ON CONFLICT(league_id) DO UPDATE SET gameweek = ?2, holder = ?3, acquired_at = ?4, expires_at = ?5
+     WHERE fantasy_waiver_locks.expires_at <= ?4`,
+  )
+    .bind(leagueId, gameweek, holder, now.toISOString(), expiresAt)
+    .run();
+  return (result.meta?.changes ?? 0) > 0 ? holder : null;
 }
 
 // Every write this run makes, the fantasy_waiver_runs marker included, is
@@ -2973,6 +3108,19 @@ async function runScheduledWaiverRuns(env) {
 // unique index rejecting a losing race against another overlapping tick)
 // rolls back the ENTIRE batch, marker included, leaving the run exactly as
 // unprocessed as before this function ran and free to be retried whole.
+//
+// What the atomic batch alone did NOT close, and what the trailing
+// roll-forward statement below now does: a claim inserted after this
+// function's SELECT but before its batch commits is invisible to the run, yet
+// still tagged with the gameweek the run is closing. The marker then exists,
+// so no later tick ever looks at that gameweek again, and the claim sat
+// pending forever - never resolved, never rejected, and blocking the
+// commissioner's own waiver-settings route, which refuses to change anything
+// while any claim is pending. Rolling every still-pending claim for the
+// settled gameweek onto the next one, inside the same transaction, means such
+// a claim is deferred rather than orphaned. It is written last so it can only
+// ever catch claims this run did not itself resolve (the earlier statements
+// have already moved those out of 'pending').
 async function runLeagueWaiverRun(env, leagueId, settledGameweek, newCurrentGameweek) {
   // Cheap read-only pre-check, NOT the correctness guard: avoids redoing all
   // the work below on every subsequent cron tick once a gameweek's run has
@@ -2987,6 +3135,38 @@ async function runLeagueWaiverRun(env, leagueId, settledGameweek, newCurrentGame
     .first();
   if (already) return;
 
+  // Advisory lease on top of that pre-check: the cron fires every minute and a
+  // slow run is still in flight when the next tick arrives, so without this
+  // both ticks would refetch everything and build a full batch just for one to
+  // be rejected. Losing the race is a no-op, not an error, and the lease can
+  // only ever cost duplicated work if it expires early (see the schema comment
+  // on fantasy_waiver_locks for why correctness never rests on it).
+  const holder = await acquireWaiverLock(env, leagueId, settledGameweek);
+  if (!holder) return;
+  let committed = false;
+  try {
+    committed = await executeLeagueWaiverRun(env, leagueId, settledGameweek, newCurrentGameweek, holder);
+  } finally {
+    // The committing batch releases the lease itself, atomically with the run.
+    // This only covers the paths that never got that far (an exception, or a
+    // batch that rolled back), and is guarded on `holder` so a tick can never
+    // release a lease that has since been broken and retaken by another.
+    if (!committed) {
+      try {
+        await env.DB.prepare(`DELETE FROM fantasy_waiver_locks WHERE league_id = ?1 AND holder = ?2`)
+          .bind(leagueId, holder)
+          .run();
+      } catch {
+        // the lease expiry is the backstop; a failed release just delays the
+        // next attempt by at most WAIVER_LOCK_LEASE_MS
+      }
+    }
+  }
+}
+
+// Returns true only if the run's batch actually committed, which is what tells
+// the caller whether the lease still needs releasing.
+async function executeLeagueWaiverRun(env, leagueId, settledGameweek, newCurrentGameweek, lockHolder) {
   const settings = await waiverSettings(env, leagueId);
   await ensureLeagueWaiverState(env, leagueId, settings.faabBudget);
 
@@ -3171,17 +3351,36 @@ async function runLeagueWaiverRun(env, leagueId, settledGameweek, newCurrentGame
     );
   }
 
+  // Last two statements, and both have to be last. The roll-forward catches
+  // any claim that landed between this function's SELECT and this batch (see
+  // the header comment): by now every claim the run DID resolve has already
+  // been moved out of 'pending' by the statements above, so this can only
+  // touch ones the run never saw, and it defers them to the next run instead
+  // of leaving them orphaned. The lease release then rides the same
+  // transaction as the marker, so the lock is given up exactly when the run
+  // becomes visible, never before.
+  writes.push(
+    env.DB.prepare(
+      `UPDATE fantasy_waivers SET gameweek = ?3 WHERE league_id = ?1 AND gameweek = ?2 AND status = 'pending'`,
+    ).bind(leagueId, settledGameweek, newCurrentGameweek),
+  );
+  writes.push(
+    env.DB.prepare(`DELETE FROM fantasy_waiver_locks WHERE league_id = ?1 AND holder = ?2`).bind(leagueId, lockHolder),
+  );
+
   try {
     // One batch, not chunked: chunking would split this across multiple
     // transactions and reopen exactly the bug this function exists to
     // close. A league's claim volume (MAX_LEAGUE_SIZE managers, a handful
     // of claims each) is nowhere near D1's practical batch limits.
     await env.DB.batch(writes);
+    return true;
   } catch {
     // Marker conflict (another tick already committed this run) or a
     // genuine D1 error: either way nothing in this batch was committed, so
     // the run is left exactly as unprocessed as before and the next tick
     // retries it from scratch.
+    return false;
   }
 }
 
@@ -3527,8 +3726,8 @@ async function generateLeagueRecap(env, league, gameweek) {
 // manager who inherited last week's XI is judged on the XI that actually
 // scored, not on an empty row.
 async function leagueGameweekAwards(env, leagueId, gameweek, managers, results, scores) {
-  const [playerScoreRows, playerRows] = await Promise.all([
-    env.DB.prepare(`SELECT player_id, points FROM fantasy_player_scores WHERE gameweek = ?1`).bind(gameweek).all(),
+  const [playerPoints, playerRows] = await Promise.all([
+    fantasyPlayerPointsForGameweek(env, gameweek),
     env.DB.prepare(
       `SELECT p.id, p.name, p.team FROM fantasy_players p
        JOIN fantasy_rosters r ON r.player_id = p.id AND r.league_id = ?1`,
@@ -3536,7 +3735,6 @@ async function leagueGameweekAwards(env, leagueId, gameweek, managers, results, 
       .bind(leagueId)
       .all(),
   ]);
-  const playerPoints = new Map((playerScoreRows.results ?? []).map((row) => [row.player_id, row.points]));
   const players = new Map((playerRows.results ?? []).map((row) => [row.id, { name: row.name, team: row.team }]));
 
   const lineups = [];

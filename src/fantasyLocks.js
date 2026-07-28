@@ -13,27 +13,37 @@
 //
 // Scope, deliberately narrow: only the instant free-agency path needs this
 // (see worker.js's handleFantasyFreeAgentAdd and CLAUDE.md). Waiver claims
-// are submitted mid-gameweek but RESOLVE at the gameweek boundary
-// (runScheduledWaiverRuns), by which point every match in the settled
-// gameweek is already terminal by construction (currentFantasyGameweek is
-// the smallest matchday with an unsettled match, so the gameweek being
-// resolved, currentGameweek - 1, has none left). Applying this lock to claim
+// are submitted mid-gameweek but RESOLVE after the gameweek's settlement
+// buffer (runScheduledWaiverRuns), by which point every match in the settled
+// gameweek is already terminal by construction. Applying this lock to claim
 // resolution would therefore reject every processed claim, not just late
-// ones, so it is intentionally only wired into the instant-add route.
+// ones, so it is intentionally only wired into the instant-add route; what
+// protects a late claim instead is the quiet period in fantasyWaivers.js,
+// which defers it to the next run rather than rejecting it.
 
+import { gameweekOf, toEpochMs } from "./fantasyCalendar.js";
 import { isFinished, isLive } from "./format.js";
 
 // One club's lock state for one gameweek. `team` is a normalized team name
 // (see normalizeTeamName/domain.js, the same join key matches and players
-// already share); `matches` is the mapped match list (mapApiFootball.js);
-// `gameweek` is the matchday in question; `now` is injected (anything `new
-// Date()` accepts, including a Date or epoch ms) so this stays pure and
-// deterministic - it never reads the clock itself.
+// already share); `matches` is the mapped match list (mapApiFootball.js),
+// ideally already run through assignGameweeks so a replayed fixture is judged
+// in the window it was actually played in; `gameweek` is the window in
+// question; `now` is injected (anything `new Date()` accepts, including a Date
+// or epoch ms) so this stays pure and deterministic - it never reads the clock
+// itself.
+//
+// A club can have more than one fixture in a window (a double gameweek: a
+// postponed match replayed inside a later window). The club is locked once ANY
+// of them has kicked off, because from that moment some of the gameweek's
+// points are already on the board and an add or drop would be retroactive. The
+// returned `kickoff` is the earliest of the club's fixtures in the window, so
+// the UI counts down to the first one rather than the last.
 //
 // Returns { locked, kickoff, reason }:
-//   - No fixture for `team` in `gameweek` (a blank gameweek: the club has no
-//     match that matchday, e.g. a postponed-and-not-yet-rescheduled slot)
-//     is NOT locked - there is nothing to have banked or lost points from.
+//   - No fixture for `team` in `gameweek` (a blank gameweek: the club plays no
+//     match inside this window, e.g. a postponed fixture that has moved out of
+//     it) is NOT locked - there is nothing to have banked or lost points from.
 //   - A live or finished fixture (isLive/isFinished, src/format.js's own
 //     status vocabulary, same as gameweekStatus in fantasyGameweek.js) is
 //     always locked, regardless of the clock: this is the "actually kicked
@@ -48,30 +58,43 @@ import { isFinished, isLive } from "./format.js";
 //   - Otherwise (a plain pre-match status: TIMED/SCHEDULED), locked once
 //     `now` is at or past the fixture's utcDate.
 export function playerLockState({ team, matches, gameweek, now }) {
-  const fixture = (matches ?? []).find(
-    (match) => match.matchday === gameweek && (match.homeTeam === team || match.awayTeam === team),
+  const fixtures = (matches ?? []).filter(
+    (match) => gameweekOf(match) === gameweek && (match.homeTeam === team || match.awayTeam === team),
   );
-  if (!fixture) return { locked: false, kickoff: null, reason: "no fixture this gameweek" };
+  if (!fixtures.length) return { locked: false, kickoff: null, reason: "no fixture this gameweek" };
 
+  const states = fixtures.map((fixture) => fixtureLockState(fixture, now));
+  const locked = states.find((state) => state.locked);
+  const kickoff = earliestKickoff(fixtures);
+  if (locked) return { locked: true, kickoff, reason: locked.reason };
+  return { locked: false, kickoff, reason: states[0].reason };
+}
+
+function fixtureLockState(fixture, now) {
   const kickoff = fixture.utcDate ?? null;
-
-  if (isLive(fixture.status)) return { locked: true, kickoff, reason: "live" };
-  if (isFinished(fixture.status)) return { locked: true, kickoff, reason: "finished" };
+  if (isLive(fixture.status)) return { locked: true, reason: "live" };
+  if (isFinished(fixture.status)) return { locked: true, reason: "finished" };
   if (fixture.status === "POSTPONED" || fixture.status === "CANCELLED") {
-    return { locked: false, kickoff, reason: "postponed or cancelled" };
+    return { locked: false, reason: "postponed or cancelled" };
   }
-
   const nowMs = toEpochMs(now);
   const kickoffMs = toEpochMs(kickoff);
   const started = Number.isFinite(nowMs) && Number.isFinite(kickoffMs) && kickoffMs <= nowMs;
-  return started ? { locked: true, kickoff, reason: "kicked off" } : { locked: false, kickoff, reason: "not kicked off" };
+  return started ? { locked: true, reason: "kicked off" } : { locked: false, reason: "not kicked off" };
 }
 
-function toEpochMs(value) {
-  if (value == null) return NaN;
-  if (value instanceof Date) return value.getTime();
-  if (typeof value === "number") return value;
-  return new Date(value).getTime();
+function earliestKickoff(fixtures) {
+  let earliest = null;
+  let earliestMs = Infinity;
+  for (const fixture of fixtures) {
+    const ms = toEpochMs(fixture.utcDate);
+    if (!Number.isFinite(ms)) continue;
+    if (ms < earliestMs) {
+      earliestMs = ms;
+      earliest = fixture.utcDate;
+    }
+  }
+  return earliest ?? fixtures[0]?.utcDate ?? null;
 }
 
 // Maps a player list to the Set of ids whose club has kicked off in

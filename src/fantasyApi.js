@@ -166,10 +166,15 @@ export async function loadWaivers(leagueId) {
 // Queues a claim against an ON_WAIVERS player: { addPlayerId, dropPlayerId,
 // bid?, priority? }. bid only matters in faab mode; priority is the caller's
 // own try-first ordering among their own pending claims (defaults server-side
-// to "tried last" when omitted). Returns { claimId, gameweek, status:
-// "pending" }, or throws with error.status 400 and a plain-English
-// error.message on a validation failure (not actually on waivers, position
-// mismatch, not enough budget, etc - see src/fantasyWaivers.js).
+// to "tried last" when omitted). Returns { claimId, gameweek, deferred,
+// runsAfter, status: "pending" }: `gameweek` names the run that will resolve
+// this claim, and `deferred` is true when the quiet period before the current
+// gameweek's run pushed it onto the next one instead (never a rejection, and
+// never ambiguous - see WAIVER_QUIET_PERIOD_MS in src/fantasyWaivers.js).
+// Throws with error.status 400 and a plain-English error.message on a
+// validation failure (not actually on waivers, position mismatch, not enough
+// budget, etc - see src/fantasyWaivers.js), or 409 in the vanishingly rare
+// case where a run committed underneath the request twice over.
 export async function submitWaiverClaim(leagueId, body) {
   return api(`/fantasy/league/${leagueId}/waivers/claim`, {
     method: "POST",

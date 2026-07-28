@@ -196,3 +196,49 @@ test("lineupChangedPlayerIds handles a first-ever lineup with no previous captai
 test("lineupChangedPlayerIds tolerates being called with nothing at all", () => {
   assert.equal(lineupChangedPlayerIds().size, 0);
 });
+
+// -- double gameweeks ----------------------------------------------------------
+
+test("playerLockState locks a club as soon as EITHER of its two fixtures in a window has started", () => {
+  // A double gameweek: a postponed fixture replayed inside a later window, so
+  // the club plays twice. Points from the first are already on the board, so
+  // an add or drop is retroactive even though the second has not kicked off.
+  const matches = [
+    { gameweek: 9, matchday: 3, status: "FINISHED", utcDate: new Date(NOW - 3 * 60 * 60 * 1000).toISOString(), homeTeam: "Man City", awayTeam: "Arsenal" },
+    { gameweek: 9, matchday: 9, status: "TIMED", utcDate: new Date(NOW + 3 * 60 * 60 * 1000).toISOString(), homeTeam: "Everton", awayTeam: "Man City" },
+  ];
+  const result = playerLockState({ team: "Man City", matches, gameweek: 9, now: NOW });
+  assert.equal(result.locked, true);
+  assert.equal(result.reason, "finished");
+});
+
+test("playerLockState reports the earliest of a club's two fixtures as the kickoff to count down to", () => {
+  const early = new Date(NOW + 2 * 60 * 60 * 1000).toISOString();
+  const late = new Date(NOW + 50 * 60 * 60 * 1000).toISOString();
+  const matches = [
+    { gameweek: 9, status: "TIMED", utcDate: late, homeTeam: "Man City", awayTeam: "Arsenal" },
+    { gameweek: 9, status: "TIMED", utcDate: early, homeTeam: "Everton", awayTeam: "Man City" },
+  ];
+  const result = playerLockState({ team: "Man City", matches, gameweek: 9, now: NOW });
+  assert.equal(result.locked, false);
+  assert.equal(result.kickoff, early);
+});
+
+test("playerLockState follows the assigned gameweek, not the provider matchday", () => {
+  // The postponed-and-replayed fixture still carries matchday 3, but it was
+  // played inside window 9 and that is the week its points belong to.
+  const matches = [
+    { gameweek: 9, matchday: 3, status: "FINISHED", utcDate: new Date(NOW - 60 * 60 * 1000).toISOString(), homeTeam: "Man City", awayTeam: "Arsenal" },
+  ];
+  assert.equal(playerLockState({ team: "Man City", matches, gameweek: 9, now: NOW }).locked, true);
+  assert.equal(playerLockState({ team: "Man City", matches, gameweek: 3, now: NOW }).locked, false);
+});
+
+test("a blank gameweek is still never locked", () => {
+  const matches = [
+    { gameweek: 9, status: "FINISHED", utcDate: new Date(NOW - 60 * 60 * 1000).toISOString(), homeTeam: "Everton", awayTeam: "Arsenal" },
+  ];
+  const result = playerLockState({ team: "Man City", matches, gameweek: 9, now: NOW });
+  assert.equal(result.locked, false);
+  assert.equal(result.reason, "no fixture this gameweek");
+});
