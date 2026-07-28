@@ -56,6 +56,22 @@ function nameForUser(userId, members) {
   return members?.find((member) => member.userId === userId)?.name ?? "Someone";
 }
 
+// A bot manager must be visibly a bot on every surface it appears on, which is
+// both an honesty requirement and the product one: the point of filling seats
+// is a credible practice league, not a league that looks busier than it is.
+// The stored display name already begins with "Bot" (see BOT_SEAT_NAMES in
+// src/fantasyBots.js) so the plain-string surfaces are honest on their own;
+// this chip is what the structured ones add on top.
+const BOT_CHIP = `<span class="chip fantasy-chip--bot" title="A bot manager filling an empty seat: it autopicks and always fields a legal XI">BOT</span>`;
+
+function botChip(isBot) {
+  return isBot ? ` ${BOT_CHIP}` : "";
+}
+
+function botChipForUser(userId, members) {
+  return botChip(Boolean(members?.find((member) => member.userId === userId)?.isBot));
+}
+
 // Small four-point sparkle, inline SVG (no external asset) for the suggested-pick
 // eyebrow. currentColor so it always matches the purple eyebrow text around it.
 const SPARKLE_ICON = `<svg class="fantasy-sparkle" viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M8 0c.4 2.9 1.1 4.6 2.2 5.8C11.4 6.9 13.1 7.6 16 8c-2.9.4-4.6 1.1-5.8 2.2C9.1 11.4 8.4 13.1 8 16c-.4-2.9-1.1-4.6-2.2-5.8C4.6 9.1 2.9 8.4 0 8c2.9-.4 4.6-1.1 5.8-2.2C7 4.6 7.6 2.9 8 0z"/></svg>`;
@@ -193,7 +209,7 @@ function renderLeagueCard(league) {
         <strong>${esc(league.name)}</strong>
         ${leagueStatusChip(league.draftStatus)}
       </div>
-      <p class="note">${league.memberCount}/${MAX_LEAGUE_SIZE} manager${league.memberCount === 1 ? "" : "s"}${league.isCommissioner ? " · You're commissioner" : ""}</p>
+      <p class="note">${league.memberCount}/${MAX_LEAGUE_SIZE} manager${league.memberCount === 1 ? "" : "s"}${league.botCount ? ` (${league.botCount} bot${league.botCount === 1 ? "" : "s"})` : ""}${league.isCommissioner ? " · You're commissioner" : ""}</p>
     </button>`;
 }
 
@@ -252,6 +268,14 @@ function renderFantasySubtabs(activeSubTab, waiversEnabled) {
 // complete, my team) so switching sub-tabs never reflows the page around it.
 export function renderFantasyLeagueHeader(league, members, activeSubTab) {
   const count = (members ?? []).length;
+  // Derived from members rather than taking a seat summary parameter, since
+  // every caller already passes the member list and a second source for the
+  // same number would be one more place to forget. A bare "5 managers" here
+  // would imply five people in a league where three of them are bots.
+  const bots = (members ?? []).filter((member) => member.isBot).length;
+  const managerChip = bots
+    ? `${count - bots} manager${count - bots === 1 ? "" : "s"} · ${bots} bot${bots === 1 ? "" : "s"}`
+    : `${count} manager${count === 1 ? "" : "s"}`;
   return `
     <div class="fantasy-panel-head">
       <button class="seg" type="button" data-fantasy-back>← Leagues</button>
@@ -260,7 +284,7 @@ export function renderFantasyLeagueHeader(league, members, activeSubTab) {
       <p class="fantasy-eyebrow">${esc(league.name)} · H2H</p>
       <h1 class="hero__title">${esc(FANTASY_SUBTAB_LABELS[activeSubTab] ?? "Draft room")}</h1>
       <div class="hero__meta">
-        <span class="chip">${count} manager${count === 1 ? "" : "s"}</span>
+        <span class="chip">${esc(managerChip)}</span>
         <span class="chip">Snake draft</span>
       </div>
     </div>
@@ -329,7 +353,7 @@ export function renderFantasyMatchupPanel(matchup, { error = "" } = {}) {
         </div>
         <span class="fantasy-matchup__vs">vs</span>
         <div class="fantasy-matchup__side fantasy-matchup__side--opponent ${leader === "opponent" ? "is-ahead" : ""}">
-          <p class="fantasy-matchup__name">${esc(opponent.name)}</p>
+          <p class="fantasy-matchup__name">${esc(opponent.name)}${botChip(opponent.isBot)}</p>
           <p class="fantasy-matchup__score">${started ? esc(opponent.score) : `<span class="fantasy-stat--empty">•</span>`}</p>
         </div>
       </div>
@@ -372,7 +396,7 @@ export function renderFantasyStandingsPanel(standings, { error = "", myUserId } 
       const isMe = myUserId != null && row.userId === myUserId;
       return `<div class="fantasy-standings-row ${isMe ? "is-me" : ""}">
           <span class="fantasy-standings-row__rank">${index + 1}</span>
-          <span class="fantasy-standings-row__name">${esc(row.name)}${isMe ? ` <span class="note--dim">(you)</span>` : ""}</span>
+          <span class="fantasy-standings-row__name">${esc(row.name)}${botChip(row.isBot)}${isMe ? ` <span class="note--dim">(you)</span>` : ""}</span>
           <span>${esc(row.played)}</span>
           <span>${esc(row.wins)}</span>
           <span>${esc(row.draws)}</span>
@@ -434,10 +458,69 @@ function renderScoutingSection(playerPool, filter, queuedIds, leagueSize) {
     ${renderFantasyPlayerPool(playerPool.players, filter, { isMyTurn: false, myRoster: [], draftedIds: new Set(), queuedIds, leagueSize }, playerPool.priorSeasonStats)}`;
 }
 
+// Bot seats: the commissioner's answer to "we only ever found five people".
+// Deliberately states in plain words what a bot does and does not do before
+// asking anyone to add one, and never appears once the draft has started (a
+// seat cannot be filled after the snake order is set).
+function renderBotFillCard(league, members, seats, { botBusy = false, botError = "" } = {}) {
+  if (!league.isCommissioner) {
+    return seats.bots
+      ? `<section class="card fantasy-bots">
+          <h3 class="card__title">Bot managers</h3>
+          <p class="note">${seats.bots} of the ${seats.total} seats ${seats.bots === 1 ? "is" : "are"} filled by a bot manager. Bots autopick their squad and always field a legal XI. They are labelled everywhere they appear.</p>
+        </section>`
+      : "";
+  }
+
+  const options = Array.from({ length: Math.min(seats.open, MAX_LEAGUE_SIZE) }, (_, i) => i + 1)
+    .map((n) => `<option value="${n}">${n} bot${n === 1 ? "" : "s"}</option>`)
+    .join("");
+
+  const removable = seats.bots
+    ? `<div class="fantasy-bots__list">${(members ?? [])
+        .filter((member) => member.isBot)
+        .map(
+          (bot) => `<div class="fantasy-bots__row">
+            <span>${esc(bot.name)}${BOT_CHIP}</span>
+            <button class="seg" type="button" data-fantasy-remove-bot="${bot.userId}" ${botBusy ? "disabled" : ""}>Remove</button>
+          </div>`,
+        )
+        .join("")}</div>`
+    : "";
+
+  return `
+    <section class="card fantasy-bots">
+      <h3 class="card__title">Fill empty seats with bots</h3>
+      <p class="note">A draft league needs a full room. Rather than wait for people who may never join, fill the spare seats with bot managers and draft on schedule. A bot autopicks its squad when its clock runs out and always fields a legal XI, and it is labelled as a bot everywhere it appears, so nobody is ever misled into thinking they are playing a person.</p>
+      ${
+        seats.open
+          ? `<div class="fantasy-bots__form">
+              <select class="fantasy-input fantasy-bots__select" data-fantasy-bot-count ${botBusy ? "disabled" : ""}>${options}</select>
+              <button class="btn btn--primary" type="button" data-fantasy-add-bots ${botBusy ? "disabled" : ""}>${botBusy ? "Adding…" : "Add bots"}</button>
+            </div>
+            <p class="note--dim">${seats.open} seat${seats.open === 1 ? "" : "s"} still open.</p>`
+          : `<p class="note--dim">Every seat is taken.</p>`
+      }
+      ${removable}
+      ${botError ? `<p class="note fantasy-form__error">${esc(botError)}</p>` : ""}
+    </section>`;
+}
+
 export function renderFantasyLobby(
   league,
   members,
-  { playerPool, filter, schedule, scheduleBusy = false, scheduleError = "", queuedIds } = {},
+  {
+    playerPool,
+    filter,
+    schedule,
+    scheduleBusy = false,
+    scheduleError = "",
+    queuedIds,
+    seats,
+    inviteUrl = "",
+    botBusy = false,
+    botError = "",
+  } = {},
 ) {
   const sorted = [...members].sort(
     (a, b) => (a.draftPosition ?? 999) - (b.draftPosition ?? 999) || a.name.localeCompare(b.name),
@@ -446,7 +529,7 @@ export function renderFantasyLobby(
     .map(
       (member, index) => `<div class="fantasy-member-row">
         <span class="fantasy-member-row__pos">${member.draftPosition ?? index + 1}</span>
-        <span class="fantasy-member-row__name">${esc(member.name)}${member.userId === league.commissionerUserId ? ` <span class="note--dim">(commissioner)</span>` : ""}</span>
+        <span class="fantasy-member-row__name">${esc(member.name)}${botChip(member.isBot)}${member.userId === league.commissionerUserId ? ` <span class="note--dim">(commissioner)</span>` : ""}</span>
       </div>`,
     )
     .join("");
@@ -454,25 +537,118 @@ export function renderFantasyLobby(
   const canStart = members.length >= 2;
   const startControl = league.isCommissioner
     ? `<button class="btn btn--primary" type="button" data-fantasy-start-draft ${canStart ? "" : "disabled"}>Start draft</button>
-       ${canStart ? "" : `<p class="note">Need at least 2 managers to start.</p>`}`
+       ${canStart ? "" : `<p class="note">Need at least 2 managers to start. Fill a seat with a bot if nobody else is coming.</p>`}`
     : `<p class="note">Waiting for the commissioner to start the draft.</p>`;
+
+  // Never a bare total: a "6 managers" heading that quietly counts four bots
+  // is exactly the implied-real-person number this feature must not produce.
+  const seatLine = seats?.bots
+    ? `${seats.humans} manager${seats.humans === 1 ? "" : "s"} · ${seats.bots} bot${seats.bots === 1 ? "" : "s"} · ${members.length}/${MAX_LEAGUE_SIZE} seats`
+    : `${members.length}/${MAX_LEAGUE_SIZE}`;
 
   return `
     <section class="card">
-      <h3 class="card__title">Managers · ${members.length}/${MAX_LEAGUE_SIZE}</h3>
+      <h3 class="card__title">Managers · ${esc(seatLine)}</h3>
       <div class="fantasy-members">${rows}</div>
     </section>
-    <section class="card fantasy-invite">
-      <h3 class="card__title">Invite code</h3>
-      <div class="fantasy-invite__row">
-        <code class="fantasy-invite__code">${esc(league.inviteCode)}</code>
-        <button class="seg" type="button" data-fantasy-copy-invite="${esc(league.inviteCode)}">Copy</button>
-      </div>
-      <p class="note">Share this code so friends can join before the draft starts.</p>
-    </section>
+    ${renderInviteCard(league, inviteUrl)}
+    ${renderBotFillCard(league, sorted, seats ?? { total: members.length, humans: members.length, bots: 0, open: Math.max(0, MAX_LEAGUE_SIZE - members.length) }, { botBusy, botError })}
     ${renderFantasyScheduleCard(league, schedule, { scheduleBusy, scheduleError })}
     <section class="card fantasy-start">${startControl}</section>
     ${renderScoutingSection(playerPool, filter ?? { position: "All", club: "All", search: "", hideTaken: true }, queuedIds, members.length)}`;
+}
+
+// A LINK first, the raw code second. A code alone asks the recipient to find
+// the app, find the Fantasy tab, sign in and then paste something; the link
+// lands them on a page that shows the league and asks for the sign-in last
+// (see renderFantasyInvitePreview). The code stays because it still works and
+// because a link is awkward to read out loud.
+function renderInviteCard(league, inviteUrl) {
+  return `
+    <section class="card fantasy-invite">
+      <h3 class="card__title">Invite your mates</h3>
+      ${
+        inviteUrl
+          ? `<div class="fantasy-invite__row">
+              <code class="fantasy-invite__link">${esc(inviteUrl)}</code>
+              <button class="btn btn--primary" type="button" data-fantasy-copy-invite="${esc(inviteUrl)}">Copy link</button>
+            </div>
+            <p class="note">Anyone opening this link sees the league before being asked to sign in.</p>`
+          : ""
+      }
+      <div class="fantasy-invite__row fantasy-invite__row--code">
+        <code class="fantasy-invite__code">${esc(league.inviteCode)}</code>
+        <button class="seg" type="button" data-fantasy-copy-invite="${esc(league.inviteCode)}">Copy code</button>
+      </div>
+      <p class="note--dim">Or share the code on its own. Either works until the draft starts.</p>
+    </section>`;
+}
+
+// -- Public invite preview (#join/<code>, signed out) ----------------------------
+//
+// The whole point of this screen is that it renders with NO session: what the
+// league is, who is already in it and how many seats are left, with the
+// sign-in as the last step rather than the first. `preview` is the raw GET
+// /fantasy/invite/:code response, or null while the first fetch is in flight.
+export function renderFantasyInvitePreview(preview, { loading, error, signedIn, joining, joinError } = {}) {
+  if (loading || (!preview && !error)) {
+    return `<div class="fantasy fantasy-invitepage"><p class="note">Loading invite…</p></div>`;
+  }
+  if (error) {
+    return `
+      <div class="fantasy fantasy-invitepage">
+        <div class="pending">
+          <p class="hero__eyebrow">Invite</p>
+          <h1 class="hero__title">This invite doesn't work</h1>
+          <p class="note">${esc(error)}</p>
+          <div class="hero__meta"><button class="seg" type="button" data-section-nav="fantasy">Go to Fantasy</button></div>
+        </div>
+      </div>`;
+  }
+
+  const { league, managers } = preview;
+  const seats = league.seats;
+  const roster = (managers ?? [])
+    .map(
+      (manager) => `<div class="fantasy-member-row">
+        <span class="fantasy-member-row__name">${esc(manager.name)}${botChip(manager.isBot)}${manager.isCommissioner ? ` <span class="note--dim">(commissioner)</span>` : ""}</span>
+      </div>`,
+    )
+    .join("");
+
+  const action = !league.joinable
+    ? `<p class="note">${league.draftStatus === "pending" ? "This league is full." : "This league has already started its draft, so it can't take new managers."}</p>`
+    : signedIn
+      ? `<button class="btn btn--primary" type="button" data-fantasy-invite-join ${joining ? "disabled" : ""}>${joining ? "Joining…" : "Join this league"}</button>`
+      : `<div class="fantasy-invitepage__signin" id="gisButton"></div>
+         <p class="note--dim">Sign in with Google and you'll be dropped straight into the league. We only use Google to sign you in. No posts, no contacts.</p>`;
+
+  return `
+    <div class="fantasy fantasy-invitepage">
+      <div class="hero__head">
+        <div class="hero__lead">
+          <p class="hero__eyebrow">You've been invited</p>
+          <h1 class="hero__title">${esc(league.name)}</h1>
+        </div>
+      </div>
+      <div class="hero__meta">
+        <span class="chip">Head-to-head</span>
+        <span class="chip">Snake draft</span>
+        <span class="chip">15-player squads</span>
+      </div>
+      <section class="card fantasy-invitepage__what">
+        <h3 class="card__title">What you're joining</h3>
+        <p class="note">A head-to-head fantasy Premier League draft: every manager drafts their own 15-player squad in a live snake draft, nobody can own the same player twice, and you play one manager head to head each gameweek across the season.</p>
+      </section>
+      <section class="card">
+        <h3 class="card__title">Managers · ${seats.humans}${seats.bots ? ` + ${seats.bots} bot${seats.bots === 1 ? "" : "s"}` : ""} · ${seats.open} seat${seats.open === 1 ? "" : "s"} open</h3>
+        <div class="fantasy-members">${roster || `<p class="note">Nobody has joined yet. You'd be first.</p>`}</div>
+      </section>
+      <section class="card fantasy-invitepage__cta">
+        ${action}
+        ${joinError ? `<p class="note fantasy-form__error">${esc(joinError)}</p>` : ""}
+      </section>
+    </div>`;
 }
 
 // Draft scheduling card: a commissioner can pick/reschedule/clear a start
@@ -550,7 +726,7 @@ export function renderDraftStatusCard({ members, draft, myUserId, season, entrie
     .map((entry) => {
       const isMe = entry.userId === myUserId;
       return `<div class="fantasy-orderchip ${entry.isOnClock ? "is-onclock" : ""}">
-          ${esc(nameForUser(entry.userId, members))}${isMe ? ` <span class="fantasy-orderchip__you">(you)</span>` : ""}
+          ${esc(nameForUser(entry.userId, members))}${botChipForUser(entry.userId, members)}${isMe ? ` <span class="fantasy-orderchip__you">(you)</span>` : ""}
         </div>`;
     })
     .join("");
@@ -578,9 +754,14 @@ function renderOnClockCard({ members, draft, myUserId, entries, isMyTurn }) {
   // scheduleDemoTurn in app.js): a real draft room's clock is always a
   // number, since worker/draftRoom.js always runs a 60s alarm.
   const clockLabel = remainingMs == null ? "No clock" : formatCountdown(remainingMs);
+  const onClockIsBot = onClockUserId != null && Boolean(members?.find((m) => m.userId === onClockUserId)?.isBot);
   let context = "";
   if (isMyTurn) {
     context = "You're on the clock.";
+  } else if (onClockIsBot) {
+    // Said out loud rather than left to the chip: somebody watching a clock
+    // tick down should know nobody is deliberating, the app is.
+    context = `${esc(nameForUser(onClockUserId, members))} is a bot manager. It autopicks in a few seconds.`;
   } else if (onClockUserId != null) {
     const onClockName = esc(nameForUser(onClockUserId, members));
     const onClockIdx = entries.findIndex((entry) => entry.isOnClock);
@@ -597,7 +778,7 @@ function renderOnClockCard({ members, draft, myUserId, entries, isMyTurn }) {
     <section class="card fantasy-onclock ${isMyTurn ? "is-mine" : ""}">
       <p class="fantasy-eyebrow">On the clock</p>
       <div class="fantasy-onclock__row">
-        <h2 class="fantasy-onclock__name">${esc(name)}</h2>
+        <h2 class="fantasy-onclock__name">${esc(name)}${onClockIsBot ? botChip(true) : ""}</h2>
         <span class="fantasy-onclock__time" data-fantasy-clock>${esc(clockLabel)}</span>
       </div>
       <p class="fantasy-onclock__context">${context}</p>
@@ -651,7 +832,7 @@ function renderPickFeed(picks, members) {
         <span class="fantasy-feed__pick">${formatPickNumber(pick.round, pick.pickInRound)}</span>
         ${badgeFor(pick.player.team)}
         <span class="fantasy-feed__player"><strong>${esc(pick.player.name)}</strong><span class="note--dim">${esc(pick.player.position)} · ${esc(abbrFor(pick.player.team))}</span></span>
-        <span class="fantasy-feed__by">${esc(nameForUser(pick.userId, members))}${pick.viaQueue ? ` <span class="chip fantasy-chip--queue" title="Autopicked from this manager's own queue">Queue</span>` : ""}</span>
+        <span class="fantasy-feed__by">${esc(nameForUser(pick.userId, members))}${botChipForUser(pick.userId, members)}${pick.viaQueue ? ` <span class="chip fantasy-chip--queue" title="Autopicked from this manager's own queue">Queue</span>` : ""}</span>
       </div>`,
     )
     .join("")}</div>`;
@@ -1339,7 +1520,7 @@ export function renderFantasyComplete(members, picks) {
         )
         .join("");
       return `<section class="card fantasy-roster-card">
-          <h3 class="card__title">${esc(member.name)}</h3>
+          <h3 class="card__title">${esc(member.name)}${botChip(member.isBot)}</h3>
           <div class="fantasy-squad-rows">${rows || `<p class="note">No players.</p>`}</div>
         </section>`;
     })
@@ -1666,7 +1847,7 @@ function renderFantasyLastRun(lastRun, playersById, members) {
   const rows = (lastRun.results ?? [])
     .map(
       (result) => `<div class="fantasy-lastrun-row fantasy-lastrun-row--${esc(result.status)}">
-          <span>${esc(nameForUser(result.userId, members))}</span>
+          <span>${esc(nameForUser(result.userId, members))}${botChipForUser(result.userId, members)}</span>
           <span>${playerLabel(result.addPlayerId, playersById)} <span class="note--dim">for ${playerLabel(result.dropPlayerId, playersById)}</span></span>
           <span class="fantasy-lastrun-row__status">${esc(claimStatusLabel(result.status))}${result.reason ? ` · ${esc(result.reason)}` : ""}</span>
         </div>`,

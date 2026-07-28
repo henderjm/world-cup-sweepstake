@@ -44,6 +44,8 @@ export const CHAT_PAGE_SIZE = 80;
 export const CHAT_EVENTS = Object.freeze({
   LEAGUE_CREATED: "league_created",
   MEMBER_JOINED: "member_joined",
+  BOTS_ADDED: "bots_added",
+  BOT_REMOVED: "bot_removed",
   DRAFT_STARTED: "draft_started",
   DRAFT_PICK: "draft_pick",
   DRAFT_COMPLETED: "draft_completed",
@@ -110,6 +112,23 @@ export function describeChatEvent(entry) {
 
     case CHAT_EVENTS.MEMBER_JOINED:
       return { icon: "👋", text: `${actor} joined the league.` };
+
+    // Named in the feed rather than slipped in quietly: a manager scrolling
+    // back must be able to see exactly when the empty seats stopped being
+    // empty and who filled them, because a bot showing up unannounced in the
+    // draft order is the version of this feature that misleads people.
+    case CHAT_EVENTS.BOTS_ADDED: {
+      const names = Array.isArray(payload.bots) ? payload.bots.filter(Boolean) : [];
+      const count = payload.count ?? names.length;
+      const who = names.length ? ` (${names.join(", ")})` : "";
+      return {
+        icon: "🤖",
+        text: `${actor} filled ${count} empty seat${count === 1 ? "" : "s"} with bot managers${who}. Bots autopick and always field a legal XI.`,
+      };
+    }
+
+    case CHAT_EVENTS.BOT_REMOVED:
+      return { icon: "🤖", text: `${actor} removed ${payload.bot || "a bot manager"} from the league.` };
 
     case CHAT_EVENTS.DRAFT_STARTED:
       return {

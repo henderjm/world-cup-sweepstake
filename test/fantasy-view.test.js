@@ -6,6 +6,7 @@ import {
   renderFantasyComplete,
   renderFantasyDraftRoom,
   renderFantasyFreeAgentRows,
+  renderFantasyInvitePreview,
   renderFantasyLeagueHeader,
   renderFantasyLeagueList,
   renderFantasyLobby,
@@ -1441,4 +1442,176 @@ test("renderFantasyClaimFlow surfaces a submit error in the shared form-error st
   const html = renderFantasyClaimFlow(flow, { roster, mode: "faab" });
   assert.match(html, /fantasy-form__error/);
   assert.match(html, /Player is not a free agent/);
+});
+
+// -- Bot managers: labelled everywhere they appear -------------------------------
+//
+// The product requirement these enforce: a user must never be misled into
+// thinking they are playing a person. That is not one chip in one place, it is
+// every surface a manager's name reaches.
+
+const botMembers = [
+  { userId: 1, name: "Alice", draftPosition: 1, isBot: false },
+  { userId: 2, name: "Bot Alfie", draftPosition: 2, isBot: true },
+];
+
+test("the lobby labels a bot manager and never reports a bare manager total that counts one", () => {
+  const html = renderFantasyLobby(lobbyLeague(), botMembers, {
+    playerPool: null,
+    filter: { position: "All", search: "" },
+    seats: { total: 2, humans: 1, bots: 1, open: 8, max: 10 },
+  });
+  assert.match(html, /fantasy-chip--bot/);
+  // The heading has to split the count: "2 managers" would imply two people.
+  assert.match(html, /1 manager · 1 bot · 2\/10 seats/);
+});
+
+test("the lobby offers bot seats to the commissioner and explains what a bot does first", () => {
+  const html = renderFantasyLobby(lobbyLeague(), botMembers, {
+    playerPool: null,
+    filter: { position: "All", search: "" },
+    seats: { total: 2, humans: 1, bots: 1, open: 8, max: 10 },
+  });
+  assert.match(html, /data-fantasy-add-bots/);
+  assert.match(html, /data-fantasy-bot-count/);
+  assert.match(html, /autopicks its squad/);
+  // And a bot already seated can be taken back out again while pending.
+  assert.match(html, /data-fantasy-remove-bot="2"/);
+});
+
+test("a non-commissioner is told bots are in the league but is offered no control", () => {
+  const html = renderFantasyLobby(lobbyLeague({ isCommissioner: false }), botMembers, {
+    playerPool: null,
+    filter: { position: "All", search: "" },
+    seats: { total: 2, humans: 1, bots: 1, open: 8, max: 10 },
+  });
+  assert.doesNotMatch(html, /data-fantasy-add-bots/);
+  assert.doesNotMatch(html, /data-fantasy-remove-bot/);
+  assert.match(html, /filled by a bot manager/);
+});
+
+test("the invite card leads with a shareable link and keeps the raw code below it", () => {
+  const html = renderFantasyLobby(lobbyLeague(), botMembers, {
+    playerPool: null,
+    filter: { position: "All", search: "" },
+    inviteUrl: "https://kickoffdraft.com/#join/AB12CD34",
+  });
+  assert.match(html, /data-fantasy-copy-invite="https:\/\/kickoffdraft\.com\/#join\/AB12CD34"/);
+  assert.match(html, /Copy link/);
+  assert.match(html, /data-fantasy-copy-invite="AB12CD34"/);
+  assert.match(html, /sees the league before being asked to sign in/);
+});
+
+test("the standings table labels a bot row", () => {
+  const html = renderFantasyStandingsPanel(
+    {
+      throughGameweek: 3,
+      standings: [
+        { userId: 2, name: "Bot Alfie", isBot: true, played: 3, wins: 2, draws: 0, losses: 1, pointsFor: 150, pointsAgainst: 140, recordPoints: 6 },
+        { userId: 1, name: "Alice", isBot: false, played: 3, wins: 1, draws: 0, losses: 2, pointsFor: 140, pointsAgainst: 150, recordPoints: 3 },
+      ],
+    },
+    { myUserId: 1 },
+  );
+  assert.equal(html.match(/fantasy-chip--bot/g).length, 1);
+});
+
+test("the matchup card labels a bot opponent", () => {
+  const html = renderFantasyMatchupPanel({
+    gameweek: 4,
+    status: "live",
+    me: { userId: 1, name: "Alice", score: 42 },
+    opponent: { userId: 2, name: "Bot Alfie", isBot: true, score: 38 },
+  });
+  assert.match(html, /fantasy-chip--bot/);
+});
+
+test("the post-draft roster board labels a bot's squad card", () => {
+  const html = renderFantasyComplete(botMembers, []);
+  assert.equal(html.match(/fantasy-chip--bot/g).length, 1);
+});
+
+// -- The public invite preview ----------------------------------------------------
+
+function invitePreview(overrides = {}) {
+  return {
+    league: {
+      name: "Sunday League",
+      draftStatus: "pending",
+      joinable: true,
+      seats: { total: 3, humans: 2, bots: 1, open: 7, max: 10 },
+      ...overrides.league,
+    },
+    managers: overrides.managers ?? [
+      { name: "Alice", isBot: false, isCommissioner: true },
+      { name: "Bo", isBot: false, isCommissioner: false },
+      { name: "Bot Alfie", isBot: true, isCommissioner: false },
+    ],
+  };
+}
+
+test("the invite preview explains the league and mounts sign-in LAST, not first", () => {
+  const html = renderFantasyInvitePreview(invitePreview(), { signedIn: false });
+  assert.match(html, /Sunday League/);
+  assert.match(html, /What you're joining/);
+  assert.match(html, /Alice/);
+  // The sign-in slot must come AFTER the explanation, since the whole point is
+  // that nobody meets a sign-in wall before knowing what is behind it.
+  assert.ok(html.indexOf("What you're joining") < html.indexOf("gisButton"));
+  assert.doesNotMatch(html, /data-fantasy-invite-join/);
+});
+
+test("the invite preview counts bots separately and labels them", () => {
+  const html = renderFantasyInvitePreview(invitePreview(), { signedIn: false });
+  assert.match(html, /Managers · 2 \+ 1 bot · 7 seats open/);
+  assert.match(html, /fantasy-chip--bot/);
+});
+
+test("an already-signed-in visitor gets an explicit Join button, never an automatic join", () => {
+  const html = renderFantasyInvitePreview(invitePreview(), { signedIn: true });
+  assert.match(html, /data-fantasy-invite-join/);
+  assert.doesNotMatch(html, /gisButton/);
+});
+
+test("the invite preview refuses to offer a join for a league that cannot take one", () => {
+  const started = renderFantasyInvitePreview(
+    invitePreview({ league: { name: "Sunday League", draftStatus: "drafting", joinable: false, seats: { total: 10, humans: 10, bots: 0, open: 0, max: 10 } } }),
+    { signedIn: true },
+  );
+  assert.doesNotMatch(started, /data-fantasy-invite-join/);
+  assert.match(started, /already started its draft/);
+
+  const full = renderFantasyInvitePreview(
+    invitePreview({ league: { name: "Sunday League", draftStatus: "pending", joinable: false, seats: { total: 10, humans: 10, bots: 0, open: 0, max: 10 } } }),
+    { signedIn: true },
+  );
+  assert.match(full, /This league is full/);
+});
+
+test("the invite preview escapes a league name and a manager name containing HTML", () => {
+  const html = renderFantasyInvitePreview(
+    invitePreview({
+      league: { name: "<img src=x onerror=1>", draftStatus: "pending", joinable: true, seats: { total: 1, humans: 1, bots: 0, open: 9, max: 10 } },
+      managers: [{ name: "<script>alert(1)</script>", isBot: false, isCommissioner: true }],
+    }),
+    { signedIn: false },
+  );
+  assert.doesNotMatch(html, /<img src=x/);
+  assert.doesNotMatch(html, /<script>alert/);
+  assert.match(html, /&lt;script&gt;/);
+});
+
+test("a bad invite code renders an honest dead end rather than a spinner", () => {
+  const html = renderFantasyInvitePreview(null, { error: "That invite code doesn't match any league." });
+  assert.match(html, /This invite doesn't work/);
+  assert.match(html, /doesn&#39;t match any league/);
+});
+
+test("the league header chip never reports a bare manager total that counts bots", () => {
+  const withBots = renderFantasyLeagueHeader(lobbyLeague(), botMembers, "draftroom");
+  assert.match(withBots, /1 manager · 1 bot/);
+  assert.doesNotMatch(withBots, />2 managers</);
+  // A league with no bots keeps exactly the wording it always had.
+  const humansOnly = renderFantasyLeagueHeader(lobbyLeague(), [{ userId: 1, name: "Alice" }, { userId: 2, name: "Bo" }], "draftroom");
+  assert.match(humansOnly, /2 managers/);
 });
