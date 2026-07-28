@@ -83,14 +83,6 @@ export function resolvePickVia({ onClockIsBot = false, fromClock = false, fromQu
   return fromQueue ? PICK_VIA.QUEUE : PICK_VIA.AUTOPICK;
 }
 
-// Whether a pick reflects a HUMAN decision, of either kind. Bot seats answer
-// false because they are not a person's engagement either way, so a caller
-// measuring attendance must exclude them from the denominator rather than
-// count them as absent (see draftEngagement in src/fantasyDraftRecap.js).
-export function isHumanChoicePick(via) {
-  return via === PICK_VIA.MANUAL || via === PICK_VIA.QUEUE;
-}
-
 // D1 surfaces a UNIQUE constraint violation as a rejected promise whose message
 // names the failure; there is no distinct error class to catch. Pulled out as a
 // pure predicate so the Durable Object's lost-race handling (a D1-level backstop
