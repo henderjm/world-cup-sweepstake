@@ -181,6 +181,7 @@ const ROUTES = [
   ["GET", "/fantasy/league/1"],
   ["GET", "/fantasy/league/1/lineup"],
   ["GET", "/fantasy/league/1/draft/queue"],
+  ["GET", "/fantasy/league/1/draft/recap"],
   ["GET", "/fantasy/league/1/matchup"],
   ["GET", "/fantasy/league/1/standings"],
   ["GET", "/fantasy/league/1/waivers"],
@@ -189,6 +190,8 @@ const ROUTES = [
   ["GET", "/fantasy/invite/ABCDEF0123"],
   ["POST", "/fantasy/league/1/bots"],
   ["DELETE", "/fantasy/league/1/bots/2"],
+  ["POST", "/fantasy/league/1/autopilot/2"],
+  ["DELETE", "/fantasy/league/1/autopilot/2"],
   ["GET", "/analysis/12345"],
   ["GET", "/banter/12345"],
   ["GET", "/match/12345"],
@@ -350,6 +353,206 @@ test("the feed rejects a bad action and an emoji outside the allowlist", async (
     body: JSON.stringify({ action: "react", messageId: 5, emoji: "🦄" }),
   }).response;
   assert.equal(emoji.status, 400);
+});
+
+// -- Dead-team autopilot routes, actually executed ----------------------------
+//
+// Same anti-short-circuit discipline as the blocks around it. What is being
+// proved here is the authorization shape, because the failure mode this
+// feature could introduce is "any member can hand any other member's team to
+// the bots", and the looser one, "a manager cannot take their own team back".
+
+function autopilotDb(seen, { commissionerUserId = 1, draftStatus = "complete", targetIsBot = false, isMember = true } = {}) {
+  const make = (sql) => {
+    const normalised = sql.replace(/\s+/g, " ").trim();
+    let bound = [];
+    const statement = {
+      bind: (...args) => {
+        bound = args;
+        return statement;
+      },
+      first: async () => {
+        if (normalised.includes("FROM sessions s")) {
+          return { id: 1, email: "ada@example.test", name: "Ada", prefs: "{}" };
+        }
+        if (normalised.includes("FROM fantasy_leagues WHERE id")) {
+          return { commissioner_user_id: commissionerUserId, draft_status: draftStatus };
+        }
+        if (normalised.includes("FROM fantasy_league_members m JOIN users u")) {
+          return isMember
+            ? { user_id: bound[1], autopilot: 1, name: "Bo", email: "bo@example.test", is_bot: targetIsBot ? 1 : 0 }
+            : null;
+        }
+        if (normalised.startsWith("SELECT name, email FROM users")) return { name: "Bo", email: "bo@example.test" };
+        return null;
+      },
+      all: async () => ({ results: [] }),
+      run: async () => ({ success: true, meta: { changes: 1 } }),
+    };
+    return statement;
+  };
+  return {
+    prepare: (sql) => {
+      seen.push(sql.replace(/\s+/g, " ").trim());
+      return make(sql);
+    },
+    batch: async () => [],
+  };
+}
+
+function autopilotCall(method, path, dbOptions) {
+  const seen = [];
+  const response = worker.fetch(
+    new Request(`https://example.test${path}`, { method, headers: { Authorization: `Bearer ${SESSION_TOKEN}` } }),
+    { ...env, DB: autopilotDb(seen, dbOptions) },
+  );
+  return { response, seen };
+}
+
+test("the commissioner can put an abandoned team on autopilot", async () => {
+  const { response, seen } = autopilotCall("POST", "/fantasy/league/1/autopilot/2");
+  assert.equal((await response).status, 200);
+  assert.ok(
+    seen.some((sql) => sql.startsWith("UPDATE fantasy_league_members SET autopilot = 1")),
+    "the flag was never written, so this test proves nothing",
+  );
+  // Announced in the feed, never quiet: this is also how the absent manager
+  // finds out when they come back.
+  assert.ok(
+    seen.some((sql) => sql.startsWith("INSERT INTO fantasy_chat_messages")),
+    "a team started playing itself without telling the league",
+  );
+});
+
+test("an ordinary member cannot put somebody else's team on autopilot", async () => {
+  // The failure mode this feature could have introduced. The session is user 1;
+  // the commissioner is user 99.
+  const { response, seen } = autopilotCall("POST", "/fantasy/league/1/autopilot/2", { commissionerUserId: 99 });
+  assert.equal((await response).status, 403);
+  assert.equal(
+    seen.some((sql) => sql.startsWith("UPDATE fantasy_league_members SET autopilot")),
+    false,
+    "a non-commissioner still wrote the flag",
+  );
+});
+
+test("a manager can take their own team back off autopilot without the commissioner", async () => {
+  // Reversibility must not depend on the commissioner being reachable.
+  const { response, seen } = autopilotCall("DELETE", "/fantasy/league/1/autopilot/1", { commissionerUserId: 99 });
+  assert.equal((await response).status, 200);
+  assert.ok(
+    seen.some((sql) => sql.startsWith("UPDATE fantasy_league_members SET autopilot = 0")),
+    "the flag was never cleared",
+  );
+});
+
+test("nobody can take a third party's team off autopilot", async () => {
+  // Disabling is looser than enabling, but not unlimited: user 1 is neither
+  // the commissioner nor the owner of seat 2.
+  const { response } = autopilotCall("DELETE", "/fantasy/league/1/autopilot/2", { commissionerUserId: 99 });
+  assert.equal((await response).status, 403);
+});
+
+test("autopilot refuses a seat that is already a bot, and a league that has not drafted", async () => {
+  // Flagging a bot seat would be a no-op that reads in the feed as though a
+  // person had gone missing.
+  const bot = await autopilotCall("POST", "/fantasy/league/1/autopilot/2", { targetIsBot: true }).response;
+  assert.equal(bot.status, 400);
+
+  // Before the draft an empty seat is filled with a real bot member instead,
+  // which is a different mechanism with different consequences.
+  const pending = await autopilotCall("POST", "/fantasy/league/1/autopilot/2", { draftStatus: "pending" }).response;
+  assert.equal(pending.status, 400);
+
+  const stranger = await autopilotCall("POST", "/fantasy/league/1/autopilot/2", { isMember: false }).response;
+  assert.equal(stranger.status, 404);
+});
+
+// -- The post-draft recap route, actually executed ----------------------------
+//
+// Same anti-short-circuit discipline as the feed block above: the ROUTES entry
+// for this path stops at the 401, so on its own it proves only that the route
+// is dispatched. These carry a session and a stub that answers the two reads
+// the handler makes, so the membership gate and the feed lookup both run.
+
+function draftRecapDb(seen, { member = true, payload } = {}) {
+  const make = (sql) => {
+    const normalised = sql.replace(/\s+/g, " ").trim();
+    const statement = {
+      bind: () => statement,
+      first: async () => {
+        if (normalised.includes("FROM sessions s")) {
+          return { id: 1, email: "ada@example.test", name: "Ada", prefs: "{}" };
+        }
+        if (normalised.includes("FROM fantasy_league_members WHERE league_id")) {
+          return member ? { x: 1 } : null;
+        }
+        if (normalised.includes("FROM fantasy_chat_messages")) {
+          return payload === undefined ? null : { payload };
+        }
+        return null;
+      },
+      all: async () => ({ results: [] }),
+      run: async () => ({ success: true, meta: { changes: 1 } }),
+    };
+    return statement;
+  };
+  return {
+    prepare: (sql) => {
+      seen.push(sql.replace(/\s+/g, " ").trim());
+      return make(sql);
+    },
+    batch: async () => [],
+  };
+}
+
+function draftRecapCall(options) {
+  const seen = [];
+  const response = worker.fetch(
+    new Request("https://example.test/fantasy/league/1/draft/recap", {
+      headers: { Authorization: `Bearer ${SESSION_TOKEN}` },
+    }),
+    { ...env, DB: draftRecapDb(seen, options) },
+  );
+  return { response, seen };
+}
+
+test("the draft recap route reads the stored recap out of the league feed", async () => {
+  const recap = { version: 1, headline: "Bo ran the room", leagueSize: 2, teams: [{ userId: 1, grade: "A" }] };
+  const { response, seen } = draftRecapCall({ payload: JSON.stringify({ recap }) });
+  const resolved = await response;
+
+  assert.equal(resolved.status, 200);
+  // The anti-short-circuit assertion: the feed lookup has to have run, not
+  // just the session and membership checks.
+  assert.ok(
+    seen.some((sql) => sql.includes("FROM fantasy_chat_messages") && sql.includes("event = ?2")),
+    "the recap lookup never ran, so this test proves nothing",
+  );
+  const body = await resolved.json();
+  assert.equal(body.recap.headline, "Bo ran the room");
+  assert.equal(body.viewerUserId, 1);
+});
+
+test("the draft recap route refuses a non-member before reading anything", async () => {
+  const { response, seen } = draftRecapCall({ member: false, payload: JSON.stringify({ recap: { headline: "x" } }) });
+  assert.equal((await response).status, 403);
+  // A private league's grades name every manager in it, so the membership gate
+  // must sit in front of the read rather than beside it.
+  assert.equal(
+    seen.some((sql) => sql.includes("FROM fantasy_chat_messages")),
+    false,
+    "a non-member's request still read the recap",
+  );
+});
+
+test("the draft recap route says 404 until the cron has written one", async () => {
+  // Distinguishable from "there is nothing here": the client needs to tell
+  // "not yet" from an error, and an empty 200 would not.
+  assert.equal((await draftRecapCall({}).response).status, 404);
+  // A row whose payload cannot be parsed is the same answer, never a 500.
+  assert.equal((await draftRecapCall({ payload: "{not json" }).response).status, 404);
+  assert.equal((await draftRecapCall({ payload: JSON.stringify({}) }).response).status, 404);
 });
 
 test("an OPTIONS preflight is answered without touching any binding", async () => {

@@ -121,6 +121,18 @@ CREATE TABLE IF NOT EXISTS fantasy_league_members (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   draft_position INTEGER, -- this member's slot in the snake order, set when the draft starts
   joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+  -- Dead-team autopilot (ESPN's Auto Control). 1 means the bots are playing
+  -- this seat: setting its lineup, and permitted to make a conservative
+  -- same-position pickup. NEVER a trade (see AUTOPILOT_ACTIONS in
+  -- src/fantasyBots.js, an allowlist precisely so a future feature cannot be
+  -- silently inherited).
+  --
+  -- The seat keeps its real human owner throughout; this is not eviction and
+  -- users.is_bot is untouched. It is cleared the instant that owner touches
+  -- anything in the league, by the same request that proves they are back, so
+  -- the flag can never outlive the absence it stands for.
+  autopilot INTEGER NOT NULL DEFAULT 0,
+  autopilot_since TEXT, -- when the commissioner handed it over; NULL when off
   PRIMARY KEY (league_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS fantasy_league_members_user ON fantasy_league_members(user_id);
@@ -135,6 +147,16 @@ CREATE TABLE IF NOT EXISTS fantasy_draft_picks (
   overall_pick INTEGER NOT NULL,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   player_id INTEGER NOT NULL REFERENCES fantasy_players(id),
+  -- HOW the pick was made: manual | queue | autopick | bot. See PICK_VIA in
+  -- src/draftLogic.js for what each value means and why a boolean was not
+  -- enough. FantasyDraftRoom.commitPick is the only writer.
+  --
+  -- Deliberately NULLABLE with no default. Every row written from now on sets
+  -- it, so NULL means exactly one thing: "picked before this column existed".
+  -- A NOT NULL DEFAULT 'manual' would have been easier and would have quietly
+  -- asserted that every historical pick was a considered one, which is the
+  -- confidently-wrong kind of number this schema avoids everywhere else.
+  via TEXT,
   picked_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS fantasy_draft_picks_league ON fantasy_draft_picks(league_id, overall_pick);
@@ -465,6 +487,25 @@ CREATE TABLE IF NOT EXISTS fantasy_league_recaps (
   prompt_version INTEGER NOT NULL DEFAULT 1,
   generated_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (league_id, gameweek)
+);
+
+-- Dedup ledger for the AI POST-DRAFT recap: exactly one per league, ever. A
+-- draft happens once, so unlike the weekly recap above there is no gameweek in
+-- the key and league_id is the whole primary key.
+--
+-- Same "check cheaply, then commit the ledger row and the recap's own feed
+-- message in ONE batch" discipline as fantasy_league_recaps: the primary key is
+-- the real gate and rejects the loser of two overlapping ticks atomically,
+-- feed message included.
+--
+-- The recap itself is NOT stored here. It lives in its fantasy_chat_messages
+-- payload, which is the same single copy every other league event keeps, so
+-- there is no second copy to drift. This table only answers "has it been
+-- written yet".
+CREATE TABLE IF NOT EXISTS fantasy_league_draft_recaps (
+  league_id INTEGER PRIMARY KEY REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  prompt_version INTEGER NOT NULL DEFAULT 1,
+  generated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- API-Football quota analytics. The Worker proxies a paid plan and until now
