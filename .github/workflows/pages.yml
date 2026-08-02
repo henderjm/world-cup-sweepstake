@@ -61,12 +61,22 @@ jobs:
       # An accumulating cache (unique key + prefix restore-keys) restores the latest set,
       # the fetch script fetches only matches it does not already hold final detail for,
       # and the post-job save writes the grown set back. Coverage converges to complete.
+      #
+      # live.json and scorers.json are cached for a different reason: a push skips
+      # the fetch entirely (see the guard below), so without them here every
+      # code-only deploy re-ships whatever feed snapshot happens to be committed.
+      # That file is a seed from the football-data.org era, so its fixture ids do
+      # not match the API-Football ids the Worker serves, and a browser on the
+      # static fallback would ask the Worker about matches it has never heard of.
+      # Caching them means a push ships fresh data with fresh code.
       - name: Restore accumulated match detail
         uses: actions/cache@v4
         with:
           path: |
             data/*/matches
             data/PL/players.json
+            data/*/live.json
+            data/*/scorers.json
           key: api-football-data-2026-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             api-football-data-2026-
