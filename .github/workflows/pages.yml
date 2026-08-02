@@ -131,8 +131,17 @@ jobs:
           FANTASY_REFRESH_HOURS: ${{ inputs.force_player_refresh && '0' || '' }}
       - name: Configure Pages
         uses: actions/configure-pages@v5
+      # PostHog stays dormant until both of these exist as repo secrets.
+      # src/telemetry.js only calls posthog.init when it has a key AND a host, so
+      # an unset secret ships a build that collects nothing rather than one that
+      # throws. Vite inlines VITE_-prefixed vars at build time, which is why they
+      # belong here rather than in the Worker: the key is a public write-only
+      # ingest token, safe in a client bundle, unlike anything in wrangler.toml.
       - name: Build Svelte app
         run: npm run build
+        env:
+          VITE_POSTHOG_KEY: ${{ secrets.VITE_POSTHOG_KEY }}
+          VITE_POSTHOG_HOST: ${{ secrets.VITE_POSTHOG_HOST }}
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:
