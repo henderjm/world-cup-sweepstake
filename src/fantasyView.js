@@ -76,8 +76,18 @@ function nameForUser(userId, members) {
 // this chip is what the structured ones add on top.
 const BOT_CHIP = `<span class="chip fantasy-chip--bot" title="A bot manager filling an empty seat: it autopicks and always fields a legal XI">BOT</span>`;
 
+// Deliberately a separate chip from BOT, never a reuse: a bot is a real seat
+// with a real squad that a person could have taken, and Average is nobody at
+// all. Calling it a bot would claim a manager exists where none does.
+const AVERAGE_CHIP = `<span class="chip fantasy-chip--average" title="Not a manager: the median score of the managers who played each other this gameweek">AVG</span>`;
+
 function botChip(isBot) {
   return isBot ? ` ${BOT_CHIP}` : "";
+}
+
+function opponentChip(opponent) {
+  if (opponent?.isAverage) return ` ${AVERAGE_CHIP}`;
+  return botChip(opponent?.isBot);
 }
 
 function botChipForUser(userId, members) {
@@ -376,7 +386,7 @@ export function renderFantasyMatchupPanel(matchup, { error = "", leagueSize = nu
       ${banner}
       <section class="card fantasy-matchup fantasy-matchup--bye">
         <p class="fantasy-eyebrow">Gameweek ${esc(gameweek)}</p>
-        <h2 class="fantasy-matchup__bye-title">You have a bye</h2>
+        <h2 class="fantasy-matchup__bye-title">You play Average</h2>
         <p class="note">${esc(byeNote(gameweek, leagueSize))}</p>
       </section>`;
   }
@@ -402,7 +412,7 @@ export function renderFantasyMatchupPanel(matchup, { error = "", leagueSize = nu
         </div>
         <span class="fantasy-matchup__vs">vs</span>
         <div class="fantasy-matchup__side fantasy-matchup__side--opponent ${leader === "opponent" ? "is-ahead" : ""}">
-          <p class="fantasy-matchup__name">${esc(opponent.name)}${botChip(opponent.isBot)}</p>
+          <p class="fantasy-matchup__name">${esc(opponent.name)}${opponentChip(opponent)}</p>
           <p class="fantasy-matchup__score">${showScores ? esc(opponent.score) : `<span class="fantasy-stat--empty">•</span>`}</p>
         </div>
       </div>
@@ -453,10 +463,11 @@ function renderScheduleWeek(row, myUserId) {
   if (row.isCurrent) classes.push("is-current");
   if (row.isPast) classes.push("is-past");
 
-  // A bye is stated plainly and by name. This is the manager who currently
-  // sees nothing at all.
+  // The unpaired manager is named rather than left out. They are not idle:
+  // an odd league pairs them with Average (src/fantasyAverage.js), so this
+  // reads as a fixture like any other rather than as a missing row.
   const byes = row.byes.length
-    ? `<p class="fantasy-sched-week__bye">${row.myBye ? "You have a bye" : `${esc(row.byes.map((bye) => bye.name).join(", "))} ${row.byes.length === 1 ? "has" : "have"} a bye`}</p>`
+    ? `<p class="fantasy-sched-week__bye">${row.myBye ? "You play Average" : `${esc(row.byes.map((bye) => bye.name).join(", "))} ${row.byes.length === 1 ? "plays" : "play"} Average`}</p>`
     : "";
 
   return `<div class="${classes.join(" ")}" data-fantasy-sched-gw="${esc(row.gameweek)}">
@@ -1439,12 +1450,14 @@ const POSITION_FILTERS = ["All", "GK", "DEF", "MID", "FWD"];
 // greyed out inline instead. `draftedIds` is required to apply it - callers
 // without a live draft (the pre-draft lobby's read-only scouting list) pass
 // an empty Set, so the filter is naturally a no-op there.
-function filterPlayers(players, filter, draftedIds) {
+function filterPlayers(players, filter, draftedIds, queuedIds) {
   const search = (filter?.search ?? "").trim().toLowerCase();
   const club = filter?.club ?? "All";
   const hideTaken = filter?.hideTaken !== false;
+  const starredOnly = Boolean(filter?.starredOnly);
   return (players ?? []).filter((player) => {
     if (hideTaken && draftedIds?.has?.(player.id)) return false;
+    if (starredOnly && !queuedIds?.has?.(player.id)) return false;
     if (filter?.position && filter.position !== "All" && player.position !== filter.position) return false;
     if (club !== "All" && player.team !== club) return false;
     if (!search) return true;
@@ -1478,8 +1491,12 @@ function filterPlayers(players, filter, draftedIds) {
 export function renderFantasyPlayerRows(players, filter, context) {
   const { isMyTurn, myRoster, draftedIds, suggestedId, queuedIds, leagueSize, board } = context ?? {};
   const ranked = withBoardAnnotations(rankDraftPool(players, leagueSize ?? 1), board, draftedIds);
-  const filtered = sortPoolBy(filterPlayers(ranked, filter, draftedIds), filter?.sort ?? DEFAULT_POOL_SORT);
-  if (!filtered.length) return `<p class="note">No players match.</p>`;
+  const filtered = sortPoolBy(filterPlayers(ranked, filter, draftedIds, queuedIds), filter?.sort ?? DEFAULT_POOL_SORT);
+  if (!filtered.length) {
+    return filter?.starredOnly && !queuedIds?.size
+      ? `<p class="note">You have not starred anyone yet. Tap ☆ on a player to build your shortlist.</p>`
+      : `<p class="note">No players match.</p>`;
+  }
   const enriched = hasPriorSeasonData(players);
   // A tier chip on every row when the manager has drawn no tiers at all is
   // noise saying "tier 1" 500 times; it earns its space only once there is
@@ -1521,6 +1538,7 @@ export function renderFantasyPlayerRows(players, filter, context) {
           <span class="fantasy-player-row__id"><strong>${esc(player.name)}${suggestedBadge}</strong><span class="note--dim">${esc(abbrFor(player.team))}${boardTierChip}${boardNote}</span></span>
           <span class="fantasy-pos">${esc(player.position)}</span>
           ${renderRankCell(player)}
+          <span class="fantasy-player-row__xp">${renderStatCell(player.xp, 1)}</span>
           ${tierCell}
           ${appsCell}
           <span class="fantasy-player-row__queue">${queueCell}</span>
@@ -1571,12 +1589,22 @@ export function renderFantasyPlayerPool(players, filter, context, priorSeasonSta
   const enriched = hasPriorSeasonData(players);
   const seasonLabel = enriched && priorSeasonStats?.season ? priorSeasonRangeLabel(priorSeasonStats.season) : "";
   const activeSort = POOL_SORTS[filter?.sort] ? filter.sort : DEFAULT_POOL_SORT;
+  // Sorting by a board nobody has built collapses to name order (every
+  // boardRank is missing, so byNumber sorts them all last), which reads as a
+  // broken control rather than an empty one. Disable it and say why.
+  const hasBoard = Boolean(context?.board?.order?.length);
   const sortPills = Object.entries(POOL_SORTS)
-    .map(
-      ([key, def]) =>
-        `<button class="seg ${key === activeSort ? "is-active" : ""}" type="button" data-fantasy-pool-sort="${key}">${esc(def.label)}</button>`,
-    )
+    .map(([key, def]) => {
+      const disabled = key === "board" && !hasBoard;
+      const hint = disabled ? "Star players in the My board tab to sort by your own order." : def.hint;
+      return `<button class="seg ${key === activeSort && !disabled ? "is-active" : ""}" type="button" data-fantasy-pool-sort="${key}"${disabled ? " disabled" : ""} title="${esc(hint ?? "")}">${esc(def.label)}</button>`;
+    })
     .join("");
+  // Deliberately no starred COUNT on the pill: starring repaints only the rows
+  // (refreshFantasyPool) and the side column, never this sticky header, so a
+  // count here would sit stale until the next full render. The star column and
+  // the queue card already say what is starred.
+  const starredOnly = Boolean(filter?.starredOnly);
 
   return `
     <section class="card fantasy-pool">
@@ -1587,6 +1615,7 @@ export function renderFantasyPlayerPool(players, filter, context, priorSeasonSta
           <div class="fantasy-pool__filters">
             <div class="segrow fantasy-pool__positions">${positionPills}</div>
             <button class="seg ${hideTaken ? "is-active" : ""}" type="button" data-fantasy-hide-taken aria-pressed="${hideTaken}">Hide taken</button>
+            <button class="seg ${starredOnly ? "is-active" : ""}" type="button" data-fantasy-starred-only aria-pressed="${starredOnly}" title="Show only the players you have starred (your queue).">★ Starred</button>
             <select class="fantasy-select" data-fantasy-club-filter>${renderClubOptions(players, filter?.club)}</select>
             <input class="fantasy-input" type="text" placeholder="Search players or clubs" value="${esc(filter?.search ?? "")}" data-fantasy-search autocomplete="off" />
           </div>
@@ -1597,7 +1626,7 @@ export function renderFantasyPlayerPool(players, filter, context, priorSeasonSta
         </div>
         <div class="fantasy-pool__table ${enriched ? "" : "fantasy-pool__table--degraded"}">
           <div class="fantasy-pool__cols">
-            <span></span><span>Player</span><span>Pos</span><span>Rank</span>${enriched ? `<span>Tier</span><span>Apps</span>` : ""}<span></span><span></span>
+            <span></span><span>Player</span><span>Pos</span><span>Rank</span><span>xP</span>${enriched ? `<span>Tier</span><span>Apps</span>` : ""}<span></span><span></span>
           </div>
           <div class="fantasy-pool__rows" data-fantasy-pool-list>${renderFantasyPlayerRows(players, filter, context)}</div>
         </div>
@@ -1623,7 +1652,7 @@ export function renderFantasyDraftSide({ members, draft, playerPool, myUserId, e
   );
   const isMyTurn = draft.onClockUserId != null && draft.onClockUserId === myUserId;
   const queuedTop = topQueuedPick(queue, playerPool, myRoster, draftedIds);
-  const suggested = queuedTop ?? suggestedPick(playerPool, myRoster, draftedIds);
+  const suggested = queuedTop ?? suggestedPick(playerPool, myRoster, draftedIds, members?.length ?? 1);
   const boardNote = board?.notes?.[String(suggested?.id)] ?? "";
   const context = { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null };
   const rankedPool = rankDraftPool(playerPool, members?.length ?? 1);
@@ -1665,7 +1694,9 @@ export function renderFantasyDraftRoom({
   // Queue-aware, matching renderFantasyDraftSide's own suggested-pick logic
   // exactly, so the pool's "Pick" badge always lands on the same player the
   // side column names as the suggestion rather than the plain heuristic.
-  const suggested = topQueuedPick(queue, playerPool, myRoster, draftedIds) ?? suggestedPick(playerPool, myRoster, draftedIds);
+  const suggested =
+    topQueuedPick(queue, playerPool, myRoster, draftedIds) ??
+    suggestedPick(playerPool, myRoster, draftedIds, members?.length ?? 1);
   const context = {
     isMyTurn,
     myRoster,

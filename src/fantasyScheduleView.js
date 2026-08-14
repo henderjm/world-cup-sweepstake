@@ -149,16 +149,21 @@ export function matchupTiming(matchup, now) {
   return { showScores: false, label: "Upcoming", note: "This fixture has not been played yet." };
 }
 
-// A bye, said plainly. An odd-sized league byes somebody every single week, and
-// the manager it happens to currently sees nothing at all, which is
-// indistinguishable from a bug. `leagueSize` is only used to explain WHY, and
-// is omitted from the explanation when we do not know it.
+// A bye, said plainly. An odd-sized league leaves somebody unpaired every
+// single week, and the manager it happens to used to see nothing at all, which
+// is indistinguishable from a bug. `leagueSize` is only used to explain WHY,
+// and is omitted from the explanation when we do not know it.
+//
+// The week is no longer forfeited: the unpaired manager plays Average, whose
+// score is the median of the managers who did play each other (see
+// src/fantasyAverage.js). This copy has to keep step with that, or the schedule
+// would still be promising a blank week while the standings recorded a result.
 export function byeNote(gameweek, leagueSize) {
   const why =
     Number.isFinite(leagueSize) && leagueSize % 2 === 1
-      ? `Your league has ${leagueSize} managers, an odd number, so one manager sits out every gameweek and this week it is you.`
-      : "There is an odd number of managers to pair up this gameweek, so one of you sits out and this week it is you.";
-  return `${why} You score no points for gameweek ${gameweek} and you are back in the schedule next gameweek.`;
+      ? `Your league has ${leagueSize} managers, an odd number, so one manager is unpaired every gameweek and this week it is you.`
+      : "There is an odd number of managers to pair up this gameweek, so one of you is unpaired and this week it is you.";
+  return `${why} You play Average for gameweek ${gameweek}: your points still count, and you win by outscoring the median of the managers who played each other.`;
 }
 
 // -- The season schedule ----------------------------------------------------------

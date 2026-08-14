@@ -174,7 +174,11 @@ test("a bye is explained rather than left blank", () => {
   const note = byeNote(1, 3);
   assert.match(note, /3 managers/);
   assert.match(note, /odd/);
-  assert.match(note, /back in the schedule/);
+  // The week is not forfeited: an unpaired manager plays Average, so the copy
+  // must promise a result rather than a blank week (src/fantasyAverage.js).
+  assert.match(note, /play Average/);
+  assert.match(note, /median/);
+  assert.doesNotMatch(note, /score no points/);
   // Still explains itself when the league size is unknown.
   assert.match(byeNote(1, null), /odd number of managers/);
 });

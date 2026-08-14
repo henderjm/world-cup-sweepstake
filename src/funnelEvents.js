@@ -56,6 +56,8 @@ export const FUNNEL_EVENTS = Object.freeze({
   FANTASY_LEAGUE_JOINED: "fantasy_league_joined",
   FANTASY_LEAGUE_OPENED: "fantasy_league_opened",
   FANTASY_INVITE_COPIED: "fantasy_invite_copied",
+  FANTASY_INVITE_ACCEPTED: "fantasy_invite_accepted",
+  FANTASY_BOTS_ADDED: "fantasy_bots_added",
   FANTASY_DRAFT_SCHEDULED: "fantasy_draft_scheduled",
   FANTASY_DRAFT_START_REQUESTED: "fantasy_draft_start_requested",
   FANTASY_DRAFT_PICK_MADE: "fantasy_draft_pick_made",

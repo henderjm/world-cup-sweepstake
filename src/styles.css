@@ -1619,7 +1619,8 @@ button { font-family: inherit; cursor: pointer; }
 /* Bot manager label. Deliberately louder than the queue badge next to it: it
    is an honesty marker, not provenance trivia, and it has to survive being
    glanced past in a dense order strip. */
-.fantasy-chip--bot {
+.fantasy-chip--bot,
+.fantasy-chip--average {
   margin-left: 6px;
   font-size: 9px;
   padding: 1px 7px;
@@ -1630,6 +1631,14 @@ button { font-family: inherit; cursor: pointer; }
   text-transform: uppercase;
   letter-spacing: 0.06em;
   vertical-align: middle;
+}
+/* AVG shares the BOT chip's shape but not its fill: a muted outline, because
+   Average is nobody and should not read as loudly as a real seat. Must stay
+   AFTER the shared block above, which sets colour/background/border. */
+.fantasy-chip--average {
+  color: var(--faint);
+  background: transparent;
+  border: 1px solid var(--faint);
 }
 
 .fantasy-bots__form { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0 6px; }
@@ -1793,15 +1802,15 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-pool__cols,
 .fantasy-player-row {
   display: grid;
-  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 54px 70px 48px 32px 76px;
-  min-width: 560px;
+  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 54px 46px 70px 48px 32px 76px;
+  min-width: 616px;
   align-items: center;
   gap: 10px;
 }
 .fantasy-pool__table--degraded .fantasy-pool__cols,
 .fantasy-pool__table--degraded .fantasy-player-row {
-  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 54px 32px 76px;
-  min-width: 420px;
+  grid-template-columns: 24px minmax(110px, 1.6fr) 44px 54px 46px 32px 76px;
+  min-width: 476px;
 }
 .fantasy-pool__cols {
   /* 26px = the rows wrapper's 16px padding + a row's own 10px padding, so the
@@ -1813,13 +1822,15 @@ button { font-family: inherit; cursor: pointer; }
   text-transform: uppercase;
   color: var(--faint);
 }
-/* nth-child(4) is the Rank cell in both the enriched and degraded grids
-   (it always sits right after Pos); (5)/(6) are Tier/Apps, only present in
-   the enriched grid - centering an empty trailing span in the degraded one
-   is harmless, so one selector list covers both variants. */
+/* (4) and (5) are Rank and xP in both the enriched and degraded grids (they
+   always sit right after Pos, and both are always rendered - a player with no
+   figure shows a dim placeholder rather than dropping the column); (6)/(7) are
+   Tier/Apps, only present in the enriched grid - centering an empty trailing
+   span in the degraded one is harmless, so one selector list covers both. */
 .fantasy-pool__cols span:nth-child(4),
 .fantasy-pool__cols span:nth-child(5),
-.fantasy-pool__cols span:nth-child(6) {
+.fantasy-pool__cols span:nth-child(6),
+.fantasy-pool__cols span:nth-child(7) {
   text-align: center;
 }
 .fantasy-pool__cols span:last-child { text-align: right; }
@@ -1837,6 +1848,12 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-player-row__id strong { font-size: 13px; }
 .fantasy-player-row__action { text-align: right; }
 .fantasy-player-row__stat { text-align: center; }
+/* xP keeps its own class rather than reusing __stat: it is the one figure the
+   pool's sort control offers that Tier/Apps do not, and it renders
+   unconditionally (like Rank) where Tier/Apps drop out together on an
+   unenriched pool, so "is the Apps cell present" must stay separately
+   answerable in markup and in tests. */
+.fantasy-player-row__xp { text-align: center; }
 .fantasy-player-row__tier { display: flex; justify-content: center; }
 /* Rank cell: "#N" over a dim "R{round}" hint, the same stacked shape as the
    id cell's name/club - see renderRankCell in src/fantasyView.js. */

@@ -70,6 +70,12 @@ import {
   standingsFromFixtures,
   sumPlayerPoints,
 } from "../src/fantasyGameweek.js";
+import {
+  AVERAGE_NAME,
+  AVERAGE_USER_ID,
+  medianScore,
+  withAverageOpponent,
+} from "../src/fantasyAverage.js";
 import { assignGameweeks, clubFixtureCounts, firstKickoffInGameweek, gameweekOf } from "../src/fantasyCalendar.js";
 import {
   DEFAULT_FAAB_BUDGET,
@@ -2795,6 +2801,34 @@ async function fantasyGameweekScore(env, leagueId, userId, gameweek) {
   return row?.points ?? 0;
 }
 
+// The Average opponent for a manager left unpaired this gameweek: the median
+// of every OTHER manager's score (see src/fantasyAverage.js for why it is a
+// median, and why the caller's own score is excluded).
+//
+// Returns null unless the league genuinely has an odd number of managers. An
+// even league with no fixture is not a bye, it is a schedule that has not been
+// generated yet, and inventing an opponent there would paper over that.
+async function averageOpponentFor(env, leagueId, userId, gameweek) {
+  const [memberRows, scoreRows] = await Promise.all([
+    env.DB.prepare(`SELECT user_id FROM fantasy_league_members WHERE league_id = ?1`).bind(leagueId).all(),
+    env.DB.prepare(
+      `SELECT user_id, points FROM fantasy_gameweek_scores WHERE league_id = ?1 AND gameweek = ?2`,
+    )
+      .bind(leagueId, gameweek)
+      .all(),
+  ]);
+
+  const memberIds = (memberRows.results ?? []).map((row) => row.user_id);
+  if (memberIds.length < 3 || memberIds.length % 2 === 0) return null;
+
+  const byUser = new Map((scoreRows.results ?? []).map((row) => [row.user_id, row.points]));
+  const others = memberIds.filter((id) => id !== userId).map((id) => byUser.get(id));
+  const median = medianScore(others);
+  if (median == null) return null;
+
+  return { userId: AVERAGE_USER_ID, name: AVERAGE_NAME, isBot: false, isAverage: true, score: median };
+}
+
 // GET /fantasy/league/:id/matchup: the caller's current-gameweek head-to-head,
 // with live-updating scores read straight from fantasy_gameweek_scores rather
 // than the possibly-stale fantasy_h2h_fixtures row (which only settles once
@@ -2846,7 +2880,11 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
     };
 
     if (!fixture) {
-      return json({ gameweek, status, me, opponent: null, ...timing }, 200, cors);
+      // Unpaired this gameweek: in an odd league that is a fixture against
+      // Average, not a blank week. Null only when there is genuinely no
+      // opponent to derive (see averageOpponentFor).
+      const average = await averageOpponentFor(env, leagueId, user.id, gameweek);
+      return json({ gameweek, status, me, opponent: average, ...timing }, 200, cors);
     }
 
     const opponentId = fixture.home_user_id === user.id ? fixture.away_user_id : fixture.home_user_id;
@@ -2987,7 +3025,7 @@ async function handleFantasyStandings(request, env, leagueId, cors) {
     const currentGameweek = await currentFantasyGameweek(env);
     const throughGameweek = currentGameweek - 1;
 
-    const [membersRows, fixtureRows] = await Promise.all([
+    const [membersRows, fixtureRows, scoreRows] = await Promise.all([
       env.DB.prepare(
         `SELECT m.user_id, u.name, u.email, u.is_bot FROM fantasy_league_members m
          JOIN users u ON u.id = m.user_id
@@ -2999,6 +3037,17 @@ async function handleFantasyStandings(request, env, leagueId, cors) {
         ? env.DB.prepare(
             `SELECT gameweek, home_user_id, away_user_id, home_score, away_score
              FROM fantasy_h2h_fixtures WHERE league_id = ?1 AND gameweek <= ?2`,
+          )
+            .bind(leagueId, throughGameweek)
+            .all()
+        : Promise.resolve({ results: [] }),
+      // Only needed to derive the Average opponent an odd league plays instead
+      // of a bye (src/fantasyAverage.js): the unpaired manager's own score is
+      // in no fixture row, so it cannot come from the query above.
+      throughGameweek >= 1
+        ? env.DB.prepare(
+            `SELECT gameweek, user_id, points FROM fantasy_gameweek_scores
+             WHERE league_id = ?1 AND gameweek <= ?2`,
           )
             .bind(leagueId, throughGameweek)
             .all()
@@ -3018,7 +3067,20 @@ async function handleFantasyStandings(request, env, leagueId, cors) {
       awayScore: row.away_score,
     }));
 
-    return json({ throughGameweek, standings: standingsFromFixtures(fixtures, members) }, 200, cors);
+    const scores = (scoreRows.results ?? []).map((row) => ({
+      gameweek: row.gameweek,
+      userId: row.user_id,
+      points: row.points,
+    }));
+    // No-op for an even league, so this is applied unconditionally rather than
+    // branching on parity here (see withAverageOpponent).
+    const withAverage = withAverageOpponent(fixtures, members, scores);
+
+    return json(
+      { throughGameweek, standings: standingsFromFixtures(withAverage.fixtures, withAverage.members) },
+      200,
+      cors,
+    );
   } catch {
     return json({ error: "fantasy unavailable" }, 502, cors);
   }

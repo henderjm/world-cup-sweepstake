@@ -5,6 +5,7 @@
 // testable outside the Worker.
 
 import { SQUAD_SLOTS } from "./fantasy.js";
+import { rankDraftPool } from "./fantasyDraftRank.js";
 
 // Snake order: odd rounds (1-based) draft in the given member order, even rounds
 // reverse it, so the last picker in round 1 picks first in round 2.
@@ -115,29 +116,48 @@ export function validatePick({ roster, draftedIds, player, squadSlots = SQUAD_SL
   return { valid: true, error: null };
 }
 
-// Deterministic best-available pick for the pick clock running out. Preference
-// order: fill the scarcest unfilled bucket first (fewest slots remaining, ties
-// broken by SQUAD_SLOTS key order: GK, DEF, MID, FWD), then the highest-listed
-// player for that bucket (first match in `available`, so the pool's own order is
-// the "rank"). Returns null only when every unfilled bucket has no legal
-// candidate left in `available` (should not happen in practice: the pool is far
-// larger than a squad, but a caller must handle it rather than crash).
+// Deterministic best-available pick for the pick clock running out: the
+// highest-ranked player on the SAME board the draft room showed the manager
+// (rankDraftPool, value over replacement) whose position bucket is not already
+// full. Returns null only when no unfilled bucket has a legal candidate left in
+// `available` (should not happen in practice: the pool is far larger than a
+// squad, but a caller must handle it rather than crash).
+//
+// This used to fill the SCARCEST unfilled bucket first (fewest slots remaining,
+// ties broken by SQUAD_SLOTS key order), taking the first listed player for it.
+// Both halves of that were wrong and they compounded. GK has the fewest slots
+// (2), so an empty roster always ranked GK as scarcest and EVERY manager's first
+// two picks were goalkeepers: an all-bot 8-manager draft opened with 16 straight
+// keepers and left Haaland on the board until pick 18. And "first listed" meant
+// the baked players.json array order, which is grouped by club and sorted only
+// by tier (see sortPlayerPool in fantasyPlayerTier.js), so the rest of the squad
+// came out as most of whichever club happens to be listed first. The same rule
+// drives the suggested-pick card, so managers were being advised to open with a
+// keeper too.
+//
+// Scarcity needs no special handling: SQUAD_SLOTS sums to exactly SQUAD_SIZE, so
+// a manager's unfilled slots always equal their remaining picks, and any pick
+// into a non-full bucket therefore keeps a legal squad reachable. Positions fill
+// themselves late by becoming the only legal buckets left, which is what a
+// real autodraft does - take value early, fill the thin buckets last.
 //
 // `available` is assumed to already exclude every player drafted anywhere in the
 // league; autoPick only re-checks the position-bucket rule via validatePick.
-export function autoPick(available, roster, squadSlots = SQUAD_SLOTS) {
-  const counts = countByPosition(roster);
-  const scarcity = Object.keys(squadSlots)
-    .map((position) => ({ position, remaining: squadSlots[position] - (counts[position] ?? 0) }))
-    .filter((entry) => entry.remaining > 0)
-    .sort((a, b) => a.remaining - b.remaining); // stable: ties keep squadSlots key order
-
+// Ranking happens HERE rather than being assumed of the caller's array order,
+// because that assumption is exactly what broke: three separate call sites (the
+// Durable Object alarm, the demo, and the suggested-pick card) each passed the
+// raw pool and none of them passed a ranked one. `leagueSize` only affects
+// replacement level, so it changes the cross-position ordering, never legality.
+export function autoPick(available, roster, squadSlots = SQUAD_SLOTS, leagueSize = 1) {
+  const pool = available ?? [];
+  const byId = new Map(pool.map((player) => [player?.id, player]));
   const noneDrafted = new Set();
-  for (const { position } of scarcity) {
-    const candidate = (available ?? []).find((player) => player?.position === position);
-    if (!candidate) continue;
-    const validation = validatePick({ roster, draftedIds: noneDrafted, player: candidate, squadSlots });
-    if (validation.valid) return candidate;
+
+  for (const candidate of rankDraftPool(pool, leagueSize, squadSlots)) {
+    // rankDraftPool returns annotated COPIES; hand back the caller's own object
+    // so pick identity survives (commitPick stores what it is given).
+    const player = byId.get(candidate?.id) ?? candidate;
+    if (validatePick({ roster, draftedIds: noneDrafted, player, squadSlots }).valid) return player;
   }
   return null;
 }
