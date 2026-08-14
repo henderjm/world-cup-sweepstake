@@ -3290,3 +3290,21 @@ button { font-family: inherit; cursor: pointer; }
 }
 .fantasy-teamname__edit:hover { opacity: 1; }
 .fantasy-teamname__input { flex: 1 1 220px; min-width: 0; }
+
+/* Head-to-head list under the standings (issue #41). Same row rhythm as the
+   table above it, but three columns rather than nine: this answers "how do I
+   do against you", and a full N-by-N grid does not fit a phone. */
+.fantasy-h2h { margin-top: 14px; }
+.fantasy-h2h__rows { display: flex; flex-direction: column; gap: 4px; }
+.fantasy-h2h-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 1.6fr) 92px minmax(90px, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 13px;
+}
+.fantasy-h2h-row__record { font-weight: 900; letter-spacing: 0.02em; }
+.fantasy-h2h-row__pts { text-align: right; color: var(--faint); font-size: 12px; }

@@ -26,6 +26,7 @@ import {
 } from "./fantasyDraft.js";
 import { DEFAULT_POOL_SORT, POOL_SORTS, rankDraftPool, sortPoolBy, startingUpgrade } from "./fantasyDraftRank.js";
 import { TEAM_NAME_MAX } from "./fantasyTeamName.js";
+import { formatRecord } from "./fantasyHeadToHead.js";
 import { withBoardAnnotations } from "./fantasyDraftBoard.js";
 import { renderFantasyBoardPanel } from "./fantasyDraftBoardView.js";
 import {
@@ -578,6 +579,38 @@ export function renderFantasyStandingsPanel(standings, { error = "", myUserId } 
         <div class="fantasy-standings__rows">${body}</div>
       </div>
       <p class="note--dim fantasy-standings__footnote">PTS is the head-to-head record (win 3, draw 1, loss 0), not football points.</p>
+    </section>
+    ${renderHeadToHeadCard(standings.headToHead)}`;
+}
+
+// Your record against each manager you have actually played (issue #41),
+// beneath the table it is derived from. Rendered only once there is something
+// to show: before any gameweek settles this would be a card full of dashes,
+// which reads as broken rather than as empty.
+//
+// Deliberately just a list rather than the full N-by-N grid every manager
+// against every other: the question people ask is "how do I do against you",
+// not "produce a matrix", and a 12-manager grid does not fit a phone.
+export function renderHeadToHeadCard(rows) {
+  if (!rows?.length) return "";
+
+  const body = rows
+    .map(
+      (row) => `<div class="fantasy-h2h-row">
+          <span class="fantasy-h2h-row__name">${esc(row.name)}${opponentChip(row)}</span>
+          <span class="fantasy-h2h-row__record">${esc(formatRecord(row))}</span>
+          <span class="fantasy-h2h-row__pts">${formatPoints(row.pointsFor)} <span class="note--dim">to</span> ${formatPoints(row.pointsAgainst)}</span>
+        </div>`,
+    )
+    .join("");
+
+  return `
+    <section class="card fantasy-h2h">
+      <div class="fantasy-standings__head">
+        <h3 class="card__title">Your head-to-head</h3>
+        <p class="note">Best record first</p>
+      </div>
+      <div class="fantasy-h2h__rows">${body}</div>
     </section>`;
 }
 

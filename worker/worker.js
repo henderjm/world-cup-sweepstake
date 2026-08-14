@@ -77,6 +77,7 @@ import {
   withAverageOpponent,
 } from "../src/fantasyAverage.js";
 import { validateTeamName } from "../src/fantasyTeamName.js";
+import { headToHeadFor } from "../src/fantasyHeadToHead.js";
 import { assignGameweeks, clubFixtureCounts, firstKickoffInGameweek, gameweekOf } from "../src/fantasyCalendar.js";
 import {
   DEFAULT_FAAB_BUDGET,
@@ -3141,8 +3142,16 @@ async function handleFantasyStandings(request, env, leagueId, cors) {
     // branching on parity here (see withAverageOpponent).
     const withAverage = withAverageOpponent(fixtures, members, scores);
 
+    // Head-to-head (issue #41) is computed HERE rather than in a route of its
+    // own, from the very same Average-merged fixture set the table above is
+    // built from. That is the whole reason the two can never disagree about a
+    // result: one query, one merge, both answers. It needs no extra reads.
     return json(
-      { throughGameweek, standings: standingsFromFixtures(withAverage.fixtures, withAverage.members) },
+      {
+        throughGameweek,
+        standings: standingsFromFixtures(withAverage.fixtures, withAverage.members),
+        headToHead: headToHeadFor(withAverage.fixtures, withAverage.members, user.id),
+      },
       200,
       cors,
     );
