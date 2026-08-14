@@ -2000,3 +2000,41 @@ test("the Average row in standings is chipped AVG and never as a bot", () => {
   assert.match(html, /fantasy-chip--average/);
   assert.doesNotMatch(html, /fantasy-chip--bot/);
 });
+
+// Issue #49: the pitch reads keeper-first, matching FPL, which is the reference
+// product for anyone playing a Premier League fantasy game. It was previously
+// attacker-first and a reporter hit exactly that confusion.
+test("the pitch renders goalkeeper first and forwards last", () => {
+  const roster = [
+    { id: 1, name: "Keeper", team: "Arsenal", position: "GK" },
+    { id: 2, name: "Backline", team: "Arsenal", position: "DEF" },
+    { id: 3, name: "Middle", team: "Arsenal", position: "MID" },
+    { id: 4, name: "Striker", team: "Arsenal", position: "FWD" },
+  ];
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 1,
+    roster,
+    lineup: {
+      gameweek: 1,
+      starters: [
+        { playerId: 1, isCaptain: false },
+        { playerId: 2, isCaptain: false },
+        { playerId: 3, isCaptain: false },
+        { playerId: 4, isCaptain: true },
+      ],
+      bench: [],
+    },
+    playerPool: [],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "",
+  });
+  const order = ["Keeper", "Backline", "Middle", "Striker"].map((name) => html.indexOf(name));
+  assert.ok(order.every((i) => i >= 0), "every player should render");
+  assert.deepEqual(
+    [...order].sort((a, b) => a - b),
+    order,
+    "pitch rows should run GK, DEF, MID, FWD from the top",
+  );
+});

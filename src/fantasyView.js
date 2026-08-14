@@ -1159,9 +1159,19 @@ export function renderTeamNameRow({ teamName, fallbackName, editing, busy, error
 // app.js owns the edit-mode working copy (state.fantasy.lineupEdit) and the
 // open player-drawer id, passed in as plain data.
 
-// Attacker-to-keeper, matching how a real formation reads top-to-bottom on a
-// pitch graphic (mirrors the Squad Goals design export's own pitchRows order).
-const PITCH_ROW_ORDER = ["FWD", "MID", "DEF", "GK"];
+// Keeper-to-attacker, top to bottom, matching FPL (issue #49).
+//
+// This was previously attacker-first, inherited from the design export. The
+// export is the source of record for how this UI LOOKS, but not for a football
+// convention: FPL is the reference product for anyone playing a Premier League
+// fantasy game, it puts the goalkeeper at the top, and a manager arriving here
+// reads the pitch with that muscle memory. A reporter hit exactly that
+// confusion. Matching the thing everyone already knows beats matching the mock.
+//
+// The order stays vertical rather than the left-to-right the issue asked for:
+// a horizontal pitch on a phone forces short wide rows, and a five-man defence
+// stops fitting at all.
+const PITCH_ROW_ORDER = ["GK", "DEF", "MID", "FWD"];
 
 // A tile (starter or bench row) dims once a swap is pending and this tile is in
 // the opposite group from the pending selection but would not produce a legal
