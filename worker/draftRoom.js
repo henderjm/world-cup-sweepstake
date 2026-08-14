@@ -42,7 +42,7 @@ export class FantasyDraftRoom {
     this.draft = null; // hydrated lazily, see ensureHydrated
     this.hydrating = null;
     this.playersById = null; // Map<id, {id,name,team,position}>
-    this.playerPoolOrder = null; // array in pool order, for autoPick's "highest-listed" rule
+    this.playerPoolOrder = null; // the full pool (xP/tier included); autoPick ranks it itself
   }
 
   async fetch(request) {
@@ -222,7 +222,7 @@ export class FantasyDraftRoom {
         this.draft.draftedPlayerIds,
         SQUAD_SLOTS,
       );
-      const player = queuedPlayer ?? autoPick(available, roster, SQUAD_SLOTS);
+      const player = queuedPlayer ?? autoPick(available, roster, SQUAD_SLOTS, this.draft.memberIds.length);
       if (!player) {
         // Every open bucket has run out of legal candidates in the pool. This
         // should not happen (the pool is far larger than a squad) but must not
@@ -590,9 +590,12 @@ export class FantasyDraftRoom {
 
   // Player pool for pick validation/autopick. Fetched from the public static site
   // (the same data/PL/players.json the frontend already reads) rather than D1,
-  // because the JSON array's own order is the "highest-listed player" ranking
-  // autoPick uses as its tiebreak; D1 has no rank column. Cached in Durable Object
-  // storage (durable across evictions) and only refetched when missing.
+  // because D1 holds no xP/tier columns and autoPick needs the same per-player
+  // figures the browser's board is built from. The array's ORDER carries no
+  // meaning here: it is grouped by club and sorted only by tier, and autoPick
+  // ranks it itself (see its header - trusting this order was the bug). Cached in
+  // Durable Object storage (durable across evictions) and only refetched when
+  // missing.
   async loadPlayerPool() {
     if (this.playersById) return;
     let pool = await this.state.storage.get(PLAYER_POOL_STORAGE_KEY);

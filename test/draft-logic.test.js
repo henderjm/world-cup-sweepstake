@@ -69,8 +69,26 @@ test("resolvePick matches SQUAD_SIZE rounds for a full draft length", () => {
   assert.equal(resolvePick(members, totalPicks + 1, SQUAD_SIZE), null);
 });
 
-function player(id, position) {
-  return { id, position, name: `Player ${id}`, team: "Test FC" };
+function player(id, position, xp) {
+  const base = { id, position, name: `Player ${id}`, team: "Test FC" };
+  return xp == null ? base : { ...base, xp };
+}
+
+// A pool shaped like the real one: several deep at every position, with xP
+// descending within each. autoPick ranks by value over replacement, which is a
+// property of the whole pool, so a two-or-three-player array cannot express what
+// the ranking is meant to do (replacement level collapses onto the worst player
+// present). `top` is the best xP at each position; forwards lead, keepers trail,
+// exactly as they do in the shipped pool.
+function deepPool({ GK = 3.0, DEF = 4.0, MID = 4.5, FWD = 5.0 } = {}, perPosition = 20) {
+  const players = [];
+  let id = 1;
+  for (const [position, top] of Object.entries({ GK, DEF, MID, FWD })) {
+    for (let i = 0; i < perPosition; i += 1) {
+      players.push(player(id++, position, Number((top - i * 0.1).toFixed(2))));
+    }
+  }
+  return players;
 }
 
 test("validatePick rejects a player already drafted anywhere in the league", () => {
@@ -128,32 +146,56 @@ test("validatePick rejects an unrecognised position", () => {
   assert.equal(result.valid, false);
 });
 
-test("autoPick fills the scarcest unfilled bucket first", () => {
-  // Roster is one short of full at every bucket except MID and FWD, which are
-  // both fully open (0 picked); GK is one away from its cap of 2 (scarcest).
-  const roster = [
-    player(101, "GK"),
-    player(102, "DEF"),
-    player(103, "DEF"),
-    player(104, "DEF"),
-    player(105, "DEF"),
-  ];
-  const available = [
-    player(1, "FWD"),
-    player(2, "MID"),
-    player(3, "GK"), // scarcest open bucket (1 slot left) should win despite listing later
-  ];
-  const pick = autoPick(available, roster, SQUAD_SLOTS);
-  assert.equal(pick.id, 3);
+test("autoPick takes the best player on the board, not the scarcest bucket", () => {
+  const available = deepPool();
+  const pick = autoPick(available, [], SQUAD_SLOTS, 8);
+  // The single best player in the pool, whatever position they play.
+  assert.equal(pick.xp, 5.0);
+  assert.equal(pick.position, "FWD");
 });
 
-test("autoPick prefers the highest-listed player within the chosen bucket", () => {
+// The regression this rule was rewritten for. GK has the fewest slots (2), so
+// the old scarcest-bucket-first rule made every manager's opening pick a
+// goalkeeper: an all-bot 8-manager draft took 16 straight keepers before a
+// single outfielder, and the suggested-pick card advised humans to do the same.
+test("autoPick never opens with a goalkeeper just because GK has the fewest slots", () => {
+  const available = deepPool();
+  for (const leagueSize of [2, 4, 8, 10]) {
+    const pick = autoPick(available, [], SQUAD_SLOTS, leagueSize);
+    assert.notEqual(pick.position, "GK", `opened with a keeper in a ${leagueSize}-manager league`);
+  }
+});
+
+test("autoPick skips the best player when their bucket is already full", () => {
+  const available = deepPool();
+  // FWD is capped at 3; fill it, and the best forward must no longer be legal.
+  const roster = [player(901, "FWD"), player(902, "FWD"), player(903, "FWD")];
+  const pick = autoPick(available, roster, SQUAD_SLOTS, 8);
+  assert.notEqual(pick.position, "FWD");
+  assert.equal(pick.xp, 4.5); // the next-best legal player, a midfielder
+});
+
+// Slot arithmetic is what makes best-available safe: SQUAD_SLOTS sums to exactly
+// SQUAD_SIZE, so unfilled slots always equal remaining picks and a thin bucket
+// fills itself late by becoming the only legal one left.
+test("autoPick still completes a legal 15-player squad without ever chasing scarcity", () => {
+  const available = deepPool();
+  const taken = new Set();
   const roster = [];
-  const available = [player(5, "FWD"), player(6, "FWD"), player(7, "GK")];
-  // GK (2 remaining) and FWD (3 remaining) both open; GK is scarcer, so FWD
-  // listing order is irrelevant here, but confirm GK candidate 7 wins.
-  const pick = autoPick(available, roster, SQUAD_SLOTS);
-  assert.equal(pick.id, 7);
+  for (let i = 0; i < SQUAD_SIZE; i += 1) {
+    const pick = autoPick(
+      available.filter((entry) => !taken.has(entry.id)),
+      roster,
+      SQUAD_SLOTS,
+      8,
+    );
+    assert.ok(pick, `ran out of legal candidates at pick ${i + 1}`);
+    taken.add(pick.id);
+    roster.push(pick);
+  }
+  const counts = {};
+  for (const entry of roster) counts[entry.position] = (counts[entry.position] ?? 0) + 1;
+  assert.deepEqual(counts, SQUAD_SLOTS);
 });
 
 test("autoPick is deterministic given identical inputs", () => {

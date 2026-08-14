@@ -177,10 +177,28 @@ test("renderFantasyPlayerPool renders the Rank column header and a sort pill per
     { isMyTurn: false, myRoster: [], draftedIds: new Set(), leagueSize: 6 },
   );
   assert.match(html, /<span>Rank<\/span>/);
-  assert.match(html, /data-fantasy-pool-sort="rank">Rank</);
-  assert.match(html, /data-fantasy-pool-sort="xp">xP</);
-  assert.match(html, /data-fantasy-pool-sort="name">Name</);
+  assert.match(html, /<span>xP<\/span>/);
+  assert.match(html, /data-fantasy-pool-sort="rank"[^>]*>Rank</);
+  assert.match(html, /data-fantasy-pool-sort="xp"[^>]*>xP</);
+  assert.match(html, /data-fantasy-pool-sort="name"[^>]*>Name</);
   assert.match(html, /seg is-active" type="button" data-fantasy-pool-sort="xp"/);
+  // Every sort pill carries its plain-English explanation as a tooltip; "Board"
+  // is the one that is meaningless without it, so it is also renamed to match
+  // the My board sub-tab it refers to.
+  assert.match(html, /data-fantasy-pool-sort="board"[^>]*>My board</);
+  assert.match(html, /data-fantasy-pool-sort="rank"[^>]*title="[^"]+"/);
+});
+
+test("the My board sort is disabled, with a reason, until the manager has actually built one", () => {
+  const players = [{ ...pooledPlayer(1, "MID"), xp: 4 }];
+  const base = { isMyTurn: false, myRoster: [], draftedIds: new Set(), leagueSize: 6 };
+  const filter = { position: "All", search: "", sort: "rank" };
+
+  const noBoard = renderFantasyPlayerPool(players, filter, base);
+  assert.match(noBoard, /data-fantasy-pool-sort="board" disabled title="Star players in the My board tab[^"]*"/);
+
+  const withBoard = renderFantasyPlayerPool(players, filter, { ...base, board: { order: [1] } });
+  assert.doesNotMatch(withBoard, /data-fantasy-pool-sort="board" disabled/);
 });
 
 test("renderFantasyPlayerPool falls back to the default sort for an unrecognised filter.sort rather than throwing", () => {
@@ -261,13 +279,46 @@ test("renderFantasyPlayerRows renders no Tier/Apps cells at all when the pool ca
   assert.doesNotMatch(html, /fantasy-tier-chip/);
   assert.doesNotMatch(html, /fantasy-player-row__tier/);
   assert.doesNotMatch(html, /fantasy-player-row__stat/);
-  // The Rank column (fantasyDraftRank.js) is unconditional, unlike Tier/Apps -
-  // this fixture carries no xp, so it legitimately renders the same empty-
-  // placeholder class once, for the rank cell only. Scoped to "exactly one,
-  // and it's the rank cell's" rather than "absent anywhere in the row".
+  // Rank and xP (fantasyDraftRank.js) are both unconditional, unlike Tier/Apps -
+  // this fixture carries no xp, so each legitimately renders the same empty-
+  // placeholder class once. Scoped to "exactly these two" rather than "absent
+  // anywhere in the row".
   const emptyPlaceholders = html.match(/fantasy-stat--empty/g) ?? [];
-  assert.equal(emptyPlaceholders.length, 1, "only the Rank cell should use fantasy-stat--empty here");
+  assert.equal(emptyPlaceholders.length, 2, "only the Rank and xP cells should use fantasy-stat--empty here");
   assert.match(html, /fantasy-player-row__rank fantasy-stat fantasy-stat--empty/);
+  assert.match(html, /fantasy-player-row__xp"><span class="fantasy-stat fantasy-stat--empty"/);
+});
+
+test("renderFantasyPlayerRows shows the xP figure the sort control offers, so nobody sorts by an invisible number", () => {
+  const withXp = { id: 1, name: "Player 1", team: "Test FC", position: "MID", xp: 4.25 };
+  const html = renderFantasyPlayerRows([withXp], { position: "All", search: "" }, {
+    isMyTurn: false,
+    myRoster: [],
+    draftedIds: new Set(),
+    leagueSize: 8,
+  });
+  assert.match(html, /fantasy-player-row__xp"><span class="fantasy-stat">4\.3</);
+});
+
+test("the Starred filter narrows the pool to queued players, and says so when nothing is starred yet", () => {
+  const players = [
+    { ...pooledPlayer(1, "MID"), xp: 5 },
+    { ...pooledPlayer(2, "FWD"), xp: 4 },
+  ];
+  const context = { isMyTurn: false, myRoster: [], draftedIds: new Set(), leagueSize: 8, queuedIds: new Set([2]) };
+
+  const starred = renderFantasyPlayerRows(players, { position: "All", search: "", starredOnly: true }, context);
+  assert.match(starred, /Player 2/);
+  assert.doesNotMatch(starred, /Player 1/);
+
+  const all = renderFantasyPlayerRows(players, { position: "All", search: "", starredOnly: false }, context);
+  assert.match(all, /Player 1/);
+  assert.match(all, /Player 2/);
+
+  // An empty shortlist must explain itself rather than reading as "no players
+  // match", which sounds like the other filters are at fault.
+  const none = renderFantasyPlayerRows(players, { position: "All", search: "", starredOnly: true }, { ...context, queuedIds: new Set() });
+  assert.match(none, /You have not starred anyone yet/);
 });
 
 test("renderFantasyPlayerRows shows a Starter tier chip and the real appearances count when the pool has prior-season enrichment", () => {
@@ -1094,11 +1145,11 @@ test("renderFantasyMatchupPanel explains a bye plainly when opponent is null", (
     { gameweek: 7, status: "scheduled", me: { userId: 1, name: "Alex", score: 0 }, opponent: null },
     { leagueSize: 3 },
   );
-  assert.match(html, /You have a bye/);
-  // Names WHY, not just that it happened: an odd-sized league byes somebody
-  // every week and the manager it happens to has to be told that.
+  assert.match(html, /You play Average/);
+  // Names WHY, not just that it happened: an odd-sized league leaves somebody
+  // unpaired every week and the manager it happens to has to be told that.
   assert.match(html, /3 managers/);
-  assert.match(html, /back in the schedule/);
+  assert.match(html, /median/);
   assert.doesNotMatch(html, /fantasy-matchup__vs/);
 });
 
@@ -1879,13 +1930,14 @@ test("the draft room's side column carries the board card and the suggested pick
     filter: { position: "All", search: "" },
     myUserId: 1,
     queue: [],
-    board: { order: [11, 10], tierBreaks: [10], notes: { 10: "only if the cheap keepers go" } },
+    board: { order: [11, 10], tierBreaks: [10], notes: { 11: "happy to take him a round early" } },
   });
   assert.match(html, /class="card fantasy-board fantasy-board--compact/);
   assert.match(html, /data-board-rows/);
-  // The suggestion here is the scarcest-bucket keeper, so its note is the one
-  // that must be in front of a manager on the clock.
-  assert.match(html, /Your note: only if the cheap keepers go/);
+  // The suggestion is the best player on the board with an open bucket (the
+  // midfielder, xP 9, not the keeper), so its note is the one that must be in
+  // front of a manager on the clock.
+  assert.match(html, /Your note: happy to take him a round early/);
 });
 
 test("My board and Waivers are each live for exactly one half of a league's life", () => {
@@ -1897,4 +1949,22 @@ test("My board and Waivers are each live for exactly one half of a league's life
   const complete = renderFantasyLeagueHeader({ name: "L", draftStatus: "complete" }, members, "feed");
   assert.match(complete, /data-fantasy-subtab="board" disabled/);
   assert.match(complete, /data-fantasy-subtab="waivers" >Waivers/);
+});
+
+test("an Average opponent renders as a real scoreline, chipped as AVG and never as a bot", () => {
+  const html = renderFantasyMatchupPanel(
+    {
+      gameweek: 7,
+      status: "final",
+      me: { userId: 1, name: "Alex", score: 62 },
+      opponent: { userId: 0, name: "Average", isBot: false, isAverage: true, score: 50 },
+    },
+    { leagueSize: 3 },
+  );
+  assert.match(html, /fantasy-matchup__vs/, "this is a fixture, not a bye card");
+  assert.match(html, /fantasy-matchup__name">Average\s*<span/);
+  assert.match(html, /fantasy-chip--average/);
+  assert.doesNotMatch(html, /fantasy-chip--bot/, "Average is not a bot and must never be chipped as one");
+  assert.match(html, />62</);
+  assert.match(html, />50</);
 });

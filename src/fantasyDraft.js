@@ -75,23 +75,33 @@ export function currentSeasonLabel(now = new Date()) {
 // card and the pool's PICK badge: the same autoPick the server falls back to
 // when a manager's clock runs out (src/draftLogic.js), applied to the caller's own
 // roster against the pool with every drafted player (anywhere in the league)
-// removed. Not AI, not a projection: a deterministic scarcest-bucket-first rule,
-// reused rather than re-derived so the suggestion never disagrees with what a
-// timeout would actually pick for you. Returns null once no legal candidate is
-// left (squad complete, or pool exhausted for every open bucket).
-export function suggestedPick(availablePlayers, myRoster, draftedIds, squadSlots = SQUAD_SLOTS) {
+// removed. Not AI, not a projection: the best player left on the manager's own
+// board whose position bucket is still open, reused rather than re-derived so
+// the suggestion never disagrees with what a timeout would actually pick for
+// you. Returns null once no legal candidate is left (squad complete, or pool
+// exhausted for every open bucket).
+//
+// `leagueSize` reaches autoPick's ranking, so passing it wrong only mis-ranks
+// the suggestion, never makes it illegal; it defaults the same way autoPick
+// does. It sits ahead of `squadSlots` because callers genuinely vary it, while
+// squadSlots is only ever overridden by tests.
+export function suggestedPick(availablePlayers, myRoster, draftedIds, leagueSize = 1, squadSlots = SQUAD_SLOTS) {
   const drafted = draftedIds ?? new Set();
   const undrafted = (availablePlayers ?? []).filter((player) => player?.id != null && !drafted.has?.(player.id));
-  return autoPick(undrafted, myRoster ?? [], squadSlots);
+  return autoPick(undrafted, myRoster ?? [], squadSlots, leagueSize);
 }
 
-// One-line rationale for the suggested-pick card, walking the exact same
-// scarcest-bucket-first path autoPick took rather than inventing a separate
-// explanation: names the position bucket (which is, by construction, the
-// scarcest one with a legal candidate left, since `player` came from
-// suggestedPick above), how many of that bucket's slots remain, and whether the
-// pick was ranked by a real xP figure or, absent that, just the pool's own
-// listed order - honest either way, never claims a stat the player doesn't have.
+// One-line rationale for the suggested-pick card, walking the exact same path
+// autoPick took rather than inventing a separate explanation: the best player
+// left on the board with an open bucket, how many of that bucket's slots remain,
+// and whether the ranking rested on a real xP figure or, absent that, just the
+// pool's own listed order - honest either way, never claims a stat the player
+// doesn't have.
+//
+// It used to open "Fills your scarcest open slot", which was true of the old
+// scarcest-bucket-first rule and is why every manager's first suggestion was a
+// goalkeeper. Reworded with the rule itself rather than left to describe
+// behaviour that no longer happens.
 export function suggestedPickReason(player, myRoster, squadSlots = SQUAD_SLOTS) {
   if (!player) return "";
   const counts = {};
@@ -102,8 +112,11 @@ export function suggestedPickReason(player, myRoster, squadSlots = SQUAD_SLOTS) 
   const total = squadSlots[player.position] ?? 0;
   const remaining = total - (counts[player.position] ?? 0);
   const stats = normalizePlayerStats(player);
-  const basis = stats.xp != null ? `Highest listed expected points for ${player.position}.` : `First available ${player.position} in the pool.`;
-  return `Fills your scarcest open slot: ${player.position} (${remaining} of ${total} remaining). ${basis}`;
+  const basis =
+    stats.xp != null
+      ? `Best value over replacement left on your board.`
+      : `First available ${player.position} in the pool.`;
+  return `${basis} Fills ${player.position} (${remaining} of ${total} remaining).`;
 }
 
 // -- Pick queue (personal shortlist) -----------------------------------------

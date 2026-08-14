@@ -363,3 +363,29 @@ test("the api key travels in the POST body, never in a URL", () => {
   assert.equal(endpoint.includes("phc_secret"), false, "the key leaked into the beacon URL");
   assert.match(html, /api_key:"phc_secret"/);
 });
+
+// -- The "only telemetry.js touches posthog" invariant ------------------------
+//
+// CLAUDE.md states it, and it had already been broken twice: two bare
+// `posthog.capture(...)` calls survived in app.js with no `posthog` in scope,
+// so accepting an invite and adding bot managers both died on
+// "posthog is not defined" - a ReferenceError thrown inside the click handler,
+// on two of the highest-intent actions in the product. A grep is a blunt test,
+// but the failure it catches is total and the rule is exactly greppable.
+test("no module outside telemetry.js touches the posthog global directly", async () => {
+  const { readdir, readFile } = await import("node:fs/promises");
+  const dir = new URL("../src/", import.meta.url);
+  const files = (await readdir(dir)).filter((name) => name.endsWith(".js") && name !== "telemetry.js");
+
+  const offenders = [];
+  for (const name of files) {
+    const source = await readFile(new URL(name, dir), "utf8");
+    source.split("\n").forEach((line, index) => {
+      // Skip comments: several modules legitimately DISCUSS posthog in prose.
+      const code = line.trim();
+      if (code.startsWith("//") || code.startsWith("*") || code.startsWith("/*")) return;
+      if (/(^|[^.\w"'`])posthog\s*\./.test(line)) offenders.push(`${name}:${index + 1}: ${code}`);
+    });
+  }
+  assert.deepEqual(offenders, [], `route these through telemetry.js's wrappers:\n${offenders.join("\n")}`);
+});

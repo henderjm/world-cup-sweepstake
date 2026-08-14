@@ -159,11 +159,32 @@ export function rankDraftPool(players, leagueSize, squadSlots = SQUAD_SLOTS) {
 // annotation present every player's boardRank is missing, so byNumber sorts
 // them all last and the order collapses to the name tie-break - which is why
 // callers must annotate before offering this sort.
+// `hint` is the control's plain-English explanation, rendered as the pill's
+// title/tooltip. "Board" in particular is meaningless without it: it is the
+// manager's OWN ordering from the My board sub-tab, not the app's ranking, and
+// the two sitting side by side as bare words invited exactly that confusion.
+// Kept here beside the comparator so a label and its explanation cannot drift.
 export const POOL_SORTS = {
-  rank: { label: "Rank", compare: byNumber((player) => player.draftRank, "asc") },
-  board: { label: "Board", compare: byNumber((player) => player.boardRank, "asc") },
-  xp: { label: "xP", compare: byNumber((player) => player.xp, "desc") },
-  name: { label: "Name", compare: (a, b) => String(a?.name ?? "").localeCompare(String(b?.name ?? "")) },
+  rank: {
+    label: "Rank",
+    hint: "The app's ranking: value over replacement for your league size.",
+    compare: byNumber((player) => player.draftRank, "asc"),
+  },
+  board: {
+    label: "My board",
+    hint: "Your own order from the My board tab. Build one there first.",
+    compare: byNumber((player) => player.boardRank, "asc"),
+  },
+  xp: {
+    label: "xP",
+    hint: "Expected fantasy points per game, from up to three prior seasons.",
+    compare: byNumber((player) => player.xp, "desc"),
+  },
+  name: {
+    label: "Name",
+    hint: "Alphabetical by player name.",
+    compare: (a, b) => String(a?.name ?? "").localeCompare(String(b?.name ?? "")),
+  },
 };
 
 export const DEFAULT_POOL_SORT = "rank";

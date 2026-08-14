@@ -452,11 +452,18 @@ test("priorSeasonRangeLabel returns an empty string for a missing or invalid sea
 
 // -- suggestedPickReason -------------------------------------------------------------
 
-test("suggestedPickReason names the scarcest bucket and remaining slots, honestly noting no xP data", () => {
+test("suggestedPickReason names the bucket and remaining slots, honestly noting no xP data", () => {
   const reason = suggestedPickReason(player(1, "FWD"), []);
-  assert.match(reason, /scarcest open slot: FWD/);
+  assert.match(reason, /Fills FWD/);
   assert.match(reason, /3 of 3 remaining/);
   assert.match(reason, /First available FWD in the pool\./);
+});
+
+// The card used to open "Fills your scarcest open slot", which is how it came to
+// advise every manager to spend pick one on a goalkeeper.
+test("suggestedPickReason no longer claims the pick fills the scarcest slot", () => {
+  const withXp = { id: 1, position: "GK", name: "Test", team: "Test FC", xp: 3.6 };
+  assert.doesNotMatch(suggestedPickReason(withXp, []), /scarcest/i);
 });
 
 test("suggestedPickReason reflects a partially-filled bucket's remaining count", () => {
@@ -465,10 +472,11 @@ test("suggestedPickReason reflects a partially-filled bucket's remaining count",
   assert.match(reason, /2 of 3 remaining/);
 });
 
-test("suggestedPickReason cites the real xP figure instead of pool order when the player has one", () => {
+test("suggestedPickReason cites the board ranking instead of pool order when the player has xP", () => {
   const withXp = { id: 1, position: "FWD", name: "Test", team: "Test FC", xp: 7.8 };
   const reason = suggestedPickReason(withXp, []);
-  assert.match(reason, /Highest listed expected points for FWD\./);
+  assert.match(reason, /Best value over replacement left on your board\./);
+  assert.doesNotMatch(reason, /First available/);
 });
 
 test("suggestedPickReason returns an empty string for a null player", () => {

@@ -295,7 +295,7 @@ function initialDemoState() {
     seed: null,
     room: null, // draft room state, same shape as the real draft room's (see fantasyDemo.js)
     remainingMs: 0,
-    filter: { position: "All", club: "All", search: "", hideTaken: true, sort: DEFAULT_POOL_SORT },
+    filter: { position: "All", club: "All", search: "", hideTaken: true, starredOnly: false, sort: DEFAULT_POOL_SORT },
     queue: [], // ordered array of queued player ids (see fantasyDraft.js's toggleQueue/moveQueueItem)
     ...initialBoardState(),
     botTimer: null,
@@ -341,7 +341,7 @@ function initialFantasyState() {
     playerPool: null,
     playerPoolLoading: false,
     draftRoom: null, // { controller, state, remainingMs } once a socket is open
-    filter: { position: "All", club: "All", search: "", hideTaken: true, sort: DEFAULT_POOL_SORT },
+    filter: { position: "All", club: "All", search: "", hideTaken: true, starredOnly: false, sort: DEFAULT_POOL_SORT },
     queue: [], // ordered array of queued player ids, personal shortlist (see fantasyDraft.js)
     ...initialBoardState(),
     subTab: null, // null until a league opens; see defaultFantasySubTab
@@ -837,7 +837,7 @@ async function acceptInvite() {
   if (state.section === "join") renderLayout();
   try {
     const league = await apiJoinLeague(invite.code);
-    posthog.capture("fantasy_invite_accepted", { league_id: league.id });
+    track(FUNNEL_EVENTS.FANTASY_INVITE_ACCEPTED, { league_id: league.id });
     state.invite = initialInviteState();
     state.fantasy.leagues = null; // the list is now stale by one league
     setSection("fantasy");
@@ -2077,7 +2077,9 @@ function fantasyPoolContext() {
   );
   const isMyTurn = room.onClockUserId != null && room.onClockUserId === state.fantasy.myUserId;
   const pool = state.fantasy.playerPool?.players ?? [];
-  const suggested = topQueuedPick(state.fantasy.queue, pool, myRoster, draftedIds) ?? suggestedPick(pool, myRoster, draftedIds);
+  const suggested =
+    topQueuedPick(state.fantasy.queue, pool, myRoster, draftedIds) ??
+    suggestedPick(pool, myRoster, draftedIds, leagueSize);
   return { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null, queuedIds, leagueSize, board: state.fantasy.board };
 }
 
@@ -2322,7 +2324,7 @@ async function addFantasyBots(count) {
   renderLayout();
   try {
     const result = await apiAddLeagueBots(f.activeLeagueId, count);
-    posthog.capture("fantasy_bots_added", { league_id: f.activeLeagueId, count: result.added?.length ?? 0 });
+    track(FUNNEL_EVENTS.FANTASY_BOTS_ADDED, { league_id: f.activeLeagueId, count: result.added?.length ?? 0 });
     f.botBusy = false;
     await openFantasyLeague(f.activeLeagueId);
   } catch (error) {
@@ -2617,7 +2619,7 @@ async function startDemoDraft() {
   d.humanId = humanId;
   d.seed = `demo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   d.room = initDemoDraftRoom(members.map((member) => member.userId));
-  d.filter = { position: "All", club: "All", search: "", hideTaken: true, sort: DEFAULT_POOL_SORT };
+  d.filter = { position: "All", club: "All", search: "", hideTaken: true, starredOnly: false, sort: DEFAULT_POOL_SORT };
   d.queue = [];
   // Kept across a "draft again": the sandbox board is the one a visitor spent
   // effort on, and throwing it away every restart would make trying the
@@ -2759,7 +2761,9 @@ function demoPoolContext() {
   );
   const isMyTurn = room.onClockUserId != null && room.onClockUserId === d.humanId;
   const pool = d.pool?.players ?? [];
-  const suggested = topQueuedPick(d.queue, pool, myRoster, draftedIds) ?? suggestedPick(pool, myRoster, draftedIds);
+  const suggested =
+    topQueuedPick(d.queue, pool, myRoster, draftedIds) ??
+    suggestedPick(pool, myRoster, draftedIds, leagueSize);
   return { isMyTurn, myRoster, draftedIds, suggestedId: suggested?.id ?? null, queuedIds, leagueSize, board: d.board };
 }
 
@@ -3485,6 +3489,14 @@ function wireLayoutControls() {
         refreshDemoPool();
         return;
       }
+      const demoStarredButton = event.target.closest("[data-fantasy-starred-only]");
+      if (demoStarredButton) {
+        state.demo.filter.starredOnly = !state.demo.filter.starredOnly;
+        demoStarredButton.classList.toggle("is-active", state.demo.filter.starredOnly);
+        demoStarredButton.setAttribute("aria-pressed", String(state.demo.filter.starredOnly));
+        refreshDemoPool();
+        return;
+      }
       const demoPoolSortButton = event.target.closest("[data-fantasy-pool-sort]");
       if (demoPoolSortButton) {
         state.demo.filter.sort = demoPoolSortButton.dataset.fantasyPoolSort;
@@ -3822,6 +3834,14 @@ function wireLayoutControls() {
       state.fantasy.filter.hideTaken = state.fantasy.filter.hideTaken === false;
       fantasyHideTakenButton.classList.toggle("is-active", state.fantasy.filter.hideTaken);
       fantasyHideTakenButton.setAttribute("aria-pressed", String(state.fantasy.filter.hideTaken));
+      refreshFantasyPool();
+      return;
+    }
+    const fantasyStarredButton = event.target.closest("[data-fantasy-starred-only]");
+    if (fantasyStarredButton) {
+      state.fantasy.filter.starredOnly = !state.fantasy.filter.starredOnly;
+      fantasyStarredButton.classList.toggle("is-active", state.fantasy.filter.starredOnly);
+      fantasyStarredButton.setAttribute("aria-pressed", String(state.fantasy.filter.starredOnly));
       refreshFantasyPool();
       return;
     }

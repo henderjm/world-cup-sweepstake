@@ -182,7 +182,7 @@ export function autoPickForRoom(room, pool) {
   if (!current) return null;
   const drafted = draftedPlayerIds(room);
   const available = (pool ?? []).filter((player) => player?.id != null && !drafted.has(player.id));
-  return autoPick(available, room.rosters?.[current.userId] ?? [], SQUAD_SLOTS);
+  return autoPick(available, room.rosters?.[current.userId] ?? [], SQUAD_SLOTS, room.memberIds?.length ?? 1);
 }
 
 export function isDemoDraftComplete(room) {
