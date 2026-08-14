@@ -656,7 +656,10 @@ function footerLearnLinks() {
   const links = learnPages(TUTORIALS)
     .map((page) => `<a href="learn/${esc(page.slug)}/">${esc(page.tutorial.title)}</a>`)
     .join(" · ");
-  return links ? `<p class="footer__learn">Guides: ${links} · <a href="learn/">all guides</a></p>` : "";
+  // "All guides" capitalised to match the tutorial titles beside it and the
+  // same link on the static Learn pages (renderLearnArticlePage), which was
+  // already sentence case. It was the only lower-case link in the row.
+  return links ? `<p class="footer__learn">Guides: ${links} · <a href="learn/">All guides</a></p>` : "";
 }
 
 export function renderFooter(model) {

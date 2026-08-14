@@ -3247,3 +3247,16 @@ button { font-family: inherit; cursor: pointer; }
   .learnpage-nav { order: 3; width: 100%; margin-left: 0; }
   .learnpage-cta--nav { margin-left: auto; }
 }
+
+/* Full-screen confetti overlay for the end of a draft (issue #42). Fixed and
+   pointer-events none so it never intercepts a click on the roster board
+   underneath, and above everything so it is not clipped by a card's overflow.
+   The element is created and removed by app.js; nothing renders it at rest. */
+.confetti-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 9999;
+}

@@ -1,4 +1,5 @@
 import { loadModel } from "./data.js";
+import { confettiBurst } from "./interactions.js";
 import { track, trackException } from "./telemetry.js";
 import {
   FUNNEL_EVENTS,
@@ -2001,7 +2002,28 @@ function applyFantasyDraftMessage(message) {
     // even if this call were ever skipped; this is the second, independent
     // layer that also actively closes the socket.
     room.controller.close();
+    celebrateDraftComplete();
   }
+}
+
+// The draft is the one genuinely communal moment this product has: eight people
+// in a room for an hour, and then it just... stops. A visual full-time whistle
+// is what tells everyone at once that it is over (issue #42).
+//
+// Deliberately fires from the "complete" MESSAGE rather than from the completed
+// render: the render also runs on every later visit to a finished league, which
+// would set confetti off weeks afterwards every time someone opened their team.
+// confettiBurst already no-ops under prefers-reduced-motion, so the check lives
+// there rather than being restated here.
+function celebrateDraftComplete() {
+  const canvas = document.createElement("canvas");
+  canvas.className = "confetti-canvas";
+  document.body.appendChild(canvas);
+  confettiBurst(canvas);
+  // Comfortably past confettiBurst's own 200-frame life, so the node goes away
+  // rather than sitting over the page swallowing nothing (it is pointer-events
+  // none, but an orphaned full-screen canvas per draft is still a leak).
+  window.setTimeout(() => canvas.remove(), 6000);
 }
 
 function updateFantasyClockDisplay(remainingMs) {
@@ -2753,6 +2775,10 @@ function applyDemoPickAndAdvance(player, { viaQueue = false, source = PICK_SOURC
   if (source !== PICK_SOURCES.BOT) track(FUNNEL_EVENTS.DEMO_PICK_MADE, pickProperties);
   if (isDemoDraftComplete(d.room)) {
     track(FUNNEL_EVENTS.DEMO_DRAFT_COMPLETED, demoDraftCompletedProperties(d));
+    // The sandbox gets the same full-time whistle as a real draft (issue #42).
+    // It is the screen most visitors actually finish, so if the celebration is
+    // worth having anywhere it is worth having here.
+    celebrateDraftComplete();
     beginDemoSeason();
     return;
   }
