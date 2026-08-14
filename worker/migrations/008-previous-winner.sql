@@ -1,0 +1,20 @@
+-- Previous winner (issue #43): the commissioner names the manager holding last
+-- season's trophy, and that manager wears it everywhere the league sees them.
+--
+-- On fantasy_leagues rather than fantasy_league_members, because "who won last
+-- season" is one fact about the LEAGUE, not a property each seat carries. A
+-- per-member flag would allow two champions, or none while the column claims
+-- otherwise, and every reader would have to defend against both.
+--
+-- Nullable with no default, and that is the whole compatibility story: NULL
+-- means "no champion recorded", which is every existing row, and every surface
+-- renders exactly as it does today. Nothing needs backfilling.
+--
+-- ON DELETE SET NULL rather than CASCADE: deleting a user must never delete the
+-- league they once won. SQLite requires an added REFERENCES column to default
+-- to NULL, which this does.
+--
+-- Apply with:
+--   npx wrangler d1 execute squad-goals --remote --file worker/migrations/008-previous-winner.sql
+-- Fresh databases get this column straight from worker/schema.sql instead.
+ALTER TABLE fantasy_leagues ADD COLUMN previous_winner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;

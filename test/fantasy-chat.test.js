@@ -153,3 +153,26 @@ test("a bot announcement written by an older build still reads as English", () =
   const removed = describeChatEvent({ kind: "system", event: CHAT_EVENTS.BOT_REMOVED, payload: {} });
   assert.equal(removed.text, "Someone removed a bot manager from the league.");
 });
+
+
+test("the feed says who was named defending champion, and copes with a payload missing a name", () => {
+  const named = describeChatEvent({
+    kind: "system",
+    event: CHAT_EVENTS.CHAMPION_SET,
+    payload: { actor: "Alice", manager: "Rory" },
+  });
+  assert.equal(named.text, "Alice named Rory the defending champion.");
+  assert.equal(named.icon, "\u{1F3C6}");
+
+  // A row written before the payload carried a name must still read as English.
+  const bare = describeChatEvent({ kind: "system", event: CHAT_EVENTS.CHAMPION_SET, payload: {} });
+  assert.equal(bare.text, "Someone named a manager the defending champion.");
+  assert.doesNotMatch(bare.text, /undefined|null/);
+
+  const cleared = describeChatEvent({
+    kind: "system",
+    event: CHAT_EVENTS.CHAMPION_CLEARED,
+    payload: { actor: "Alice" },
+  });
+  assert.equal(cleared.text, "Alice cleared the defending champion.");
+});

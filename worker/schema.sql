@@ -113,6 +113,19 @@ CREATE TABLE IF NOT EXISTS fantasy_leagues (
   commissioner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   invite_code TEXT NOT NULL UNIQUE,
   draft_status TEXT NOT NULL DEFAULT 'pending', -- pending | drafting | complete
+  -- The league's defending champion, set by the commissioner (issue #43): who
+  -- won the season BEFORE this app was keeping score. NULL means nobody has
+  -- been named, which is every league until a commissioner says otherwise.
+  --
+  -- Hand-set rather than derived because a champion of a season the app did
+  -- not run is not derivable from anything; see src/fantasyChampion.js for why
+  -- it is one holder rather than a table of past seasons.
+  --
+  -- ON DELETE SET NULL, not CASCADE: if the holder's account goes, the league
+  -- must lose its trophy holder, never itself. See
+  -- worker/migrations/008-previous-winner.sql for adding this to a database
+  -- created before it shipped (fresh databases get it from here).
+  previous_winner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

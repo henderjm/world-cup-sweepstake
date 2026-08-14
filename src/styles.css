@@ -1668,6 +1668,24 @@ button { font-family: inherit; cursor: pointer; }
   border-top: 1px solid var(--line-2);
 }
 
+/* Defending champion (issue #43). The trophy chip is an emoji rather than a
+   word, so it keeps the BOT chip's spacing and vertical alignment but drops the
+   uppercase-label treatment entirely: a filled lime pill around a gold trophy
+   fights itself, and the glyph is already the whole message. */
+.fantasy-chip--champion {
+  margin-left: 6px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+  background: transparent;
+  border: 0;
+  vertical-align: middle;
+}
+
+.fantasy-champion__form { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0 6px; }
+.fantasy-champion__select { flex: 1 1 180px; max-width: 260px; }
+.fantasy-champion__holder { margin: 0; color: var(--text); }
+
 /* Public invite preview (#join/<code>). Signed out, so it gets the same
    centred hero treatment as the other standalone screens rather than the
    in-league panel shell. */

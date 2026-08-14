@@ -193,6 +193,8 @@ const ROUTES = [
   ["DELETE", "/fantasy/league/1/bots/2"],
   ["POST", "/fantasy/league/1/autopilot/2"],
   ["DELETE", "/fantasy/league/1/autopilot/2"],
+  ["POST", "/fantasy/league/1/champion"],
+  ["DELETE", "/fantasy/league/1/champion"],
   ["GET", "/analysis/12345"],
   ["GET", "/banter/12345"],
   ["GET", "/match/12345"],
@@ -467,6 +469,149 @@ test("autopilot refuses a seat that is already a bot, and a league that has not 
 
   const stranger = await autopilotCall("POST", "/fantasy/league/1/autopilot/2", { isMember: false }).response;
   assert.equal(stranger.status, 404);
+});
+
+// -- The defending champion, actually executed --------------------------------
+//
+// Same anti-short-circuit discipline as the autopilot block above. What is
+// being proved is the authorization shape: the failure mode this feature could
+// introduce is "any member can hand the league's trophy to anyone", and the
+// second one is storing an id belonging to somebody who is not in the league,
+// which would save cleanly and then never match a member again.
+
+function championDb(seen, { commissionerUserId = 1, draftStatus = "complete", members, previousWinner = null } = {}) {
+  const rows = members ?? [
+    { user_id: 1, team_name: null, name: "Ada", email: "ada@example.test", is_bot: 0 },
+    { user_id: 2, team_name: "Rory's XI", name: "Rory", email: "rory@example.test", is_bot: 0 },
+    { user_id: 7, team_name: null, name: "Bot Casillas", email: "bot@example.test", is_bot: 1 },
+  ];
+  const make = (sql) => {
+    const normalised = sql.replace(/\s+/g, " ").trim();
+    const statement = {
+      bind: () => statement,
+      first: async () => {
+        if (normalised.includes("FROM sessions s")) {
+          return { id: 1, email: "ada@example.test", name: "Ada", prefs: "{}" };
+        }
+        if (normalised.includes("FROM fantasy_leagues WHERE id")) {
+          return {
+            id: 1,
+            commissioner_user_id: commissionerUserId,
+            draft_status: draftStatus,
+            previous_winner_user_id: previousWinner,
+          };
+        }
+        return null;
+      },
+      all: async () => ({ results: rows }),
+      run: async () => ({ success: true, meta: { changes: 1 } }),
+    };
+    return statement;
+  };
+  return {
+    prepare: (sql) => {
+      seen.push(sql.replace(/\s+/g, " ").trim());
+      return make(sql);
+    },
+    batch: async () => [],
+  };
+}
+
+function championCall(method, body, dbOptions) {
+  const seen = [];
+  const response = worker.fetch(
+    new Request("https://example.test/fantasy/league/1/champion", {
+      method,
+      headers: { Authorization: `Bearer ${SESSION_TOKEN}`, "Content-Type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    }),
+    { ...env, DB: championDb(seen, dbOptions) },
+  );
+  return { response, seen };
+}
+
+test("the commissioner can name last season's winner, and the league is told", async () => {
+  const { response, seen } = championCall("POST", { userId: 2 });
+  const resolved = await response;
+  assert.equal(resolved.status, 200);
+  assert.deepEqual(await resolved.json(), { previousWinnerUserId: 2 });
+  assert.ok(
+    seen.some((sql) => sql.startsWith("UPDATE fantasy_leagues SET previous_winner_user_id = ?2")),
+    "the champion was never written, so this test proves nothing",
+  );
+  // A trophy appearing beside a name unannounced is the version that starts an
+  // argument in the group chat rather than settling one.
+  assert.ok(
+    seen.some((sql) => sql.startsWith("INSERT INTO fantasy_chat_messages")),
+    "the league was never told who the champion is",
+  );
+});
+
+test("an ordinary member cannot name the champion", async () => {
+  // The session is user 1; the commissioner is user 99.
+  const { response, seen } = championCall("POST", { userId: 1 }, { commissionerUserId: 99 });
+  assert.equal((await response).status, 403);
+  assert.equal(
+    seen.some((sql) => sql.startsWith("UPDATE fantasy_leagues SET previous_winner_user_id")),
+    false,
+    "a non-commissioner still wrote the champion",
+  );
+});
+
+test("the champion must be a member of this league, and must not be a bot", async () => {
+  const stranger = championCall("POST", { userId: 404 });
+  assert.equal((await stranger.response).status, 400);
+  assert.equal(
+    stranger.seen.some((sql) => sql.startsWith("UPDATE fantasy_leagues SET previous_winner_user_id")),
+    false,
+    "an id belonging to nobody in this league was stored",
+  );
+
+  // A bot seat is created for this league while it is pending, so it cannot
+  // have won a season that predates the league.
+  const bot = championCall("POST", { userId: 7 });
+  assert.equal((await bot.response).status, 400);
+
+  for (const body of [{}, { userId: null }, { userId: "nobody" }]) {
+    assert.equal((await championCall("POST", body).response).status, 400, JSON.stringify(body));
+  }
+});
+
+test("naming the champion is allowed after the draft, unlike filling a seat with a bot", async () => {
+  // The deliberate difference from the bot routes: this records history, it
+  // does not change who plays, so a commissioner who only thinks of it in
+  // October must still be able to do it.
+  for (const draftStatus of ["pending", "drafting", "complete"]) {
+    const { response } = championCall("POST", { userId: 2 }, { draftStatus });
+    assert.equal((await response).status, 200, draftStatus);
+  }
+});
+
+test("clearing the champion is idempotent, and only says so when there was one", async () => {
+  const had = championCall("DELETE", undefined, { previousWinner: 2 });
+  const resolved = await had.response;
+  assert.equal(resolved.status, 200);
+  assert.deepEqual(await resolved.json(), { previousWinnerUserId: null });
+  assert.ok(had.seen.some((sql) => sql.startsWith("INSERT INTO fantasy_chat_messages")));
+
+  // Nothing to clear: still a 200 (the caller gets the end state they asked
+  // for), but no feed line about an event that did not happen.
+  const hadNot = championCall("DELETE", undefined, { previousWinner: null });
+  assert.equal((await hadNot.response).status, 200);
+  assert.equal(
+    hadNot.seen.some((sql) => sql.startsWith("INSERT INTO fantasy_chat_messages")),
+    false,
+    "the feed announced a champion being cleared when there was none",
+  );
+});
+
+test("an ordinary member cannot clear the champion either", async () => {
+  const { response, seen } = championCall("DELETE", undefined, { commissionerUserId: 99, previousWinner: 2 });
+  assert.equal((await response).status, 403);
+  assert.equal(
+    seen.some((sql) => sql.includes("previous_winner_user_id = NULL")),
+    false,
+  );
 });
 
 // -- The post-draft recap route, actually executed ----------------------------
