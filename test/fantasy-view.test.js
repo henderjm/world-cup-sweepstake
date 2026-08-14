@@ -1359,7 +1359,8 @@ test("renderFantasyWaiversPanel lists wire players with a Claim action and their
 
 test("renderFantasyWaiversPanel's status header explains faab mode and shows the caller's budget", () => {
   const html = renderFantasyWaiversPanel(waiversFixture({ mode: "faab" }), { myUserId: 3, roster: [] });
-  assert.match(html, /Blind bidding \(FAAB\)/);
+  assert.match(html, /Blind bidding/);
+  assert.doesNotMatch(html, /FAAB/); // issue #35: no unexplained acronyms in the UI
   assert.match(html, /highest bid wins/i);
   assert.match(html, /80/); // myBudgetRemaining
   assert.match(html, /league budget 100/);

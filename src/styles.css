@@ -640,6 +640,20 @@ button { font-family: inherit; cursor: pointer; }
 
 /* Fixtures --------------------------------------------------------------------------------- */
 
+/* Results/Upcoming and the club filter share one row, wrapping to two on a
+   phone rather than squeezing the select down to nothing. */
+.fxfilters {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.fxfilters .fantasy-select { margin-left: auto; }
+@media (max-width: 520px) {
+  .fxfilters .fantasy-select { margin-left: 0; width: 100%; }
+}
+
 .fxday { margin-bottom: 18px; }
 .fxday h3 {
   margin: 0 0 6px;

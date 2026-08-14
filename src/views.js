@@ -417,16 +417,29 @@ export function renderKnockout(model) {
 
 // -- Fixtures ----------------------------------------------------------------------------------------
 
-export function renderFixtures(model, view = "results") {
+// `team` is "All" or a club name exactly as it appears on a match. Filtering by
+// club is the one thing a 380-fixture season list is unusable without: the
+// question people actually bring to this page is "when do we play", not "what
+// is on this weekend". The Results/Upcoming counts are deliberately computed
+// AFTER the club filter, so they describe the list actually on screen rather
+// than the whole competition.
+export function renderFixtures(model, view = "results", team = "All") {
   const isUpcoming = (match) => !isFinished(match.status) && !isLive(match.status);
   const upcoming = view === "upcoming";
+  const clubs = [...new Set(model.matches.flatMap((match) => [match.homeTeam, match.awayTeam]).filter(Boolean))].sort(
+    (a, b) => a.localeCompare(b),
+  );
+  const activeTeam = team && clubs.includes(team) ? team : "All";
+  const inTeam = (match) => activeTeam === "All" || match.homeTeam === activeTeam || match.awayTeam === activeTeam;
+
+  const scoped = model.matches.filter(inTeam);
   const counts = {
-    results: model.matches.filter((match) => !isUpcoming(match)).length,
-    upcoming: model.matches.filter(isUpcoming).length,
+    results: scoped.filter((match) => !isUpcoming(match)).length,
+    upcoming: scoped.filter(isUpcoming).length,
   };
 
   const byDay = new Map();
-  model.matches
+  scoped
     .filter((match) => (upcoming ? isUpcoming(match) : !isUpcoming(match)))
     .sort((a, b) =>
       upcoming
@@ -458,9 +471,24 @@ export function renderFixtures(model, view = "results") {
     )
     .join("");
 
+  const teamOptions = ["All", ...clubs]
+    .map(
+      (club) =>
+        `<option value="${esc(club)}"${club === activeTeam ? " selected" : ""}>${club === "All" ? "All clubs" : esc(club)}</option>`,
+    )
+    .join("");
+
+  const empty =
+    activeTeam === "All"
+      ? `No ${upcoming ? "upcoming fixtures" : "results yet"}.`
+      : `No ${upcoming ? "upcoming fixtures" : "results yet"} for ${esc(activeTeam)}.`;
+
   return `
-    <div class="segrow" style="margin-bottom:16px;">${segments}</div>
-    ${days || `<p class="note">No ${upcoming ? "upcoming fixtures" : "results yet"}.</p>`}`;
+    <div class="fxfilters">
+      <div class="segrow">${segments}</div>
+      <select class="fantasy-select" data-fixture-team aria-label="Filter fixtures by club">${teamOptions}</select>
+    </div>
+    ${days || `<p class="note">${empty}</p>`}`;
 }
 
 // -- Player stats --------------------------------------------------------------------------------------

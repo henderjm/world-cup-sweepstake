@@ -8,8 +8,14 @@
 import { formatOrdinal, normalizePlayerStats } from "./fantasyDraft.js";
 
 // Short, plain-English label for the mode chip.
+//
+// The `faab` KEY is the stored league setting (fantasy_waiver_settings.mode)
+// and must not change; only what a manager reads does. FAAB is standard jargon
+// in American fantasy and meaningless to everyone else, and this product's
+// whole premise is bringing that format to people who have not played it, so
+// the acronym is spelled out wherever it appears.
 const MODE_LABELS = {
-  faab: "Blind bidding (FAAB)",
+  faab: "Blind bidding",
   rolling: "Rolling list",
   reverse_standings: "Reverse standings",
 };

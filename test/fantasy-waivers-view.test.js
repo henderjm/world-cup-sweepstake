@@ -16,7 +16,9 @@ import {
 // -- waiverModeLabel / waiverModeExplanation --------------------------------
 
 test("waiverModeLabel names all three modes", () => {
-  assert.equal(waiverModeLabel("faab"), "Blind bidding (FAAB)");
+  // The stored mode key stays "faab"; the acronym is gone from what a
+  // manager reads (issue #35).
+  assert.equal(waiverModeLabel("faab"), "Blind bidding");
   assert.equal(waiverModeLabel("rolling"), "Rolling list");
   assert.equal(waiverModeLabel("reverse_standings"), "Reverse standings");
 });

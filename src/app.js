@@ -243,6 +243,9 @@ const state = {
   tab: SCORES_TABS.includes(initialHash) ? initialHash : "live",
   competition: storedCompetition(),
   fixtureView: "results",
+  // "All" or a club name, for the Fixtures club filter (issue #36). Reset
+  // whenever the competition changes, since a club list is per competition.
+  fixtureTeam: "All",
   statsSort: "goals",
   isMobile: window.matchMedia("(max-width: 760px)").matches,
   paperrun: {
@@ -335,6 +338,10 @@ function initialFantasyState() {
   return {
     leagues: null,
     leaguesLoading: false,
+    // Set by closeFantasyLeague so the "one league opens itself" shortcut in
+    // renderFantasy does not immediately reopen the league the manager just
+    // backed out of. Cleared whenever they open one again.
+    browsingLeagues: false,
     activeLeagueId: null,
     league: null, // { league, members, picks, roster } from GET /fantasy/league/:id
     myUserId: null,
@@ -667,7 +674,7 @@ function renderPanel() {
     case "knockout":
       return renderKnockout(model);
     case "fixtures":
-      return renderFixtures(model, state.fixtureView);
+      return renderFixtures(model, state.fixtureView, state.fixtureTeam);
     case "stats":
       return renderStats(model, state.statsSort);
     default:
@@ -895,6 +902,16 @@ function renderFantasy() {
       loadFantasyLeagues();
       return;
     }
+    // Straight into the league when there is only one to be in. A list of one
+    // is not a choice, it is a tap between the manager and the thing they
+    // opened the app for, and almost every manager has exactly one league.
+    // `closeFantasyLeague` sets `browsingLeagues` so the back button still
+    // reaches this list rather than being bounced back in immediately.
+    if (f.leagues.length === 1 && !f.browsingLeagues) {
+      openFantasyLeague(f.leagues[0].id);
+      elements.layout.innerHTML = `<p class="note">Loading league…</p>`;
+      return;
+    }
     elements.layout.innerHTML = f.leagues.length
       ? renderFantasyLeagueList(f.leagues, fantasyFormState())
       : renderFantasyEmptyState(fantasyFormState());
@@ -948,6 +965,19 @@ function renderFantasy() {
   }
 
   if (!f.draftRoom?.state) {
+    // renderLayout tears the socket down on EVERY navigation away from Fantasy
+    // (teardownFantasyDraftRoom, which is what stops an idle draft holding a
+    // connection open), and openFantasyLeague was the only place that ever
+    // mounted it. So leaving an open league for Scores, Learn or Play and
+    // coming back left f.league populated but f.draftRoom null, and this
+    // message sat there forever with nothing in flight to clear it. Re-mount
+    // here, the same "start the work if it has not started, render what we
+    // have now" shape the lineup, feed and lobby pool loads already use.
+    //
+    // Guarded on the room being ABSENT rather than on its state being unset:
+    // a mount that is still connecting has a draftRoom with no state yet, and
+    // re-mounting that would open a second socket on every render.
+    if (!f.draftRoom) mountFantasyDraftRoom(f.activeLeagueId);
     elements.layout.innerHTML = `<p class="note">Connecting to the draft room…</p>`;
     return;
   }
@@ -1064,17 +1094,18 @@ async function loadFantasyLineup(leagueId) {
 // -- League feed ---------------------------------------------------------------
 //
 // The default landing tab for a league whose draft is done, which is most of a
-// league's life. Built-in chat that sits behind a corner tab is the version
-// managers abandon for WhatsApp; the version that gets used is the one they
-// land on, where the app's own events and the conversation about them are one
-// timeline.
+// league's life: My team. That is the screen a manager opens the app to reach -
+// who is starting, who is injured, what the captain is - and it is the one they
+// act on. The feed previously led here on the theory that a league lands where
+// the conversation is, but the conversation is a reason to come back, not the
+// first thing to see: landing on it makes the app open on other people's news
+// rather than on your own squad, and the feed is one tap away either way.
 //
-// A live draft is the exception: while the clock is running, the draft board
-// is where a manager needs to be, and the feed is one tap away. A pending
-// league lands on its lobby for the same reason (the invite code and the start
-// button live there).
+// A live draft is still the exception: while the clock is running, the draft
+// board is where a manager needs to be. A pending league lands on its lobby for
+// the same reason (the invite code and the start button live there).
 function defaultFantasySubTab(draftStatus) {
-  return draftStatus === "complete" ? "feed" : "draftroom";
+  return draftStatus === "complete" ? "myteam" : "draftroom";
 }
 
 const FEED_POLL_MS = 12000;
@@ -1771,6 +1802,7 @@ async function joinFantasyLeague(code) {
 async function openFantasyLeague(id) {
   teardownFantasyDraftRoom();
   const f = state.fantasy;
+  f.browsingLeagues = false;
   f.activeLeagueId = id;
   f.league = null;
   f.myUserId = null;
@@ -2370,6 +2402,7 @@ function closeFantasyLeague() {
   teardownFantasyDraftRoom();
   stopFantasyFeedPolling();
   const f = state.fantasy;
+  f.browsingLeagues = true; // they chose the list; do not bounce them back in
   f.activeLeagueId = null;
   f.league = null;
   f.myUserId = null;
@@ -3279,6 +3312,11 @@ function wireNav() {
 async function switchCompetition(code) {
   if (!COMPETITIONS[code] || code === state.competition) return;
   state.competition = code;
+  // A club filter is meaningless across competitions: keeping "Arsenal"
+  // selected on a switch to the Champions League would silently show an empty
+  // fixture list for a club that is in the new competition under a different
+  // set of fixtures, or none at all.
+  state.fixtureTeam = "All";
   try {
     window.localStorage.setItem(COMPETITION_STORAGE_KEY, code);
   } catch {
@@ -4174,6 +4212,14 @@ function wireLayoutControls() {
     }
   });
   elements.layout.addEventListener("change", (event) => {
+    // Outside the demo/fantasy branches below: the Fixtures club filter lives
+    // in the Scores section, so it must be checked before the demo early return.
+    const fixtureTeam = event.target.closest("[data-fixture-team]");
+    if (fixtureTeam) {
+      state.fixtureTeam = fixtureTeam.value;
+      renderLayout();
+      return;
+    }
     if (state.section === "demo") {
       const demoClub = event.target.closest("[data-fantasy-club-filter]");
       if (demoClub) {

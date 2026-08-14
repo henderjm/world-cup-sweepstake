@@ -36,7 +36,7 @@ const OG_IMAGE_PATH = "/assets/og-image.png";
 const OG_IMAGE_ALT = "Kickoff Draft wordmark on a navy background, with a lime accent line.";
 const INDEX_TITLE = "Learn: fantasy Premier League draft guides";
 const INDEX_DESCRIPTION =
-  "Short, practical guides to running a head-to-head fantasy Premier League draft league: the snake draft itself, and how waivers, FAAB bidding and free agency actually resolve.";
+  "Short, practical guides to running a head-to-head fantasy Premier League draft league: the snake draft itself, and how waivers, blind bidding and free agency actually resolve.";
 const INDEX_LEDE = "Short walkthroughs of how Kickoff Draft features actually work.";
 
 // A page one level deep (/learn/) and two levels deep (/learn/<slug>/) both

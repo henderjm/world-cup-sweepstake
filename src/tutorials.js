@@ -54,7 +54,7 @@ export const TUTORIALS = [
         heading: "Pick a waiver mode",
         body: [
           "Before the draft, decide how your league will handle players nobody drafted once the season is underway. There are three modes, and the choice is yours as commissioner.",
-          "FAAB bidding is the default: every manager has a season-long budget of fake credits and the highest blind bid wins a claim. It rewards judgement about how much a player is really worth to you, and overspending early genuinely costs you later.",
+          "Blind bidding is the default: every manager has a season-long budget of fake credits and the highest bid wins a claim. It rewards judgement about how much a player is really worth to you, and overspending early genuinely costs you later.",
           "Rolling order ignores bids entirely. Whoever is highest in a rotating queue wins any claim they make, then goes to the back of the queue. It is the simplest to explain and it self-balances, since everyone gets a turn.",
           "Reverse standings flips the league table upside down every week: the bottom side gets first call on any player they want. It is the strongest catch-up mechanic, at the cost of letting a struggling manager keep taking the best player left, week after week.",
           "The full mechanics, including exactly how a same-week three-way claim gets resolved differently under each mode, are covered in the separate \"How waivers work\" tutorial in Learn. Read it before the draft so you can explain your choice when someone asks why they lost a claim.",
@@ -198,7 +198,7 @@ export const TUTORIALS = [
           },
           {
             when: "Tuesday to the last kickoff",
-            body: "Klopp, Ancelotti and Guardiola all want him. Each submits a claim: the player to add, one of their own forwards to drop, and in FAAB a bid. Nobody can see anyone else's claim.",
+            body: "Klopp, Ancelotti and Guardiola all want him. Each submits a claim: the player to add, one of their own forwards to drop, and under blind bidding a bid. Nobody can see anyone else's claim.",
           },
           {
             when: "An hour before the last kickoff",
@@ -240,7 +240,7 @@ export const TUTORIALS = [
         ],
         modes: {
           faab: {
-            label: "FAAB bidding",
+            label: "Blind bidding",
             description:
               "Highest bid wins, full stop. Bids are blind, so nobody knows what the others offered. If two managers bid exactly the same, the tie goes to whoever is lower in the league table, so a struggling squad gets the benefit.",
             winner: "Ancelotti",
@@ -250,7 +250,7 @@ export const TUTORIALS = [
               { manager: "Guardiola", result: "rejected", reason: "Outbid" },
             ],
             aftermath:
-              "Ancelotti pays 35, his budget drops from 100 to 65 for the rest of the season, and Wissa goes on the wire. Klopp and Guardiola spend nothing, so they carry their full budgets into next week. Queue positions are irrelevant in FAAB and do not move. Had Klopp also bid 35, he would have won it for being bottom of the table.",
+              "Ancelotti pays 35, his budget drops from 100 to 65 for the rest of the season, and Wissa goes on the wire. Klopp and Guardiola spend nothing, so they carry their full budgets into next week. Queue positions are irrelevant under blind bidding and do not move. Had Klopp also bid 35, he would have won it for being bottom of the table.",
           },
           rolling: {
             label: "Rolling order",
@@ -310,7 +310,7 @@ export const TUTORIALS = [
         type: "prose",
         heading: "Which mode should you pick?",
         body: [
-          "FAAB is the default and the most skill-expressive. Your credits have to last the whole season, so overpaying early genuinely hurts you later. It rewards judgement about how badly you actually need someone.",
+          "Blind bidding is the default and the most skill-expressive. Your credits have to last the whole season, so overpaying early genuinely hurts you later. It rewards judgement about how badly you actually need someone.",
           "Rolling order is the simplest to explain and self-balancing: everyone gets a turn, because winning sends you to the back of the queue. Good for a casual league where nobody wants to think about budgets.",
           "Reverse standings is the strongest catch-up mechanic, since the bottom team always gets first call. The tradeoff is that a struggling manager can keep taking the best player available every single week.",
         ],
