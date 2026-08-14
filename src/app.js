@@ -67,6 +67,7 @@ import {
   createLeague as apiCreateLeague,
   loadInvitePreview as apiLoadInvitePreview,
   removeLeagueBot as apiRemoveLeagueBot,
+  setLeagueTeamName as apiSetLeagueTeamName,
   fantasyAvailable,
   getLineup as apiGetLineup,
   isFantasyNotDeployed,
@@ -343,6 +344,11 @@ function initialFantasyState() {
     // renderFantasy does not immediately reopen the league the manager just
     // backed out of. Cleared whenever they open one again.
     browsingLeagues: false,
+    // Team rename (issue #48): editing is the inline form's open/closed state,
+    // never persisted; the name itself lives on the league's member row.
+    teamNameEditing: false,
+    teamNameBusy: false,
+    teamNameError: "",
     activeLeagueId: null,
     league: null, // { league, members, picks, roster } from GET /fantasy/league/:id
     myUserId: null,
@@ -1071,7 +1077,45 @@ function renderFantasyMyTeamBody(league, room) {
     lineupError: f.lineupError,
     priorSeasonStats: f.playerPool?.priorSeasonStats,
     xpStats: f.playerPool?.xpStats,
+    teamName: myLeagueMember()?.teamName ?? null,
+    // From the SERVER, not currentAccount(): the resolved display name and the
+    // account name are identical once a team name is set, so only the server
+    // can say what clearing it would fall back TO.
+    teamNameFallback: f.league.viewerAccountName ?? "",
+    teamNameEditing: f.teamNameEditing,
+    teamNameBusy: f.teamNameBusy,
+    teamNameError: f.teamNameError,
   });
+}
+
+// The caller's own row in the active league, which is where their team name and
+// seat-level flags live.
+function myLeagueMember() {
+  const f = state.fantasy;
+  return (f.league?.members ?? []).find((member) => member.userId === f.myUserId) ?? null;
+}
+
+async function saveFantasyTeamName(value) {
+  const f = state.fantasy;
+  const leagueId = f.activeLeagueId;
+  f.teamNameBusy = true;
+  f.teamNameError = "";
+  renderLayout();
+  try {
+    const { teamName } = await apiSetLeagueTeamName(leagueId, value);
+    if (f.activeLeagueId !== leagueId) return; // navigated away mid-flight
+    // Refetch rather than patching the local copy: the display name every other
+    // panel renders is resolved SERVER-side (memberDisplayName), so a locally
+    // patched copy would disagree with standings and the feed until next visit.
+    f.teamNameEditing = false;
+    f.league = await apiLoadLeague(leagueId);
+  } catch (error) {
+    if (f.activeLeagueId !== leagueId) return;
+    f.teamNameError = error.message || "Couldn't save that team name.";
+  } finally {
+    if (f.activeLeagueId === leagueId) f.teamNameBusy = false;
+  }
+  if (state.section === "fantasy") renderLayout();
 }
 
 async function loadFantasyLineup(leagueId) {
@@ -3849,6 +3893,27 @@ function wireLayoutControls() {
     if (fantasyAddBotsButton && !fantasyAddBotsButton.disabled) {
       const count = Number(elements.layout.querySelector("[data-fantasy-bot-count]")?.value ?? 1);
       addFantasyBots(count);
+      return;
+    }
+    const teamNameEdit = event.target.closest("[data-fantasy-teamname-edit]");
+    if (teamNameEdit) {
+      state.fantasy.teamNameEditing = true;
+      state.fantasy.teamNameError = "";
+      renderLayout();
+      elements.layout.querySelector("[data-fantasy-teamname-input]")?.focus();
+      return;
+    }
+    const teamNameCancel = event.target.closest("[data-fantasy-teamname-cancel]");
+    if (teamNameCancel) {
+      state.fantasy.teamNameEditing = false;
+      state.fantasy.teamNameError = "";
+      renderLayout();
+      return;
+    }
+    const teamNameSave = event.target.closest("[data-fantasy-teamname-save]");
+    if (teamNameSave) {
+      const input = elements.layout.querySelector("[data-fantasy-teamname-input]");
+      saveFantasyTeamName(input?.value ?? "");
       return;
     }
     const fantasyRemoveBotButton = event.target.closest("[data-fantasy-remove-bot]");

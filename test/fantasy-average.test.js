@@ -162,3 +162,26 @@ test("over a full season no manager in an odd league is ever left without a fixt
     }
   }
 });
+
+// The chip only renders if the flag survives the standings computation, and
+// standingsFromFixtures builds its rows from scratch rather than spreading the
+// member through, so this has to be asserted rather than assumed.
+test("standingsFromFixtures carries isAverage through to the row, distinct from isBot", () => {
+  const three = members([1, 2, 3]);
+  const fixtures = [{ gameweek: 1, homeUserId: 1, awayUserId: 2, homeScore: 40, awayScore: 60 }];
+  const scores = [
+    { gameweek: 1, userId: 1, points: 40 },
+    { gameweek: 1, userId: 2, points: 60 },
+    { gameweek: 1, userId: 3, points: 70 },
+  ];
+  const merged = withAverageOpponent(fixtures, three, scores);
+  const table = standingsFromFixtures(merged.fixtures, merged.members);
+
+  const average = table.find((row) => isAverageId(row.userId));
+  assert.equal(average.isAverage, true);
+  assert.equal(average.isBot, false, "Average must never be labelled a bot");
+
+  for (const row of table.filter((r) => !isAverageId(r.userId))) {
+    assert.equal(row.isAverage, false, `${row.name} should not be flagged as Average`);
+  }
+});

@@ -1969,3 +1969,34 @@ test("an Average opponent renders as a real scoreline, chipped as AVG and never 
   assert.match(html, />62</);
   assert.match(html, />50</);
 });
+
+test("standings round a floating-point points total instead of printing it raw", () => {
+  // 297.6 as a sum of one-decimal scores is 297.59999999999997 in binary float,
+  // and the table used to print every digit of it.
+  const html = renderFantasyStandingsPanel(
+    {
+      throughGameweek: 5,
+      standings: [
+        { userId: 1, name: "Alex", played: 5, wins: 5, draws: 0, losses: 0, pointsFor: 297.59999999999997, pointsAgainst: 236.75, recordPoints: 15 },
+      ],
+    },
+    { myUserId: 1 },
+  );
+  assert.match(html, />297\.6</);
+  assert.match(html, />236\.8</);
+  assert.doesNotMatch(html, /297\.59999/);
+});
+
+test("the Average row in standings is chipped AVG and never as a bot", () => {
+  const html = renderFantasyStandingsPanel(
+    {
+      throughGameweek: 5,
+      standings: [
+        { userId: 0, name: "Average", isAverage: true, played: 5, wins: 1, draws: 0, losses: 4, pointsFor: 261.95, pointsAgainst: 315.7, recordPoints: 3 },
+      ],
+    },
+    { myUserId: 1 },
+  );
+  assert.match(html, /fantasy-chip--average/);
+  assert.doesNotMatch(html, /fantasy-chip--bot/);
+});

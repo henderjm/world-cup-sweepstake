@@ -44,6 +44,7 @@ export const CHAT_PAGE_SIZE = 80;
 export const CHAT_EVENTS = Object.freeze({
   LEAGUE_CREATED: "league_created",
   MEMBER_JOINED: "member_joined",
+  TEAM_RENAMED: "team_renamed",
   BOTS_ADDED: "bots_added",
   BOT_REMOVED: "bot_removed",
   DRAFT_STARTED: "draft_started",
@@ -116,6 +117,15 @@ export function describeChatEvent(entry) {
 
     case CHAT_EVENTS.MEMBER_JOINED:
       return { icon: "👋", text: `${actor} joined the league.` };
+
+    // A rename is announced rather than applied silently: the standings simply
+    // showing an unfamiliar name is how a league ends up asking "who is that".
+    // `actor` is the ACCOUNT name captured at write time, so the sentence still
+    // identifies the person even though every other surface now shows the team.
+    case CHAT_EVENTS.TEAM_RENAMED:
+      return payload?.teamName
+        ? { icon: "✏️", text: `${actor} renamed their team to ${payload.teamName}.` }
+        : { icon: "✏️", text: `${actor} cleared their team name.` };
 
     // Named in the feed rather than slipped in quietly: a manager scrolling
     // back must be able to see exactly when the empty seats stopped being

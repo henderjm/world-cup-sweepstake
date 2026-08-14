@@ -1,0 +1,17 @@
+-- Team names (issue #48): a manager names their squad, per league.
+--
+-- On fantasy_league_members rather than users, because a team name belongs to
+-- a SEAT, not a person: the same manager can be "Klopp's Eleven" in one league
+-- and something unrepeatable in another, which is how every other fantasy
+-- product treats it and how people actually use it.
+--
+-- Nullable with no default, and that is the whole compatibility story: a NULL
+-- means "this manager has not named a team", which is every existing row, and
+-- memberDisplayName (worker/worker.js) falls through to the account name
+-- exactly as it does today. Nothing needs backfilling, and a league that never
+-- touches the feature behaves identically.
+--
+-- Apply with:
+--   npx wrangler d1 execute squad-goals --remote --file worker/migrations/007-team-names.sql
+-- Fresh databases get this column straight from worker/schema.sql instead.
+ALTER TABLE fantasy_league_members ADD COLUMN team_name TEXT;

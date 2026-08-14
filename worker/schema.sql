@@ -133,6 +133,11 @@ CREATE TABLE IF NOT EXISTS fantasy_league_members (
   -- the flag can never outlive the absence it stands for.
   autopilot INTEGER NOT NULL DEFAULT 0,
   autopilot_since TEXT, -- when the commissioner handed it over; NULL when off
+  -- The manager's own name for their squad in THIS league (issue #48). NULL
+  -- means unnamed, which falls through to the account name in
+  -- memberDisplayName; see worker/migrations/007-team-names.sql for adding
+  -- this to a database created before team names shipped.
+  team_name TEXT,
   PRIMARY KEY (league_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS fantasy_league_members_user ON fantasy_league_members(user_id);

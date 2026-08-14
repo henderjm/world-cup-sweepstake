@@ -498,7 +498,7 @@ export class FantasyDraftRoom {
     // verified user id, and the feed is a permanent history that must not
     // depend on a later join to stay legible.
     const members = await this.env.DB.prepare(
-      `SELECT m.user_id, u.name, u.email, u.is_bot FROM fantasy_league_members m
+      `SELECT m.user_id, m.team_name, u.name, u.email, u.is_bot FROM fantasy_league_members m
        JOIN users u ON u.id = m.user_id
        WHERE m.league_id = ?1
        ORDER BY m.draft_position IS NULL, m.draft_position, m.joined_at`,

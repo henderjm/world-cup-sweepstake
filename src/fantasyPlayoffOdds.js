@@ -235,6 +235,10 @@ export function mergeStandings(base, extra) {
           userId: row.userId,
           name: row.name,
           isBot: Boolean(row.isBot),
+          // Kept in step with standingsFromFixtures deliberately: this function
+          // is asserted to be equivalent to it over disjoint fixture sets, so a
+          // field on one and not the other is a real divergence, not cosmetic.
+          isAverage: Boolean(row.isAverage),
           played: row.played ?? 0,
           wins: row.wins ?? 0,
           draws: row.draws ?? 0,

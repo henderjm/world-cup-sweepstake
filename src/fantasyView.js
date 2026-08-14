@@ -25,6 +25,7 @@ import {
   xpTooltip,
 } from "./fantasyDraft.js";
 import { DEFAULT_POOL_SORT, POOL_SORTS, rankDraftPool, sortPoolBy, startingUpgrade } from "./fantasyDraftRank.js";
+import { TEAM_NAME_MAX } from "./fantasyTeamName.js";
 import { withBoardAnnotations } from "./fantasyDraftBoard.js";
 import { renderFantasyBoardPanel } from "./fantasyDraftBoardView.js";
 import {
@@ -88,6 +89,18 @@ function botChip(isBot) {
 function opponentChip(opponent) {
   if (opponent?.isAverage) return ` ${AVERAGE_CHIP}`;
   return botChip(opponent?.isBot);
+}
+
+// A points total is a SUM of one-decimal gameweek scores, so binary floating
+// point turns 297.6 into 297.59999999999997 and the standings table prints it
+// in full. Rounded at the point of display rather than in the maths: the stored
+// figure stays exact for ordering and for the Average opponent's median, and
+// only what a manager reads is tidied. Trailing ".0" is dropped so a whole
+// number reads as a whole number.
+function formatPoints(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return esc(value ?? "");
+  return esc(String(Math.round(n * 10) / 10));
 }
 
 function botChipForUser(userId, members) {
@@ -540,13 +553,13 @@ export function renderFantasyStandingsPanel(standings, { error = "", myUserId } 
       const isMe = myUserId != null && row.userId === myUserId;
       return `<div class="fantasy-standings-row ${isMe ? "is-me" : ""}">
           <span class="fantasy-standings-row__rank">${index + 1}</span>
-          <span class="fantasy-standings-row__name">${esc(row.name)}${botChip(row.isBot)}${isMe ? ` <span class="note--dim">(you)</span>` : ""}</span>
+          <span class="fantasy-standings-row__name">${esc(row.name)}${opponentChip(row)}${isMe ? ` <span class="note--dim">(you)</span>` : ""}</span>
           <span>${esc(row.played)}</span>
           <span>${esc(row.wins)}</span>
           <span>${esc(row.draws)}</span>
           <span>${esc(row.losses)}</span>
-          <span>${esc(row.pointsFor)}</span>
-          <span>${esc(row.pointsAgainst)}</span>
+          <span>${formatPoints(row.pointsFor)}</span>
+          <span>${formatPoints(row.pointsAgainst)}</span>
           <span class="fantasy-standings-row__pts">${esc(row.recordPoints)}</span>
         </div>`;
     })
@@ -1073,6 +1086,35 @@ export function renderFantasyMyTeamPanel(picks, myUserId) {
   return renderMySquad(picks, myUserId, { compact: false });
 }
 
+// The team-name row at the top of My team (issue #48): the name as it appears
+// to everyone else, with a pencil to change it. Renders as a plain heading
+// until tapped, so the default state is one line rather than a form.
+//
+// `teamName` is the raw stored name (null when unnamed) and `fallbackName` is
+// what the rest of the league currently sees instead, so the placeholder can
+// show that rather than an empty box - a manager should be able to tell what
+// they are replacing.
+export function renderTeamNameRow({ teamName, fallbackName, editing, busy, error }) {
+  if (!editing) {
+    return `
+      <div class="fantasy-teamname">
+        <h3 class="fantasy-teamname__name">${esc(teamName || fallbackName || "My team")}</h3>
+        <button class="fantasy-teamname__edit" type="button" data-fantasy-teamname-edit aria-label="Rename your team" title="Rename your team">✏️</button>
+      </div>
+      ${error ? `<p class="fantasy-form__error">${esc(error)}</p>` : ""}`;
+  }
+  return `
+    <div class="fantasy-teamname fantasy-teamname--editing">
+      <input class="fantasy-input fantasy-teamname__input" type="text" maxlength="${TEAM_NAME_MAX}"
+        value="${esc(teamName ?? "")}" placeholder="${esc(fallbackName || "Team name")}"
+        data-fantasy-teamname-input aria-label="Team name" autocomplete="off" />
+      <button class="btn fantasy-teamname__save" type="button" data-fantasy-teamname-save ${busy ? "disabled" : ""}>${busy ? "Saving…" : "Save"}</button>
+      <button class="seg" type="button" data-fantasy-teamname-cancel ${busy ? "disabled" : ""}>Cancel</button>
+    </div>
+    <p class="note--dim">Leave it empty to go back to ${esc(fallbackName || "your own name")}.</p>
+    ${error ? `<p class="fantasy-form__error">${esc(error)}</p>` : ""}`;
+}
+
 // -- My team pitch view (draftStatus: complete) ---------------------------------
 //
 // Once a draft is complete a manager's 15-man squad is fixed for the season, so
@@ -1394,6 +1436,11 @@ export function renderFantasyRosterPanel({
   lineupError,
   priorSeasonStats,
   xpStats,
+  teamName = null,
+  teamNameFallback = "",
+  teamNameEditing = false,
+  teamNameBusy = false,
+  teamNameError = "",
   now = Date.now(),
 }) {
   if (!lineup) {
@@ -1431,6 +1478,13 @@ export function renderFantasyRosterPanel({
   const drawerPlayer = drawerPlayerId != null ? (roster ?? []).find((player) => player.id === drawerPlayerId) ?? null : null;
 
   return `
+    ${renderTeamNameRow({
+      teamName,
+      fallbackName: teamNameFallback,
+      editing: teamNameEditing,
+      busy: teamNameBusy,
+      error: teamNameError,
+    })}
     <div class="fantasy-myteam-grid">
       <div class="fantasy-myteam-grid__main">
         ${pitchCard}

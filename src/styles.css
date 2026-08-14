@@ -3260,3 +3260,33 @@ button { font-family: inherit; cursor: pointer; }
   pointer-events: none;
   z-index: 9999;
 }
+
+/* Team name row at the top of My team (issue #48). Reads as a heading at rest
+   and only becomes a form once the pencil is tapped, so the default state of
+   the screen is one line rather than an input box nobody asked for. */
+.fantasy-teamname {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.fantasy-teamname__name {
+  margin: 0;
+  font-family: var(--font-display, inherit);
+  font-style: italic;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  font-size: 20px;
+}
+.fantasy-teamname__edit {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px;
+  opacity: 0.65;
+}
+.fantasy-teamname__edit:hover { opacity: 1; }
+.fantasy-teamname__input { flex: 1 1 220px; min-width: 0; }

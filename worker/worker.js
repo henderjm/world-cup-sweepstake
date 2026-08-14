@@ -76,6 +76,7 @@ import {
   medianScore,
   withAverageOpponent,
 } from "../src/fantasyAverage.js";
+import { validateTeamName } from "../src/fantasyTeamName.js";
 import { assignGameweeks, clubFixtureCounts, firstKickoffInGameweek, gameweekOf } from "../src/fantasyCalendar.js";
 import {
   DEFAULT_FAAB_BUDGET,
@@ -316,6 +317,12 @@ export default {
     // Bot managers filling empty seats. Commissioner-only and pending-only;
     // see handleFantasyBotsAdd for why that pair of checks is the whole
     // security surface here.
+    // A manager names their OWN seat only; there is no user id in the path
+    // precisely so this can never become a route for renaming somebody else.
+    const fantasyTeamNameRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/team-name$/);
+    if (fantasyTeamNameRoute && request.method === "POST") {
+      return handleFantasyTeamName(request, env, Number(fantasyTeamNameRoute[1]), cors);
+    }
     const fantasyBotsRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/bots$/);
     if (fantasyBotsRoute && request.method === "POST") {
       return handleFantasyBotsAdd(request, env, Number(fantasyBotsRoute[1]), cors);
@@ -1243,6 +1250,55 @@ async function sweepOrphanBots(env, leagueId) {
     .run();
 }
 
+// POST /fantasy/league/:id/team-name — the caller names their own squad in this
+// league (issue #48). Body: { teamName }. An empty/whitespace name CLEARS it,
+// which stores NULL and falls the manager back to their account name.
+//
+// Membership is the whole authorisation story: the UPDATE is scoped to
+// (league_id, user_id) from the SESSION, never from the body, so there is no
+// shape of request that renames another manager's team.
+async function handleFantasyTeamName(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "invalid JSON" }, 400, cors);
+  }
+
+  const check = validateTeamName(body?.teamName);
+  if (!check.valid) return json({ error: check.error }, 400, cors);
+
+  try {
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+
+    await env.DB.prepare(`UPDATE fantasy_league_members SET team_name = ?3 WHERE league_id = ?1 AND user_id = ?2`)
+      .bind(leagueId, user.id, check.name)
+      .run();
+
+    // Announced in the feed like every other league change, so a rename is not
+    // a silent identity swap mid-season: the standings just showing a new name
+    // with no explanation is how people end up asking "who is that". The
+    // previous name is carried so the sentence can name both.
+    await postLeagueEvent(env, leagueId, CHAT_EVENTS.TEAM_RENAMED, {
+      actor: memberDisplayName({ name: user.name, email: user.email }),
+      teamName: check.name,
+    });
+
+    return json({ teamName: check.name }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
 async function handleFantasyBotsAdd(request, env, leagueId, cors) {
   if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
   const user = await sessionUser(request, env);
@@ -1270,7 +1326,7 @@ async function handleFantasyBotsAdd(request, env, leagueId, cors) {
     if (league.draft_status !== "pending") return json({ error: "draft already started" }, 400, cors);
 
     const members = await env.DB.prepare(
-      `SELECT u.name, u.email FROM fantasy_league_members m JOIN users u ON u.id = m.user_id
+      `SELECT m.team_name, u.name, u.email FROM fantasy_league_members m JOIN users u ON u.id = m.user_id
        WHERE m.league_id = ?1`,
     )
       .bind(leagueId)
@@ -1343,7 +1399,7 @@ async function handleFantasyBotRemove(request, env, leagueId, botUserId, cors) {
     if (league.draft_status !== "pending") return json({ error: "draft already started" }, 400, cors);
 
     const target = await env.DB.prepare(
-      `SELECT u.id, u.name FROM fantasy_league_members m JOIN users u ON u.id = m.user_id
+      `SELECT u.id, m.team_name, u.name FROM fantasy_league_members m JOIN users u ON u.id = m.user_id
        WHERE m.league_id = ?1 AND m.user_id = ?2 AND u.is_bot = 1`,
     )
       .bind(leagueId, botUserId)
@@ -1402,7 +1458,7 @@ async function autopilotAuthorize(env, leagueId, targetUserId, user, { commissio
   // seat is already played by the bots, so flagging one would be a no-op that
   // reads in the feed as though a person had gone missing.
   const target = await env.DB.prepare(
-    `SELECT m.user_id, m.autopilot, u.name, u.email, u.is_bot
+    `SELECT m.user_id, m.team_name, m.autopilot, u.name, u.email, u.is_bot
      FROM fantasy_league_members m JOIN users u ON u.id = m.user_id
      WHERE m.league_id = ?1 AND m.user_id = ?2`,
   )
@@ -1538,7 +1594,7 @@ async function handleFantasyInvitePreview(env, rawCode, cors) {
     if (!league) return json({ error: "unknown invite code" }, 404, cors);
 
     const members = await env.DB.prepare(
-      `SELECT m.user_id, u.name, u.email, u.is_bot FROM fantasy_league_members m
+      `SELECT m.user_id, m.team_name, u.name, u.email, u.is_bot FROM fantasy_league_members m
        JOIN users u ON u.id = m.user_id
        WHERE m.league_id = ?1 ORDER BY m.joined_at`,
     )
@@ -1629,7 +1685,7 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
 
     const [members, picks, roster, currentGameweek, scheduleRow] = await Promise.all([
       env.DB.prepare(
-        `SELECT m.user_id, m.draft_position, m.autopilot, m.autopilot_since, u.name, u.email, u.is_bot
+        `SELECT m.user_id, m.team_name, m.draft_position, m.autopilot, m.autopilot_since, u.name, u.email, u.is_bot
          FROM fantasy_league_members m
          JOIN users u ON u.id = m.user_id
          WHERE m.league_id = ?1 ORDER BY m.draft_position IS NULL, m.draft_position, m.joined_at`,
@@ -1653,6 +1709,10 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
     const memberList = (members.results ?? []).map((row) => ({
       userId: row.user_id,
       name: memberDisplayName(row),
+      // The RAW team name alongside the resolved display name, so the rename
+      // editor can prefill with what was actually set rather than with the
+      // account name a manager has never chosen. Null means unnamed.
+      teamName: row.team_name ?? null,
       draftPosition: row.draft_position,
       isBot: Boolean(row.is_bot),
       // A team being played by the bots must be visibly labelled wherever it
@@ -1668,6 +1728,11 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
         // members[], picks[] and the draft room's onClockUserId are all keyed by
         // numeric user id, so the caller needs to know which one is theirs.
         viewerUserId: user.id,
+        // The caller's own ACCOUNT name, which is what clearing a team name
+        // falls back to (issue #48). Sent for the viewer only, never for other
+        // members: once somebody has named a team, their account name is not
+        // the league's business.
+        viewerAccountName: memberDisplayName({ name: user.name, email: user.email }),
         currentGameweek,
         league: {
           id: league.id,
@@ -2943,7 +3008,7 @@ async function handleFantasyLeagueSchedule(request, env, leagueId, cors) {
         .bind(leagueId)
         .all(),
       env.DB.prepare(
-        `SELECT m.user_id, u.name, u.email, u.is_bot FROM fantasy_league_members m
+        `SELECT m.user_id, m.team_name, u.name, u.email, u.is_bot FROM fantasy_league_members m
          JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
       )
         .bind(leagueId)
@@ -3027,7 +3092,7 @@ async function handleFantasyStandings(request, env, leagueId, cors) {
 
     const [membersRows, fixtureRows, scoreRows] = await Promise.all([
       env.DB.prepare(
-        `SELECT m.user_id, u.name, u.email, u.is_bot FROM fantasy_league_members m
+        `SELECT m.user_id, m.team_name, u.name, u.email, u.is_bot FROM fantasy_league_members m
          JOIN users u ON u.id = m.user_id
          WHERE m.league_id = ?1`,
       )
@@ -3105,8 +3170,18 @@ async function handleFantasyStandings(request, env, leagueId, cors) {
 // fantasy routes already use. System-event payloads store the result rather
 // than a user id: the feed is a permanent history and must keep reading
 // correctly after a rename or a deleted account.
+// The one place a manager's on-screen name is decided, which is what makes
+// team names (issue #48) a small change rather than a sweep: every league
+// surface already routes through here, so adding one term at the front gives
+// standings, the matchup, the feed, the roster board, the draft order strip and
+// the invite preview team names at once.
+//
+// A row with no `team_name` key at all is unaffected, so the non-league callers
+// that also use this (banter, which is site-wide match chat and has nothing to
+// do with a league seat) keep showing the person's own name with no special
+// casing needed.
 function memberDisplayName(row) {
-  return row?.name || String(row?.email ?? "").split("@")[0] || "Someone";
+  return row?.team_name || row?.name || String(row?.email ?? "").split("@")[0] || "Someone";
 }
 
 // The prepared statement for one system event, so a caller can fold it into
@@ -3378,8 +3453,10 @@ async function handleFantasyWaiversView(request, env, leagueId, cors) {
     const [currentGameweek, stateRows, ownedRows, wireRows, allPlayers, myClaimRows, lastRunRow] = await Promise.all([
       currentFantasyGameweek(env),
       env.DB.prepare(
-        `SELECT s.user_id, s.faab_remaining, s.priority, u.name, u.email FROM fantasy_waiver_state s
-         JOIN users u ON u.id = s.user_id WHERE s.league_id = ?1 ORDER BY s.priority`,
+        `SELECT s.user_id, s.faab_remaining, s.priority, m.team_name, u.name, u.email FROM fantasy_waiver_state s
+         JOIN users u ON u.id = s.user_id
+         LEFT JOIN fantasy_league_members m ON m.league_id = s.league_id AND m.user_id = s.user_id
+         WHERE s.league_id = ?1 ORDER BY s.priority`,
       )
         .bind(leagueId)
         .all(),
@@ -4111,7 +4188,7 @@ async function executeLeagueWaiverRun(env, leagueId, settledGameweek, newCurrent
     if (settings.mode === "reverse_standings" || settings.mode === "faab") {
       const [membersRows, fixtureRows] = await Promise.all([
         env.DB.prepare(
-          `SELECT m.user_id, u.name, u.email FROM fantasy_league_members m
+          `SELECT m.user_id, m.team_name, u.name, u.email FROM fantasy_league_members m
            JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
         )
           .bind(leagueId)
@@ -4493,7 +4570,7 @@ async function generateLeagueRecap(env, league, gameweek) {
 
   const [memberRows, fixtureRows, scoreRows] = await Promise.all([
     env.DB.prepare(
-      `SELECT m.user_id, u.name, u.email, u.is_bot FROM fantasy_league_members m
+      `SELECT m.user_id, m.team_name, u.name, u.email, u.is_bot FROM fantasy_league_members m
        JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
     )
       .bind(leagueId)
@@ -4712,7 +4789,7 @@ async function generateDraftRecap(env, league) {
 
   const [memberRows, pickRows, playerRows] = await Promise.all([
     env.DB.prepare(
-      `SELECT m.user_id, u.name, u.email, u.is_bot FROM fantasy_league_members m
+      `SELECT m.user_id, m.team_name, u.name, u.email, u.is_bot FROM fantasy_league_members m
        JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
     )
       .bind(leagueId)
@@ -4858,7 +4935,7 @@ async function runScheduledAutopilot(env) {
   if (!env.DB) return;
 
   const seats = await env.DB.prepare(
-    `SELECT m.league_id, m.user_id, l.name AS league_name, u.name, u.email
+    `SELECT m.league_id, m.user_id, l.name AS league_name, m.team_name, u.name, u.email
      FROM fantasy_league_members m
      JOIN fantasy_leagues l ON l.id = m.league_id
      JOIN users u ON u.id = m.user_id

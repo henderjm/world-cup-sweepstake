@@ -138,6 +138,11 @@ export function standingsFromFixtures(fixtures, members) {
         // caller knows which members are bots. Absent for a caller with no
         // bots, which reads as false.
         isBot: Boolean(member.isBot),
+        // Carried through for the same reason as isBot, and kept separate from
+        // it: the Average opponent an odd league plays instead of a bye has to
+        // be labelled in the table it appears in, and labelling it a bot would
+        // claim a manager exists where none does (see src/fantasyAverage.js).
+        isAverage: Boolean(member.isAverage),
         played: 0,
         wins: 0,
         draws: 0,

@@ -67,6 +67,14 @@ export async function loadLeague(id) {
 // it planned to (see src/fantasyBots.js). Returns { league, added: [name] }.
 // Throws with error.status 403 for a non-commissioner, 400 for a bad count,
 // a full league, or a draft that has already started.
+// Names the CALLER's own squad in this league (issue #48). No user id in the
+// path or the body: the Worker scopes the write to the session's own seat, so
+// there is no way to spell "rename somebody else". An empty name clears it and
+// the manager falls back to their account name. Returns { teamName }.
+export async function setLeagueTeamName(leagueId, teamName) {
+  return api(`/fantasy/league/${leagueId}/team-name`, { method: "POST", body: JSON.stringify({ teamName }) });
+}
+
 export async function addLeagueBots(leagueId, count) {
   return api(`/fantasy/league/${leagueId}/bots`, { method: "POST", body: JSON.stringify({ count }) });
 }
