@@ -1,4 +1,5 @@
 import { abbrFor, badgeFor } from "./badges.js";
+import { displayTeamName } from "./domain.js";
 import { byPosition, dateLabel, isLive as isLiveStatus, statusLabel } from "./format.js";
 import { MAX_LEAGUE_SIZE } from "./fantasy.js";
 import { squadGameweekShape, teamGameweekFixtures } from "./fantasyCalendar.js";
@@ -337,29 +338,40 @@ const FANTASY_SUBTAB_LABELS = {
   settings: "Settings",
 };
 
-// Feed leads the bar, and is where a running league lands by default (see
-// defaultFantasySubTab in app.js). League chat hidden behind a corner tab is
-// the version managers abandon for WhatsApp; the one that gets used is the one
-// they arrive on, where the moves and the talk about them share a timeline.
-// My board and Waivers are each live for exactly one half of a league's life
-// and disabled for the other, so the bar never grows: a board ranks players
-// nobody has drafted yet and is meaningless once every squad is fixed, which
-// is precisely when free agency and waivers begin.
-// `isCommissioner` adds a Settings tab rather than showing a disabled one to
-// everybody: nine managers in ten will never be able to open it, and a
-// permanently dead button is worse than an absent one.
-function renderFantasySubtabs(activeSubTab, waiversEnabled, isCommissioner = false) {
-  const boardEnabled = !waiversEnabled;
+// Feed leads the bar (a running league lands on My team, see
+// defaultFantasySubTab in app.js, but the conversation stays one tap away at
+// the front of the bar rather than hidden behind a corner tab, which is the
+// version managers abandon for WhatsApp). The rest of the bar is gated by
+// where the league is in its life, so no tab ever offers a step out of
+// sequence: a board ranks players nobody has drafted yet and is meaningless
+// once every squad is fixed, which is precisely when free agency, matchups and
+// standings begin. Every gate lives in fantasySubTabAvailable so the disabled
+// attribute here, app.js's deep-link restore clamp and the body guards can
+// never disagree about which tabs a league currently has.
+// Settings is open to EVERY member, not just the commissioner: it holds each
+// manager's own team name, and the league-level levers inside it scope
+// themselves to the commissioner (see renderFantasySettingsPanel).
+export function fantasySubTabAvailable(subTab, draftStatus) {
+  if (subTab === "board") return draftStatus !== "complete";
+  if (subTab === "matchup" || subTab === "waivers" || subTab === "standings") return draftStatus === "complete";
+  return true; // feed, myteam, draftroom, settings carry every phase
+}
+
+function renderFantasySubtabs(activeSubTab, draftStatus) {
+  const tab = (key, label) => {
+    const enabled = fantasySubTabAvailable(key, draftStatus);
+    return `<button class="fantasy-subtab ${activeSubTab === key ? "is-active" : ""}" type="button" data-fantasy-subtab="${key}" ${enabled ? "" : "disabled"}>${label}</button>`;
+  };
   return `
     <div class="fantasy-subtabs">
-      <button class="fantasy-subtab ${activeSubTab === "feed" ? "is-active" : ""}" type="button" data-fantasy-subtab="feed">Feed</button>
-      <button class="fantasy-subtab ${activeSubTab === "matchup" ? "is-active" : ""}" type="button" data-fantasy-subtab="matchup">Matchup</button>
-      <button class="fantasy-subtab ${activeSubTab === "myteam" ? "is-active" : ""}" type="button" data-fantasy-subtab="myteam">My team</button>
-      <button class="fantasy-subtab ${activeSubTab === "draftroom" ? "is-active" : ""}" type="button" data-fantasy-subtab="draftroom">Draft room</button>
-      <button class="fantasy-subtab ${activeSubTab === "board" ? "is-active" : ""}" type="button" data-fantasy-subtab="board" ${boardEnabled ? "" : "disabled"}>My board</button>
-      <button class="fantasy-subtab ${activeSubTab === "waivers" ? "is-active" : ""}" type="button" data-fantasy-subtab="waivers" ${waiversEnabled ? "" : "disabled"}>Waivers</button>
-      <button class="fantasy-subtab ${activeSubTab === "standings" ? "is-active" : ""}" type="button" data-fantasy-subtab="standings">Standings</button>
-      ${isCommissioner ? `<button class="fantasy-subtab ${activeSubTab === "settings" ? "is-active" : ""}" type="button" data-fantasy-subtab="settings">Settings</button>` : ""}
+      ${tab("feed", "Feed")}
+      ${tab("matchup", "Matchup")}
+      ${tab("myteam", "My team")}
+      ${tab("draftroom", "Draft room")}
+      ${tab("board", "My board")}
+      ${tab("waivers", "Waivers")}
+      ${tab("standings", "Standings")}
+      ${tab("settings", "Settings")}
     </div>`;
 }
 
@@ -389,7 +401,7 @@ export function renderFantasyLeagueHeader(league, members, activeSubTab) {
         <span class="chip">Snake draft</span>
       </div>
     </div>
-    ${renderFantasySubtabs(activeSubTab, league.draftStatus === "complete", Boolean(league.isCommissioner))}`;
+    ${renderFantasySubtabs(activeSubTab, league.draftStatus)}`;
 }
 
 // Wraps a sub-tab's body with the shared header inside the standard .fantasy
@@ -456,12 +468,26 @@ export function renderFantasyMatchupPanel(
   const timing = matchupTiming(matchup, now);
   const banner = renderSquadDeadlineBanner(matchup, now);
 
+  // "6 done · 3 in play · 2 to come" under a score, while the gameweek is
+  // being played: the score says who is ahead, this says whether that lead is
+  // safe. Only rendered when scores are (a pre-kickoff "11 to come" is noise,
+  // and settled weeks need no reminder that everyone finished) and only when
+  // the worker actually sent progress, so an older payload renders exactly as
+  // before. Lit while any of that side's players are on a pitch.
+  const progressLine = (progress, showScores) => {
+    if (!showScores) return "";
+    const summary = trackerSummary(progress);
+    if (!summary) return "";
+    return `<p class="fantasy-matchup__progress ${progress.inPlay ? "is-live" : ""}">${esc(summary)}</p>`;
+  };
+
   if (!opponent) {
     return `
       ${banner}
       <section class="card fantasy-matchup fantasy-matchup--bye">
         <p class="fantasy-eyebrow">Gameweek ${esc(gameweek)}</p>
         <h2 class="fantasy-matchup__bye-title">You play Average</h2>
+        ${progressLine(me?.progress, timing.showScores)}
         <p class="note">${esc(byeNote(gameweek, leagueSize))}</p>
       </section>`;
   }
@@ -484,11 +510,13 @@ export function renderFantasyMatchupPanel(
         <div class="fantasy-matchup__side ${leader === "me" ? "is-ahead" : ""}">
           <p class="fantasy-matchup__name">${esc(me.name)}${championChipForId(me.userId, previousWinnerUserId)}</p>
           <p class="fantasy-matchup__score">${showScores ? esc(me.score) : `<span class="fantasy-stat--empty">•</span>`}</p>
+          ${progressLine(me.progress, showScores)}
         </div>
         <span class="fantasy-matchup__vs">vs</span>
         <div class="fantasy-matchup__side fantasy-matchup__side--opponent ${leader === "opponent" ? "is-ahead" : ""}">
           <p class="fantasy-matchup__name">${esc(opponent.name)}${opponentChip(opponent)}${championChipForId(opponent.userId, previousWinnerUserId)}</p>
           <p class="fantasy-matchup__score">${showScores ? esc(opponent.score) : `<span class="fantasy-stat--empty">•</span>`}</p>
+          ${progressLine(opponent.progress, showScores)}
         </div>
       </div>
       ${
@@ -774,10 +802,36 @@ export function renderFantasySettingsPanel(
     championError = "",
     settingsBusy = false,
     settingsError = "",
+    teamName = null,
+    teamNameFallback = "",
+    teamNameEditing = false,
+    teamNameBusy = false,
+    teamNameError = "",
   } = {},
 ) {
+  // Every member's own settings first: the team name is the thing people
+  // actually come to a Settings tab to change, and it must not depend on
+  // being the commissioner. The league-level levers below stay commissioner
+  // scoped.
+  const yourTeam = `
+    <section class="card fantasy-yourteam">
+      <h3 class="card__title">Your team</h3>
+      ${renderTeamNameRow({
+        teamName,
+        fallbackName: teamNameFallback,
+        editing: teamNameEditing,
+        busy: teamNameBusy,
+        error: teamNameError,
+      })}
+      <p class="note--dim">The name the rest of the league sees, everywhere your team appears.</p>
+    </section>`;
+
   if (!league?.isCommissioner) {
-    return `<p class="note">Only the commissioner can change league settings.</p>`;
+    return `
+      <div class="fantasy-settings">
+        ${yourTeam}
+        <p class="note--dim">Draft time, bot seats and waiver rules are the commissioner's to change.</p>
+      </div>`;
   }
 
   const pending = league.draftStatus === "pending";
@@ -809,6 +863,7 @@ export function renderFantasySettingsPanel(
 
   return `
     <div class="fantasy-settings">
+      ${yourTeam}
       ${draftSection}
       ${botSection}
       ${renderChampionCard(league, members, { championBusy, championError })}
@@ -901,19 +956,17 @@ function renderBotFillCard(league, members, seats, { botBusy = false, botError =
 // The commissioner names last season's winner (issue #43), and everyone else
 // reads who it is.
 //
-// Rendered in two places on purpose: the lobby, where a commissioner is already
-// setting the league up, and under the standings, which is where the trophy
-// itself is most visible and the only one of the two that still exists once the
-// draft is done. One renderer, two mount points - a commissioner who forgets in
-// August must not have to wait until next August.
+// The FORM lives on the Settings tab only; under the standings, where the
+// trophy is most visible, the card renders as a fact for everyone
+// (editable: false), so the same control never appears on two tabs at once.
 //
 // For a non-commissioner it is a fact, not a control, and a league with no
 // champion recorded shows them nothing at all rather than an empty card
 // explaining a feature they cannot use.
-export function renderChampionCard(league, members, { championBusy = false, championError = "" } = {}) {
+export function renderChampionCard(league, members, { championBusy = false, championError = "", editable = true } = {}) {
   const holder = championMember(members, league?.previousWinnerUserId);
 
-  if (!league?.isCommissioner) {
+  if (!league?.isCommissioner || !editable) {
     return holder
       ? `<section class="card fantasy-champion">
           <h3 class="card__title">Defending champion</h3>
@@ -945,6 +998,12 @@ export function renderChampionCard(league, members, { championBusy = false, cham
     </section>`;
 }
 
+// The lobby is the pre-draft checklist: who is here, get more people in, know
+// when the draft is, start it, scout. Configuration (draft time, bot seats,
+// defending champion) is edited on the Settings tab and only POINTED TO from
+// here, so the same control never appears on two tabs at once. The schedule
+// stays visible read-only because every manager needs the countdown, not just
+// the one who can move it.
 export function renderFantasyLobby(
   league,
   members,
@@ -952,15 +1011,9 @@ export function renderFantasyLobby(
     playerPool,
     filter,
     schedule,
-    scheduleBusy = false,
-    scheduleError = "",
     queuedIds,
     seats,
     inviteUrl = "",
-    botBusy = false,
-    botError = "",
-    championBusy = false,
-    championError = "",
   } = {},
 ) {
   const sorted = [...members].sort(
@@ -977,8 +1030,11 @@ export function renderFantasyLobby(
 
   const canStart = members.length >= 2;
   const startControl = league.isCommissioner
-    ? `<button class="btn btn--primary" type="button" data-fantasy-start-draft ${canStart ? "" : "disabled"}>Start draft</button>
-       ${canStart ? "" : `<p class="note">Need at least 2 managers to start. Fill a seat with a bot if nobody else is coming.</p>`}`
+    ? `<div class="fantasy-start__row">
+        <button class="btn btn--primary" type="button" data-fantasy-start-draft ${canStart ? "" : "disabled"}>Start draft</button>
+        <button class="seg" type="button" data-fantasy-subtab="settings">League settings</button>
+       </div>
+       ${canStart ? "" : `<p class="note">Need at least 2 managers to start. Add a bot in Settings if nobody else is coming.</p>`}`
     : `<p class="note">Waiting for the commissioner to start the draft.</p>`;
 
   // Never a bare total: a "6 managers" heading that quietly counts four bots
@@ -993,9 +1049,7 @@ export function renderFantasyLobby(
       <div class="fantasy-members">${rows}</div>
     </section>
     ${renderInviteCard(league, inviteUrl)}
-    ${renderBotFillCard(league, sorted, seats ?? { total: members.length, humans: members.length, bots: 0, open: Math.max(0, MAX_LEAGUE_SIZE - members.length) }, { botBusy, botError })}
-    ${renderChampionCard(league, sorted, { championBusy, championError })}
-    ${renderFantasyScheduleCard(league, schedule, { scheduleBusy, scheduleError })}
+    ${renderFantasyScheduleCard(league, schedule, { editable: false })}
     <section class="card fantasy-start">${startControl}</section>
     ${renderScoutingSection(playerPool, filter ?? { position: "All", club: "All", search: "", hideTaken: true }, queuedIds, members.length)}`;
 }
@@ -1101,19 +1155,27 @@ export function renderFantasyInvitePreview(preview, { loading, error, signedIn, 
 // app.js's updateFantasyScheduleCountdownDisplay keeps ticking without a
 // full re-render (data-fantasy-schedule-countdown carries the raw ISO value
 // for that timer to recompute from).
-function renderFantasyScheduleCard(league, schedule, { scheduleBusy, scheduleError }) {
+//
+// `editable: false` renders the same facts with the form swapped for a
+// pointer into Settings: the lobby shows every manager WHEN the draft is,
+// while the one place the time is set stays the Settings tab, so the same
+// form never appears on two tabs at once.
+function renderFantasyScheduleCard(league, schedule, { scheduleBusy, scheduleError, editable = true } = {}) {
   const errorLine = scheduleError ? `<p class="fantasy-form__error">${esc(scheduleError)}</p>` : "";
+  const canEdit = editable && league.isCommissioner;
 
   if (schedule?.scheduledAt) {
     const remainingMs = new Date(schedule.scheduledAt).getTime() - Date.now();
     const soon = isDraftSoon(remainingMs);
-    const commissionerControls = league.isCommissioner
+    const commissionerControls = canEdit
       ? `<div class="fantasy-schedule__form">
           <input type="datetime-local" class="fantasy-schedule__input" data-fantasy-schedule-input value="${esc(isoToLocalInputValue(schedule.scheduledAt))}" />
           <button class="btn" type="button" data-fantasy-schedule-save ${scheduleBusy ? "disabled" : ""}>Reschedule</button>
           <button class="seg" type="button" data-fantasy-schedule-clear ${scheduleBusy ? "disabled" : ""}>Clear</button>
         </div>`
-      : `<p class="note">If you miss it, your squad will be auto-picked from the players still available.</p>`;
+      : league.isCommissioner
+        ? `<p class="note--dim">Change or clear it in <button class="linklike" type="button" data-fantasy-subtab="settings">Settings</button>.</p>`
+        : `<p class="note">If you miss it, your squad will be auto-picked from the players still available.</p>`;
     return `
     <section class="card fantasy-schedule ${soon ? "is-soon" : ""}">
       <h3 class="card__title">Draft scheduled</h3>
@@ -1129,6 +1191,14 @@ function renderFantasyScheduleCard(league, schedule, { scheduleBusy, scheduleErr
     <section class="card fantasy-schedule">
       <h3 class="card__title">Draft schedule</h3>
       <p class="note">The commissioner hasn't scheduled the draft yet.</p>
+    </section>`;
+  }
+
+  if (!editable) {
+    return `
+    <section class="card fantasy-schedule">
+      <h3 class="card__title">Draft schedule</h3>
+      <p class="note">No draft time set. Pick one in <button class="linklike" type="button" data-fantasy-subtab="settings">Settings</button> so everyone shows up.</p>
     </section>`;
   }
 
@@ -1372,15 +1442,24 @@ export function renderFantasyMyTeamPanel(picks, myUserId) {
   return renderMySquad(picks, myUserId, { compact: false });
 }
 
-// The team-name row at the top of My team (issue #48): the name as it appears
-// to everyone else, with a pencil to change it. Renders as a plain heading
-// until tapped, so the default state is one line rather than a form.
+// The team-name row (issue #48): the name as it appears to everyone else.
+// The FORM lives on the Settings tab (the place a manager goes looking for it);
+// My team shows the same row with `editable: false`, whose pencil jumps to
+// Settings rather than opening a second copy of the form. Renders as a plain
+// heading until tapped, so the default state is one line rather than a form.
 //
 // `teamName` is the raw stored name (null when unnamed) and `fallbackName` is
 // what the rest of the league currently sees instead, so the placeholder can
 // show that rather than an empty box - a manager should be able to tell what
 // they are replacing.
-export function renderTeamNameRow({ teamName, fallbackName, editing, busy, error }) {
+export function renderTeamNameRow({ teamName, fallbackName, editing, busy, error, editable = true }) {
+  if (!editable) {
+    return `
+      <div class="fantasy-teamname">
+        <h3 class="fantasy-teamname__name">${esc(teamName || fallbackName || "My team")}</h3>
+        <button class="fantasy-teamname__edit" type="button" data-fantasy-subtab="settings" aria-label="Rename your team in Settings" title="Rename your team in Settings">✏️</button>
+      </div>`;
+  }
   if (!editing) {
     return `
       <div class="fantasy-teamname">
@@ -1742,7 +1821,7 @@ function renderPlayerDrawer(player, { picks, statsById, priorSeasonStats, xpStat
         <div class="fantasy-drawer__head">
           ${badgeFor(player.team, "xl")}
           <p class="fantasy-drawer__name">${esc(player.name)}</p>
-          <p class="note">${esc(player.team)} · ${esc(player.position)}</p>
+          <p class="note">${esc(displayTeamName(player.team))} · ${esc(player.position)}</p>
           ${pickLabel ? `<span class="chip">Pick ${esc(pickLabel)}</span>` : ""}
         </div>
         <h4>Stats</h4>
@@ -1772,9 +1851,6 @@ export function renderFantasyRosterPanel({
   xpStats,
   teamName = null,
   teamNameFallback = "",
-  teamNameEditing = false,
-  teamNameBusy = false,
-  teamNameError = "",
   matches = null,
   now = Date.now(),
 }) {
@@ -1818,13 +1894,7 @@ export function renderFantasyRosterPanel({
   const drawerPlayer = drawerPlayerId != null ? (roster ?? []).find((player) => player.id === drawerPlayerId) ?? null : null;
 
   return `
-    ${renderTeamNameRow({
-      teamName,
-      fallbackName: teamNameFallback,
-      editing: teamNameEditing,
-      busy: teamNameBusy,
-      error: teamNameError,
-    })}
+    ${renderTeamNameRow({ teamName, fallbackName: teamNameFallback, editable: false })}
     <div class="fantasy-myteam-grid">
       <div class="fantasy-myteam-grid__main">
         ${pitchCard}
@@ -1855,7 +1925,13 @@ function filterPlayers(players, filter, draftedIds, queuedIds) {
     if (filter?.position && filter.position !== "All" && player.position !== filter.position) return false;
     if (club !== "All" && player.team !== club) return false;
     if (!search) return true;
-    return player.name.toLowerCase().includes(search) || player.team.toLowerCase().includes(search);
+    // Match the display label too, so searching "forest" finds Nottingham's
+    // players even though the canonical key spells the club differently.
+    return (
+      player.name.toLowerCase().includes(search) ||
+      player.team.toLowerCase().includes(search) ||
+      displayTeamName(player.team).toLowerCase().includes(search)
+    );
   });
 }
 
@@ -1946,12 +2022,18 @@ export function renderFantasyPlayerRows(players, filter, context) {
 // player data (never a hardcoded team list, matching the "flows from the feed"
 // rule the rest of the app follows for badges/teams).
 function renderClubOptions(players, selectedClub) {
-  const clubs = [...new Set((players ?? []).map((player) => player.team).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  // Option VALUES stay the canonical join key (the filter compares against
+  // player.team); only the visible label goes through displayTeamName.
+  const clubs = [...new Set((players ?? []).map((player) => player.team).filter(Boolean))].sort((a, b) =>
+    displayTeamName(a).localeCompare(displayTeamName(b)),
+  );
   const selected = selectedClub ?? "All";
   const allOption = `<option value="All"${selected === "All" ? " selected" : ""}>All clubs</option>`;
   return (
     allOption +
-    clubs.map((club) => `<option value="${esc(club)}"${selected === club ? " selected" : ""}>${esc(club)}</option>`).join("")
+    clubs
+      .map((club) => `<option value="${esc(club)}"${selected === club ? " selected" : ""}>${esc(displayTeamName(club))}</option>`)
+      .join("")
   );
 }
 
@@ -2337,7 +2419,13 @@ function filterWireEntries(wire, filter) {
     if (filter?.position && filter.position !== "All" && player.position !== filter.position) return false;
     if (club !== "All" && player.team !== club) return false;
     if (!search) return true;
-    return player.name.toLowerCase().includes(search) || player.team.toLowerCase().includes(search);
+    // Match the display label too, so searching "forest" finds Nottingham's
+    // players even though the canonical key spells the club differently.
+    return (
+      player.name.toLowerCase().includes(search) ||
+      player.team.toLowerCase().includes(search) ||
+      displayTeamName(player.team).toLowerCase().includes(search)
+    );
   });
 }
 
@@ -2514,7 +2602,7 @@ function renderFantasyPriorities(priorities, myUserId, mode) {
 // "Commissioner settings" distinguishes it from the manager-facing panels
 // around it, and inside the Settings tab, where that title would be saying the
 // same word twice.
-function renderFantasyWaiverSettings(waivers, { busy = false, error = "", heading = "Commissioner settings" } = {}) {
+function renderFantasyWaiverSettings(waivers, { busy = false, error = "", heading = "Waivers" } = {}) {
   const pendingOwnClaims = (waivers.myClaims ?? []).filter((claim) => claim.status === "pending").length;
   const blocked = pendingOwnClaims > 0;
   const disabledAttr = busy || blocked ? "disabled" : "";
@@ -2574,8 +2662,6 @@ export function renderFantasyWaiversPanel(
     freeAgentFilter = { position: "All", club: "All", search: "" },
     wireFilter = { position: "All", club: "All", search: "" },
     flow = null,
-    settingsBusy = false,
-    settingsError = "",
     playerPool = [],
     lineup = null,
     xpStats = null,
@@ -2609,6 +2695,10 @@ export function renderFantasyWaiversPanel(
     ${renderFantasyWire(waivers.wire, wireFilter)}
     ${renderFantasyMyClaims(waivers.myClaims, playersById)}
     ${renderFantasyPriorities(waivers.priorities, myUserId, waivers.mode)}
-    ${isCommissioner ? renderFantasyWaiverSettings(waivers, { busy: settingsBusy, error: settingsError }) : ""}
+    ${
+      isCommissioner
+        ? `<p class="note--dim">Waiver mode and budget are set in <button class="linklike" type="button" data-fantasy-subtab="settings">Settings</button>.</p>`
+        : ""
+    }
     ${renderFantasyLastRun(waivers.lastRun, playersById, members)}`;
 }

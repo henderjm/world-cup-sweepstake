@@ -80,6 +80,7 @@ import { validateTeamName } from "../src/fantasyTeamName.js";
 import { isChampionId, validateChampionChoice } from "../src/fantasyChampion.js";
 import { headToHeadFor } from "../src/fantasyHeadToHead.js";
 import { assignGameweeks, clubFixtureCounts, firstKickoffInGameweek, gameweekOf } from "../src/fantasyCalendar.js";
+import { trackGameweek } from "../src/fantasyGameweekTracker.js";
 import {
   DEFAULT_FAAB_BUDGET,
   WAIVER_MODES,
@@ -3080,6 +3081,20 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
       .bind(leagueId, gameweek, user.id)
       .first();
 
+    // Each side's starters placed against this gameweek's real fixtures
+    // (done / in play / to come): the number that decides whether a lead is
+    // safe. Derived with the same pure trackGameweek the client's own tracker
+    // uses, from the resolved lineup (set, inherited or default) so it can
+    // never disagree with what scoring will count. Only the aggregate COUNTS
+    // are sent: how many players an opponent has left is scoreboard material,
+    // their actual lineup is not revealed here. Null when the feed is
+    // unreadable, which the client renders as absent rather than as "0 left".
+    const progressFor = async (userId) => {
+      if (!matches) return null;
+      const { roster, starters } = await resolveManagerLineup(env, leagueId, userId, gameweek);
+      return trackGameweek({ matches, roster, starterIds: starters.map((entry) => entry.playerId), gameweek }).counts;
+    };
+
     const meScore = await fantasyGameweekScore(env, leagueId, user.id, gameweek);
     // Through memberDisplayName like every other surface, so a manager who has
     // named their team sees that name here too. Reading user.name directly was
@@ -3091,7 +3106,7 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
     )
       .bind(leagueId, user.id)
       .first();
-    const me = { userId: user.id, name: memberDisplayName(mySeat ?? user), score: meScore };
+    const me = { userId: user.id, name: memberDisplayName(mySeat ?? user), score: meScore, progress: await progressFor(user.id) };
     const timing = {
       kickoff: timetable?.firstKickoff ?? null,
       deadline: timetable?.squad.deadline ?? null,
@@ -3109,15 +3124,17 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
     }
 
     const opponentId = fixture.home_user_id === user.id ? fixture.away_user_id : fixture.home_user_id;
-    const [opponentRow, opponentScore] = await Promise.all([
+    const [opponentRow, opponentScore, opponentProgress] = await Promise.all([
       env.DB.prepare(`SELECT name, email, is_bot FROM users WHERE id = ?1`).bind(opponentId).first(),
       fantasyGameweekScore(env, leagueId, opponentId, gameweek),
+      progressFor(opponentId),
     ]);
     const opponent = {
       userId: opponentId,
       name: memberDisplayName(opponentRow),
       isBot: Boolean(opponentRow?.is_bot),
       score: opponentScore,
+      progress: opponentProgress,
     };
 
     return json({ gameweek, status, me, opponent, ...timing }, 200, cors);
@@ -4157,12 +4174,30 @@ async function handleFantasyWaiverSettings(request, env, leagueId, cors) {
       return json({ error: "cannot change waiver settings while any claims are pending" }, 400, cors);
     }
 
-    await env.DB.prepare(
-      `INSERT INTO fantasy_waiver_settings (league_id, mode, faab_budget, updated_at) VALUES (?1, ?2, ?3, datetime('now'))
-       ON CONFLICT(league_id) DO UPDATE SET mode = ?2, faab_budget = ?3, updated_at = datetime('now')`,
-    )
-      .bind(leagueId, mode, faabBudget)
-      .run();
+    // A budget change must reach every manager's REMAINING budget or saving it
+    // changes nothing anyone can see: fantasy_waiver_state rows are seeded once
+    // (ensureLeagueWaiverState, INSERT OR IGNORE) and were never revisited.
+    // Applied as a delta rather than a reset so money already spent in past
+    // runs stays spent; MAX(0, ...) because a cut below what someone has left
+    // zeroes them rather than minting a negative balance. One batch with the
+    // settings write, so the stored budget and the balances can never disagree
+    // about whether the change happened.
+    const previous = await waiverSettings(env, leagueId);
+    const delta = faabBudget - previous.faabBudget;
+    const statements = [
+      env.DB.prepare(
+        `INSERT INTO fantasy_waiver_settings (league_id, mode, faab_budget, updated_at) VALUES (?1, ?2, ?3, datetime('now'))
+         ON CONFLICT(league_id) DO UPDATE SET mode = ?2, faab_budget = ?3, updated_at = datetime('now')`,
+      ).bind(leagueId, mode, faabBudget),
+    ];
+    if (delta !== 0) {
+      statements.push(
+        env.DB.prepare(
+          `UPDATE fantasy_waiver_state SET faab_remaining = MAX(0, faab_remaining + ?2) WHERE league_id = ?1`,
+        ).bind(leagueId, delta),
+      );
+    }
+    await env.DB.batch(statements);
 
     return json({ mode, faabBudget }, 200, cors);
   } catch {

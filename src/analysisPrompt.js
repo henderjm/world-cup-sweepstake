@@ -5,6 +5,7 @@
 
 import {
   buildTeamPerformance,
+  displayTeamName,
   mapStandings,
   normalizeTeamName,
 } from "./domain.js";
@@ -19,7 +20,7 @@ export function analysisEligible(match) {
 // Bump when the system prompt or payload shape changes meaningfully: the version is
 // part of the cache signature, so a deploy regenerates live and fresh matches with
 // the new prompt instead of serving reads written by the old one.
-export const ANALYSIS_PROMPT_VERSION = 3;
+export const ANALYSIS_PROMPT_VERSION = 4;
 
 // Cache signature: a new analysis is worth generating whenever the signature changes.
 // Score, status and penalties are always part of it (a goal, half-time, full-time or
@@ -122,9 +123,11 @@ export function buildAnalysisPrompt(detail, live) {
           detail.score?.penHome != null ? `${detail.score.penHome}-${detail.score.penAway}` : null,
       },
       events: {
-        goals: detail.goals ?? [],
-        cards: detail.cards ?? [],
-        substitutions: detail.subs ?? [],
+        // Copied, not mutated: the detail payload may be a shared in-isolate
+        // memo (see fetchJson's cache) and must stay read-only.
+        goals: (detail.goals ?? []).map(eventWithDisplayTeam),
+        cards: (detail.cards ?? []).map(eventWithDisplayTeam),
+        substitutions: (detail.subs ?? []).map(eventWithDisplayTeam),
       },
     },
     table: tableContext(standings, competition, homeTeam, awayTeam),
@@ -133,11 +136,17 @@ export function buildAnalysisPrompt(detail, live) {
   return JSON.stringify(payload);
 }
 
+function eventWithDisplayTeam(event) {
+  return { ...event, team: displayTeamName(event.team) };
+}
+
 function sideContext(team, side, standings, performance) {
   const standing = standings.get(team);
   const stats = performance.get(team);
   return {
-    team,
+    // The joins above use the canonical key; the name the model will quote in
+    // its prose is the display label ("Brighton", not the "Brighton Hove" key).
+    team: displayTeamName(team),
     formation: side?.formation ?? null,
     coach: side?.coach ?? null,
     position: standing?.position ?? null,
@@ -176,7 +185,7 @@ function tableContext(standings, competition, homeTeam, awayTeam) {
       .filter((row) => interesting.has(row.position))
       .map((row) => ({
         position: row.position,
-        team: row.team,
+        team: displayTeamName(row.team),
         played: row.played,
         points: row.points,
         goalDifference: row.goalDifference,

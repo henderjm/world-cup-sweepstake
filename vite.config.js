@@ -75,6 +75,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: "./",
+    server: {
+      host: true,
+      port: Number(process.env.PORT) || 8731,
+    },
     plugins: [
       svelte(),
       seoLearnPages(analytics),

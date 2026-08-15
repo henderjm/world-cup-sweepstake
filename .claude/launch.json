@@ -4,8 +4,12 @@
     {
       "name": "kickoff-draft",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 8731
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 8731,
+      "autoPort": true
     }
   ]
 }

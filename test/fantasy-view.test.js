@@ -19,6 +19,7 @@ import {
   renderFantasySessionExpired,
   renderFantasyStandingsPanel,
   renderFantasySettingsPanel,
+  renderTeamNameRow,
   renderGameweekTracker,
   renderFantasyWaiversPanel,
   renderChampionCard,
@@ -571,14 +572,18 @@ test("renderFantasyLobby also treats a genuinely empty (non-unavailable) pool as
 
 // -- renderFantasyLobby: draft scheduling ----------------------------------------
 
-test("renderFantasyLobby offers a commissioner a schedule picker when nothing is scheduled yet", () => {
+test("renderFantasyLobby points a commissioner at Settings when nothing is scheduled, with no picker of its own", () => {
+  // The picker lives on the Settings tab only (see renderFantasySettingsPanel's
+  // tests); the lobby shows the fact and the way there, never a second copy of
+  // the form.
   const html = renderFantasyLobby(lobbyLeague({ isCommissioner: true }), lobbyMembers, {
     playerPool: null,
     filter: { position: "All", search: "" },
   });
-  assert.match(html, /Schedule the draft/);
-  assert.match(html, /data-fantasy-schedule-input/);
-  assert.match(html, /data-fantasy-schedule-save/);
+  assert.match(html, /No draft time set/);
+  assert.match(html, /data-fantasy-subtab="settings"/);
+  assert.doesNotMatch(html, /data-fantasy-schedule-input/);
+  assert.doesNotMatch(html, /data-fantasy-schedule-save/);
 });
 
 test("renderFantasyLobby tells a non-commissioner nothing is scheduled yet, with no picker", () => {
@@ -590,7 +595,7 @@ test("renderFantasyLobby tells a non-commissioner nothing is scheduled yet, with
   assert.doesNotMatch(html, /data-fantasy-schedule-input/);
 });
 
-test("renderFantasyLobby shows the scheduled time, a countdown and reschedule/clear controls for the commissioner", () => {
+test("renderFantasyLobby shows the commissioner the scheduled time and countdown, with changes routed to Settings", () => {
   const scheduledAt = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
   const html = renderFantasyLobby(lobbyLeague({ isCommissioner: true }), lobbyMembers, {
     playerPool: null,
@@ -599,9 +604,9 @@ test("renderFantasyLobby shows the scheduled time, a countdown and reschedule/cl
   });
   assert.match(html, /Draft scheduled/);
   assert.match(html, new RegExp(`data-scheduled-at="${scheduledAt}"`));
-  assert.match(html, /data-fantasy-schedule-save/);
-  assert.match(html, /Reschedule/);
-  assert.match(html, /data-fantasy-schedule-clear/);
+  assert.match(html, /Change or clear it in/);
+  assert.doesNotMatch(html, /data-fantasy-schedule-save/);
+  assert.doesNotMatch(html, /data-fantasy-schedule-clear/);
 });
 
 test("renderFantasyLobby shows a non-commissioner the scheduled time read-only, plus the auto-pick warning, no controls", () => {
@@ -627,23 +632,22 @@ test("renderFantasyLobby marks a schedule within the hour as soon", () => {
   assert.match(html, /class="card fantasy-schedule is-soon"/);
 });
 
-test("renderFantasyLobby surfaces a schedule error message, escaped", () => {
-  const html = renderFantasyLobby(lobbyLeague({ isCommissioner: true }), lobbyMembers, {
-    playerPool: null,
-    filter: { position: "All", search: "" },
-    scheduleError: `bad "date" <here>`,
-  });
+test("the settings tab surfaces a schedule error message, escaped", () => {
+  const html = renderFantasySettingsPanel(
+    { name: "L", draftStatus: "pending", isCommissioner: true },
+    [{ userId: 1, name: "Me" }],
+    { seats: { total: 10, humans: 1, bots: 0, open: 9 }, schedule: null, scheduleError: `bad "date" <here>` },
+  );
   assert.match(html, /bad &quot;date&quot; &lt;here&gt;/);
 });
 
-test("renderFantasyLobby disables schedule controls while a save/clear is in flight", () => {
+test("the settings tab disables schedule controls while a save/clear is in flight", () => {
   const scheduledAt = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
-  const html = renderFantasyLobby(lobbyLeague({ isCommissioner: true }), lobbyMembers, {
-    playerPool: null,
-    filter: { position: "All", search: "" },
-    schedule: { scheduledAt },
-    scheduleBusy: true,
-  });
+  const html = renderFantasySettingsPanel(
+    { name: "L", draftStatus: "pending", isCommissioner: true },
+    [{ userId: 1, name: "Me" }],
+    { seats: { total: 10, humans: 1, bots: 0, open: 9 }, schedule: { scheduledAt }, scheduleBusy: true },
+  );
   assert.match(html, /data-fantasy-schedule-save disabled/);
   assert.match(html, /data-fantasy-schedule-clear disabled/);
 });
@@ -658,15 +662,30 @@ test("renderFantasyLeagueHeader shows the purple eyebrow, the active sub-tab's t
   assert.match(html, /Snake draft/);
 });
 
-test("renderFantasyLeagueHeader marks the active sub-tab and leaves the other three live", () => {
-  const html = renderFantasyLeagueHeader({ name: "Test League" }, members, "myteam");
-  const myTeamButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="myteam">/)[0];
+test("renderFantasyLeagueHeader marks the active sub-tab and leaves the season tabs live once the draft is complete", () => {
+  const html = renderFantasyLeagueHeader({ name: "Test League", draftStatus: "complete" }, members, "myteam");
+  const myTeamButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="myteam"[^>]*>/)[0];
   assert.match(myTeamButton, /is-active/);
-  const matchupButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="matchup">/)[0];
+  const matchupButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="matchup"[^>]*>/)[0];
   assert.doesNotMatch(matchupButton, /disabled/);
-  const standingsButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="standings">/)[0];
+  const standingsButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="standings"[^>]*>/)[0];
   assert.doesNotMatch(standingsButton, /disabled/);
   assert.doesNotMatch(html, /Soon/);
+});
+
+// The gate that keeps every step in sequence: a league that has not drafted
+// has no matchups, no standings and no waiver wire, so those tabs are inert
+// until the draft completes rather than leading to a request that can only 400.
+test("renderFantasyLeagueHeader disables Matchup, Standings and Waivers until the draft is complete", () => {
+  for (const draftStatus of ["pending", "drafting"]) {
+    const html = renderFantasyLeagueHeader({ name: "Test League", draftStatus }, members, "draftroom");
+    for (const tab of ["matchup", "standings", "waivers"]) {
+      const button = html.match(new RegExp(`<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="${tab}"[^>]*>`))[0];
+      assert.match(button, /disabled/, `${tab} should be disabled while ${draftStatus}`);
+    }
+    const boardButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="board"[^>]*>/)[0];
+    assert.doesNotMatch(boardButton, /disabled/, `board should stay live while ${draftStatus}`);
+  }
 });
 
 test("renderFantasyLeagueHeader puts Feed first in the sub-tab bar and never disables it", () => {
@@ -1210,6 +1229,52 @@ test("renderFantasyMatchupPanel shows a pending score (not a bare 0-0) while the
   assert.match(html, /fantasy-stat--empty/);
 });
 
+test("a live matchup shows each side's progress, lit for the side with players on a pitch", () => {
+  const html = renderFantasyMatchupPanel({
+    gameweek: 7,
+    status: "live",
+    me: { userId: 1, name: "Alex", score: 41, progress: { total: 11, done: 6, inPlay: 3, toCome: 2, blank: 0 } },
+    opponent: { userId: 2, name: "Sam", score: 38, progress: { total: 11, done: 11, inPlay: 0, toCome: 0, blank: 0 } },
+  });
+  assert.match(html, /6 done · 3 in play · 2 to come/);
+  assert.match(html, /11 done/);
+  // My three players are on a pitch; Sam is finished. Only my line is lit.
+  const lit = (html.match(/fantasy-matchup__progress is-live/g) ?? []).length;
+  assert.equal(lit, 1, "exactly the side with players on a pitch is lit");
+});
+
+test("progress stays quiet before kickoff and when an older worker sends none", () => {
+  const preKickoff = renderFantasyMatchupPanel({
+    gameweek: 7,
+    status: "scheduled",
+    me: { userId: 1, name: "Alex", score: 0, progress: { total: 11, done: 0, inPlay: 0, toCome: 11, blank: 0 } },
+    opponent: { userId: 2, name: "Sam", score: 0, progress: { total: 11, done: 0, inPlay: 0, toCome: 11, blank: 0 } },
+  });
+  assert.doesNotMatch(preKickoff, /fantasy-matchup__progress/, "11 to come before kickoff is noise, not information");
+
+  const older = renderFantasyMatchupPanel({
+    gameweek: 7,
+    status: "live",
+    me: { userId: 1, name: "Alex", score: 41 },
+    opponent: { userId: 2, name: "Sam", score: 38 },
+  });
+  assert.doesNotMatch(older, /fantasy-matchup__progress/, "a payload without progress renders exactly as before");
+});
+
+test("the Average bye card carries your own progress while the gameweek runs", () => {
+  const html = renderFantasyMatchupPanel(
+    {
+      gameweek: 7,
+      status: "live",
+      me: { userId: 1, name: "Alex", score: 41, progress: { total: 11, done: 6, inPlay: 3, toCome: 2, blank: 0 } },
+      opponent: null,
+    },
+    { leagueSize: 9 },
+  );
+  assert.match(html, /You play Average/);
+  assert.match(html, /6 done · 3 in play · 2 to come/);
+});
+
 test("a pre-season matchup reads as upcoming and names the season start, with no countdown", () => {
   // The owner's first complaint: pre-season, an unplayed fixture rendered as a
   // 0-0 scoreline with in-season deadline language wrapped around it.
@@ -1420,19 +1485,25 @@ test("renderFantasyWaiversPanel's status header explains rolling mode and shows 
   assert.doesNotMatch(html, /credits left/);
 });
 
-test("renderFantasyWaiversPanel shows commissioner settings only for the commissioner", () => {
+test("renderFantasyWaiversPanel points the commissioner at Settings instead of carrying its own settings form", () => {
+  // The mode/budget form lives on the Settings tab only; a second copy here is
+  // exactly the duplicated-settings smell this replaced.
   const commissionerView = renderFantasyWaiversPanel(waiversFixture(), { myUserId: 3, roster: [], isCommissioner: true });
-  assert.match(commissionerView, /Commissioner settings/);
-  assert.match(commissionerView, /data-fantasy-settings-save/);
+  assert.match(commissionerView, /data-fantasy-subtab="settings"/);
+  assert.doesNotMatch(commissionerView, /data-fantasy-settings-save/);
 
   const memberView = renderFantasyWaiversPanel(waiversFixture(), { myUserId: 3, roster: [], isCommissioner: false });
-  assert.doesNotMatch(memberView, /Commissioner settings/);
+  assert.doesNotMatch(memberView, /data-fantasy-subtab="settings"/);
   assert.doesNotMatch(memberView, /data-fantasy-settings-save/);
 });
 
-test("renderFantasyWaiversPanel disables commissioner settings and explains why when the caller has a pending claim", () => {
+test("the settings tab disables the waiver form and explains why when the caller has a pending claim", () => {
   const withPending = waiversFixture({ myClaims: [{ claimId: 1, addPlayerId: 11, dropPlayerId: 20, bid: 10, priority: 1, status: "pending", reason: null, gameweek: 7 }] });
-  const html = renderFantasyWaiversPanel(withPending, { myUserId: 3, roster: [], isCommissioner: true });
+  const html = renderFantasySettingsPanel(
+    { name: "L", draftStatus: "complete", isCommissioner: true },
+    [{ userId: 1, name: "Me" }],
+    { seats: { total: 10, humans: 1, bots: 0, open: 9 }, schedule: null, waivers: withPending },
+  );
   assert.match(html, /data-fantasy-settings-save[^>]*disabled/);
   assert.match(html, /can't change until it resolves/);
 });
@@ -1751,28 +1822,30 @@ test("the lobby labels a bot manager and never reports a bare manager total that
   assert.match(html, /1 manager · 1 bot · 2\/10 seats/);
 });
 
-test("the lobby offers bot seats to the commissioner and explains what a bot does first", () => {
-  const html = renderFantasyLobby(lobbyLeague(), botMembers, {
-    playerPool: null,
-    filter: { position: "All", search: "" },
+test("bot seat controls live on the settings tab, and a seated bot can be removed there while pending", () => {
+  const html = renderFantasySettingsPanel(lobbyLeague({ draftStatus: "pending" }), botMembers, {
     seats: { total: 2, humans: 1, bots: 1, open: 8, max: 10 },
+    schedule: null,
   });
   assert.match(html, /data-fantasy-add-bots/);
   assert.match(html, /data-fantasy-bot-count/);
   assert.match(html, /autopicks its squad/);
-  // And a bot already seated can be taken back out again while pending.
   assert.match(html, /data-fantasy-remove-bot="2"/);
 });
 
-test("a non-commissioner is told bots are in the league but is offered no control", () => {
-  const html = renderFantasyLobby(lobbyLeague({ isCommissioner: false }), botMembers, {
+test("the lobby itself carries no bot controls, only the seat split and the bot chip", () => {
+  // The controls moved to Settings; the lobby still tells the room who is a
+  // bot (the chip on the member row and the split in the heading), because
+  // hiding that would imply real people where none sit.
+  const html = renderFantasyLobby(lobbyLeague(), botMembers, {
     playerPool: null,
     filter: { position: "All", search: "" },
     seats: { total: 2, humans: 1, bots: 1, open: 8, max: 10 },
   });
   assert.doesNotMatch(html, /data-fantasy-add-bots/);
   assert.doesNotMatch(html, /data-fantasy-remove-bot/);
-  assert.match(html, /seats filled by a bot/);
+  assert.match(html, /1 manager · 1 bot/);
+  assert.match(html, /fantasy-chip--bot/);
 });
 
 test("the invite card leads with a shareable link and keeps the raw code below it", () => {
@@ -2189,21 +2262,52 @@ test("the champion card escapes team names and its own error message", () => {
 
 // -- Commissioner settings tab -----------------------------------------------
 
-test("the Settings tab is offered to a commissioner and absent for everyone else", () => {
+test("the Settings tab is offered to every member; the body scopes what each can do", () => {
   const members = [{ userId: 1, name: "Me" }];
   const asCommish = renderFantasyLeagueHeader({ name: "L", draftStatus: "complete", isCommissioner: true }, members, "feed");
   const asManager = renderFantasyLeagueHeader({ name: "L", draftStatus: "complete", isCommissioner: false }, members, "feed");
+  // Settings holds each member's OWN team name, so it cannot be a
+  // commissioner-only tab; the league-level levers scope themselves inside.
   assert.match(asCommish, /data-fantasy-subtab="settings"/);
-  // Absent rather than disabled: nine managers in ten can never open it, and a
-  // permanently dead button is worse than no button.
-  assert.doesNotMatch(asManager, /data-fantasy-subtab="settings"/);
+  assert.match(asManager, /data-fantasy-subtab="settings"/);
 });
 
-test("settings refuses to render its controls for a non-commissioner", () => {
-  const html = renderFantasySettingsPanel({ name: "L", draftStatus: "complete", isCommissioner: false }, []);
-  assert.match(html, /Only the commissioner/);
+test("a non-commissioner's settings hold their team name and none of the league levers", () => {
+  const html = renderFantasySettingsPanel({ name: "L", draftStatus: "complete", isCommissioner: false }, [], {
+    teamName: "The Goon Squad",
+    teamNameFallback: "Ada",
+  });
+  assert.match(html, /Your team/);
+  assert.match(html, /The Goon Squad/);
+  assert.match(html, /data-fantasy-teamname-edit/, "the rename form's home is Settings");
   assert.doesNotMatch(html, /data-fantasy-add-bots/);
   assert.doesNotMatch(html, /data-fantasy-settings-mode/);
+});
+
+test("the commissioner's settings lead with their own team card before the league levers", () => {
+  const html = renderFantasySettingsPanel(
+    { name: "L", draftStatus: "complete", isCommissioner: true },
+    [{ userId: 1, name: "Me" }],
+    {
+      seats: { total: 10, humans: 1, bots: 0, open: 9 },
+      schedule: null,
+      waivers: { mode: "faab", faabBudget: 100, myClaims: [] },
+      teamName: null,
+      teamNameFallback: "Me",
+    },
+  );
+  assert.match(html, /Your team/);
+  assert.match(html, /data-fantasy-teamname-edit/);
+  assert.match(html, /data-fantasy-settings-mode/, "league levers still there for the commissioner");
+  assert.ok(html.indexOf("Your team") < html.indexOf("Waivers"), "own settings first, league levers after");
+});
+
+test("the My team pitch shows the team name with a pencil that jumps to Settings, not a second form", () => {
+  const html = renderTeamNameRow({ teamName: "The Goon Squad", fallbackName: "Ada", editable: false });
+  assert.match(html, /The Goon Squad/);
+  assert.match(html, /data-fantasy-subtab="settings"/);
+  assert.doesNotMatch(html, /data-fantasy-teamname-edit/, "one form, one home");
+  assert.doesNotMatch(html, /data-fantasy-teamname-input/);
 });
 
 test("a pending league's settings offer the draft and bot controls, and explain why waivers are not there yet", () => {

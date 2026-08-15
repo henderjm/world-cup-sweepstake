@@ -59,7 +59,9 @@ import { hashSeed, mulberry32 } from "./seededRandom.js";
 
 export const DEMO_LEAGUE_SIZES = [4, 6, 8];
 export const DEFAULT_DEMO_LEAGUE_SIZE = 6;
-export const DEFAULT_DEMO_MANAGER_NAME = "You";
+// "Your team", not "You": every league surface marks the caller's own row with
+// a "(you)" suffix, and a manager literally named "You" rendered as "You (you)".
+export const DEFAULT_DEMO_MANAGER_NAME = "Your team";
 export const DEMO_HUMAN_ID = "you";
 
 // Fixed, deterministic bot roster: no randomness needed here, a league of up

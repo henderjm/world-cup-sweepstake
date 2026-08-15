@@ -1,6 +1,6 @@
 import { abbrFor, badgeFor } from "./badges.js";
 import { DATA_API } from "./data.js";
-import { normalizeTeamName } from "./domain.js";
+import { displayTeamName, normalizeTeamName } from "./domain.js";
 import { byPosition, dayLabel, formatStage, isFinished, isLive, timeLabel } from "./format.js";
 import { banterAvailable, mountBanter, unmountBanter } from "./banter.js";
 
@@ -129,12 +129,12 @@ function renderShell(match) {
       </button>
     </div>
     <div class="dz__score">
-      <div class="dz__team">${badgeFor(match.homeTeam, "xl")}<p>${esc(match.homeTeam)}</p></div>
+      <div class="dz__team">${badgeFor(match.homeTeam, "xl")}<p>${esc(displayTeamName(match.homeTeam))}</p></div>
       <div>
         <p class="dz__num">${decided ? `${match.score.home} – ${match.score.away}` : "v"}</p>
         ${pill}
       </div>
-      <div class="dz__team">${badgeFor(match.awayTeam, "xl")}<p>${esc(match.awayTeam)}</p></div>
+      <div class="dz__team">${badgeFor(match.awayTeam, "xl")}<p>${esc(displayTeamName(match.awayTeam))}</p></div>
     </div>
     ${match.venue ? `<p class="dz__venue">${esc(match.venue)}</p>` : ""}
     <div class="dz__ai" id="mdAnalysis" hidden></div>
@@ -202,7 +202,7 @@ function renderDetail(match, detail) {
       .map((p) => esc(p.name))
       .join(", ");
     return `<div class="xi">
-        <div class="xi__head">${badgeFor(normalizeTeamName(team.name))}<span>${esc(team.name)}</span>
+        <div class="xi__head">${badgeFor(normalizeTeamName(team.name))}<span>${esc(displayTeamName(normalizeTeamName(team.name)))}</span>
           ${team.formation ? `<span class="xi__formation">${esc(team.formation)}</span>` : ""}
           ${team.coach ? `<span class="xi__coach">${esc(team.coach)}</span>` : ""}
         </div>

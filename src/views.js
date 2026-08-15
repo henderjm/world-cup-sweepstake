@@ -1,5 +1,6 @@
 import { abbrFor, badgeFor } from "./badges.js";
 import { COMPETITIONS } from "./competitions.js";
+import { displayTeamName } from "./domain.js";
 import { compareByGoals, compareByInvolvements } from "./scorers.js";
 import { dateLabel, dayLabel, formatStage, isFinished, isLive, statusLabel } from "./format.js";
 import { learnPages } from "./learnSeo.js";
@@ -140,10 +141,10 @@ export function renderHero(model) {
     live.length
       ? `<span class="chip"><span class="chip__dot"></span>${live.length} live now</span>`
       : next
-        ? `<span class="chip">Next: ${esc(next.homeTeam)} v ${esc(next.awayTeam)} · ${esc(dayLabel(next.utcDate))}</span>`
+        ? `<span class="chip">Next: ${esc(displayTeamName(next.homeTeam))} v ${esc(displayTeamName(next.awayTeam))} · ${esc(dayLabel(next.utcDate))}</span>`
         : "",
     seasonStarted && leader
-      ? `<span class="chip">Top: ${esc(leader.team)} · ${leader.points} pts</span>`
+      ? `<span class="chip">Top: ${esc(displayTeamName(leader.team))} · ${leader.points} pts</span>`
       : "",
   ]
     .filter(Boolean)
@@ -192,9 +193,9 @@ function matchLine(match) {
   const live = isLive(match.status);
   return `<div class="mline" data-match-id="${match.id ?? ""}" role="button" tabindex="0">
       <span class="mline__st ${live ? "is-live" : ""}">${esc(statusLabel(match))}</span>
-      <span class="mline__side mline__side--h"><span class="mline__name">${esc(match.homeTeam)}</span>${badgeFor(match.homeTeam)}</span>
+      <span class="mline__side mline__side--h"><span class="mline__name">${esc(displayTeamName(match.homeTeam))}</span>${badgeFor(match.homeTeam)}</span>
       <span class="mline__score">${scoreText(match)}${penaltyTag(match)}</span>
-      <span class="mline__side">${badgeFor(match.awayTeam)}<span class="mline__name">${esc(match.awayTeam)}</span></span>
+      <span class="mline__side">${badgeFor(match.awayTeam)}<span class="mline__name">${esc(displayTeamName(match.awayTeam))}</span></span>
     </div>`;
 }
 
@@ -205,9 +206,9 @@ function liveCard(match) {
         <span class="lcard__tag">${matchTag(match)}</span>
       </div>
       <div class="lcard__grid">
-        <span class="lcard__team">${badgeFor(match.homeTeam, "lg")}<span class="lcard__name">${esc(match.homeTeam)}</span></span>
+        <span class="lcard__team">${badgeFor(match.homeTeam, "lg")}<span class="lcard__name">${esc(displayTeamName(match.homeTeam))}</span></span>
         <span class="lcard__score">${Number.isFinite(match.score?.home) ? match.score.home : "–"}</span>
-        <span class="lcard__team">${badgeFor(match.awayTeam, "lg")}<span class="lcard__name">${esc(match.awayTeam)}</span></span>
+        <span class="lcard__team">${badgeFor(match.awayTeam, "lg")}<span class="lcard__name">${esc(displayTeamName(match.awayTeam))}</span></span>
         <span class="lcard__score">${Number.isFinite(match.score?.away) ? match.score.away : "–"}</span>
       </div>
     </div>`;
@@ -250,7 +251,7 @@ export function renderLive(model) {
     }
     <div class="scoregrid">
       <div class="scorecol">
-        ${listCard("Today", today, "No more kick-offs today.")}
+        ${listCard("Today", today, "No kick-offs today.")}
         ${listCard("Next up", upcoming, "Nothing on the horizon.")}
       </div>
       <div class="scorecol">
@@ -277,7 +278,7 @@ export function renderTable(model) {
         .map(
           (row) => `<div class="ltable__row">
             <span class="ltable__pos"><span class="zbar ${row.zone ? `zbar--${row.zone.tone}` : ""}"></span><span class="ltable__posnum">${row.position}</span></span>
-            <span class="ltable__club">${badgeFor(row.team)}<span class="ltable__team">${esc(row.team)}</span></span>
+            <span class="ltable__club">${badgeFor(row.team)}<span class="ltable__team">${esc(displayTeamName(row.team))}</span></span>
             <span class="ltable__num">${row.played}</span>
             <span class="ltable__num ltable__wdl">${row.won}</span>
             <span class="ltable__num ltable__wdl">${row.drawn}</span>
@@ -324,7 +325,7 @@ export function renderMiniTable(model) {
       (row) => `<div class="minirow">
         <span class="zbar ${row.zone ? `zbar--${row.zone.tone}` : ""}"></span>
         <span class="minirow__pos">${row.position}</span>
-        <span class="minirow__club">${badgeFor(row.team)}<span class="minirow__team">${esc(row.team)}</span></span>
+        <span class="minirow__club">${badgeFor(row.team)}<span class="minirow__team">${esc(displayTeamName(row.team))}</span></span>
         <span class="minirow__pts">${row.points}</span>
       </div>`,
     )
@@ -390,9 +391,9 @@ export function renderKnockout(model) {
 
   const koCard = (match) => `<div class="kocard kocard--openable" data-match-id="${match.id ?? ""}" role="button" tabindex="0">
       <div class="kocard__grid">
-        <span class="kocard__team">${badgeFor(match.homeTeam)}<span class="kocard__name">${esc(match.homeTeam)}</span></span>
+        <span class="kocard__team">${badgeFor(match.homeTeam)}<span class="kocard__name">${esc(displayTeamName(match.homeTeam))}</span></span>
         <span class="kocard__score">${Number.isFinite(match.score?.home) ? match.score.home : "–"}</span>
-        <span class="kocard__team">${badgeFor(match.awayTeam)}<span class="kocard__name">${esc(match.awayTeam)}</span></span>
+        <span class="kocard__team">${badgeFor(match.awayTeam)}<span class="kocard__name">${esc(displayTeamName(match.awayTeam))}</span></span>
         <span class="kocard__score">${Number.isFinite(match.score?.away) ? match.score.away : "–"}</span>
       </div>
       <p class="kocard__note">${esc(statusLabel(match))}${match.utcDate ? ` · ${esc(dayLabel(match.utcDate))}` : ""}${penaltyTag(match)}</p>
@@ -471,17 +472,19 @@ export function renderFixtures(model, view = "results", team = "All") {
     )
     .join("");
 
+  // Option VALUES stay the canonical join key (the filter compares against
+  // match team names); only the visible label goes through displayTeamName.
   const teamOptions = ["All", ...clubs]
     .map(
       (club) =>
-        `<option value="${esc(club)}"${club === activeTeam ? " selected" : ""}>${club === "All" ? "All clubs" : esc(club)}</option>`,
+        `<option value="${esc(club)}"${club === activeTeam ? " selected" : ""}>${club === "All" ? "All clubs" : esc(displayTeamName(club))}</option>`,
     )
     .join("");
 
   const empty =
     activeTeam === "All"
       ? `No ${upcoming ? "upcoming fixtures" : "results yet"}.`
-      : `No ${upcoming ? "upcoming fixtures" : "results yet"} for ${esc(activeTeam)}.`;
+      : `No ${upcoming ? "upcoming fixtures" : "results yet"} for ${esc(displayTeamName(activeTeam))}.`;
 
   return `
     <div class="fxfilters">
@@ -533,7 +536,7 @@ export function renderStats(model, sortKey = "goals") {
       (row, index) => `<div class="strow">
         <span class="strow__rk">${index + 1}</span>
         <span class="strow__player">${badgeFor(row.team, "lg")}
-          <span class="strow__id"><strong>${esc(row.player)}</strong><span>${esc(row.team)}</span></span>
+          <span class="strow__id"><strong>${esc(row.player)}</strong><span>${esc(displayTeamName(row.team))}</span></span>
         </span>
         <span class="strow__num ${sorted("goals")}">${row.goals}</span>
         <span class="strow__num ${sorted("assists")}">${row.assists}</span>
@@ -601,7 +604,9 @@ export function renderSignedIn(model, account, isFollowed) {
   const chips = teams
     .map((team) => {
       const on = isFollowed(comp, team);
-      return `<button class="compchip ${on ? "is-active" : ""}" type="button" data-follow-team="${esc(team)}">${badgeFor(team)} ${esc(team)}</button>`;
+      // data-follow-team stays the canonical join key: it is what POST
+      // /follows/toggle stores and what push targeting matches against.
+      return `<button class="compchip ${on ? "is-active" : ""}" type="button" data-follow-team="${esc(team)}">${badgeFor(team)} ${esc(displayTeamName(team))}</button>`;
     })
     .join("");
 
@@ -628,9 +633,9 @@ export function renderSignedIn(model, account, isFollowed) {
       </section>
       <section class="card">
         <h3 class="card__title">Followed clubs · ${esc(model.competition.shortName)}</h3>
-        <p class="note" style="margin:0 0 12px;">Goal and result alerts for these clubs once push notifications ship.</p>
+        <p class="note" style="margin:0 0 12px;">Goal and result alerts for these clubs, sent as push notifications.</p>
         <div class="you__chips">${chips || `<p class="note">No clubs to follow until the feed opens the season.</p>`}</div>
-        ${otherFollows.length ? `<p class="note--dim" style="margin-top:10px;">Also following: ${otherFollows.map((f) => esc(f.team)).join(", ")}</p>` : ""}
+        ${otherFollows.length ? `<p class="note--dim" style="margin-top:10px;">Also following: ${otherFollows.map((f) => esc(displayTeamName(f.team))).join(", ")}</p>` : ""}
       </section>
       <section class="card">
         <h3 class="card__title">Notifications</h3>
