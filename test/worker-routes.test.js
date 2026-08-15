@@ -1126,6 +1126,19 @@ test("saving waiver settings with the budget unchanged leaves balances alone", a
   );
 });
 
+test("the matchup carries each side's gameweek progress so the client can say who is finished", async () => {
+  const { response } = waiverCall("/fantasy/league/1/matchup");
+  const resolved = await response;
+  assert.equal(resolved.status, 200);
+  const body = await resolved.json();
+  // The KEY must be present even when the feed is unreadable (null then), or
+  // the client cannot tell "no progress known" from "not sent".
+  assert.ok(Object.hasOwn(body.me, "progress"), "me.progress missing from the matchup payload");
+  if (body.opponent) {
+    assert.ok(Object.hasOwn(body.opponent, "progress"), "opponent.progress missing from the matchup payload");
+  }
+});
+
 test("GET the lineup reports each club's fixture count so a blank or double gameweek is visible", async () => {
   const { response } = waiverCall("/fantasy/league/1/lineup");
   const resolved = await response;

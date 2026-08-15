@@ -1187,6 +1187,52 @@ test("renderFantasyMatchupPanel shows a pending score (not a bare 0-0) while the
   assert.match(html, /fantasy-stat--empty/);
 });
 
+test("a live matchup shows each side's progress, lit for the side with players on a pitch", () => {
+  const html = renderFantasyMatchupPanel({
+    gameweek: 7,
+    status: "live",
+    me: { userId: 1, name: "Alex", score: 41, progress: { total: 11, done: 6, inPlay: 3, toCome: 2, blank: 0 } },
+    opponent: { userId: 2, name: "Sam", score: 38, progress: { total: 11, done: 11, inPlay: 0, toCome: 0, blank: 0 } },
+  });
+  assert.match(html, /6 done · 3 in play · 2 to come/);
+  assert.match(html, /11 done/);
+  // My three players are on a pitch; Sam is finished. Only my line is lit.
+  const lit = (html.match(/fantasy-matchup__progress is-live/g) ?? []).length;
+  assert.equal(lit, 1, "exactly the side with players on a pitch is lit");
+});
+
+test("progress stays quiet before kickoff and when an older worker sends none", () => {
+  const preKickoff = renderFantasyMatchupPanel({
+    gameweek: 7,
+    status: "scheduled",
+    me: { userId: 1, name: "Alex", score: 0, progress: { total: 11, done: 0, inPlay: 0, toCome: 11, blank: 0 } },
+    opponent: { userId: 2, name: "Sam", score: 0, progress: { total: 11, done: 0, inPlay: 0, toCome: 11, blank: 0 } },
+  });
+  assert.doesNotMatch(preKickoff, /fantasy-matchup__progress/, "11 to come before kickoff is noise, not information");
+
+  const older = renderFantasyMatchupPanel({
+    gameweek: 7,
+    status: "live",
+    me: { userId: 1, name: "Alex", score: 41 },
+    opponent: { userId: 2, name: "Sam", score: 38 },
+  });
+  assert.doesNotMatch(older, /fantasy-matchup__progress/, "a payload without progress renders exactly as before");
+});
+
+test("the Average bye card carries your own progress while the gameweek runs", () => {
+  const html = renderFantasyMatchupPanel(
+    {
+      gameweek: 7,
+      status: "live",
+      me: { userId: 1, name: "Alex", score: 41, progress: { total: 11, done: 6, inPlay: 3, toCome: 2, blank: 0 } },
+      opponent: null,
+    },
+    { leagueSize: 9 },
+  );
+  assert.match(html, /You play Average/);
+  assert.match(html, /6 done · 3 in play · 2 to come/);
+});
+
 test("a pre-season matchup reads as upcoming and names the season start, with no countdown", () => {
   // The owner's first complaint: pre-season, an unplayed fixture rendered as a
   // 0-0 scoreline with in-season deadline language wrapped around it.

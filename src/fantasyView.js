@@ -468,12 +468,26 @@ export function renderFantasyMatchupPanel(
   const timing = matchupTiming(matchup, now);
   const banner = renderSquadDeadlineBanner(matchup, now);
 
+  // "6 done · 3 in play · 2 to come" under a score, while the gameweek is
+  // being played: the score says who is ahead, this says whether that lead is
+  // safe. Only rendered when scores are (a pre-kickoff "11 to come" is noise,
+  // and settled weeks need no reminder that everyone finished) and only when
+  // the worker actually sent progress, so an older payload renders exactly as
+  // before. Lit while any of that side's players are on a pitch.
+  const progressLine = (progress, showScores) => {
+    if (!showScores) return "";
+    const summary = trackerSummary(progress);
+    if (!summary) return "";
+    return `<p class="fantasy-matchup__progress ${progress.inPlay ? "is-live" : ""}">${esc(summary)}</p>`;
+  };
+
   if (!opponent) {
     return `
       ${banner}
       <section class="card fantasy-matchup fantasy-matchup--bye">
         <p class="fantasy-eyebrow">Gameweek ${esc(gameweek)}</p>
         <h2 class="fantasy-matchup__bye-title">You play Average</h2>
+        ${progressLine(me?.progress, timing.showScores)}
         <p class="note">${esc(byeNote(gameweek, leagueSize))}</p>
       </section>`;
   }
@@ -496,11 +510,13 @@ export function renderFantasyMatchupPanel(
         <div class="fantasy-matchup__side ${leader === "me" ? "is-ahead" : ""}">
           <p class="fantasy-matchup__name">${esc(me.name)}${championChipForId(me.userId, previousWinnerUserId)}</p>
           <p class="fantasy-matchup__score">${showScores ? esc(me.score) : `<span class="fantasy-stat--empty">•</span>`}</p>
+          ${progressLine(me.progress, showScores)}
         </div>
         <span class="fantasy-matchup__vs">vs</span>
         <div class="fantasy-matchup__side fantasy-matchup__side--opponent ${leader === "opponent" ? "is-ahead" : ""}">
           <p class="fantasy-matchup__name">${esc(opponent.name)}${opponentChip(opponent)}${championChipForId(opponent.userId, previousWinnerUserId)}</p>
           <p class="fantasy-matchup__score">${showScores ? esc(opponent.score) : `<span class="fantasy-stat--empty">•</span>`}</p>
+          ${progressLine(opponent.progress, showScores)}
         </div>
       </div>
       ${

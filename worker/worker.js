@@ -80,6 +80,7 @@ import { validateTeamName } from "../src/fantasyTeamName.js";
 import { isChampionId, validateChampionChoice } from "../src/fantasyChampion.js";
 import { headToHeadFor } from "../src/fantasyHeadToHead.js";
 import { assignGameweeks, clubFixtureCounts, firstKickoffInGameweek, gameweekOf } from "../src/fantasyCalendar.js";
+import { trackGameweek } from "../src/fantasyGameweekTracker.js";
 import {
   DEFAULT_FAAB_BUDGET,
   WAIVER_MODES,
@@ -3080,6 +3081,20 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
       .bind(leagueId, gameweek, user.id)
       .first();
 
+    // Each side's starters placed against this gameweek's real fixtures
+    // (done / in play / to come): the number that decides whether a lead is
+    // safe. Derived with the same pure trackGameweek the client's own tracker
+    // uses, from the resolved lineup (set, inherited or default) so it can
+    // never disagree with what scoring will count. Only the aggregate COUNTS
+    // are sent: how many players an opponent has left is scoreboard material,
+    // their actual lineup is not revealed here. Null when the feed is
+    // unreadable, which the client renders as absent rather than as "0 left".
+    const progressFor = async (userId) => {
+      if (!matches) return null;
+      const { roster, starters } = await resolveManagerLineup(env, leagueId, userId, gameweek);
+      return trackGameweek({ matches, roster, starterIds: starters.map((entry) => entry.playerId), gameweek }).counts;
+    };
+
     const meScore = await fantasyGameweekScore(env, leagueId, user.id, gameweek);
     // Through memberDisplayName like every other surface, so a manager who has
     // named their team sees that name here too. Reading user.name directly was
@@ -3091,7 +3106,7 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
     )
       .bind(leagueId, user.id)
       .first();
-    const me = { userId: user.id, name: memberDisplayName(mySeat ?? user), score: meScore };
+    const me = { userId: user.id, name: memberDisplayName(mySeat ?? user), score: meScore, progress: await progressFor(user.id) };
     const timing = {
       kickoff: timetable?.firstKickoff ?? null,
       deadline: timetable?.squad.deadline ?? null,
@@ -3109,15 +3124,17 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
     }
 
     const opponentId = fixture.home_user_id === user.id ? fixture.away_user_id : fixture.home_user_id;
-    const [opponentRow, opponentScore] = await Promise.all([
+    const [opponentRow, opponentScore, opponentProgress] = await Promise.all([
       env.DB.prepare(`SELECT name, email, is_bot FROM users WHERE id = ?1`).bind(opponentId).first(),
       fantasyGameweekScore(env, leagueId, opponentId, gameweek),
+      progressFor(opponentId),
     ]);
     const opponent = {
       userId: opponentId,
       name: memberDisplayName(opponentRow),
       isBot: Boolean(opponentRow?.is_bot),
       score: opponentScore,
+      progress: opponentProgress,
     };
 
     return json({ gameweek, status, me, opponent, ...timing }, 200, cors);
