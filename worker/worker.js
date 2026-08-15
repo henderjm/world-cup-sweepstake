@@ -3080,7 +3080,17 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
       .first();
 
     const meScore = await fantasyGameweekScore(env, leagueId, user.id, gameweek);
-    const me = { userId: user.id, name: user.name || "You", score: meScore };
+    // Through memberDisplayName like every other surface, so a manager who has
+    // named their team sees that name here too. Reading user.name directly was
+    // the one place a team name did not reach (issue #48).
+    const mySeat = await env.DB.prepare(
+      `SELECT m.team_name, u.name, u.email FROM fantasy_league_members m
+       JOIN users u ON u.id = m.user_id
+       WHERE m.league_id = ?1 AND m.user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    const me = { userId: user.id, name: memberDisplayName(mySeat ?? user), score: meScore };
     const timing = {
       kickoff: timetable?.firstKickoff ?? null,
       deadline: timetable?.squad.deadline ?? null,
@@ -3459,8 +3469,17 @@ async function readLeagueChat(env, leagueId, userId) {
     .bind(leagueId, CHAT_PAGE_SIZE)
     .all();
 
-  const window = (rows.results ?? []).slice().reverse();
-  const oldestId = window.length ? window[0].id : 0;
+  // Newest first, which is the order the rows already arrive in. This used to
+  // be reversed into oldest-first chat convention, where the newest thing is at
+  // the BOTTOM and you have to scroll to find out what happened. That works for
+  // a chat window pinned to its own scroll bottom; it does not work for a feed
+  // that mostly carries app events and opens at the top, where it meant the
+  // first thing a manager saw on landing was the oldest thing in the league.
+  const window = rows.results ?? [];
+  // The id bound of the window, for the reactions join below. Computed as a
+  // MINIMUM rather than taken from an end of the array, so it cannot silently
+  // become the newest id if this ordering ever changes again.
+  const oldestId = window.length ? Math.min(...window.map((row) => row.id)) : 0;
 
   // Reactions for exactly the window just read, joined through the messages
   // table rather than bound as one parameter per message id: CHAT_PAGE_SIZE

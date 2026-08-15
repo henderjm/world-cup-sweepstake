@@ -17,6 +17,8 @@ import {
   renderFantasyRosterPanel,
   renderFantasySessionExpired,
   renderFantasyStandingsPanel,
+  renderFantasySettingsPanel,
+  renderGameweekTracker,
   renderFantasyWaiversPanel,
   renderChampionCard,
   renderFantasyWireRows,
@@ -2141,4 +2143,88 @@ test("the champion card escapes team names and its own error message", () => {
   assert.doesNotMatch(html, /<script>alert/);
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /bad &lt;choice&gt;/);
+});
+
+// -- Commissioner settings tab -----------------------------------------------
+
+test("the Settings tab is offered to a commissioner and absent for everyone else", () => {
+  const members = [{ userId: 1, name: "Me" }];
+  const asCommish = renderFantasyLeagueHeader({ name: "L", draftStatus: "complete", isCommissioner: true }, members, "feed");
+  const asManager = renderFantasyLeagueHeader({ name: "L", draftStatus: "complete", isCommissioner: false }, members, "feed");
+  assert.match(asCommish, /data-fantasy-subtab="settings"/);
+  // Absent rather than disabled: nine managers in ten can never open it, and a
+  // permanently dead button is worse than no button.
+  assert.doesNotMatch(asManager, /data-fantasy-subtab="settings"/);
+});
+
+test("settings refuses to render its controls for a non-commissioner", () => {
+  const html = renderFantasySettingsPanel({ name: "L", draftStatus: "complete", isCommissioner: false }, []);
+  assert.match(html, /Only the commissioner/);
+  assert.doesNotMatch(html, /data-fantasy-add-bots/);
+  assert.doesNotMatch(html, /data-fantasy-settings-mode/);
+});
+
+test("a pending league's settings offer the draft and bot controls, and explain why waivers are not there yet", () => {
+  const html = renderFantasySettingsPanel(
+    { name: "L", draftStatus: "pending", isCommissioner: true },
+    [{ userId: 1, name: "Me" }],
+    { seats: { total: 10, humans: 1, bots: 0, open: 9 }, schedule: null },
+  );
+  assert.match(html, /data-fantasy-add-bots/, "bots are settable before the draft");
+  assert.match(html, /Free agency starts after the draft/);
+  assert.doesNotMatch(html, /data-fantasy-settings-mode/, "waiver mode is not settable yet");
+});
+
+test("a drafted league's settings drop the bot and schedule controls but keep waiver mode", () => {
+  const html = renderFantasySettingsPanel(
+    { name: "L", draftStatus: "complete", isCommissioner: true },
+    [{ userId: 1, name: "Me" }],
+    {
+      seats: { total: 10, humans: 1, bots: 0, open: 9 },
+      schedule: null,
+      waivers: { mode: "faab", faabBudget: 100, myClaims: [] },
+    },
+  );
+  assert.doesNotMatch(html, /data-fantasy-add-bots/, "seats are fixed once the draft starts");
+  assert.match(html, /Seats are fixed once the draft starts/);
+  assert.match(html, /data-fantasy-settings-mode/, "waiver mode is settable now");
+  assert.match(html, /card__title">Waivers</, "titled for its home, not 'Commissioner settings'");
+});
+
+// -- Gameweek tracker --------------------------------------------------------
+
+test("the tracker names your players in each fixture and leads with the live one", () => {
+  const tracker = {
+    counts: { total: 2, done: 0, inPlay: 1, toCome: 1, blank: 0 },
+    fixtures: [
+      {
+        match: { id: 1, homeTeam: "Arsenal", awayTeam: "Everton", status: "IN_PLAY", minute: 63, score: { home: 2, away: 1 }, utcDate: "2026-08-21T14:00:00Z" },
+        yours: [{ id: 10, name: "Saka" }],
+      },
+      {
+        match: { id: 2, homeTeam: "Chelsea", awayTeam: "Fulham", status: "TIMED", score: {}, utcDate: "2026-08-21T16:30:00Z" },
+        yours: [{ id: 11, name: "Palmer" }],
+      },
+    ],
+  };
+  const html = renderGameweekTracker(tracker, { gameweek: 6 });
+  assert.match(html, /Gameweek 6/);
+  assert.match(html, /1 in play · 1 to come/);
+  assert.match(html, /Saka/);
+  assert.match(html, /2 – 1/);
+  assert.ok(html.indexOf("Saka") < html.indexOf("Palmer"), "the live fixture leads");
+  assert.match(html, /fantasy-gwtrack-row is-live/);
+});
+
+// Without a feed every starter would look like a blank gameweek, which is a
+// lie rather than a gap.
+test("no live feed says so rather than reporting everyone blank", () => {
+  const html = renderGameweekTracker(null, { gameweek: 6, hasLiveFeed: false });
+  assert.match(html, /Live scores are unavailable/);
+  assert.doesNotMatch(html, /blank/);
+});
+
+test("an unset lineup asks for one instead of rendering an empty bar", () => {
+  const html = renderGameweekTracker({ counts: { total: 0 }, fixtures: [] }, { gameweek: 6 });
+  assert.match(html, /No starting eleven set/);
 });

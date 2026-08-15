@@ -1,5 +1,5 @@
 import { abbrFor, badgeFor } from "./badges.js";
-import { dateLabel } from "./format.js";
+import { dateLabel, isLive as isLiveStatus, statusLabel } from "./format.js";
 import { MAX_LEAGUE_SIZE } from "./fantasy.js";
 import { squadGameweekShape } from "./fantasyCalendar.js";
 import { WAIVER_MODES } from "./fantasyWaivers.js";
@@ -28,6 +28,7 @@ import { DEFAULT_POOL_SORT, POOL_SORTS, rankDraftPool, sortPoolBy, startingUpgra
 import { TEAM_NAME_MAX } from "./fantasyTeamName.js";
 import { championMember, eligibleChampions, isChampionId } from "./fantasyChampion.js";
 import { formatRecord } from "./fantasyHeadToHead.js";
+import { trackerSummary } from "./fantasyGameweekTracker.js";
 import { withBoardAnnotations } from "./fantasyDraftBoard.js";
 import { renderFantasyBoardPanel } from "./fantasyDraftBoardView.js";
 import {
@@ -333,6 +334,7 @@ const FANTASY_SUBTAB_LABELS = {
   board: "My board",
   waivers: "Waivers",
   standings: "Standings",
+  settings: "Settings",
 };
 
 // Feed leads the bar, and is where a running league lands by default (see
@@ -343,7 +345,10 @@ const FANTASY_SUBTAB_LABELS = {
 // and disabled for the other, so the bar never grows: a board ranks players
 // nobody has drafted yet and is meaningless once every squad is fixed, which
 // is precisely when free agency and waivers begin.
-function renderFantasySubtabs(activeSubTab, waiversEnabled) {
+// `isCommissioner` adds a Settings tab rather than showing a disabled one to
+// everybody: nine managers in ten will never be able to open it, and a
+// permanently dead button is worse than an absent one.
+function renderFantasySubtabs(activeSubTab, waiversEnabled, isCommissioner = false) {
   const boardEnabled = !waiversEnabled;
   return `
     <div class="fantasy-subtabs">
@@ -354,6 +359,7 @@ function renderFantasySubtabs(activeSubTab, waiversEnabled) {
       <button class="fantasy-subtab ${activeSubTab === "board" ? "is-active" : ""}" type="button" data-fantasy-subtab="board" ${boardEnabled ? "" : "disabled"}>My board</button>
       <button class="fantasy-subtab ${activeSubTab === "waivers" ? "is-active" : ""}" type="button" data-fantasy-subtab="waivers" ${waiversEnabled ? "" : "disabled"}>Waivers</button>
       <button class="fantasy-subtab ${activeSubTab === "standings" ? "is-active" : ""}" type="button" data-fantasy-subtab="standings">Standings</button>
+      ${isCommissioner ? `<button class="fantasy-subtab ${activeSubTab === "settings" ? "is-active" : ""}" type="button" data-fantasy-subtab="settings">Settings</button>` : ""}
     </div>`;
 }
 
@@ -383,7 +389,7 @@ export function renderFantasyLeagueHeader(league, members, activeSubTab) {
         <span class="chip">Snake draft</span>
       </div>
     </div>
-    ${renderFantasySubtabs(activeSubTab, league.draftStatus === "complete")}`;
+    ${renderFantasySubtabs(activeSubTab, league.draftStatus === "complete", Boolean(league.isCommissioner))}`;
 }
 
 // Wraps a sub-tab's body with the shared header inside the standard .fantasy
@@ -667,6 +673,147 @@ export function renderHeadToHeadCard(rows, previousWinnerUserId = null) {
       </div>
       <div class="fantasy-h2h__rows">${body}</div>
     </section>`;
+}
+
+// -- Gameweek tracker ------------------------------------------------------------
+//
+// Your starting eleven against the real fixtures they are in, with live scores.
+// The matchup above it answers "am I ahead"; this answers the question that
+// decides whether being ahead means anything: have I finished, or do I still
+// have four players to come?
+//
+// Only fixtures you have a starter in are listed. The full card already exists
+// in Scores, and repeating it here would bury the three matches that are
+// actually yours among seven that are not.
+export function renderGameweekTracker(tracker, { gameweek, hasLiveFeed = true } = {}) {
+  if (!hasLiveFeed) {
+    return `
+      <section class="card fantasy-gwtrack">
+        <h3 class="card__title">Gameweek ${esc(gameweek ?? "")}</h3>
+        <p class="note">Live scores are unavailable right now.${hint("Your points still update from the same feed once it is reachable again; only this view is affected.")}</p>
+      </section>`;
+  }
+  if (!tracker?.counts?.total) {
+    return `
+      <section class="card fantasy-gwtrack">
+        <h3 class="card__title">Gameweek ${esc(gameweek ?? "")}</h3>
+        <p class="note">No starting eleven set for this gameweek yet.</p>
+      </section>`;
+  }
+
+  const { counts, fixtures } = tracker;
+  const summary = trackerSummary(counts);
+  const pct = (n) => (counts.total ? Math.round((n / counts.total) * 100) : 0);
+
+  const rows = fixtures.length
+    ? fixtures.map((entry) => renderTrackerFixture(entry)).join("")
+    : `<p class="note">None of your starters have a fixture this gameweek.</p>`;
+
+  return `
+    <section class="card fantasy-gwtrack">
+      <div class="fantasy-standings__head">
+        <h3 class="card__title">Gameweek ${esc(gameweek ?? "")}</h3>
+        <p class="note">${esc(summary)}</p>
+      </div>
+      <div class="fantasy-gwtrack__bar" role="img" aria-label="${esc(summary)}">
+        <span class="fantasy-gwtrack__seg is-done" style="width:${pct(counts.done)}%"></span>
+        <span class="fantasy-gwtrack__seg is-live" style="width:${pct(counts.inPlay)}%"></span>
+        <span class="fantasy-gwtrack__seg is-blank" style="width:${pct(counts.blank)}%"></span>
+      </div>
+      <div class="fantasy-gwtrack__rows">${rows}</div>
+    </section>`;
+}
+
+// One fixture, with the score if it has one and your players in it named. The
+// names are the point: a scoreline without them is just the Scores tab.
+function renderTrackerFixture({ match, yours }) {
+  const live = isLiveStatus(match.status);
+  const played = match.score?.home != null && match.score?.away != null;
+  const score = played ? `${esc(match.score.home)} – ${esc(match.score.away)}` : "v";
+  const names = yours.map((player) => esc(player.name)).join(", ");
+
+  return `<div class="fantasy-gwtrack-row ${live ? "is-live" : ""}">
+      <span class="fantasy-gwtrack-row__status ${live ? "is-live" : ""}">${esc(statusLabel(match))}</span>
+      <span class="fantasy-gwtrack-row__teams">
+        ${badgeFor(match.homeTeam)}<span class="fantasy-gwtrack-row__score">${score}</span>${badgeFor(match.awayTeam)}
+      </span>
+      <span class="fantasy-gwtrack-row__yours">${names}</span>
+    </div>`;
+}
+
+// -- Commissioner settings -------------------------------------------------------
+//
+// Every lever a commissioner has, in one place, for the whole life of the
+// league. They were scattered before, and worse, they moved: the draft schedule
+// and the bot seats lived only in the lobby, which STOPS EXISTING the moment
+// the draft completes, and the waiver mode lived inside the Waivers tab, which
+// does not exist until it does. So a commissioner's controls appeared and
+// vanished depending on the week, and the only way to find one was to already
+// know where it used to be.
+//
+// Composed from the same renderers the lobby and waivers panel use rather than
+// reimplemented, so there is one definition of each control and no chance of
+// two copies drifting.
+//
+// A section that cannot act yet is shown with the reason rather than hidden.
+// Hiding it means a commissioner cannot discover that waiver mode is a thing
+// they choose until the week it starts mattering, which is too late to have an
+// opinion about it.
+export function renderFantasySettingsPanel(
+  league,
+  members,
+  {
+    seats,
+    schedule,
+    waivers = null,
+    scheduleBusy = false,
+    scheduleError = "",
+    botBusy = false,
+    botError = "",
+    championBusy = false,
+    championError = "",
+    settingsBusy = false,
+    settingsError = "",
+  } = {},
+) {
+  if (!league?.isCommissioner) {
+    return `<p class="note">Only the commissioner can change league settings.</p>`;
+  }
+
+  const pending = league.draftStatus === "pending";
+  const complete = league.draftStatus === "complete";
+
+  const draftSection = pending
+    ? renderFantasyScheduleCard(league, schedule, { scheduleBusy, scheduleError })
+    : `<section class="card">
+        <h3 class="card__title">Draft</h3>
+        <p class="note">${complete ? "This league has drafted." : "The draft is under way."}${hint("A draft can only be scheduled or started while the league is still pending.")}</p>
+      </section>`;
+
+  const botSection = pending
+    ? renderBotFillCard(league, members, seats, { botBusy, botError })
+    : `<section class="card">
+        <h3 class="card__title">Bot managers</h3>
+        <p class="note">Seats are fixed once the draft starts.${hint("Bots can only fill a seat before the draft, because the snake order is set when it begins.")}</p>
+      </section>`;
+
+  const waiverSection = complete
+    ? waivers
+      ? renderFantasyWaiverSettings(waivers, { busy: settingsBusy, error: settingsError, heading: "Waivers" })
+      : `<section class="card"><h3 class="card__title">Waivers</h3><p class="note">Loading waiver settings…</p></section>`
+    : `<section class="card">
+        <h3 class="card__title">Waivers</h3>
+        <p class="note">Free agency starts after the draft.${hint("Blind bidding, rolling list or reverse standings. You can change this any time before the first run.")}</p>
+        <p class="note--dim"><a href="learn/how-waivers-work/">How waivers work →</a></p>
+      </section>`;
+
+  return `
+    <div class="fantasy-settings">
+      ${draftSection}
+      ${botSection}
+      ${renderChampionCard(league, members, { championBusy, championError })}
+      ${waiverSection}
+    </div>`;
 }
 
 // -- Lobby (draftStatus: pending) -----------------------------------------------
@@ -2319,7 +2466,11 @@ function renderFantasyPriorities(priorities, myUserId, mode) {
 // server-side by a pending claim belonging to someone else; that failure
 // falls through to the same form-error style as any other save failure below,
 // not a special second warning.
-function renderFantasyWaiverSettings(waivers, { busy = false, error = "" } = {}) {
+// `heading` because this card has two homes: inside the Waivers tab, where
+// "Commissioner settings" distinguishes it from the manager-facing panels
+// around it, and inside the Settings tab, where that title would be saying the
+// same word twice.
+function renderFantasyWaiverSettings(waivers, { busy = false, error = "", heading = "Commissioner settings" } = {}) {
   const pendingOwnClaims = (waivers.myClaims ?? []).filter((claim) => claim.status === "pending").length;
   const blocked = pendingOwnClaims > 0;
   const disabledAttr = busy || blocked ? "disabled" : "";
@@ -2328,8 +2479,8 @@ function renderFantasyWaiverSettings(waivers, { busy = false, error = "" } = {})
   ).join("");
   return `
     <section class="card fantasy-waiver-settings">
-      <h3 class="card__title">Commissioner settings</h3>
-      <p class="note">${esc(waiverModeExplanation(waivers.mode))}</p>
+      <h3 class="card__title">${esc(heading)}</h3>
+      <p class="note">${esc(waiverModeLabel(waivers.mode))}${hint(waiverModeExplanation(waivers.mode))}</p>
       <div class="fantasy-form__row">
         <select class="fantasy-select" data-fantasy-settings-mode ${disabledAttr}>${options}</select>
         <input class="fantasy-input" type="number" min="0" step="1" value="${esc(waivers.faabBudget)}" data-fantasy-settings-budget ${disabledAttr} />

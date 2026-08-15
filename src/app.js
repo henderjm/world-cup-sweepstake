@@ -1,4 +1,5 @@
 import { loadModel } from "./data.js";
+import { trackGameweek } from "./fantasyGameweekTracker.js";
 import { confettiBurst } from "./interactions.js";
 import { track, trackException } from "./telemetry.js";
 import {
@@ -155,6 +156,8 @@ import {
   renderFantasySessionExpired,
   renderFantasySignedOut,
   renderFantasyStandingsPanel,
+  renderGameweekTracker,
+  renderFantasySettingsPanel,
   renderFantasyWaiversPanel,
   renderFantasyWireRows,
 } from "./fantasyView.js";
@@ -239,7 +242,7 @@ function resolveInitialLearnHash(rawHash) {
 // Valid fantasy sub-tabs, so a hand-edited or stale URL cannot put the shell
 // into a tab that does not exist. Mirrors the data-fantasy-subtab values in
 // fantasyView.js's shell.
-const FANTASY_SUB_TABS = ["feed", "matchup", "myteam", "draftroom", "board", "waivers", "standings"];
+const FANTASY_SUB_TABS = ["feed", "matchup", "myteam", "draftroom", "board", "waivers", "standings", "settings"];
 
 // `#fantasy/<leagueId>/<subTab>` — the league and tab a manager is actually
 // looking at, so a refresh (or a shared link, or the back button) lands where
@@ -1003,7 +1006,9 @@ function renderFantasy() {
                 ? renderFantasyBoardBody()
                 : subTab === "waivers"
                   ? renderFantasyWaiversBody(league)
-                  : renderFantasyLobby(league, members, {
+                  : subTab === "settings"
+                    ? renderFantasySettingsBody()
+                    : renderFantasyLobby(league, members, {
                   playerPool: f.playerPool,
                   filter: f.filter,
                   schedule,
@@ -1072,6 +1077,8 @@ function renderFantasyDraftPanel() {
               ? renderFantasyBoardBody()
               : subTab === "waivers"
                 ? renderFantasyWaiversBody(league)
+                : subTab === "settings"
+                ? renderFantasySettingsBody()
                 : room.status === "complete"
                 ? renderFantasyComplete(members, room.picks)
                 : renderFantasyDraftRoom({
@@ -1351,11 +1358,32 @@ async function postFantasyFeed(body) {
 // season schedule under it. The schedule is not its own sub-tab because the
 // tab bar is already six wide and cramped at 375px, and "who am I playing
 // later" belongs next to "who am I playing now".
+// Live gameweek tracking, built from the SAME feed the Scores section already
+// polls (module-level `model`), so it costs no extra request and updates on the
+// existing 20-second live cadence rather than a timer of its own.
+function renderGameweekTrackerBody() {
+  const f = state.fantasy;
+  const gameweek = f.matchup?.gameweek ?? f.league?.currentGameweek ?? null;
+  // No feed is a real state, not an empty one: without matches every starter
+  // would look like a blank gameweek, which is a lie rather than a gap.
+  const matches = model?.matches ?? null;
+  if (!matches?.length || gameweek == null) {
+    return renderGameweekTracker(null, { gameweek, hasLiveFeed: Boolean(matches?.length) });
+  }
+  const starterIds = (f.lineup?.starters ?? []).map((entry) => entry.playerId);
+  const tracker = trackGameweek({ matches, roster: f.league?.roster ?? [], starterIds, gameweek });
+  return renderGameweekTracker(tracker, { gameweek, hasLiveFeed: true });
+}
+
 function renderFantasyMatchupBody() {
   const f = state.fantasy;
   if (!f.matchup && !f.matchupLoading && !f.matchupError) loadFantasyMatchup(f.activeLeagueId);
   if (!f.seasonSchedule && !f.seasonScheduleLoading && !f.seasonScheduleError) loadFantasyLeagueSchedule(f.activeLeagueId);
+  // The lineup is what says which eleven to track. Loaded lazily here the same
+  // way My team does, so opening Matchup first still fills the tracker.
+  if (!f.lineup && !f.lineupLoading && !f.lineupError) loadFantasyLineup(f.activeLeagueId);
   return `
+    ${renderGameweekTrackerBody()}
     ${renderFantasyMatchupPanel(f.matchup, {
       error: f.matchupError,
       leagueSize: f.league?.members?.length ?? null,
@@ -1385,6 +1413,33 @@ async function loadFantasyLeagueSchedule(leagueId) {
     if (f.activeLeagueId === leagueId) f.seasonScheduleLoading = false;
   }
   if (state.section === "fantasy") renderLayout();
+}
+
+// The commissioner's settings body. Same call from the pending and the
+// completed chains, since the panel itself decides which sections can act.
+function renderFantasySettingsBody() {
+  const f = state.fantasy;
+  const { league, members, schedule } = f.league;
+  // Waiver settings live behind the same lazily-loaded payload the Waivers tab
+  // uses, so kick that load off from here too rather than telling a
+  // commissioner to go and open another tab first (same "start the work if it
+  // has not started" pattern as the lineup and feed loads).
+  if (league.draftStatus === "complete" && !f.waivers && !f.waiversLoading && !f.waiversError) {
+    loadFantasyWaivers(f.activeLeagueId);
+  }
+  return renderFantasySettingsPanel(league, members, {
+    seats: f.league.seats,
+    schedule,
+    waivers: f.waivers,
+    scheduleBusy: f.scheduleBusy,
+    scheduleError: f.scheduleError,
+    botBusy: f.botBusy,
+    botError: f.botError,
+    championBusy: f.championBusy,
+    championError: f.championError,
+    settingsBusy: f.waiverSettingsBusy,
+    settingsError: f.waiverSettingsError,
+  });
 }
 
 function renderFantasyStandingsBody() {

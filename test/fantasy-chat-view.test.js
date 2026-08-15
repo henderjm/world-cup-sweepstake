@@ -201,3 +201,19 @@ test("the panel wraps the timeline in the surgical-refresh hook the poll uses", 
   const html = renderFantasyFeedPanel({ entries: [MESSAGE], viewerUserId: 7 }, { myUserId: 7 });
   assert.match(html, /data-feed-list/);
 });
+
+// The feed opens at the top and mostly carries app events, so the newest thing
+// has to be the first thing. It previously rendered oldest-first (chat
+// convention), which meant landing on a league showed the oldest event in it.
+test("feed entries render in the order given, newest first", () => {
+  const entries = [
+    { id: 3, kind: "message", name: "C", text: "newest", ts: "2026-08-15T12:00:00Z", reactions: { counts: {}, mine: [] } },
+    { id: 2, kind: "message", name: "B", text: "middle", ts: "2026-08-15T11:00:00Z", reactions: { counts: {}, mine: [] } },
+    { id: 1, kind: "message", name: "A", text: "oldest", ts: "2026-08-15T10:00:00Z", reactions: { counts: {}, mine: [] } },
+  ];
+  const html = renderFeedEntries(entries, {});
+  assert.ok(
+    html.indexOf("newest") < html.indexOf("middle") && html.indexOf("middle") < html.indexOf("oldest"),
+    "entries should render in the order supplied, newest at the top",
+  );
+});
