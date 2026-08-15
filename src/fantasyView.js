@@ -3,6 +3,7 @@ import { displayTeamName } from "./domain.js";
 import { byPosition, dateLabel, isLive as isLiveStatus, statusLabel } from "./format.js";
 import { MAX_LEAGUE_SIZE } from "./fantasy.js";
 import { squadGameweekShape, teamGameweekFixtures } from "./fantasyCalendar.js";
+import { fixtureOutlook, hasStrengthSignal } from "./fantasyFixtureOutlook.js";
 import { WAIVER_MODES } from "./fantasyWaivers.js";
 import {
   canDraftPlayer,
@@ -2459,6 +2460,60 @@ function renderFantasyWire(wire, filter) {
 }
 
 // -- Add/claim confirm step ----------------------------------------------------
+
+// The claim flow's comparison stat line: the SAME xP badge and season-points
+// treatment as the free-agent rows above (renderFreeAgentStats), reusing their
+// classes so a player is never quoted differently in the list than in the
+// confirm step. A missing figure stays the dim placeholder / an omission,
+// never a zero. Renders nothing at all without a compare context, which is
+// the pre-data state, not an error.
+function renderClaimCompareStats(player, compare) {
+  if (!compare) return "";
+  const stats = normalizePlayerStats(compare.statsById?.get?.(player.id) ?? {});
+  const badge = xpBadge(stats, player.position, compare.xpStats);
+  const points = compare.seasonPoints?.get?.(player.id);
+  const pointsHtml =
+    typeof points === "number" && Number.isFinite(points)
+      ? `<span class="fantasy-fa-row__pts" title="Fantasy points scored so far this season">${esc(formatScheduleScore(points))} pts</span>`
+      : "";
+  return `<span class="fantasy-claim-compare__stats">
+      <span class="fantasy-fa-row__xp ${badge.cls}" ${badge.title ? `title="${esc(badge.title)}" aria-label="${esc(badge.title)}"` : ""}>${badge.text}</span>
+      ${pointsHtml}
+    </span>`;
+}
+
+// One chip per upcoming fixture ("ARS (H)"), coloured by difficulty only when
+// the strength model can actually rank clubs (fantasyFixtureOutlook.js), plus
+// an explicit chip for a blank gameweek - a club with no fixture is exactly
+// the "tough gameweek coming up" a manager needs told before dropping the
+// wrong player. No outlook (no feed, no anchoring gameweek) renders nothing.
+function renderClaimFixtureChips(team, compare) {
+  const outlook = fixtureOutlook({
+    matches: compare?.matches,
+    team,
+    fromGameweek: compare?.fromGameweek,
+    strength: compare?.clubStrength,
+  });
+  if (!outlook) return "";
+  const chips = outlook
+    .map(({ gameweek, fixtures }) => {
+      if (!fixtures.length) {
+        return `<span class="fantasy-fix fantasy-fix--blank" title="Gameweek ${esc(gameweek)}: no fixture, so no points that week">GW${esc(gameweek)} blank</span>`;
+      }
+      return fixtures
+        .map((fixture) => {
+          const difficultyNote =
+            fixture.difficulty == null ? "" : `, a ${fixture.difficulty === "fair" ? "middling" : fixture.difficulty} fixture`;
+          return `<span class="fantasy-fix ${fixture.difficulty ? `fantasy-fix--${fixture.difficulty}` : ""}"
+              title="Gameweek ${esc(gameweek)}: ${esc(displayTeamName(fixture.opponent))} ${fixture.isHome ? "at home" : "away"}${esc(difficultyNote)}"
+            >${esc(abbrFor(fixture.opponent))} (${fixture.isHome ? "H" : "A"})</span>`;
+        })
+        .join("");
+    })
+    .join("");
+  return `<span class="fantasy-claim-compare__fixtures">${chips}</span>`;
+}
+
 //
 // `flow` is { addPlayer, path: "free_agent" | "waiver", dropPlayerId } while
 // a manager is mid-acquisition (state.fantasy.waiverFlow in app.js); `mode`
@@ -2472,18 +2527,51 @@ function renderFantasyWire(wire, filter) {
 // gameweek has settled, long after its matches are decided either way, so the
 // lock has nothing meaningful to say about a drop that will not actually
 // happen until then (see CLAUDE.md and worker.js's runLeagueWaiverRun).
-export function renderFantasyClaimFlow(flow, { roster, mode, lockedIds } = {}) {
+//
+// `compare` (optional) is the comparison context the panel builds: the pool's
+// statsById/xpStats, the season-points map, the live feed's matches, the club
+// strength map and the two gameweek anchors. With it, the add player and every
+// drop candidate carry xP, season points and a next-fixtures line, so "who is
+// the right one to swap out" is decided on facts on screen. Without it the
+// flow renders exactly as before - names only - rather than substituting
+// figures it does not have.
+export function renderFantasyClaimFlow(flow, { roster, mode, lockedIds, compare = null } = {}) {
   const { addPlayer, path, dropPlayerId, busy = false, error = "" } = flow;
   const effectiveLockedIds = path === "free_agent" ? lockedIds : null;
   const allSamePosition = dropCandidates(roster, addPlayer.position, null);
   const candidates = dropCandidates(roster, addPlayer.position, effectiveLockedIds);
   const someLocked = candidates.length < allSamePosition.length;
+  // Which gameweek the fixture chips start from is the first gameweek the
+  // acquired player could actually play for you: this gameweek for an instant
+  // free-agent add, but the gameweek AFTER the run for a queued claim, since
+  // the run only resolves once its gameweek has settled (fantasyWaivers.js).
+  // Showing a claim the current gameweek's fixtures would be advertising
+  // matches the player can never play for this manager.
+  const fromGameweek =
+    path === "waiver"
+      ? Number.isFinite(compare?.claimGameweek)
+        ? compare.claimGameweek + 1
+        : null
+      : (compare?.currentGameweek ?? null);
+  const outlookCompare = compare ? { ...compare, fromGameweek } : null;
+  const outlookAvailable = Boolean(
+    outlookCompare && fixtureOutlook({ matches: outlookCompare.matches, team: addPlayer.team, fromGameweek: outlookCompare.fromGameweek }),
+  );
+  const outlookNote = outlookAvailable
+    ? `<p class="note--dim">Fixtures shown from gameweek ${esc(fromGameweek)} (H home, A away).${
+        hasStrengthSignal(compare?.clubStrength) ? " Green is a kinder fixture, red a tougher one." : ""
+      }</p>`
+    : "";
   const drops = candidates.length
     ? candidates
         .map(
           (player) => `<button class="fantasy-claim-drop ${player.id === dropPlayerId ? "is-selected" : ""}" type="button" data-fantasy-claim-drop="${player.id}" ${busy ? "disabled" : ""}>
               ${badgeFor(player.team)}
-              <span>${esc(player.name)}</span>
+              <span class="fantasy-claim-drop__id">
+                <span class="fantasy-claim-drop__name"><span>${esc(player.name)}</span> <span class="note--dim">${esc(abbrFor(player.team))}</span></span>
+                ${renderClaimCompareStats(player, compare)}
+                ${renderClaimFixtureChips(player.team, outlookCompare)}
+              </span>
             </button>`,
         )
         .join("")
@@ -2500,12 +2588,15 @@ export function renderFantasyClaimFlow(flow, { roster, mode, lockedIds } = {}) {
     <section class="card fantasy-claim-flow">
       <div class="fantasy-claim-flow__head">
         ${badgeFor(addPlayer.team)}
-        <div>
+        <div class="fantasy-claim-flow__head-id">
           <strong>${esc(addPlayer.name)}</strong>
           <p class="note--dim">${esc(addPlayer.position)} · ${esc(abbrFor(addPlayer.team))}</p>
+          ${renderClaimCompareStats(addPlayer, compare)}
+          ${renderClaimFixtureChips(addPlayer.team, outlookCompare)}
         </div>
       </div>
       <p class="note">Drop one of your ${esc(addPlayer.position)}s.${hint("Every squad slot is always full, so an add is only ever legal alongside a drop from the same position.")}</p>
+      ${outlookNote}
       ${someLocked ? `<p class="note--dim">Locked players are hidden.${hint("Squads lock two hours before the gameweek's first kickoff, and a club that has already kicked off is locked regardless.")}</p>` : ""}
       <div class="fantasy-claim-flow__drops">${drops}</div>
       ${bidField}
@@ -2659,6 +2750,8 @@ export function renderFantasyWaiversPanel(
     playerPool = [],
     lineup = null,
     xpStats = null,
+    matches = null,
+    clubStrength = null,
     now = Date.now(),
   } = {},
 ) {
@@ -2671,9 +2764,23 @@ export function renderFantasyWaiversPanel(
   const playersById = buildWaiverPlayerLookup({ freeAgents: waivers.freeAgents, wire: waivers.wire, roster });
   const lockedIds = new Set(waivers.lockedPlayerIds ?? []);
   const freeAgentContext = buildFreeAgentContext({ waivers, roster, playerPool, lineup, xpStats });
+  // The claim flow's comparison context: the same statsById/seasonPoints the
+  // free-agent rows read (so the two can never quote a player differently),
+  // plus the live feed and club strength for the fixture outlook, and the two
+  // gameweek anchors the flow picks between (see renderFantasyClaimFlow for
+  // why a queued claim starts a gameweek later than an instant add).
+  const compare = {
+    statsById: freeAgentContext.statsById,
+    seasonPoints: freeAgentContext.seasonPoints,
+    xpStats,
+    matches,
+    clubStrength,
+    currentGameweek: waivers.currentGameweek ?? null,
+    claimGameweek: waivers.claimWindow?.gameweek ?? null,
+  };
 
   return `
-    ${flow ? renderFantasyClaimFlow(flow, { roster, mode: waivers.mode, lockedIds }) : ""}
+    ${flow ? renderFantasyClaimFlow(flow, { roster, mode: waivers.mode, lockedIds, compare }) : ""}
     ${renderSquadDeadlineBanner(
       {
         gameweek: waivers.currentGameweek,

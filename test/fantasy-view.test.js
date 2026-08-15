@@ -1800,6 +1800,97 @@ test("renderFantasyClaimFlow surfaces a submit error in the shared form-error st
   assert.match(html, /Player is not a free agent/);
 });
 
+// -- Claim flow comparison stats (xP, season points, fixture outlook) ----------
+
+// A compare context like the one renderFantasyWaiversPanel builds: pool stats,
+// season points, a toy schedule and a strength map that can actually rank.
+function claimCompare() {
+  return {
+    statsById: new Map([
+      [10, { id: 10, xp: 5.2, xpBasis: "history" }],
+      [20, { id: 20, xp: 3.1, xpBasis: "history" }],
+    ]),
+    seasonPoints: new Map([
+      [10, 12],
+      [20, 4],
+    ]),
+    xpStats: null,
+    matches: [
+      { matchday: 1, homeTeam: "Arsenal", awayTeam: "Chelsea" },
+      { matchday: 1, homeTeam: "Liverpool", awayTeam: "Everton" },
+      { matchday: 2, homeTeam: "Chelsea", awayTeam: "Liverpool" },
+      { matchday: 2, homeTeam: "Everton", awayTeam: "Arsenal" },
+      { matchday: 3, homeTeam: "Arsenal", awayTeam: "Liverpool" },
+    ],
+    clubStrength: new Map([
+      ["Arsenal", 1],
+      ["Liverpool", 0.9],
+      ["Chelsea", 0.5],
+      ["Everton", 0.1],
+    ]),
+    currentGameweek: 1,
+    claimGameweek: 1,
+  };
+}
+
+test("renderFantasyClaimFlow compares xP, season points and upcoming fixtures for the add player and every drop candidate", () => {
+  const roster = [{ id: 20, name: "My Def", team: "Chelsea", position: "DEF" }];
+  const flow = { addPlayer: { id: 10, name: "New Def", team: "Everton", position: "DEF" }, path: "free_agent", dropPlayerId: null };
+  const html = renderFantasyClaimFlow(flow, { roster, mode: "faab", compare: claimCompare() });
+  assert.match(html, /xP 5\.2/); // the add player...
+  assert.match(html, /xP 3\.1/); // ...and the drop candidate are both quoted
+  assert.match(html, /12 pts/);
+  assert.match(html, /4 pts/);
+  // Chelsea's outlook from gameweek 1: Arsenal away (hard), Liverpool home
+  // (hard), then blank in gameweek 3.
+  assert.match(html, /ARS \(A\)/);
+  assert.match(html, /LIV \(H\)/);
+  assert.match(html, /fantasy-fix--hard/);
+  assert.match(html, /GW3 blank/);
+  assert.match(html, /Fixtures shown from gameweek 1/);
+  assert.match(html, /Green is a kinder fixture/);
+});
+
+test("renderFantasyClaimFlow starts a waiver claim's outlook the gameweek AFTER the run it lands in", () => {
+  const roster = [{ id: 20, name: "My Def", team: "Chelsea", position: "DEF" }];
+  const flow = { addPlayer: { id: 10, name: "Wire Def", team: "Everton", position: "DEF" }, path: "waiver", dropPlayerId: null };
+  const html = renderFantasyClaimFlow(flow, { roster, mode: "faab", compare: claimCompare() });
+  // The claim resolves after gameweek 1 settles, so gameweek 1's fixtures are
+  // matches the player can never play for this manager: the outlook starts at 2.
+  assert.match(html, /Fixtures shown from gameweek 2/);
+  assert.doesNotMatch(html, /ARS \(A\)/); // Chelsea's GW1 trip to Arsenal is not shown
+  assert.match(html, /LIV \(H\)/);
+});
+
+test("renderFantasyClaimFlow with an unranked strength map shows fixtures without difficulty colors or the color legend", () => {
+  const compare = { ...claimCompare(), clubStrength: new Map() };
+  const roster = [{ id: 20, name: "My Def", team: "Chelsea", position: "DEF" }];
+  const flow = { addPlayer: { id: 10, name: "New Def", team: "Everton", position: "DEF" }, path: "free_agent", dropPlayerId: null };
+  const html = renderFantasyClaimFlow(flow, { roster, mode: "faab", compare });
+  assert.match(html, /ARS \(A\)/);
+  assert.doesNotMatch(html, /fantasy-fix--hard/);
+  assert.doesNotMatch(html, /fantasy-fix--easy/);
+  assert.doesNotMatch(html, /Green is a kinder fixture/);
+});
+
+test("renderFantasyClaimFlow without a compare context renders names only, never substitute figures", () => {
+  const roster = [{ id: 20, name: "My Def", team: "Chelsea", position: "DEF" }];
+  const flow = { addPlayer: { id: 10, name: "New Def", team: "Everton", position: "DEF" }, path: "free_agent", dropPlayerId: null };
+  const html = renderFantasyClaimFlow(flow, { roster, mode: "faab" });
+  assert.doesNotMatch(html, /xP/);
+  assert.doesNotMatch(html, /pts/);
+  assert.doesNotMatch(html, /Fixtures shown/);
+});
+
+test("renderFantasyClaimFlow omits season points before any match has been played rather than showing 0", () => {
+  const compare = { ...claimCompare(), seasonPoints: new Map() };
+  const roster = [{ id: 20, name: "My Def", team: "Chelsea", position: "DEF" }];
+  const flow = { addPlayer: { id: 10, name: "New Def", team: "Everton", position: "DEF" }, path: "free_agent", dropPlayerId: null };
+  const html = renderFantasyClaimFlow(flow, { roster, mode: "faab", compare });
+  assert.match(html, /xP 5\.2/); // xP still quoted
+  assert.doesNotMatch(html, /pts</);
+});
+
 // -- Bot managers: labelled everywhere they appear -------------------------------
 //
 // The product requirement these enforce: a user must never be misled into

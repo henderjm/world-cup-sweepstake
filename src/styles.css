@@ -2575,26 +2575,51 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-wire-row__clears { font-size: 11px; color: var(--muted); }
 .fantasy-wire-row__action { text-align: right; }
 
-/* Add/claim confirm step: same-position drop candidates as a row of pill
-   buttons, so the "why is this list filtered" explanation right above it
-   reads against something concrete rather than an abstract rule. */
+/* Add/claim confirm step: same-position drop candidates as comparison rows
+   (xP, season points, next fixtures), so "who is the right one to swap out"
+   is decided on facts on screen rather than memory. The xP/points spans
+   reuse the free-agent row classes so a player is never styled differently
+   here than in the list the flow was opened from. */
 .fantasy-claim-flow { border-color: var(--fantasy-line); background: var(--fantasy-soft); }
-.fantasy-claim-flow__head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.fantasy-claim-flow__head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 6px; }
 .fantasy-claim-flow__head strong { font-size: 14px; }
-.fantasy-claim-flow__drops { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.fantasy-claim-flow__head-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.fantasy-claim-flow__head-id .note--dim { margin: 0; }
+.fantasy-claim-flow__drops { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
 .fantasy-claim-drop {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 999px;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--line-2);
   background: var(--surface-2);
   color: var(--text);
   font-size: 12px;
   font-weight: 700;
+  text-align: left;
 }
-.fantasy-claim-drop.is-selected { border-color: var(--fantasy-line); background: var(--fantasy-accent); color: var(--fantasy-ink); }
+.fantasy-claim-drop.is-selected { border-color: var(--fantasy-accent); background: var(--fantasy-soft); box-shadow: inset 0 0 0 1px var(--fantasy-line); }
+.fantasy-claim-drop__id { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.fantasy-claim-drop__name { font-size: 13px; }
+.fantasy-claim-compare__stats { display: inline-flex; align-items: baseline; gap: 8px; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fantasy-claim-compare__fixtures { display: flex; flex-wrap: wrap; gap: 4px; }
+/* Difficulty colors only ever appear when the strength model can actually
+   rank clubs (hasStrengthSignal); an unlabelled fixture stays neutral rather
+   than pretending to a "fair" verdict nothing supports. */
+.fantasy-fix {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--muted);
+}
+.fantasy-fix--easy { color: var(--up); background: var(--accent-soft); }
+.fantasy-fix--hard { color: var(--clay); background: rgb(255 77 94 / 0.12); }
+.fantasy-fix--blank { color: var(--faint); font-style: italic; }
 .fantasy-claim-flow__bid { display: flex; flex-direction: column; gap: 6px; max-width: 160px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 10px; }
 .fantasy-claim-flow__actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
 

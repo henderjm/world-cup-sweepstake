@@ -189,7 +189,7 @@ import {
   submitDemoWaiverClaims,
 } from "./fantasyDemo.js";
 import { renderDemoDesk, renderDemoReportCard, renderDemoRoll, renderDemoSetup } from "./fantasyDemoView.js";
-import { standingsMapFromRawPayload } from "./fantasyDemoFixtures.js";
+import { deriveClubStrength, standingsMapFromRawPayload } from "./fantasyDemoFixtures.js";
 import { tutorialBySlug, TUTORIALS } from "./tutorials.js";
 import { renderTutorial, renderTutorialIndex } from "./tutorialsView.js";
 
@@ -1604,6 +1604,15 @@ function renderFantasyWaiversBody(league) {
   // without those figures, never with substitute ones.
   if (!f.playerPool && !f.playerPoolLoading) loadFantasyPlayerPoolForLobby();
   if (!f.lineup && !f.lineupLoading && !f.lineupError) loadFantasyLineup(f.activeLeagueId);
+  // The claim flow's fixture outlook reads the SAME feed the Scores section
+  // already polls, but only when that feed actually is the Premier League: a
+  // visitor parked on the Champions League switcher must get "no fixture
+  // data" there rather than CL fixtures dressed up as PL gameweeks. Club
+  // strength (the difficulty shading) is only derived while a flow is open,
+  // since that is the only consumer, and it degrades in the same order the
+  // demo's fixture model does: real table once games are played, squad xP
+  // before that, else no shading at all.
+  const plFeed = model?.competition?.code === "PL" ? model : null;
   return renderFantasyWaiversPanel(f.waivers, {
     error: f.waiversError,
     myUserId: f.myUserId,
@@ -1616,6 +1625,10 @@ function renderFantasyWaiversBody(league) {
     playerPool: f.playerPool?.players ?? [],
     lineup: f.lineup,
     xpStats: f.playerPool?.xpStats,
+    matches: plFeed?.matches ?? null,
+    clubStrength: f.waiverFlow
+      ? deriveClubStrength({ standingsMap: plFeed?.standings, players: f.playerPool?.players ?? [] })
+      : null,
     now: Date.now(),
   });
 }
