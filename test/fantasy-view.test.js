@@ -19,6 +19,7 @@ import {
   renderFantasySessionExpired,
   renderFantasyStandingsPanel,
   renderFantasySettingsPanel,
+  renderTeamNameRow,
   renderGameweekTracker,
   renderFantasyWaiversPanel,
   renderChampionCard,
@@ -2261,21 +2262,52 @@ test("the champion card escapes team names and its own error message", () => {
 
 // -- Commissioner settings tab -----------------------------------------------
 
-test("the Settings tab is offered to a commissioner and absent for everyone else", () => {
+test("the Settings tab is offered to every member; the body scopes what each can do", () => {
   const members = [{ userId: 1, name: "Me" }];
   const asCommish = renderFantasyLeagueHeader({ name: "L", draftStatus: "complete", isCommissioner: true }, members, "feed");
   const asManager = renderFantasyLeagueHeader({ name: "L", draftStatus: "complete", isCommissioner: false }, members, "feed");
+  // Settings holds each member's OWN team name, so it cannot be a
+  // commissioner-only tab; the league-level levers scope themselves inside.
   assert.match(asCommish, /data-fantasy-subtab="settings"/);
-  // Absent rather than disabled: nine managers in ten can never open it, and a
-  // permanently dead button is worse than no button.
-  assert.doesNotMatch(asManager, /data-fantasy-subtab="settings"/);
+  assert.match(asManager, /data-fantasy-subtab="settings"/);
 });
 
-test("settings refuses to render its controls for a non-commissioner", () => {
-  const html = renderFantasySettingsPanel({ name: "L", draftStatus: "complete", isCommissioner: false }, []);
-  assert.match(html, /Only the commissioner/);
+test("a non-commissioner's settings hold their team name and none of the league levers", () => {
+  const html = renderFantasySettingsPanel({ name: "L", draftStatus: "complete", isCommissioner: false }, [], {
+    teamName: "The Goon Squad",
+    teamNameFallback: "Ada",
+  });
+  assert.match(html, /Your team/);
+  assert.match(html, /The Goon Squad/);
+  assert.match(html, /data-fantasy-teamname-edit/, "the rename form's home is Settings");
   assert.doesNotMatch(html, /data-fantasy-add-bots/);
   assert.doesNotMatch(html, /data-fantasy-settings-mode/);
+});
+
+test("the commissioner's settings lead with their own team card before the league levers", () => {
+  const html = renderFantasySettingsPanel(
+    { name: "L", draftStatus: "complete", isCommissioner: true },
+    [{ userId: 1, name: "Me" }],
+    {
+      seats: { total: 10, humans: 1, bots: 0, open: 9 },
+      schedule: null,
+      waivers: { mode: "faab", faabBudget: 100, myClaims: [] },
+      teamName: null,
+      teamNameFallback: "Me",
+    },
+  );
+  assert.match(html, /Your team/);
+  assert.match(html, /data-fantasy-teamname-edit/);
+  assert.match(html, /data-fantasy-settings-mode/, "league levers still there for the commissioner");
+  assert.ok(html.indexOf("Your team") < html.indexOf("Waivers"), "own settings first, league levers after");
+});
+
+test("the My team pitch shows the team name with a pencil that jumps to Settings, not a second form", () => {
+  const html = renderTeamNameRow({ teamName: "The Goon Squad", fallbackName: "Ada", editable: false });
+  assert.match(html, /The Goon Squad/);
+  assert.match(html, /data-fantasy-subtab="settings"/);
+  assert.doesNotMatch(html, /data-fantasy-teamname-edit/, "one form, one home");
+  assert.doesNotMatch(html, /data-fantasy-teamname-input/);
 });
 
 test("a pending league's settings offer the draft and bot controls, and explain why waivers are not there yet", () => {

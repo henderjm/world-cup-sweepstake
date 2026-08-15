@@ -1140,11 +1140,9 @@ function renderFantasyMyTeamBody(league, room) {
     teamName: myLeagueMember()?.teamName ?? null,
     // From the SERVER, not currentAccount(): the resolved display name and the
     // account name are identical once a team name is set, so only the server
-    // can say what clearing it would fall back TO.
+    // can say what clearing it would fall back TO. The rename FORM lives on
+    // the Settings tab; the pitch head only displays the name.
     teamNameFallback: f.league.viewerAccountName ?? "",
-    teamNameEditing: f.teamNameEditing,
-    teamNameBusy: f.teamNameBusy,
-    teamNameError: f.teamNameError,
     // Same feed the tracker uses; no extra request.
     matches: model?.matches ?? null,
   });
@@ -1448,6 +1446,14 @@ function renderFantasySettingsBody() {
     championError: f.championError,
     settingsBusy: f.waiverSettingsBusy,
     settingsError: f.waiverSettingsError,
+    // The member's own section: the rename form lives here now (issue #48
+    // moved homes), fed by the same server-resolved name/fallback pair the
+    // roster panel reads.
+    teamName: myLeagueMember()?.teamName ?? null,
+    teamNameFallback: f.league.viewerAccountName ?? "",
+    teamNameEditing: f.teamNameEditing,
+    teamNameBusy: f.teamNameBusy,
+    teamNameError: f.teamNameError,
   });
 }
 

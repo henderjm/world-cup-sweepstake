@@ -348,16 +348,16 @@ const FANTASY_SUBTAB_LABELS = {
 // standings begin. Every gate lives in fantasySubTabAvailable so the disabled
 // attribute here, app.js's deep-link restore clamp and the body guards can
 // never disagree about which tabs a league currently has.
-// `isCommissioner` adds a Settings tab rather than showing a disabled one to
-// everybody: nine managers in ten will never be able to open it, and a
-// permanently dead button is worse than an absent one.
+// Settings is open to EVERY member, not just the commissioner: it holds each
+// manager's own team name, and the league-level levers inside it scope
+// themselves to the commissioner (see renderFantasySettingsPanel).
 export function fantasySubTabAvailable(subTab, draftStatus) {
   if (subTab === "board") return draftStatus !== "complete";
   if (subTab === "matchup" || subTab === "waivers" || subTab === "standings") return draftStatus === "complete";
   return true; // feed, myteam, draftroom, settings carry every phase
 }
 
-function renderFantasySubtabs(activeSubTab, draftStatus, isCommissioner = false) {
+function renderFantasySubtabs(activeSubTab, draftStatus) {
   const tab = (key, label) => {
     const enabled = fantasySubTabAvailable(key, draftStatus);
     return `<button class="fantasy-subtab ${activeSubTab === key ? "is-active" : ""}" type="button" data-fantasy-subtab="${key}" ${enabled ? "" : "disabled"}>${label}</button>`;
@@ -371,7 +371,7 @@ function renderFantasySubtabs(activeSubTab, draftStatus, isCommissioner = false)
       ${tab("board", "My board")}
       ${tab("waivers", "Waivers")}
       ${tab("standings", "Standings")}
-      ${isCommissioner ? tab("settings", "Settings") : ""}
+      ${tab("settings", "Settings")}
     </div>`;
 }
 
@@ -401,7 +401,7 @@ export function renderFantasyLeagueHeader(league, members, activeSubTab) {
         <span class="chip">Snake draft</span>
       </div>
     </div>
-    ${renderFantasySubtabs(activeSubTab, league.draftStatus, Boolean(league.isCommissioner))}`;
+    ${renderFantasySubtabs(activeSubTab, league.draftStatus)}`;
 }
 
 // Wraps a sub-tab's body with the shared header inside the standard .fantasy
@@ -802,10 +802,36 @@ export function renderFantasySettingsPanel(
     championError = "",
     settingsBusy = false,
     settingsError = "",
+    teamName = null,
+    teamNameFallback = "",
+    teamNameEditing = false,
+    teamNameBusy = false,
+    teamNameError = "",
   } = {},
 ) {
+  // Every member's own settings first: the team name is the thing people
+  // actually come to a Settings tab to change, and it must not depend on
+  // being the commissioner. The league-level levers below stay commissioner
+  // scoped.
+  const yourTeam = `
+    <section class="card fantasy-yourteam">
+      <h3 class="card__title">Your team</h3>
+      ${renderTeamNameRow({
+        teamName,
+        fallbackName: teamNameFallback,
+        editing: teamNameEditing,
+        busy: teamNameBusy,
+        error: teamNameError,
+      })}
+      <p class="note--dim">The name the rest of the league sees, everywhere your team appears.</p>
+    </section>`;
+
   if (!league?.isCommissioner) {
-    return `<p class="note">Only the commissioner can change league settings.</p>`;
+    return `
+      <div class="fantasy-settings">
+        ${yourTeam}
+        <p class="note--dim">Draft time, bot seats and waiver rules are the commissioner's to change.</p>
+      </div>`;
   }
 
   const pending = league.draftStatus === "pending";
@@ -837,6 +863,7 @@ export function renderFantasySettingsPanel(
 
   return `
     <div class="fantasy-settings">
+      ${yourTeam}
       ${draftSection}
       ${botSection}
       ${renderChampionCard(league, members, { championBusy, championError })}
@@ -1415,15 +1442,24 @@ export function renderFantasyMyTeamPanel(picks, myUserId) {
   return renderMySquad(picks, myUserId, { compact: false });
 }
 
-// The team-name row at the top of My team (issue #48): the name as it appears
-// to everyone else, with a pencil to change it. Renders as a plain heading
-// until tapped, so the default state is one line rather than a form.
+// The team-name row (issue #48): the name as it appears to everyone else.
+// The FORM lives on the Settings tab (the place a manager goes looking for it);
+// My team shows the same row with `editable: false`, whose pencil jumps to
+// Settings rather than opening a second copy of the form. Renders as a plain
+// heading until tapped, so the default state is one line rather than a form.
 //
 // `teamName` is the raw stored name (null when unnamed) and `fallbackName` is
 // what the rest of the league currently sees instead, so the placeholder can
 // show that rather than an empty box - a manager should be able to tell what
 // they are replacing.
-export function renderTeamNameRow({ teamName, fallbackName, editing, busy, error }) {
+export function renderTeamNameRow({ teamName, fallbackName, editing, busy, error, editable = true }) {
+  if (!editable) {
+    return `
+      <div class="fantasy-teamname">
+        <h3 class="fantasy-teamname__name">${esc(teamName || fallbackName || "My team")}</h3>
+        <button class="fantasy-teamname__edit" type="button" data-fantasy-subtab="settings" aria-label="Rename your team in Settings" title="Rename your team in Settings">✏️</button>
+      </div>`;
+  }
   if (!editing) {
     return `
       <div class="fantasy-teamname">
@@ -1815,9 +1851,6 @@ export function renderFantasyRosterPanel({
   xpStats,
   teamName = null,
   teamNameFallback = "",
-  teamNameEditing = false,
-  teamNameBusy = false,
-  teamNameError = "",
   matches = null,
   now = Date.now(),
 }) {
@@ -1861,13 +1894,7 @@ export function renderFantasyRosterPanel({
   const drawerPlayer = drawerPlayerId != null ? (roster ?? []).find((player) => player.id === drawerPlayerId) ?? null : null;
 
   return `
-    ${renderTeamNameRow({
-      teamName,
-      fallbackName: teamNameFallback,
-      editing: teamNameEditing,
-      busy: teamNameBusy,
-      error: teamNameError,
-    })}
+    ${renderTeamNameRow({ teamName, fallbackName: teamNameFallback, editable: false })}
     <div class="fantasy-myteam-grid">
       <div class="fantasy-myteam-grid__main">
         ${pitchCard}
