@@ -3392,3 +3392,16 @@ button { font-family: inherit; cursor: pointer; }
   .fantasy-gwtrack-row { grid-template-columns: 44px 1fr; }
   .fantasy-gwtrack-row__yours { grid-column: 2; text-align: left; }
 }
+
+/* Opponent line under a pitch tile's club (issue: "show who they're playing
+   next"). Smaller and dimmer than the club so the tile still reads
+   name → club → opponent → xP top to bottom without competing. */
+.fantasy-pitch__opp {
+  margin: 1px 0 0;
+  font-size: 10px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}

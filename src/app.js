@@ -1145,6 +1145,8 @@ function renderFantasyMyTeamBody(league, room) {
     teamNameEditing: f.teamNameEditing,
     teamNameBusy: f.teamNameBusy,
     teamNameError: f.teamNameError,
+    // Same feed the tracker uses; no extra request.
+    matches: model?.matches ?? null,
   });
 }
 

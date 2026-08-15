@@ -1,7 +1,7 @@
 import { abbrFor, badgeFor } from "./badges.js";
 import { dateLabel, isLive as isLiveStatus, statusLabel } from "./format.js";
 import { MAX_LEAGUE_SIZE } from "./fantasy.js";
-import { squadGameweekShape } from "./fantasyCalendar.js";
+import { squadGameweekShape, teamGameweekFixtures } from "./fantasyCalendar.js";
 import { WAIVER_MODES } from "./fantasyWaivers.js";
 import {
   canDraftPlayer,
@@ -28,7 +28,7 @@ import { DEFAULT_POOL_SORT, POOL_SORTS, rankDraftPool, sortPoolBy, startingUpgra
 import { TEAM_NAME_MAX } from "./fantasyTeamName.js";
 import { championMember, eligibleChampions, isChampionId } from "./fantasyChampion.js";
 import { formatRecord } from "./fantasyHeadToHead.js";
-import { trackerSummary } from "./fantasyGameweekTracker.js";
+import { opponentLabel, trackerSummary } from "./fantasyGameweekTracker.js";
 import { withBoardAnnotations } from "./fantasyDraftBoard.js";
 import { renderFantasyBoardPanel } from "./fantasyDraftBoardView.js";
 import {
@@ -1454,7 +1454,34 @@ function xpBadge(stats, position, xpStats) {
   return { text: `xP ${stats.xp.toFixed(1)}`, cls, title };
 }
 
-function renderPitchTile(player, { isCaptain, isPending, isDimmed, editing }, statsById, xpStats) {
+// A player's fixture line, from a prebuilt Map<team, label>. A club with no
+// fixture this gameweek says so rather than rendering blank: a missing line
+// reads as a rendering gap, and "no fixture" is a fact the manager needs before
+// the deadline, not after.
+// Map<team, label> for every club in the squad, or null when there is no feed
+// to build it from. "" is a real value meaning a blank gameweek, distinct from
+// the map being absent entirely.
+function buildOpponentLabels(roster, matches, gameweek) {
+  if (!matches?.length || gameweek == null) return null;
+  const teams = [...new Set((roster ?? []).map((player) => player.team).filter(Boolean))];
+  return new Map(
+    teams.map((team) => [team, opponentLabel(teamGameweekFixtures(matches, gameweek, team), team, abbrFor)]),
+  );
+}
+
+function renderOpponentLine(player, opponents, className) {
+  const label = opponents?.get(player.team);
+  if (label == null) return "";
+  return `<p class="${className}">${label ? esc(label) : "No fixture"}</p>`;
+}
+
+function renderOpponentSuffix(player, opponents) {
+  const label = opponents?.get(player.team);
+  if (label == null) return "";
+  return ` · ${label ? esc(label) : "No fixture"}`;
+}
+
+function renderPitchTile(player, { isCaptain, isPending, isDimmed, editing }, statsById, xpStats, opponents) {
   const stats = normalizePlayerStats(statsById.get(player.id) ?? {});
   const badge = xpBadge(stats, player.position, xpStats);
   const classes = ["fantasy-pitch__player"];
@@ -1466,12 +1493,13 @@ function renderPitchTile(player, { isCaptain, isPending, isDimmed, editing }, st
       <span class="fantasy-pitch__crest">${badgeFor(player.team)}</span>
       <p class="fantasy-pitch__name">${esc(player.name)}</p>
       <p class="fantasy-pitch__club">${esc(abbrFor(player.team))}</p>
+      ${renderOpponentLine(player, opponents, "fantasy-pitch__opp")}
       <p class="fantasy-pitch__xp ${badge.cls}" ${badge.title ? `title="${esc(badge.title)}" aria-label="${esc(badge.title)}"` : ""}>${badge.text}</p>
       ${editing && isPending ? `<button class="fantasy-pitch__captainbtn" type="button" data-fantasy-make-captain="${player.id}">Make captain</button>` : ""}
     </div>`;
 }
 
-function renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats }) {
+function renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats, opponents }) {
   const byId = new Map(roster.map((player) => [player.id, player]));
   const editing = Boolean(editState);
   const pending = editState?.pendingId ?? null;
@@ -1495,6 +1523,7 @@ function renderPitch({ roster, starterIds, benchIds, captainId, editState, stats
           },
           statsById,
           xpStats,
+          opponents,
         ),
       )
       .join("");
@@ -1556,7 +1585,7 @@ function renderPitchHead(currentGameweek, lineup, editState, roster) {
     ${editState?.error ? `<p class="fantasy-form__error">${esc(editState.error)}</p>` : ""}`;
 }
 
-function renderBenchRow(player, { isPending, isDimmed }, statsById, xpStats) {
+function renderBenchRow(player, { isPending, isDimmed }, statsById, xpStats, opponents) {
   const stats = normalizePlayerStats(statsById.get(player.id) ?? {});
   const badge = xpBadge(stats, player.position, xpStats);
   const xpCell =
@@ -1569,13 +1598,13 @@ function renderBenchRow(player, { isPending, isDimmed }, statsById, xpStats) {
   return `
     <div class="${classes.join(" ")}" data-fantasy-player-id="${player.id}" data-fantasy-slot="bench" role="button" tabindex="0">
       ${badgeFor(player.team)}
-      <span class="fantasy-bench-row__name"><strong>${esc(player.name)}</strong><span class="note--dim">${esc(abbrFor(player.team))}</span></span>
+      <span class="fantasy-bench-row__name"><strong>${esc(player.name)}</strong><span class="note--dim">${esc(abbrFor(player.team))}${renderOpponentSuffix(player, opponents)}</span></span>
       <span class="fantasy-pos">${esc(player.position)}</span>
       ${xpCell}
     </div>`;
 }
 
-function renderBench({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats }) {
+function renderBench({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats, opponents }) {
   const byId = new Map(roster.map((player) => [player.id, player]));
   const editing = Boolean(editState);
   const pending = editState?.pendingId ?? null;
@@ -1596,6 +1625,7 @@ function renderBench({ roster, starterIds, benchIds, captainId, editState, stats
         },
         statsById,
         xpStats,
+        opponents,
       ),
     )
     .join("");
@@ -1737,6 +1767,7 @@ export function renderFantasyRosterPanel({
   teamNameEditing = false,
   teamNameBusy = false,
   teamNameError = "",
+  matches = null,
   now = Date.now(),
 }) {
   if (!lineup) {
@@ -1746,6 +1777,11 @@ export function renderFantasyRosterPanel({
   }
 
   const statsById = new Map((playerPool ?? []).map((player) => [player.id, player]));
+  // One label per CLUB rather than per player: eleven players share four or
+  // five clubs, so this is a handful of lookups instead of one per tile. A null
+  // map (no feed) means every line is omitted rather than every player being
+  // told he has no fixture, which would be a lie rather than a gap.
+  const opponents = buildOpponentLabels(roster, matches, lineup.gameweek ?? currentGameweek);
   const starterIds = editState ? editState.starters : lineup.starters.map((entry) => entry.playerId);
   const captainId = editState ? editState.captainId : (lineup.starters.find((entry) => entry.isCaptain)?.playerId ?? null);
   const benchIds = editState ? editState.bench : lineup.bench;
@@ -1768,7 +1804,7 @@ export function renderFantasyRosterPanel({
     ${deadlineCard}
     <section class="card fantasy-pitch">
       ${renderPitchHead(currentGameweek, lineup, editState, roster)}
-      ${renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats })}
+      ${renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats, opponents })}
     </section>`;
 
   const drawerPlayer = drawerPlayerId != null ? (roster ?? []).find((player) => player.id === drawerPlayerId) ?? null : null;
@@ -1784,7 +1820,7 @@ export function renderFantasyRosterPanel({
     <div class="fantasy-myteam-grid">
       <div class="fantasy-myteam-grid__main">
         ${pitchCard}
-        ${renderBench({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats })}
+        ${renderBench({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats, opponents })}
       </div>
       <div class="fantasy-myteam-grid__rail">
         ${renderSquadXp({ roster, starterIds, statsById, xpStats })}

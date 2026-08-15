@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { abbrFor } from "../src/badges.js";
 import test from "node:test";
 
 import {
@@ -2227,4 +2228,67 @@ test("no live feed says so rather than reporting everyone blank", () => {
 test("an unset lineup asks for one instead of rendering an empty bar", () => {
   const html = renderGameweekTracker({ counts: { total: 0 }, fixtures: [] }, { gameweek: 6 });
   assert.match(html, /No starting eleven set/);
+});
+
+test("the pitch names who each player is up against, home or away", () => {
+  const roster = [
+    { id: 1, name: "Keeper", team: "Arsenal", position: "GK" },
+    { id: 2, name: "Backline", team: "Everton", position: "DEF" },
+  ];
+  const matches = [
+    { id: 90, utcDate: "2026-08-21T19:00:00Z", status: "TIMED", matchday: 1, homeTeam: "Arsenal", awayTeam: "Coventry City", score: {} },
+    { id: 91, utcDate: "2026-08-22T14:00:00Z", status: "TIMED", matchday: 1, homeTeam: "Chelsea", awayTeam: "Everton", score: {} },
+  ];
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 1,
+    roster,
+    lineup: { gameweek: 1, starters: [{ playerId: 1 }, { playerId: 2 }], bench: [] },
+    playerPool: [],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "",
+    matches,
+  });
+  // abbrFor derives its own short form (the feed's TLA in production, initials
+  // as a fallback), so the expectation is built from it rather than hardcoded.
+  assert.match(html, new RegExp(`${abbrFor("Coventry City")} \\(H\\)`), "a home fixture names the opponent and (H)");
+  assert.match(html, new RegExp(`${abbrFor("Chelsea")} \\(A\\)`), "an away fixture names the opponent and (A)");
+});
+
+// A missing line reads as a rendering gap; "No fixture" is a fact a manager
+// needs before the deadline, not after.
+test("a club with no fixture this gameweek says so on the pitch", () => {
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 1,
+    roster: [{ id: 1, name: "Idle", team: "Arsenal", position: "GK" }],
+    lineup: { gameweek: 1, starters: [{ playerId: 1 }], bench: [] },
+    playerPool: [],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "",
+    matches: [
+      { id: 90, utcDate: "2026-08-21T19:00:00Z", status: "TIMED", matchday: 1, homeTeam: "Chelsea", awayTeam: "Everton", score: {} },
+    ],
+  });
+  assert.match(html, /No fixture/);
+});
+
+// Without a feed, saying "No fixture" for everyone would be a lie rather than
+// a gap, so the line is omitted entirely.
+test("with no feed the pitch omits the fixture line rather than claiming none", () => {
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 1,
+    roster: [{ id: 1, name: "Keeper", team: "Arsenal", position: "GK" }],
+    lineup: { gameweek: 1, starters: [{ playerId: 1 }], bench: [] },
+    playerPool: [],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "",
+    matches: null,
+  });
+  assert.doesNotMatch(html, /No fixture/);
+  assert.doesNotMatch(html, /fantasy-pitch__opp/);
 });

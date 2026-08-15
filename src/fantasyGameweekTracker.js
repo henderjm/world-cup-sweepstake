@@ -100,3 +100,29 @@ export function trackerSummary(counts) {
   if (counts.blank) parts.push(`${counts.blank} blank`);
   return parts.join(" · ");
 }
+
+// "COV (H)" — who this player's club plays in this gameweek, and where.
+//
+// The opponent is the fact that makes a pitch actionable: a manager deciding
+// between two midfielders on similar expected points is really deciding
+// between two fixtures, and until now they had to leave the app to find out
+// what those were.
+//
+// Three shapes, because a gameweek is a window and all three genuinely happen:
+//   one fixture     "COV (H)"
+//   a double        "COV (H), EVE (A)"  - he plays twice and scores twice
+//   a blank         ""                  - the caller decides how to say so,
+//                                         since a pitch tile and a bench row
+//                                         have very different room for it.
+// `abbr` is injected rather than imported so this module stays free of the
+// badge registry, the same way the rest of src/fantasy*.js keeps view lookups
+// at the edge.
+export function opponentLabel(fixtures, team, abbr = (name) => name) {
+  return (fixtures ?? [])
+    .map((match) => {
+      const home = match.homeTeam === team;
+      const opponent = home ? match.awayTeam : match.homeTeam;
+      return `${abbr(opponent)} (${home ? "H" : "A"})`;
+    })
+    .join(", ");
+}

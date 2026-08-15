@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { PLAYER_MATCH_STATES, trackGameweek, trackerSummary } from "../src/fantasyGameweekTracker.js";
+import { PLAYER_MATCH_STATES, opponentLabel, trackGameweek, trackerSummary } from "../src/fantasyGameweekTracker.js";
 
 // Matchday 1 = gameweek 1 for these fixtures, which is what gameweekOf reads.
 const fixture = (id, home, away, status, extra = {}) => ({
@@ -126,4 +126,22 @@ test("trackerSummary omits empty parts and says nothing for an empty XI", () => 
 test("an empty or missing input does not throw", () => {
   assert.deepEqual(trackGameweek({ matches: null, roster: null, starterIds: null, gameweek: 1 }).players, []);
   assert.deepEqual(trackGameweek({}).fixtures, []);
+});
+
+test("opponentLabel names the opponent and whether it is home or away", () => {
+  const home = { homeTeam: "Arsenal", awayTeam: "Coventry City" };
+  const away = { homeTeam: "Everton", awayTeam: "Arsenal" };
+  assert.equal(opponentLabel([home], "Arsenal"), "Coventry City (H)");
+  assert.equal(opponentLabel([away], "Arsenal"), "Everton (A)");
+  assert.equal(opponentLabel([home], "Arsenal", (n) => n.slice(0, 3).toUpperCase()), "COV (H)");
+});
+
+test("a double gameweek names both fixtures; a blank names none", () => {
+  const fixtures = [
+    { homeTeam: "Arsenal", awayTeam: "Coventry City" },
+    { homeTeam: "Everton", awayTeam: "Arsenal" },
+  ];
+  assert.equal(opponentLabel(fixtures, "Arsenal", (n) => n.slice(0, 3).toUpperCase()), "COV (H), EVE (A)");
+  assert.equal(opponentLabel([], "Arsenal"), "");
+  assert.equal(opponentLabel(null, "Arsenal"), "");
 });
