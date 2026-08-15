@@ -851,6 +851,47 @@ test("renderFantasyRosterPanel lays out all 11 starters and 4 bench players with
   assert.doesNotMatch(html, /data-fantasy-make-captain/); // no affordance without an edit in progress
 });
 
+// The order the Bench card actually renders its rows in, by player id.
+function benchOrder(html) {
+  return [...html.matchAll(/data-fantasy-player-id="(\d+)" data-fantasy-slot="bench"/g)].map((m) => Number(m[1]));
+}
+
+test("renderFantasyRosterPanel reads the bench keeper-first, whatever order the roster is in (#51)", () => {
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    // /lineup derives the bench as "roster minus starters", so it arrives in
+    // the order the squad was drafted in: here a forward, then a defender,
+    // then the keeper.
+    lineup: baseLineup({ bench: [15, 13, 12, 14] }),
+    playerPool: [],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "",
+  });
+
+  assert.deepEqual(benchOrder(html), [12, 13, 14, 15]);
+});
+
+test("renderFantasyRosterPanel keeps the bench in position order mid-swap, without disturbing the swap state", () => {
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: rosterFixture(),
+    lineup: baseLineup(),
+    playerPool: [],
+    picks: [],
+    // A pending swap holds its own working copy of the bench; the rows are
+    // still read keeper-first, and the pending tile is still the one selected.
+    editState: { starters: ROSTER_STARTERS, captainId: 10, bench: [14, 15, 12, 13], pendingId: 12, saving: false, error: "" },
+    drawerPlayerId: null,
+    lineupError: "",
+  });
+
+  assert.deepEqual(benchOrder(html), [12, 13, 14, 15]);
+  assert.match(tileClasses(html, 12) ?? "", /is-pending/);
+});
+
 test("renderFantasyRosterPanel shows a real xP value for a player the pool has stats for, a placeholder otherwise", () => {
   const html = renderFantasyRosterPanel({
     currentGameweek: 5,
