@@ -143,7 +143,7 @@ test("a pre-season fixture is upcoming, never a 0-0 scoreline", () => {
   assert.equal(timing.showScores, false, "showing scores pre-season is the reported bug");
   assert.equal(timing.label, "Upcoming");
   assert.match(timing.note, /season starts/i);
-  assert.match(timing.note, /nothing has been played/i);
+  assert.match(timing.note, /Your opening fixture/i);
 });
 
 test("an in-season upcoming fixture names its kickoff and its deadline", () => {

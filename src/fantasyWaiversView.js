@@ -28,9 +28,9 @@ export function waiverModeLabel(mode) {
 // for a manager who has never seen this before. Never claims a mode exists
 // beyond the three the league setting actually supports.
 const MODE_EXPLANATIONS = {
-  faab: "Everyone bids blind from their season budget: the highest bid wins, ties broken by waiver priority.",
-  rolling: "Claims are resolved in priority order; whoever wins a claim moves to the back of the queue.",
-  reverse_standings: "The worst-placed manager in the league gets first pick each run, recomputed fresh every time.",
+  faab: "Highest blind bid wins. Ties go to waiver priority.",
+  rolling: "Resolved in priority order. Win one, go to the back.",
+  reverse_standings: "Worst-placed manager picks first, recomputed every run.",
 };
 
 export function waiverModeExplanation(mode) {
