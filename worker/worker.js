@@ -4157,12 +4157,30 @@ async function handleFantasyWaiverSettings(request, env, leagueId, cors) {
       return json({ error: "cannot change waiver settings while any claims are pending" }, 400, cors);
     }
 
-    await env.DB.prepare(
-      `INSERT INTO fantasy_waiver_settings (league_id, mode, faab_budget, updated_at) VALUES (?1, ?2, ?3, datetime('now'))
-       ON CONFLICT(league_id) DO UPDATE SET mode = ?2, faab_budget = ?3, updated_at = datetime('now')`,
-    )
-      .bind(leagueId, mode, faabBudget)
-      .run();
+    // A budget change must reach every manager's REMAINING budget or saving it
+    // changes nothing anyone can see: fantasy_waiver_state rows are seeded once
+    // (ensureLeagueWaiverState, INSERT OR IGNORE) and were never revisited.
+    // Applied as a delta rather than a reset so money already spent in past
+    // runs stays spent; MAX(0, ...) because a cut below what someone has left
+    // zeroes them rather than minting a negative balance. One batch with the
+    // settings write, so the stored budget and the balances can never disagree
+    // about whether the change happened.
+    const previous = await waiverSettings(env, leagueId);
+    const delta = faabBudget - previous.faabBudget;
+    const statements = [
+      env.DB.prepare(
+        `INSERT INTO fantasy_waiver_settings (league_id, mode, faab_budget, updated_at) VALUES (?1, ?2, ?3, datetime('now'))
+         ON CONFLICT(league_id) DO UPDATE SET mode = ?2, faab_budget = ?3, updated_at = datetime('now')`,
+      ).bind(leagueId, mode, faabBudget),
+    ];
+    if (delta !== 0) {
+      statements.push(
+        env.DB.prepare(
+          `UPDATE fantasy_waiver_state SET faab_remaining = MAX(0, faab_remaining + ?2) WHERE league_id = ?1`,
+        ).bind(leagueId, delta),
+      );
+    }
+    await env.DB.batch(statements);
 
     return json({ mode, faabBudget }, 200, cors);
   } catch {

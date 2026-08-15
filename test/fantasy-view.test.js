@@ -571,14 +571,18 @@ test("renderFantasyLobby also treats a genuinely empty (non-unavailable) pool as
 
 // -- renderFantasyLobby: draft scheduling ----------------------------------------
 
-test("renderFantasyLobby offers a commissioner a schedule picker when nothing is scheduled yet", () => {
+test("renderFantasyLobby points a commissioner at Settings when nothing is scheduled, with no picker of its own", () => {
+  // The picker lives on the Settings tab only (see renderFantasySettingsPanel's
+  // tests); the lobby shows the fact and the way there, never a second copy of
+  // the form.
   const html = renderFantasyLobby(lobbyLeague({ isCommissioner: true }), lobbyMembers, {
     playerPool: null,
     filter: { position: "All", search: "" },
   });
-  assert.match(html, /Schedule the draft/);
-  assert.match(html, /data-fantasy-schedule-input/);
-  assert.match(html, /data-fantasy-schedule-save/);
+  assert.match(html, /No draft time set/);
+  assert.match(html, /data-fantasy-subtab="settings"/);
+  assert.doesNotMatch(html, /data-fantasy-schedule-input/);
+  assert.doesNotMatch(html, /data-fantasy-schedule-save/);
 });
 
 test("renderFantasyLobby tells a non-commissioner nothing is scheduled yet, with no picker", () => {
@@ -590,7 +594,7 @@ test("renderFantasyLobby tells a non-commissioner nothing is scheduled yet, with
   assert.doesNotMatch(html, /data-fantasy-schedule-input/);
 });
 
-test("renderFantasyLobby shows the scheduled time, a countdown and reschedule/clear controls for the commissioner", () => {
+test("renderFantasyLobby shows the commissioner the scheduled time and countdown, with changes routed to Settings", () => {
   const scheduledAt = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
   const html = renderFantasyLobby(lobbyLeague({ isCommissioner: true }), lobbyMembers, {
     playerPool: null,
@@ -599,9 +603,9 @@ test("renderFantasyLobby shows the scheduled time, a countdown and reschedule/cl
   });
   assert.match(html, /Draft scheduled/);
   assert.match(html, new RegExp(`data-scheduled-at="${scheduledAt}"`));
-  assert.match(html, /data-fantasy-schedule-save/);
-  assert.match(html, /Reschedule/);
-  assert.match(html, /data-fantasy-schedule-clear/);
+  assert.match(html, /Change or clear it in/);
+  assert.doesNotMatch(html, /data-fantasy-schedule-save/);
+  assert.doesNotMatch(html, /data-fantasy-schedule-clear/);
 });
 
 test("renderFantasyLobby shows a non-commissioner the scheduled time read-only, plus the auto-pick warning, no controls", () => {
@@ -627,23 +631,22 @@ test("renderFantasyLobby marks a schedule within the hour as soon", () => {
   assert.match(html, /class="card fantasy-schedule is-soon"/);
 });
 
-test("renderFantasyLobby surfaces a schedule error message, escaped", () => {
-  const html = renderFantasyLobby(lobbyLeague({ isCommissioner: true }), lobbyMembers, {
-    playerPool: null,
-    filter: { position: "All", search: "" },
-    scheduleError: `bad "date" <here>`,
-  });
+test("the settings tab surfaces a schedule error message, escaped", () => {
+  const html = renderFantasySettingsPanel(
+    { name: "L", draftStatus: "pending", isCommissioner: true },
+    [{ userId: 1, name: "Me" }],
+    { seats: { total: 10, humans: 1, bots: 0, open: 9 }, schedule: null, scheduleError: `bad "date" <here>` },
+  );
   assert.match(html, /bad &quot;date&quot; &lt;here&gt;/);
 });
 
-test("renderFantasyLobby disables schedule controls while a save/clear is in flight", () => {
+test("the settings tab disables schedule controls while a save/clear is in flight", () => {
   const scheduledAt = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
-  const html = renderFantasyLobby(lobbyLeague({ isCommissioner: true }), lobbyMembers, {
-    playerPool: null,
-    filter: { position: "All", search: "" },
-    schedule: { scheduledAt },
-    scheduleBusy: true,
-  });
+  const html = renderFantasySettingsPanel(
+    { name: "L", draftStatus: "pending", isCommissioner: true },
+    [{ userId: 1, name: "Me" }],
+    { seats: { total: 10, humans: 1, bots: 0, open: 9 }, schedule: { scheduledAt }, scheduleBusy: true },
+  );
   assert.match(html, /data-fantasy-schedule-save disabled/);
   assert.match(html, /data-fantasy-schedule-clear disabled/);
 });
@@ -1394,19 +1397,25 @@ test("renderFantasyWaiversPanel's status header explains rolling mode and shows 
   assert.doesNotMatch(html, /credits left/);
 });
 
-test("renderFantasyWaiversPanel shows commissioner settings only for the commissioner", () => {
+test("renderFantasyWaiversPanel points the commissioner at Settings instead of carrying its own settings form", () => {
+  // The mode/budget form lives on the Settings tab only; a second copy here is
+  // exactly the duplicated-settings smell this replaced.
   const commissionerView = renderFantasyWaiversPanel(waiversFixture(), { myUserId: 3, roster: [], isCommissioner: true });
-  assert.match(commissionerView, /Commissioner settings/);
-  assert.match(commissionerView, /data-fantasy-settings-save/);
+  assert.match(commissionerView, /data-fantasy-subtab="settings"/);
+  assert.doesNotMatch(commissionerView, /data-fantasy-settings-save/);
 
   const memberView = renderFantasyWaiversPanel(waiversFixture(), { myUserId: 3, roster: [], isCommissioner: false });
-  assert.doesNotMatch(memberView, /Commissioner settings/);
+  assert.doesNotMatch(memberView, /data-fantasy-subtab="settings"/);
   assert.doesNotMatch(memberView, /data-fantasy-settings-save/);
 });
 
-test("renderFantasyWaiversPanel disables commissioner settings and explains why when the caller has a pending claim", () => {
+test("the settings tab disables the waiver form and explains why when the caller has a pending claim", () => {
   const withPending = waiversFixture({ myClaims: [{ claimId: 1, addPlayerId: 11, dropPlayerId: 20, bid: 10, priority: 1, status: "pending", reason: null, gameweek: 7 }] });
-  const html = renderFantasyWaiversPanel(withPending, { myUserId: 3, roster: [], isCommissioner: true });
+  const html = renderFantasySettingsPanel(
+    { name: "L", draftStatus: "complete", isCommissioner: true },
+    [{ userId: 1, name: "Me" }],
+    { seats: { total: 10, humans: 1, bots: 0, open: 9 }, schedule: null, waivers: withPending },
+  );
   assert.match(html, /data-fantasy-settings-save[^>]*disabled/);
   assert.match(html, /can't change until it resolves/);
 });
@@ -1725,28 +1734,30 @@ test("the lobby labels a bot manager and never reports a bare manager total that
   assert.match(html, /1 manager · 1 bot · 2\/10 seats/);
 });
 
-test("the lobby offers bot seats to the commissioner and explains what a bot does first", () => {
-  const html = renderFantasyLobby(lobbyLeague(), botMembers, {
-    playerPool: null,
-    filter: { position: "All", search: "" },
+test("bot seat controls live on the settings tab, and a seated bot can be removed there while pending", () => {
+  const html = renderFantasySettingsPanel(lobbyLeague({ draftStatus: "pending" }), botMembers, {
     seats: { total: 2, humans: 1, bots: 1, open: 8, max: 10 },
+    schedule: null,
   });
   assert.match(html, /data-fantasy-add-bots/);
   assert.match(html, /data-fantasy-bot-count/);
   assert.match(html, /autopicks its squad/);
-  // And a bot already seated can be taken back out again while pending.
   assert.match(html, /data-fantasy-remove-bot="2"/);
 });
 
-test("a non-commissioner is told bots are in the league but is offered no control", () => {
-  const html = renderFantasyLobby(lobbyLeague({ isCommissioner: false }), botMembers, {
+test("the lobby itself carries no bot controls, only the seat split and the bot chip", () => {
+  // The controls moved to Settings; the lobby still tells the room who is a
+  // bot (the chip on the member row and the split in the heading), because
+  // hiding that would imply real people where none sit.
+  const html = renderFantasyLobby(lobbyLeague(), botMembers, {
     playerPool: null,
     filter: { position: "All", search: "" },
     seats: { total: 2, humans: 1, bots: 1, open: 8, max: 10 },
   });
   assert.doesNotMatch(html, /data-fantasy-add-bots/);
   assert.doesNotMatch(html, /data-fantasy-remove-bot/);
-  assert.match(html, /seats filled by a bot/);
+  assert.match(html, /1 manager · 1 bot/);
+  assert.match(html, /fantasy-chip--bot/);
 });
 
 test("the invite card leads with a shareable link and keeps the raw code below it", () => {

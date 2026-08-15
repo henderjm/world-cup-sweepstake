@@ -1018,15 +1018,9 @@ function renderFantasy() {
                   playerPool: f.playerPool,
                   filter: f.filter,
                   schedule,
-                  scheduleBusy: f.scheduleBusy,
-                  scheduleError: f.scheduleError,
                   queuedIds: new Set(f.queue ?? []),
                   seats: f.league.seats,
                   inviteUrl: inviteUrlFor(league.inviteCode),
-                  botBusy: f.botBusy,
-                  botError: f.botError,
-                  championBusy: f.championBusy,
-                  championError: f.championError,
                 });
     elements.layout.innerHTML = renderFantasyLeagueShell(league, members, subTab, body);
     syncFantasyFeedPolling(subTab);
@@ -1470,7 +1464,7 @@ function renderFantasyStandingsBody() {
       previousWinnerUserId: f.league?.league?.previousWinnerUserId ?? null,
     })}
     ${renderFantasyPlayoffOddsBody()}
-    ${renderChampionCard(f.league?.league, f.league?.members, { championBusy: f.championBusy, championError: f.championError })}`;
+    ${renderChampionCard(f.league?.league, f.league?.members, { editable: false })}`;
 }
 
 // -- Playoff odds, under the standings table ------------------------------------
@@ -1613,8 +1607,6 @@ function renderFantasyWaiversBody(league) {
     freeAgentFilter: f.waiverFreeAgentFilter,
     wireFilter: f.waiverWireFilter,
     flow: f.waiverFlow,
-    settingsBusy: f.waiverSettingsBusy,
-    settingsError: f.waiverSettingsError,
     playerPool: f.playerPool?.players ?? [],
     lineup: f.lineup,
     xpStats: f.playerPool?.xpStats,

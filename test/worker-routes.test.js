@@ -1093,6 +1093,39 @@ test("submitting a waiver claim inserts it guarded on that gameweek's run not ha
   assert.equal(typeof body.deferred, "boolean");
 });
 
+test("changing the FAAB budget reaches every manager's remaining balance", async () => {
+  // The regression this pins down: fantasy_waiver_state rows are seeded once
+  // (INSERT OR IGNORE), so a settings save that only rewrote
+  // fantasy_waiver_settings changed a number nobody could ever see. The stub's
+  // settings read answers no stored row, so the previous budget is the default
+  // (100) and saving 150 must produce a +50 delta update on the balances.
+  const { response, seen } = waiverCall("/fantasy/league/1/waivers/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "faab", faabBudget: 150 }),
+  });
+  assert.equal((await response).status, 200);
+  assert.ok(
+    seen.some((sql) => sql.startsWith("UPDATE fantasy_waiver_state SET faab_remaining = MAX(0, faab_remaining +")),
+    "the budget change never reached fantasy_waiver_state, so saving it changes nothing visible",
+  );
+});
+
+test("saving waiver settings with the budget unchanged leaves balances alone", async () => {
+  // Delta of zero: a mode-only change must not touch anyone's remaining money.
+  const { response, seen } = waiverCall("/fantasy/league/1/waivers/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "rolling", faabBudget: 100 }),
+  });
+  assert.equal((await response).status, 200);
+  assert.equal(
+    seen.some((sql) => sql.startsWith("UPDATE fantasy_waiver_state SET faab_remaining")),
+    false,
+    "an unchanged budget still rewrote balances",
+  );
+});
+
 test("GET the lineup reports each club's fixture count so a blank or double gameweek is visible", async () => {
   const { response } = waiverCall("/fantasy/league/1/lineup");
   const resolved = await response;

@@ -359,7 +359,7 @@ button { font-family: inherit; cursor: pointer; }
   border-radius: 999px;
   border: 1px solid rgb(255 255 255 / 0.1);
   background: rgb(255 255 255 / 0.03);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: #c6cdd4;
 }
@@ -406,12 +406,29 @@ button { font-family: inherit; cursor: pointer; }
   border: 1px solid var(--line-2);
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 800;
 }
 .seg.is-active { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent); }
 .seg__count { font-weight: 600; color: var(--faint); }
 .seg.is-active .seg__count { color: var(--accent); opacity: 0.75; }
+
+/* Inline text button: navigation that lives inside a sentence ("set it in
+   Settings"), styled as a link rather than a pill so the sentence still reads
+   as one. Used by the fantasy panels, hence the fantasy accent. */
+.linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  color: var(--fantasy-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.fantasy-start__row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 /* Team badge: feed crest in the design's circular frame, abbr ring fallback ------ */
 
@@ -455,8 +472,8 @@ button { font-family: inherit; cursor: pointer; }
 
 .card--list { padding-bottom: 8px; }
 
-.note { font-size: 12px; color: var(--muted); }
-.note--dim { font-size: 11px; color: var(--faint); }
+.note { font-size: 13px; color: var(--muted); }
+.note--dim { font-size: 12px; color: var(--faint); }
 
 /* Live cards ---------------------------------------------------------------------- */
 
@@ -491,7 +508,7 @@ button { font-family: inherit; cursor: pointer; }
 
 .lcard__grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; align-items: center; }
 .lcard__team { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.lcard__name { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lcard__name { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lcard__score { font-size: 18px; font-weight: 900; font-variant-numeric: tabular-nums; }
 
 /* Match lines (today / next up / recent / fixtures) --------------------------------- */
@@ -511,13 +528,13 @@ button { font-family: inherit; cursor: pointer; }
 .mline:hover, .mline:focus-visible { background: rgb(200 245 66 / 0.05); }
 .mline + .mline { border-top: 1px solid rgb(255 255 255 / 0.05); }
 
-.mline__st { font-size: 10.5px; font-weight: 800; color: #7e8894; font-variant-numeric: tabular-nums; }
+.mline__st { font-size: 11px; font-weight: 800; color: #7e8894; font-variant-numeric: tabular-nums; }
 .mline__st.is-live { color: var(--accent); }
 
 .mline__side { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .mline__side--h { justify-content: flex-end; }
-.mline__name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mline__score { font-size: 13px; font-weight: 900; min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
+.mline__name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mline__score { font-size: 14px; font-weight: 900; min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
 
 .pens { font-size: 10px; color: var(--muted); font-weight: 600; }
 
@@ -548,7 +565,7 @@ button { font-family: inherit; cursor: pointer; }
 .ltable__row.is-here { background: rgb(200 245 66 / 0.05); }
 
 .ltable__pos { display: flex; align-items: center; gap: 6px; }
-.ltable__posnum { font-size: 12px; color: var(--muted); }
+.ltable__posnum { font-size: 13px; color: var(--muted); }
 
 .zbar { width: 3px; height: 15px; border-radius: 2px; background: transparent; }
 .zbar--safe { background: var(--accent); }
@@ -556,9 +573,9 @@ button { font-family: inherit; cursor: pointer; }
 .zbar--out { background: var(--clay); }
 
 .ltable__club { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.ltable__team { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ltable__team { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.ltable__num { text-align: right; font-size: 13px; color: #c6cdd4; }
+.ltable__num { text-align: right; font-size: 14px; color: #c6cdd4; }
 .ltable__pts { text-align: right; font-size: 13px; font-weight: 900; }
 
 .ltable__form { display: flex; gap: 3px; justify-content: flex-end; align-items: center; }
@@ -602,10 +619,10 @@ button { font-family: inherit; cursor: pointer; }
   font-variant-numeric: tabular-nums;
 }
 .minirow .zbar { height: 14px; }
-.minirow__pos { font-size: 11px; color: var(--muted); }
+.minirow__pos { font-size: 12px; color: var(--muted); }
 .minirow__club { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .minirow__club .tb { width: 19px; height: 19px; font-size: 7px; }
-.minirow__team { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.minirow__team { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .minirow__pts { text-align: right; font-size: 12px; font-weight: 900; }
 
 .aside__legend {
@@ -701,9 +718,9 @@ button { font-family: inherit; cursor: pointer; }
 .strow__player { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .strow__player .tb { width: 24px; height: 24px; }
 .strow__id { display: flex; flex-direction: column; min-width: 0; }
-.strow__id strong { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.strow__id span { font-size: 11px; color: var(--muted); }
-.strow__num { text-align: right; font-size: 13px; color: #c6cdd4; }
+.strow__id strong { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.strow__id span { font-size: 12px; color: var(--muted); }
+.strow__num { text-align: right; font-size: 14px; color: #c6cdd4; }
 .strow__num.is-sorted { color: var(--accent); font-weight: 900; }
 
 /* Footer ----------------------------------------------------------------------------------------- */
@@ -1882,7 +1899,7 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-player-row.is-drafted { opacity: 0.45; }
 .fantasy-player-row.is-suggested { background: var(--fantasy-row-tint); }
 .fantasy-player-row__id { display: flex; flex-direction: column; min-width: 0; }
-.fantasy-player-row__id strong { font-size: 13px; }
+.fantasy-player-row__id strong { font-size: 14px; }
 .fantasy-player-row__action { text-align: right; }
 .fantasy-player-row__stat { text-align: center; }
 /* xP keeps its own class rather than reusing __stat: it is the one figure the
@@ -2714,7 +2731,7 @@ button { font-family: inherit; cursor: pointer; }
   margin: 0 0 10px;
 }
 
-.tutorial-p { font-size: 13.5px; line-height: 1.65; color: #c6cdd4; margin: 0 0 10px; }
+.tutorial-p { font-size: 14px; line-height: 1.65; color: #c6cdd4; margin: 0 0 10px; }
 .tutorial-p:last-child { margin-bottom: 0; }
 
 .tutorial-callout {
@@ -2740,14 +2757,14 @@ button { font-family: inherit; cursor: pointer; }
 
 .tutorial-state { border-radius: var(--radius-sm); padding: 13px 14px; border: 1px solid var(--line-2); background: var(--surface-2); }
 .tutorial-state__title { font-size: 10.5px; font-weight: 900; letter-spacing: 0.09em; text-transform: uppercase; margin: 0 0 6px; }
-.tutorial-state__body { font-size: 12.5px; line-height: 1.55; color: var(--muted); margin: 0; }
+.tutorial-state__body { font-size: 13px; line-height: 1.55; color: var(--muted); margin: 0; }
 
 .tutorial-state--wire { border-color: rgb(245 197 66 / 0.4); background: rgb(245 197 66 / 0.07); }
 .tutorial-state--wire .tutorial-state__title { color: var(--gold); }
 .tutorial-state--free { border-color: var(--fantasy-line); background: var(--fantasy-soft); }
 .tutorial-state--free .tutorial-state__title { color: var(--fantasy-accent); }
 
-.tutorial-list { margin: 4px 0 0; padding-left: 20px; font-size: 13.5px; line-height: 1.65; color: #c6cdd4; }
+.tutorial-list { margin: 4px 0 0; padding-left: 20px; font-size: 14px; line-height: 1.65; color: #c6cdd4; }
 .tutorial-list li + li { margin-top: 6px; }
 
 .tutorial-table-card { padding: 14px 16px; }
