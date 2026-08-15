@@ -3364,3 +3364,55 @@ button { font-family: inherit; cursor: pointer; }
 }
 .fantasy-hint:hover,
 .fantasy-hint:focus-visible { color: var(--text); border-color: var(--text); }
+
+/* Gameweek tracker: your XI against the real fixtures they are in. Sits above
+   the matchup on the Matchup tab. */
+.fantasy-gwtrack { margin-bottom: 14px; }
+.fantasy-gwtrack__bar {
+  display: flex;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-2);
+  margin: 10px 0 12px;
+}
+.fantasy-gwtrack__seg { display: block; height: 100%; }
+.fantasy-gwtrack__seg.is-done { background: var(--fantasy-accent, var(--accent)); }
+.fantasy-gwtrack__seg.is-live { background: var(--live, #ff5e7a); }
+.fantasy-gwtrack__seg.is-blank { background: var(--faint); }
+
+.fantasy-gwtrack__rows { display: flex; flex-direction: column; gap: 4px; }
+.fantasy-gwtrack-row {
+  display: grid;
+  grid-template-columns: 52px minmax(120px, 1fr) minmax(80px, 1.2fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 13px;
+}
+/* A live row is the one a manager is actually here for on a Saturday. */
+.fantasy-gwtrack-row.is-live { background: color-mix(in srgb, var(--live, #ff5e7a) 12%, var(--surface-2)); }
+.fantasy-gwtrack-row__status { font-size: 10px; font-weight: 900; text-transform: uppercase; color: var(--faint); }
+.fantasy-gwtrack-row__status.is-live { color: var(--live, #ff5e7a); }
+.fantasy-gwtrack-row__teams { display: flex; align-items: center; gap: 8px; }
+.fantasy-gwtrack-row__score { font-weight: 900; letter-spacing: 0.02em; }
+.fantasy-gwtrack-row__yours { text-align: right; color: var(--faint); font-size: 12px; }
+@media (max-width: 520px) {
+  .fantasy-gwtrack-row { grid-template-columns: 44px 1fr; }
+  .fantasy-gwtrack-row__yours { grid-column: 2; text-align: left; }
+}
+
+/* Opponent line under a pitch tile's club (issue: "show who they're playing
+   next"). Smaller and dimmer than the club so the tile still reads
+   name → club → opponent → xP top to bottom without competing. */
+.fantasy-pitch__opp {
+  margin: 1px 0 0;
+  font-size: 10px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}

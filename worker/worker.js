@@ -84,6 +84,7 @@ import {
   DEFAULT_FAAB_BUDGET,
   WAIVER_MODES,
   claimGameweek,
+  dropGoesToWire,
   playerAvailability,
   resolveWaiverRun,
   validateAcquisition,
@@ -3080,7 +3081,17 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
       .first();
 
     const meScore = await fantasyGameweekScore(env, leagueId, user.id, gameweek);
-    const me = { userId: user.id, name: user.name || "You", score: meScore };
+    // Through memberDisplayName like every other surface, so a manager who has
+    // named their team sees that name here too. Reading user.name directly was
+    // the one place a team name did not reach (issue #48).
+    const mySeat = await env.DB.prepare(
+      `SELECT m.team_name, u.name, u.email FROM fantasy_league_members m
+       JOIN users u ON u.id = m.user_id
+       WHERE m.league_id = ?1 AND m.user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    const me = { userId: user.id, name: memberDisplayName(mySeat ?? user), score: meScore };
     const timing = {
       kickoff: timetable?.firstKickoff ?? null,
       deadline: timetable?.squad.deadline ?? null,
@@ -3459,8 +3470,17 @@ async function readLeagueChat(env, leagueId, userId) {
     .bind(leagueId, CHAT_PAGE_SIZE)
     .all();
 
-  const window = (rows.results ?? []).slice().reverse();
-  const oldestId = window.length ? window[0].id : 0;
+  // Newest first, which is the order the rows already arrive in. This used to
+  // be reversed into oldest-first chat convention, where the newest thing is at
+  // the BOTTOM and you have to scroll to find out what happened. That works for
+  // a chat window pinned to its own scroll bottom; it does not work for a feed
+  // that mostly carries app events and opens at the top, where it meant the
+  // first thing a manager saw on landing was the oldest thing in the league.
+  const window = rows.results ?? [];
+  // The id bound of the window, for the reactions join below. Computed as a
+  // MINIMUM rather than taken from an end of the array, so it cannot silently
+  // become the newest id if this ordering ever changes again.
+  const oldestId = window.length ? Math.min(...window.map((row) => row.id)) : 0;
 
   // Reactions for exactly the window just read, joined through the messages
   // table rather than bound as one parameter per message id: CHAT_PAGE_SIZE
@@ -4043,17 +4063,41 @@ async function handleFantasyFreeAgentAdd(request, env, leagueId, cors) {
       .run();
     if ((insert.meta?.changes ?? 0) === 0) return json({ error: "Player is not a free agent" }, 400, cors);
 
-    await env.DB.batch([
+    // Before the season starts, a dropped player goes straight back to free
+    // agency instead of onto the waiver wire.
+    //
+    // The wire exists to stop a drop-and-re-add cycle dodging the waiver queue.
+    // Pre-season there is no queue to dodge: no gameweek has scored, no run can
+    // fire, and nobody gains an edge. What the wire DOES cost pre-season is
+    // real and one-directional: the first run cannot happen until gameweek 1
+    // has settled, so every player dropped while managers are tinkering with a
+    // freshly drafted squad is frozen for WEEKS, for the whole league, not just
+    // for whoever dropped him. A league doing normal post-draft housekeeping
+    // could quietly freeze a chunk of the player pool before a ball is kicked,
+    // and a manager could not even undo their own mistake.
+    //
+    // So the wire starts when the season does. `preseason` is derived from the
+    // schedule (seasonFirstKickoff), not a date, so a moved opening fixture
+    // moves it. With no feed to read, `matches` is null and this falls through
+    // to the wire, which is the conservative side of a fail-open: the worst
+    // case is the pre-existing behaviour, not an unprotected wire mid-season.
+    const preseason = matches ? seasonPhase({ matches, now: Date.now() }).preseason : null;
+    const dropStatements = [
       env.DB.prepare(`DELETE FROM fantasy_rosters WHERE league_id = ?1 AND user_id = ?2 AND player_id = ?3`).bind(
         leagueId,
         user.id,
         dropPlayerId,
       ),
-      env.DB.prepare(
-        `INSERT INTO fantasy_waiver_wire (league_id, player_id, clears_after_gameweek) VALUES (?1, ?2, ?3)
-         ON CONFLICT(league_id, player_id) DO UPDATE SET added_at = datetime('now'), clears_after_gameweek = ?3`,
-      ).bind(leagueId, dropPlayerId, gameweek),
-    ]);
+    ];
+    if (dropGoesToWire({ preseason })) {
+      dropStatements.push(
+        env.DB.prepare(
+          `INSERT INTO fantasy_waiver_wire (league_id, player_id, clears_after_gameweek) VALUES (?1, ?2, ?3)
+           ON CONFLICT(league_id, player_id) DO UPDATE SET added_at = datetime('now'), clears_after_gameweek = ?3`,
+        ).bind(leagueId, dropPlayerId, gameweek),
+      );
+    }
+    await env.DB.batch(dropStatements);
 
     await postLeagueEvent(env, leagueId, CHAT_EVENTS.FREE_AGENT_ADD, {
       actor: memberDisplayName(user),

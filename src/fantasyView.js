@@ -1,8 +1,8 @@
 import { abbrFor, badgeFor } from "./badges.js";
 import { displayTeamName } from "./domain.js";
-import { dateLabel } from "./format.js";
+import { dateLabel, isLive as isLiveStatus, statusLabel } from "./format.js";
 import { MAX_LEAGUE_SIZE } from "./fantasy.js";
-import { squadGameweekShape } from "./fantasyCalendar.js";
+import { squadGameweekShape, teamGameweekFixtures } from "./fantasyCalendar.js";
 import { WAIVER_MODES } from "./fantasyWaivers.js";
 import {
   canDraftPlayer,
@@ -29,6 +29,7 @@ import { DEFAULT_POOL_SORT, POOL_SORTS, rankDraftPool, sortPoolBy, startingUpgra
 import { TEAM_NAME_MAX } from "./fantasyTeamName.js";
 import { championMember, eligibleChampions, isChampionId } from "./fantasyChampion.js";
 import { formatRecord } from "./fantasyHeadToHead.js";
+import { opponentLabel, trackerSummary } from "./fantasyGameweekTracker.js";
 import { withBoardAnnotations } from "./fantasyDraftBoard.js";
 import { renderFantasyBoardPanel } from "./fantasyDraftBoardView.js";
 import {
@@ -334,6 +335,7 @@ const FANTASY_SUBTAB_LABELS = {
   board: "My board",
   waivers: "Waivers",
   standings: "Standings",
+  settings: "Settings",
 };
 
 // Feed leads the bar (a running league lands on My team, see
@@ -346,13 +348,16 @@ const FANTASY_SUBTAB_LABELS = {
 // standings begin. Every gate lives in fantasySubTabAvailable so the disabled
 // attribute here, app.js's deep-link restore clamp and the body guards can
 // never disagree about which tabs a league currently has.
+// `isCommissioner` adds a Settings tab rather than showing a disabled one to
+// everybody: nine managers in ten will never be able to open it, and a
+// permanently dead button is worse than an absent one.
 export function fantasySubTabAvailable(subTab, draftStatus) {
   if (subTab === "board") return draftStatus !== "complete";
   if (subTab === "matchup" || subTab === "waivers" || subTab === "standings") return draftStatus === "complete";
-  return true; // feed, myteam, draftroom carry every phase
+  return true; // feed, myteam, draftroom, settings carry every phase
 }
 
-function renderFantasySubtabs(activeSubTab, draftStatus) {
+function renderFantasySubtabs(activeSubTab, draftStatus, isCommissioner = false) {
   const tab = (key, label) => {
     const enabled = fantasySubTabAvailable(key, draftStatus);
     return `<button class="fantasy-subtab ${activeSubTab === key ? "is-active" : ""}" type="button" data-fantasy-subtab="${key}" ${enabled ? "" : "disabled"}>${label}</button>`;
@@ -366,6 +371,8 @@ function renderFantasySubtabs(activeSubTab, draftStatus) {
       ${tab("board", "My board")}
       ${tab("waivers", "Waivers")}
       ${tab("standings", "Standings")}
+      ${isCommissioner ? tab("settings", "Settings") : ""}
+    </div>`;
     </div>`;
 }
 
@@ -395,7 +402,7 @@ export function renderFantasyLeagueHeader(league, members, activeSubTab) {
         <span class="chip">Snake draft</span>
       </div>
     </div>
-    ${renderFantasySubtabs(activeSubTab, league.draftStatus)}`;
+    ${renderFantasySubtabs(activeSubTab, league.draftStatus, Boolean(league.isCommissioner))}`;
 }
 
 // Wraps a sub-tab's body with the shared header inside the standard .fantasy
@@ -679,6 +686,147 @@ export function renderHeadToHeadCard(rows, previousWinnerUserId = null) {
       </div>
       <div class="fantasy-h2h__rows">${body}</div>
     </section>`;
+}
+
+// -- Gameweek tracker ------------------------------------------------------------
+//
+// Your starting eleven against the real fixtures they are in, with live scores.
+// The matchup above it answers "am I ahead"; this answers the question that
+// decides whether being ahead means anything: have I finished, or do I still
+// have four players to come?
+//
+// Only fixtures you have a starter in are listed. The full card already exists
+// in Scores, and repeating it here would bury the three matches that are
+// actually yours among seven that are not.
+export function renderGameweekTracker(tracker, { gameweek, hasLiveFeed = true } = {}) {
+  if (!hasLiveFeed) {
+    return `
+      <section class="card fantasy-gwtrack">
+        <h3 class="card__title">Gameweek ${esc(gameweek ?? "")}</h3>
+        <p class="note">Live scores are unavailable right now.${hint("Your points still update from the same feed once it is reachable again; only this view is affected.")}</p>
+      </section>`;
+  }
+  if (!tracker?.counts?.total) {
+    return `
+      <section class="card fantasy-gwtrack">
+        <h3 class="card__title">Gameweek ${esc(gameweek ?? "")}</h3>
+        <p class="note">No starting eleven set for this gameweek yet.</p>
+      </section>`;
+  }
+
+  const { counts, fixtures } = tracker;
+  const summary = trackerSummary(counts);
+  const pct = (n) => (counts.total ? Math.round((n / counts.total) * 100) : 0);
+
+  const rows = fixtures.length
+    ? fixtures.map((entry) => renderTrackerFixture(entry)).join("")
+    : `<p class="note">None of your starters have a fixture this gameweek.</p>`;
+
+  return `
+    <section class="card fantasy-gwtrack">
+      <div class="fantasy-standings__head">
+        <h3 class="card__title">Gameweek ${esc(gameweek ?? "")}</h3>
+        <p class="note">${esc(summary)}</p>
+      </div>
+      <div class="fantasy-gwtrack__bar" role="img" aria-label="${esc(summary)}">
+        <span class="fantasy-gwtrack__seg is-done" style="width:${pct(counts.done)}%"></span>
+        <span class="fantasy-gwtrack__seg is-live" style="width:${pct(counts.inPlay)}%"></span>
+        <span class="fantasy-gwtrack__seg is-blank" style="width:${pct(counts.blank)}%"></span>
+      </div>
+      <div class="fantasy-gwtrack__rows">${rows}</div>
+    </section>`;
+}
+
+// One fixture, with the score if it has one and your players in it named. The
+// names are the point: a scoreline without them is just the Scores tab.
+function renderTrackerFixture({ match, yours }) {
+  const live = isLiveStatus(match.status);
+  const played = match.score?.home != null && match.score?.away != null;
+  const score = played ? `${esc(match.score.home)} – ${esc(match.score.away)}` : "v";
+  const names = yours.map((player) => esc(player.name)).join(", ");
+
+  return `<div class="fantasy-gwtrack-row ${live ? "is-live" : ""}">
+      <span class="fantasy-gwtrack-row__status ${live ? "is-live" : ""}">${esc(statusLabel(match))}</span>
+      <span class="fantasy-gwtrack-row__teams">
+        ${badgeFor(match.homeTeam)}<span class="fantasy-gwtrack-row__score">${score}</span>${badgeFor(match.awayTeam)}
+      </span>
+      <span class="fantasy-gwtrack-row__yours">${names}</span>
+    </div>`;
+}
+
+// -- Commissioner settings -------------------------------------------------------
+//
+// Every lever a commissioner has, in one place, for the whole life of the
+// league. They were scattered before, and worse, they moved: the draft schedule
+// and the bot seats lived only in the lobby, which STOPS EXISTING the moment
+// the draft completes, and the waiver mode lived inside the Waivers tab, which
+// does not exist until it does. So a commissioner's controls appeared and
+// vanished depending on the week, and the only way to find one was to already
+// know where it used to be.
+//
+// Composed from the same renderers the lobby and waivers panel use rather than
+// reimplemented, so there is one definition of each control and no chance of
+// two copies drifting.
+//
+// A section that cannot act yet is shown with the reason rather than hidden.
+// Hiding it means a commissioner cannot discover that waiver mode is a thing
+// they choose until the week it starts mattering, which is too late to have an
+// opinion about it.
+export function renderFantasySettingsPanel(
+  league,
+  members,
+  {
+    seats,
+    schedule,
+    waivers = null,
+    scheduleBusy = false,
+    scheduleError = "",
+    botBusy = false,
+    botError = "",
+    championBusy = false,
+    championError = "",
+    settingsBusy = false,
+    settingsError = "",
+  } = {},
+) {
+  if (!league?.isCommissioner) {
+    return `<p class="note">Only the commissioner can change league settings.</p>`;
+  }
+
+  const pending = league.draftStatus === "pending";
+  const complete = league.draftStatus === "complete";
+
+  const draftSection = pending
+    ? renderFantasyScheduleCard(league, schedule, { scheduleBusy, scheduleError })
+    : `<section class="card">
+        <h3 class="card__title">Draft</h3>
+        <p class="note">${complete ? "This league has drafted." : "The draft is under way."}${hint("A draft can only be scheduled or started while the league is still pending.")}</p>
+      </section>`;
+
+  const botSection = pending
+    ? renderBotFillCard(league, members, seats, { botBusy, botError })
+    : `<section class="card">
+        <h3 class="card__title">Bot managers</h3>
+        <p class="note">Seats are fixed once the draft starts.${hint("Bots can only fill a seat before the draft, because the snake order is set when it begins.")}</p>
+      </section>`;
+
+  const waiverSection = complete
+    ? waivers
+      ? renderFantasyWaiverSettings(waivers, { busy: settingsBusy, error: settingsError, heading: "Waivers" })
+      : `<section class="card"><h3 class="card__title">Waivers</h3><p class="note">Loading waiver settings…</p></section>`
+    : `<section class="card">
+        <h3 class="card__title">Waivers</h3>
+        <p class="note">Free agency starts after the draft.${hint("Blind bidding, rolling list or reverse standings. You can change this any time before the first run.")}</p>
+        <p class="note--dim"><a href="learn/how-waivers-work/">How waivers work →</a></p>
+      </section>`;
+
+  return `
+    <div class="fantasy-settings">
+      ${draftSection}
+      ${botSection}
+      ${renderChampionCard(league, members, { championBusy, championError })}
+      ${waiverSection}
+    </div>`;
 }
 
 // -- Lobby (draftStatus: pending) -----------------------------------------------
@@ -1319,7 +1467,34 @@ function xpBadge(stats, position, xpStats) {
   return { text: `xP ${stats.xp.toFixed(1)}`, cls, title };
 }
 
-function renderPitchTile(player, { isCaptain, isPending, isDimmed, editing }, statsById, xpStats) {
+// A player's fixture line, from a prebuilt Map<team, label>. A club with no
+// fixture this gameweek says so rather than rendering blank: a missing line
+// reads as a rendering gap, and "no fixture" is a fact the manager needs before
+// the deadline, not after.
+// Map<team, label> for every club in the squad, or null when there is no feed
+// to build it from. "" is a real value meaning a blank gameweek, distinct from
+// the map being absent entirely.
+function buildOpponentLabels(roster, matches, gameweek) {
+  if (!matches?.length || gameweek == null) return null;
+  const teams = [...new Set((roster ?? []).map((player) => player.team).filter(Boolean))];
+  return new Map(
+    teams.map((team) => [team, opponentLabel(teamGameweekFixtures(matches, gameweek, team), team, abbrFor)]),
+  );
+}
+
+function renderOpponentLine(player, opponents, className) {
+  const label = opponents?.get(player.team);
+  if (label == null) return "";
+  return `<p class="${className}">${label ? esc(label) : "No fixture"}</p>`;
+}
+
+function renderOpponentSuffix(player, opponents) {
+  const label = opponents?.get(player.team);
+  if (label == null) return "";
+  return ` · ${label ? esc(label) : "No fixture"}`;
+}
+
+function renderPitchTile(player, { isCaptain, isPending, isDimmed, editing }, statsById, xpStats, opponents) {
   const stats = normalizePlayerStats(statsById.get(player.id) ?? {});
   const badge = xpBadge(stats, player.position, xpStats);
   const classes = ["fantasy-pitch__player"];
@@ -1331,12 +1506,13 @@ function renderPitchTile(player, { isCaptain, isPending, isDimmed, editing }, st
       <span class="fantasy-pitch__crest">${badgeFor(player.team)}</span>
       <p class="fantasy-pitch__name">${esc(player.name)}</p>
       <p class="fantasy-pitch__club">${esc(abbrFor(player.team))}</p>
+      ${renderOpponentLine(player, opponents, "fantasy-pitch__opp")}
       <p class="fantasy-pitch__xp ${badge.cls}" ${badge.title ? `title="${esc(badge.title)}" aria-label="${esc(badge.title)}"` : ""}>${badge.text}</p>
       ${editing && isPending ? `<button class="fantasy-pitch__captainbtn" type="button" data-fantasy-make-captain="${player.id}">Make captain</button>` : ""}
     </div>`;
 }
 
-function renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats }) {
+function renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats, opponents }) {
   const byId = new Map(roster.map((player) => [player.id, player]));
   const editing = Boolean(editState);
   const pending = editState?.pendingId ?? null;
@@ -1360,6 +1536,7 @@ function renderPitch({ roster, starterIds, benchIds, captainId, editState, stats
           },
           statsById,
           xpStats,
+          opponents,
         ),
       )
       .join("");
@@ -1421,7 +1598,7 @@ function renderPitchHead(currentGameweek, lineup, editState, roster) {
     ${editState?.error ? `<p class="fantasy-form__error">${esc(editState.error)}</p>` : ""}`;
 }
 
-function renderBenchRow(player, { isPending, isDimmed }, statsById, xpStats) {
+function renderBenchRow(player, { isPending, isDimmed }, statsById, xpStats, opponents) {
   const stats = normalizePlayerStats(statsById.get(player.id) ?? {});
   const badge = xpBadge(stats, player.position, xpStats);
   const xpCell =
@@ -1434,13 +1611,13 @@ function renderBenchRow(player, { isPending, isDimmed }, statsById, xpStats) {
   return `
     <div class="${classes.join(" ")}" data-fantasy-player-id="${player.id}" data-fantasy-slot="bench" role="button" tabindex="0">
       ${badgeFor(player.team)}
-      <span class="fantasy-bench-row__name"><strong>${esc(player.name)}</strong><span class="note--dim">${esc(abbrFor(player.team))}</span></span>
+      <span class="fantasy-bench-row__name"><strong>${esc(player.name)}</strong><span class="note--dim">${esc(abbrFor(player.team))}${renderOpponentSuffix(player, opponents)}</span></span>
       <span class="fantasy-pos">${esc(player.position)}</span>
       ${xpCell}
     </div>`;
 }
 
-function renderBench({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats }) {
+function renderBench({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats, opponents }) {
   const byId = new Map(roster.map((player) => [player.id, player]));
   const editing = Boolean(editState);
   const pending = editState?.pendingId ?? null;
@@ -1461,6 +1638,7 @@ function renderBench({ roster, starterIds, benchIds, captainId, editState, stats
         },
         statsById,
         xpStats,
+        opponents,
       ),
     )
     .join("");
@@ -1602,6 +1780,7 @@ export function renderFantasyRosterPanel({
   teamNameEditing = false,
   teamNameBusy = false,
   teamNameError = "",
+  matches = null,
   now = Date.now(),
 }) {
   if (!lineup) {
@@ -1611,6 +1790,11 @@ export function renderFantasyRosterPanel({
   }
 
   const statsById = new Map((playerPool ?? []).map((player) => [player.id, player]));
+  // One label per CLUB rather than per player: eleven players share four or
+  // five clubs, so this is a handful of lookups instead of one per tile. A null
+  // map (no feed) means every line is omitted rather than every player being
+  // told he has no fixture, which would be a lie rather than a gap.
+  const opponents = buildOpponentLabels(roster, matches, lineup.gameweek ?? currentGameweek);
   const starterIds = editState ? editState.starters : lineup.starters.map((entry) => entry.playerId);
   const captainId = editState ? editState.captainId : (lineup.starters.find((entry) => entry.isCaptain)?.playerId ?? null);
   const benchIds = editState ? editState.bench : lineup.bench;
@@ -1633,7 +1817,7 @@ export function renderFantasyRosterPanel({
     ${deadlineCard}
     <section class="card fantasy-pitch">
       ${renderPitchHead(currentGameweek, lineup, editState, roster)}
-      ${renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats })}
+      ${renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats, opponents })}
     </section>`;
 
   const drawerPlayer = drawerPlayerId != null ? (roster ?? []).find((player) => player.id === drawerPlayerId) ?? null : null;
@@ -1649,7 +1833,7 @@ export function renderFantasyRosterPanel({
     <div class="fantasy-myteam-grid">
       <div class="fantasy-myteam-grid__main">
         ${pitchCard}
-        ${renderBench({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats })}
+        ${renderBench({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats, opponents })}
       </div>
       <div class="fantasy-myteam-grid__rail">
         ${renderSquadXp({ roster, starterIds, statsById, xpStats })}
@@ -2349,7 +2533,11 @@ function renderFantasyPriorities(priorities, myUserId, mode) {
 // server-side by a pending claim belonging to someone else; that failure
 // falls through to the same form-error style as any other save failure below,
 // not a special second warning.
-function renderFantasyWaiverSettings(waivers, { busy = false, error = "" } = {}) {
+// `heading` because this card has two homes: inside the Waivers tab, where
+// "Commissioner settings" distinguishes it from the manager-facing panels
+// around it, and inside the Settings tab, where that title would be saying the
+// same word twice.
+function renderFantasyWaiverSettings(waivers, { busy = false, error = "", heading = "Commissioner settings" } = {}) {
   const pendingOwnClaims = (waivers.myClaims ?? []).filter((claim) => claim.status === "pending").length;
   const blocked = pendingOwnClaims > 0;
   const disabledAttr = busy || blocked ? "disabled" : "";
@@ -2358,8 +2546,8 @@ function renderFantasyWaiverSettings(waivers, { busy = false, error = "" } = {})
   ).join("");
   return `
     <section class="card fantasy-waiver-settings">
-      <h3 class="card__title">Commissioner settings</h3>
-      <p class="note">${esc(waiverModeExplanation(waivers.mode))}</p>
+      <h3 class="card__title">${esc(heading)}</h3>
+      <p class="note">${esc(waiverModeLabel(waivers.mode))}${hint(waiverModeExplanation(waivers.mode))}</p>
       <div class="fantasy-form__row">
         <select class="fantasy-select" data-fantasy-settings-mode ${disabledAttr}>${options}</select>
         <input class="fantasy-input" type="number" min="0" step="1" value="${esc(waivers.faabBudget)}" data-fantasy-settings-budget ${disabledAttr} />
