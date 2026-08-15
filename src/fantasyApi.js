@@ -62,11 +62,6 @@ export async function loadLeague(id) {
   return api(`/fantasy/league/${id}`);
 }
 
-// Commissioner-only, pending-only: fills `count` empty seats with bot
-// managers so a league that never found ten people can still draft on the day
-// it planned to (see src/fantasyBots.js). Returns { league, added: [name] }.
-// Throws with error.status 403 for a non-commissioner, 400 for a bad count,
-// a full league, or a draft that has already started.
 // Names the CALLER's own squad in this league (issue #48). No user id in the
 // path or the body: the Worker scopes the write to the session's own seat, so
 // there is no way to spell "rename somebody else". An empty name clears it and
@@ -92,6 +87,11 @@ export async function clearLeagueChampion(leagueId) {
   return api(`/fantasy/league/${leagueId}/champion`, { method: "DELETE" });
 }
 
+// Commissioner-only, pending-only: fills `count` empty seats with bot
+// managers so a league that never found ten people can still draft on the day
+// it planned to (see src/fantasyBots.js). Returns { league, added: [name] }.
+// Throws with error.status 403 for a non-commissioner, 400 for a bad count,
+// a full league, or a draft that has already started.
 export async function addLeagueBots(leagueId, count) {
   return api(`/fantasy/league/${leagueId}/bots`, { method: "POST", body: JSON.stringify({ count }) });
 }

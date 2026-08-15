@@ -70,7 +70,7 @@ test("the feed marks the viewer's own messages", () => {
 test("an empty feed explains what will land in it rather than showing nothing", () => {
   const html = renderFeedEntries([], {});
   assert.match(html, /fantasy-feed-empty/);
-  assert.match(html, /waiver claim/);
+  assert.match(html, /claim/);
 });
 
 test("a pending optimistic message renders dimmed and without reaction controls", () => {

@@ -24,6 +24,28 @@
 //               test/tutorials.test.js, so this content can never quietly
 //               drift from the deployed rules.
 
+import { SCORING } from "./fantasy.js";
+
+// The points table in the scoring tutorial is DERIVED from SCORING rather than
+// retyped, for the same reason the waiver resolver block is cross-checked
+// against the real engine: a tutorial that quietly disagrees with the deployed
+// rules is worse than no tutorial. Change a value in src/fantasy.js and this
+// table changes with it.
+const byPosition = (value) =>
+  typeof value === "number"
+    ? ["GK", "DEF", "MID", "FWD"].map(() => String(value))
+    : ["GK", "DEF", "MID", "FWD"].map((position) => String(value[position]));
+
+const SCORING_TABLE_ROWS = [
+  ["Playing in a match", ...byPosition(SCORING.appearance)],
+  ["Goal", ...byPosition(SCORING.goal)],
+  ["Assist", ...byPosition(SCORING.assist)],
+  ["Clean sheet", ...byPosition(SCORING.cleanSheet)],
+  ["Yellow card", ...byPosition(SCORING.yellowCard)],
+  ["Red card", ...byPosition(SCORING.redCard)],
+  ["Own goal", ...byPosition(SCORING.ownGoal)],
+];
+
 export const TUTORIALS = [
   {
     slug: "first-league",
@@ -319,6 +341,76 @@ export const TUTORIALS = [
         type: "callout",
         body: [
           "A free agent you can add instantly. A player on the wire you cannot, no matter how fast you are. Those are two different buttons doing two different things, and the difference is only ever how recently that player was dropped.",
+        ],
+      },
+    ],
+  },
+  {
+    slug: "scoring",
+    title: "How scoring works",
+    summary: "What every action on the pitch is worth, why a defender's goal beats a striker's, and how your gameweek total is actually built.",
+    minutes: 6,
+    sections: [
+      {
+        type: "prose",
+        heading: "Your score is your starting eleven, and nothing else",
+        body: [
+          "Every gameweek you field eleven players from your fifteen-man squad. Only those eleven score. Your four substitutes score nothing at all, however well they played, and there is no automatic substitution if one of your starters does not get on the pitch.",
+          "That is the single most expensive thing to get wrong, and it is entirely within your control: a starter who is injured, suspended or on the bench for his club is eleven points of appearance and clean-sheet value you simply did not collect.",
+        ],
+      },
+      {
+        type: "table",
+        heading: "What everything is worth",
+        columns: ["Action", "GK", "DEF", "MID", "FWD"],
+        rows: SCORING_TABLE_ROWS,
+        note: "Points are per match. A player who features in two matches in the same gameweek scores in both, and the two are added together.",
+      },
+      {
+        type: "prose",
+        heading: "Why a defender's goal is worth more than a striker's",
+        body: [
+          "A forward is picked to score and will get chances every week. A centre-half might manage three goals all season. Paying both the same would mean the goal that actually swings your gameweek is the one you could most easily have predicted.",
+          "The same logic runs through clean sheets in reverse. A goalkeeper or defender keeping a clean sheet is doing the job you drafted them for, so it is worth four. A midfielder gets one, because it is a genuine but incidental contribution. A forward gets nothing, because nobody drafts a striker hoping for a 0-0.",
+        ],
+      },
+      {
+        type: "prose",
+        heading: "Appearance points are the floor",
+        body: [
+          "Every player who takes the pitch earns two points for doing so. It sounds trivial and it is the most reliable thing in the game: eleven starters who all play is twenty-two points before anybody touches the ball.",
+          "This is why minutes matter as much as talent when you draft. A brilliant player who starts half the time is worth less over a season than a dependable one who starts every week, and it is why the draft board shows you appearances alongside expected points.",
+        ],
+      },
+      {
+        type: "states",
+        heading: "Cards, and the one rule people get wrong",
+        items: [
+          { title: "Yellow card", tone: "warn", body: "Minus one. Only ever counted once in a match, however many bookings are shown." },
+          { title: "Red card", tone: "bad", body: "Minus three, and it replaces the yellow rather than adding to it. A second-bookable offence costs you three, not four." },
+          { title: "Own goal", tone: "bad", body: "Minus two, for any position." },
+        ],
+      },
+      {
+        type: "prose",
+        heading: "The captain",
+        body: [
+          "One of your eleven wears the armband and scores double. Everything doubles, including the bad: a captain sent off in the first half costs you six rather than three.",
+          "The safest captain is usually the one most certain to play ninety minutes, not the one with the highest ceiling. Doubling two appearance points is guaranteed; doubling a blank is nothing.",
+        ],
+      },
+      {
+        type: "prose",
+        heading: "Double and blank gameweeks",
+        body: [
+          "A gameweek is a window of time, not a fixed round of fixtures. When a match is rescheduled it lands in whichever window actually contains its new kickoff, which means some clubs occasionally play twice in one gameweek and some play not at all.",
+          "A player in a double gameweek scores in both matches and you get the sum. A player in a blank gameweek scores nothing, and no substitute comes on for him. The My team screen tells you which of your players are in each situation before the deadline, so it is worth a look rather than a surprise.",
+        ],
+      },
+      {
+        type: "callout",
+        body: [
+          "You win a gameweek by outscoring one other manager, not by hitting a number. A 38-point week that beats their 35 is worth exactly as much as a 90-point demolition: three league points either way.",
         ],
       },
     ],

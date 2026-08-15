@@ -38,8 +38,8 @@ export function deadlineBanner({ gameweek, deadline, locked, preseason, seasonSt
       kind: "locked",
       headline: `Gameweek ${gameweek} squad locked`,
       detail: preseason
-        ? `The season starts ${formatLocalSchedule(seasonStart)}. Your squad is already locked for the opening gameweek.`
-        : `Locked ${formatLocalSchedule(deadline)}, two hours before the first kickoff.`,
+        ? `Season starts ${formatLocalSchedule(seasonStart)}.`
+        : `Locked ${formatLocalSchedule(deadline)}.`,
       countdown: "",
     };
   }
@@ -58,7 +58,7 @@ export function deadlineBanner({ gameweek, deadline, locked, preseason, seasonSt
       kind: "preseason",
       headline: `Season starts ${formatLocalSchedule(seasonStart)}`,
       detail:
-        "Pre-season: lineups, captaincy and transfers are all open, and no player is locked. Squads lock two hours before the first kickoff of each gameweek.",
+        "Lineups, captaincy and transfers are all open.",
       countdown: "",
     };
   }
@@ -67,7 +67,7 @@ export function deadlineBanner({ gameweek, deadline, locked, preseason, seasonSt
     return {
       kind: "unknown",
       headline: "Deadline not available",
-      detail: "The fixture list could not be read just now, so this gameweek's deadline is unknown.",
+      detail: "The fixture list could not be read just now.",
       countdown: "",
     };
   }
@@ -79,8 +79,8 @@ export function deadlineBanner({ gameweek, deadline, locked, preseason, seasonSt
     // opening-day banner carries both facts rather than dropping one.
     detail:
       preseason && seasonStart != null
-        ? `The season starts ${formatLocalSchedule(seasonStart)}. Squads lock ${formatLocalSchedule(deadline)}, two hours before the first kickoff.`
-        : `Squads lock ${formatLocalSchedule(deadline)}, two hours before the first kickoff.`,
+        ? `Season starts ${formatLocalSchedule(seasonStart)}. Squads lock ${formatLocalSchedule(deadline)}.`
+        : `Squads lock ${formatLocalSchedule(deadline)}.`,
     countdown: untilDeadline == null ? "" : formatScheduleCountdown(untilDeadline),
   };
 }
@@ -161,9 +161,9 @@ export function matchupTiming(matchup, now) {
 export function byeNote(gameweek, leagueSize) {
   const why =
     Number.isFinite(leagueSize) && leagueSize % 2 === 1
-      ? `Your league has ${leagueSize} managers, an odd number, so one manager is unpaired every gameweek and this week it is you.`
-      : "There is an odd number of managers to pair up this gameweek, so one of you is unpaired and this week it is you.";
-  return `${why} You play Average for gameweek ${gameweek}: your points still count, and you win by outscoring the median of the managers who played each other.`;
+      ? `Odd number of managers (${leagueSize}), so one is unpaired each gameweek.`
+      : "Odd number of managers, so one is unpaired each gameweek.";
+  return `${why} You play Average: beat the median of the managers who played each other and you win.`;
 }
 
 // -- The season schedule ----------------------------------------------------------

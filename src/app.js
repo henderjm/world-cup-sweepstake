@@ -236,14 +236,40 @@ function resolveInitialLearnHash(rawHash) {
   return { section: "learn", slug: tutorialBySlug(match[1]) ? match[1] : null };
 }
 
+// Valid fantasy sub-tabs, so a hand-edited or stale URL cannot put the shell
+// into a tab that does not exist. Mirrors the data-fantasy-subtab values in
+// fantasyView.js's shell.
+const FANTASY_SUB_TABS = ["feed", "matchup", "myteam", "draftroom", "board", "waivers", "standings"];
+
+// `#fantasy/<leagueId>/<subTab>` — the league and tab a manager is actually
+// looking at, so a refresh (or a shared link, or the back button) lands where
+// they were rather than dumping them at the Fantasy root. Same shape as
+// `#learn/<slug>` above, deliberately: one hash convention, not two.
+//
+// Both trailing parts are optional and independently validated. A league id
+// that is not a number, or a tab this build does not have, degrades to the
+// plain section rather than erroring.
+function resolveInitialFantasyHash(rawHash) {
+  const match = /^fantasy(?:\/(\d+))?(?:\/([a-z]+))?$/.exec(rawHash);
+  if (!match) return { section: rawHash, leagueId: null, subTab: null };
+  return {
+    section: "fantasy",
+    leagueId: match[1] ? Number(match[1]) : null,
+    subTab: FANTASY_SUB_TABS.includes(match[2]) ? match[2] : null,
+  };
+}
+
 const rawInitialHash = window.location.hash.replace("#", "");
+const initialFantasy = resolveInitialFantasyHash(rawInitialHash);
 const initialLearn = resolveInitialLearnHash(rawInitialHash);
 const initialJoinCode = resolveInitialJoinHash(rawInitialHash);
 const initialHash = initialJoinCode
   ? "join"
   : initialLearn.section === "learn"
     ? "learn"
-    : (HASH_ALIASES[rawInitialHash] ?? rawInitialHash);
+    : initialFantasy.section === "fantasy"
+      ? "fantasy"
+      : (HASH_ALIASES[rawInitialHash] ?? rawInitialHash);
 const state = {
   section: NON_SCORES_SECTIONS.includes(initialHash) ? initialHash : "scores",
   tab: SCORES_TABS.includes(initialHash) ? initialHash : "live",
@@ -260,7 +286,12 @@ const state = {
     loading: false,
     mount: null,
   },
-  fantasy: initialFantasyState(),
+  fantasy: Object.assign(initialFantasyState(), {
+    // Where the URL says we should be. Consumed once, by renderFantasy, as soon
+    // as there is a session to load it with (see restoreFantasyRoute).
+    restoreLeagueId: initialFantasy.leagueId,
+    restoreSubTab: initialFantasy.subTab,
+  }),
   invite: initialInviteState(initialJoinCode),
   demo: initialDemoState(),
   learn: {
@@ -914,6 +945,20 @@ function renderFantasy() {
       elements.layout.innerHTML = `<p class="note">Loading your leagues…</p>`;
       loadFantasyLeagues();
       return;
+    }
+    // The URL asked for a specific league (a refresh, a bookmark, a shared
+    // link). Honoured before the single-league shortcut below, and only if the
+    // caller is actually a member of it, so a stale or guessed id falls through
+    // to the list rather than hanging on a league they cannot load.
+    if (f.restoreLeagueId != null) {
+      const wanted = f.leagues.find((league) => league.id === f.restoreLeagueId);
+      f.restoreLeagueId = null;
+      if (wanted) {
+        openFantasyLeague(wanted.id);
+        elements.layout.innerHTML = `<p class="note">Loading league…</p>`;
+        return;
+      }
+      f.restoreSubTab = null;
     }
     // Straight into the league when there is only one to be in. A list of one
     // is not a choice, it is a tap between the manager and the thing they
@@ -1871,6 +1916,7 @@ async function openFantasyLeague(id) {
   teardownFantasyDraftRoom();
   const f = state.fantasy;
   f.browsingLeagues = false;
+  f.restoreLeagueId = null; // consumed; a later open is a real navigation
   f.activeLeagueId = id;
   f.league = null;
   f.myUserId = null;
@@ -1919,7 +1965,12 @@ async function openFantasyLeague(id) {
     if (f.activeLeagueId !== id) return; // navigated elsewhere mid-flight
     f.league = detail;
     f.myUserId = detail.viewerUserId ?? null;
-    f.subTab = defaultFantasySubTab(detail.league.draftStatus);
+    // A tab named in the URL wins over the default, so a refresh lands on the
+    // screen the manager was actually looking at. Consumed once: a later
+    // openFantasyLeague (they navigated somewhere themselves) uses the default.
+    f.subTab = f.restoreSubTab ?? defaultFantasySubTab(detail.league.draftStatus);
+    f.restoreSubTab = null;
+    syncFantasyHash();
     // Best-effort: restores whatever shortlist this manager last saved for
     // this league (see persistFantasyQueue), so a reload/reconnect shows the
     // same queue the server would actually autopick from, rather than a
@@ -2539,6 +2590,8 @@ function closeFantasyLeague() {
   stopFantasyFeedPolling();
   const f = state.fantasy;
   f.browsingLeagues = true; // they chose the list; do not bounce them back in
+  f.restoreLeagueId = null;
+  f.restoreSubTab = null;
   f.activeLeagueId = null;
   f.league = null;
   f.myUserId = null;
@@ -3382,6 +3435,21 @@ function syncNav() {
   });
 }
 
+// The fantasy URL, rebuilt from state. Called on every change that a refresh
+// should survive: opening a league, leaving one, switching sub-tab.
+// replaceState rather than pushState, so switching tabs does not stack up
+// history entries a manager then has to press back through.
+function syncFantasyHash() {
+  if (state.section !== "fantasy") return;
+  const f = state.fantasy;
+  const parts = ["fantasy"];
+  if (f.activeLeagueId != null) {
+    parts.push(String(f.activeLeagueId));
+    if (f.subTab) parts.push(f.subTab);
+  }
+  window.history.replaceState(null, "", `#${parts.join("/")}`);
+}
+
 function setSection(section) {
   if (state.section === section) return;
   const previous = state.section;
@@ -3936,6 +4004,7 @@ function wireLayoutControls() {
       state.fantasy.lineupEdit = null;
       state.fantasy.playerDrawerId = null;
       state.fantasy.waiverFlow = null;
+      syncFantasyHash();
       renderLayout();
       return;
     }

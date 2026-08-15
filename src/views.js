@@ -549,7 +549,7 @@ export function renderStats(model, sortKey = "goals") {
       </div>
       ${rows}
     </section>
-    <p class="note" style="margin:12px 2px 0;">Goal involvements across the season. Penalties count; own goals and shootout kicks do not. Updates every few minutes.</p>`;
+    <p class="note" style="margin:12px 2px 0;">Goal involvements this season.<span title="Penalties count. Own goals and shootout kicks do not. Updates every few minutes." class="fantasy-hint" role="img" aria-label="Penalties count. Own goals and shootout kicks do not.">?</span></p>`;
 }
 
 function seasonLabel(model) {

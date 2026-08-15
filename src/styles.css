@@ -3326,3 +3326,30 @@ button { font-family: inherit; cursor: pointer; }
 }
 .fantasy-h2h-row__record { font-weight: 900; letter-spacing: 0.02em; }
 .fantasy-h2h-row__pts { text-align: right; color: var(--faint); font-size: 12px; }
+
+/* The one explanatory affordance in the fantasy UI (see hint() in
+   fantasyView.js). Panels used to carry a paragraph each; a screen made of
+   paragraphs is a screen nobody reads, and on a phone the prose pushes the
+   control it is explaining off-screen. Small, low-contrast and inline, so it
+   sits beside a label without competing with it. */
+.fantasy-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin-left: 6px;
+  padding: 0;
+  border: 1px solid var(--faint);
+  border-radius: 50%;
+  background: none;
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: help;
+  vertical-align: middle;
+  flex: none;
+}
+.fantasy-hint:hover,
+.fantasy-hint:focus-visible { color: var(--text); border-color: var(--text); }

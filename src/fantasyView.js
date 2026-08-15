@@ -79,6 +79,26 @@ function nameForUser(userId, members) {
 // this chip is what the structured ones add on top.
 const BOT_CHIP = `<span class="chip fantasy-chip--bot" title="A bot manager filling an empty seat: it autopicks and always fields a legal XI">BOT</span>`;
 
+// The one way this UI explains itself beyond a label.
+//
+// Panels used to carry a paragraph of prose each, and a screen made of
+// paragraphs is a screen nobody reads: the explanation crowds out the control
+// it is explaining, and on a phone it pushes the control off-screen entirely.
+// So the rule is a short label, and everything else behind this. Anything that
+// genuinely needs more than a sentence belongs in Learn, linked with
+// `data-tutorial-open`, not inlined here.
+//
+// `title` rather than a custom popover on purpose: it is free on desktop
+// hover, it is announced by screen readers via aria-label, and it needs no
+// state, no positioning and no dismissal handling. The trade is that touch
+// devices do not show it, which is why the visible label must always stand on
+// its own and the hint must never carry the only copy of something a manager
+// has to know.
+function hint(text) {
+  if (!text) return "";
+  return `<button class="fantasy-hint" type="button" title="${esc(text)}" aria-label="${esc(text)}" tabindex="0">?</button>`;
+}
+
 // Deliberately a separate chip from BOT, never a reuse: a bot is a real seat
 // with a real squad that a person could have taken, and Average is nobody at
 // all. Calling it a bot would claim a manager exists where none does.
@@ -613,7 +633,7 @@ export function renderFantasyStandingsPanel(standings, { error = "", myUserId, p
         </div>
         <div class="fantasy-standings__rows">${body}</div>
       </div>
-      <p class="note--dim fantasy-standings__footnote">PTS is the head-to-head record (win 3, draw 1, loss 0), not football points.</p>
+      <p class="note--dim fantasy-standings__footnote">Ranked by PTS${hint("PTS is the head-to-head record: 3 for a win, 1 for a draw. Not football points, and not the same as PF.")}</p>
     </section>
     ${renderHeadToHeadCard(standings.headToHead, previousWinnerUserId)}`;
 }
@@ -692,7 +712,7 @@ function renderBotFillCard(league, members, seats, { botBusy = false, botError =
     return seats.bots
       ? `<section class="card fantasy-bots">
           <h3 class="card__title">Bot managers</h3>
-          <p class="note">${seats.bots} of the ${seats.total} seats ${seats.bots === 1 ? "is" : "are"} filled by a bot manager. Bots autopick their squad and always field a legal XI. They are labelled everywhere they appear.</p>
+          <p class="note">${seats.bots} of ${seats.total} seats filled by a bot.${hint("A bot autopicks its squad when its clock runs out and always fields a legal XI. It is labelled everywhere it appears.")}</p>
         </section>`
       : "";
   }
@@ -716,7 +736,7 @@ function renderBotFillCard(league, members, seats, { botBusy = false, botError =
   return `
     <section class="card fantasy-bots">
       <h3 class="card__title">Fill empty seats with bots</h3>
-      <p class="note">A draft league needs a full room. Rather than wait for people who may never join, fill the spare seats with bot managers and draft on schedule. A bot autopicks its squad when its clock runs out and always fields a legal XI, and it is labelled as a bot everywhere it appears, so nobody is ever misled into thinking they are playing a person.</p>
+      <p class="note">Draft on schedule instead of waiting for a full room.${hint("A bot autopicks its squad when its clock runs out and always fields a legal XI. It is labelled as a bot everywhere it appears, so nobody is misled into thinking they are playing a person.")}</p>
       ${
         seats.open
           ? `<div class="fantasy-bots__form">
@@ -896,7 +916,7 @@ export function renderFantasyInvitePreview(preview, { loading, error, signedIn, 
     : signedIn
       ? `<button class="btn btn--primary" type="button" data-fantasy-invite-join ${joining ? "disabled" : ""}>${joining ? "Joining…" : "Join this league"}</button>`
       : `<div class="fantasy-invitepage__signin" id="gisButton"></div>
-         <p class="note--dim">Sign in with Google and you'll be dropped straight into the league. We only use Google to sign you in. No posts, no contacts.</p>`;
+         <p class="note--dim">Sign in and you'll drop straight into the league.${hint("We only use Google to sign you in. No posts, no contacts.")}</p>`;
 
   return `
     <div class="fantasy fantasy-invitepage">
@@ -913,7 +933,8 @@ export function renderFantasyInvitePreview(preview, { loading, error, signedIn, 
       </div>
       <section class="card fantasy-invitepage__what">
         <h3 class="card__title">What you're joining</h3>
-        <p class="note">A head-to-head fantasy Premier League draft: every manager drafts their own 15-player squad in a live snake draft, nobody can own the same player twice, and you play one manager head to head each gameweek across the season.</p>
+        <p class="note">Draft a 15-player squad. Play one manager head to head each gameweek. No two managers can own the same player.</p>
+        <p class="note--dim"><a href="learn/running-your-first-league/">How a draft league works →</a></p>
       </section>
       <section class="card">
         <h3 class="card__title">Managers · ${seats.humans}${seats.bots ? ` + ${seats.bots} bot${seats.bots === 1 ? "" : "s"}` : ""} · ${seats.open} seat${seats.open === 1 ? "" : "s"} open</h3>
@@ -2211,8 +2232,8 @@ export function renderFantasyClaimFlow(flow, { roster, mode, lockedIds } = {}) {
           <p class="note--dim">${esc(addPlayer.position)} · ${esc(abbrFor(addPlayer.team))}</p>
         </div>
       </div>
-      <p class="note">Every squad slot is always full, so adding a ${esc(addPlayer.position)} means dropping one of your own ${esc(addPlayer.position)}s. Choose which one below.</p>
-      ${someLocked ? `<p class="note">This list is shorter than usual: a locked ${esc(addPlayer.position)} can't be dropped. Squads lock two hours before the gameweek's first kickoff, and a club that has already kicked off is locked regardless.</p>` : ""}
+      <p class="note">Drop one of your ${esc(addPlayer.position)}s.${hint("Every squad slot is always full, so an add is only ever legal alongside a drop from the same position.")}</p>
+      ${someLocked ? `<p class="note--dim">Locked players are hidden.${hint("Squads lock two hours before the gameweek's first kickoff, and a club that has already kicked off is locked regardless.")}</p>` : ""}
       <div class="fantasy-claim-flow__drops">${drops}</div>
       ${bidField}
       ${error ? `<p class="fantasy-form__error">${esc(error)}</p>` : ""}

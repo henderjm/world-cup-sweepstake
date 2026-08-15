@@ -85,7 +85,7 @@ export function renderFantasyPlayoffOddsPanel(result, { myUserId } = {}) {
     ? `<p class="note">Every manager in this league already qualifies for the ${esc(playoffSpots)}-spot playoff, so there is nothing left to project.</p>`
     : nothingDecided
       ? `<p class="note">Top ${esc(playoffSpots)} make the playoffs. No gameweek has been decided yet, so these are squad strength and the schedule only: expect them to sit close together and to say very little until real results land.</p>`
-      : `<p class="note">Top ${esc(playoffSpots)} make the playoffs. Odds are a Monte Carlo projection over the remaining schedule, not a guarantee.</p>`;
+      : `<p class="note">Top ${esc(playoffSpots)} make the playoffs.<span class="fantasy-hint" role="img" title="A Monte Carlo projection over the remaining schedule, not a guarantee." aria-label="A Monte Carlo projection over the remaining schedule, not a guarantee.">?</span></p>`;
 
   const rows = standings.map((row) => renderRow(row, myUserId)).join("");
 

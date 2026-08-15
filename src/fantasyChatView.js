@@ -154,7 +154,7 @@ function renderEntry(entry, { myUserId, signedIn }) {
 // pattern renderFantasyFreeAgentRows uses for the waivers lists).
 export function renderFeedEntries(entries, { myUserId = null, signedIn = true } = {}) {
   if (!entries?.length) {
-    return `<li class="fantasy-feed-empty"><p class="note">Nothing here yet. Every pick, waiver claim and lineup change lands in this feed, and so does whatever anyone has to say about it.</p></li>`;
+    return `<li class="fantasy-feed-empty"><p class="note">Nothing here yet. Every pick, claim and lineup change lands here.</p></li>`;
   }
   return entries.map((entry) => renderEntry(entry, { myUserId, signedIn })).join("");
 }

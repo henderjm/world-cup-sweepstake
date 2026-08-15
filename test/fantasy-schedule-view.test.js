@@ -57,7 +57,7 @@ test("on opening day the countdown appears even though the season has not starte
   assert.equal(banner.countdown, "3h 0m");
   // Both facts survive: the deadline AND that the season has not begun.
   assert.match(banner.detail, /season starts/i);
-  assert.match(banner.detail, /two hours before the first kickoff/);
+  assert.match(banner.detail, /Squads lock/);
 });
 
 test("a day and a half out from the opener is still the quiet pre-season banner", () => {
@@ -86,7 +86,7 @@ test("in season, the deadline banner counts down and names the lock time", () =>
   assert.equal(banner.kind, "open");
   assert.equal(banner.headline, "Gameweek 7 deadline");
   assert.equal(banner.countdown, "3h 0m");
-  assert.match(banner.detail, /two hours before the first kickoff/);
+  assert.match(banner.detail, /Squads lock/);
 });
 
 test("a locked squad says so, and still names the season start when pre-season", () => {
@@ -172,15 +172,17 @@ test("a live or final matchup shows its scores", () => {
 
 test("a bye is explained rather than left blank", () => {
   const note = byeNote(1, 3);
-  assert.match(note, /3 managers/);
-  assert.match(note, /odd/);
+  assert.match(note, /3\)/); // names the league size without spelling out a sentence
+  assert.match(note, /Odd/);
   // The week is not forfeited: an unpaired manager plays Average, so the copy
   // must promise a result rather than a blank week (src/fantasyAverage.js).
   assert.match(note, /play Average/);
   assert.match(note, /median/);
   assert.doesNotMatch(note, /score no points/);
+  // Kept to one short line: the full explanation lives in Learn, not here.
+  assert.ok(note.length < 170, `bye note is ${note.length} chars, too long for a card`);
   // Still explains itself when the league size is unknown.
-  assert.match(byeNote(1, null), /odd number of managers/);
+  assert.match(byeNote(1, null), /Odd number of managers/);
 });
 
 // -- The season schedule ----------------------------------------------------------

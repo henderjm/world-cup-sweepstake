@@ -390,3 +390,41 @@ test("the waivers tutorial's claims resolve identically through the real waiver 
     ["Player already claimed", "Player already claimed"],
   );
 });
+
+// -- The scoring tutorial ----------------------------------------------------
+//
+// Same discipline as the waiver resolver block: a tutorial that quietly
+// disagrees with the deployed rules is worse than no tutorial, so the numbers
+// are checked against the real SCORING constant rather than trusted.
+test("the scoring tutorial's points table matches the deployed scoring rules", async () => {
+  const { SCORING } = await import("../src/fantasy.js");
+  const tutorial = tutorialBySlug("scoring");
+  assert.ok(tutorial, "a scoring tutorial should exist");
+
+  const table = tutorial.sections.find((section) => section.type === "table");
+  assert.deepEqual(table.columns, ["Action", "GK", "DEF", "MID", "FWD"]);
+
+  const row = (label) => table.rows.find((r) => r[0] === label).slice(1).map(Number);
+  assert.deepEqual(row("Goal"), [SCORING.goal.GK, SCORING.goal.DEF, SCORING.goal.MID, SCORING.goal.FWD]);
+  assert.deepEqual(row("Clean sheet"), [
+    SCORING.cleanSheet.GK,
+    SCORING.cleanSheet.DEF,
+    SCORING.cleanSheet.MID,
+    SCORING.cleanSheet.FWD,
+  ]);
+  assert.deepEqual(row("Assist"), Array(4).fill(SCORING.assist));
+  assert.deepEqual(row("Playing in a match"), Array(4).fill(SCORING.appearance));
+  assert.deepEqual(row("Red card"), Array(4).fill(SCORING.redCard));
+  assert.deepEqual(row("Own goal"), Array(4).fill(SCORING.ownGoal));
+});
+
+test("the scoring tutorial gets a public page and a sitemap entry with no other edit", async () => {
+  const { learnPages, sitemapEntries } = await import("../src/learnSeo.js");
+  const page = learnPages(TUTORIALS).find((p) => p.tutorial.slug === "scoring");
+  assert.ok(page, "scoring should get its own /learn/ page");
+  assert.equal(page.slug, "how-scoring-works", "the public slug comes from the title");
+  assert.ok(
+    sitemapEntries({ tutorials: TUTORIALS }).some((entry) => entry.loc.includes("how-scoring-works")),
+    "it should appear in the sitemap",
+  );
+});

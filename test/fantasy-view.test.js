@@ -1149,7 +1149,7 @@ test("renderFantasyMatchupPanel explains a bye plainly when opponent is null", (
   assert.match(html, /You play Average/);
   // Names WHY, not just that it happened: an odd-sized league leaves somebody
   // unpaired every week and the manager it happens to has to be told that.
-  assert.match(html, /3 managers/);
+  assert.match(html, /\(3\)/); // names the league size
   assert.match(html, /median/);
   assert.doesNotMatch(html, /fantasy-matchup__vs/);
 });
@@ -1611,7 +1611,9 @@ test("renderFantasyClaimFlow lists only same-position roster players as drop can
   assert.match(html, /My Def One/);
   assert.match(html, /My Def Two/);
   assert.doesNotMatch(html, /My Mid/);
-  assert.match(html, /dropping one of your own DEF/);
+  // The rule moved into a hint; the visible line names the action.
+  assert.match(html, /Drop one of your DEFs/);
+  assert.match(html, /same position/);
   assert.doesNotMatch(html, /data-fantasy-claim-bid/); // free-agent path never bids
 });
 
@@ -1653,7 +1655,7 @@ test("renderFantasyClaimFlow excludes a locked roster player from drop candidate
   const html = renderFantasyClaimFlow(flow, { roster, mode: "faab", lockedIds: new Set([20]) });
   assert.doesNotMatch(html, /Locked Def/);
   assert.match(html, /Open Def/);
-  assert.match(html, /list is shorter than usual/);
+  assert.match(html, /Locked players are hidden/);
 });
 
 test("renderFantasyClaimFlow does not filter locked players out of drop candidates on the waiver-claim path", () => {
@@ -1726,7 +1728,7 @@ test("a non-commissioner is told bots are in the league but is offered no contro
   });
   assert.doesNotMatch(html, /data-fantasy-add-bots/);
   assert.doesNotMatch(html, /data-fantasy-remove-bot/);
-  assert.match(html, /filled by a bot manager/);
+  assert.match(html, /seats filled by a bot/);
 });
 
 test("the invite card leads with a shareable link and keeps the raw code below it", () => {
