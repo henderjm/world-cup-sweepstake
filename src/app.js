@@ -49,7 +49,7 @@ import {
 } from "./account.js";
 import { disablePush, enablePush, pushState, sendTestPush } from "./push.js";
 import { setMatchModel, setupMatchDetail, openMatch } from "./matchDetail.js";
-import { isLive } from "./format.js";
+import { isFinished, isLive } from "./format.js";
 import { todayPaperRunDate } from "./paperRunModel.js";
 import {
   displayName,
@@ -133,6 +133,7 @@ import { renderFantasyPlayoffOddsPanel } from "./fantasyPlayoffOddsView.js";
 import { validateChampionChoice, withChampionFlags } from "./fantasyChampion.js";
 import { renderFantasyFeedPanel, renderFeedEntries } from "./fantasyChatView.js";
 import {
+  fantasySubTabAvailable,
   renderChampionCard,
   renderDraftErrorNotice,
   renderDraftStatusCard,
@@ -274,7 +275,11 @@ const state = {
   section: NON_SCORES_SECTIONS.includes(initialHash) ? initialHash : "scores",
   tab: SCORES_TABS.includes(initialHash) ? initialHash : "live",
   competition: storedCompetition(),
-  fixtureView: "results",
+  // null = data-driven default: Results once any match has finished, Upcoming
+  // before then (a pre-season visitor should not land on an empty Results
+  // panel with 380 fixtures hidden behind the other pill). A click on either
+  // pill sets it explicitly for the visit; see resolvedFixtureView.
+  fixtureView: null,
   // "All" or a club name, for the Fixtures club filter (issue #36). Reset
   // whenever the competition changes, since a club list is per competition.
   fixtureTeam: "All",
@@ -506,6 +511,7 @@ async function start() {
   setUpdatedLabel();
   window.setInterval(setUpdatedLabel, 1000);
   wireNav();
+  wireHashRouting();
   wireLayoutControls();
   wireViewportChange();
   setupMatchDetail(model, { drawer: elements.matchDrawer });
@@ -718,7 +724,7 @@ function renderPanel() {
     case "knockout":
       return renderKnockout(model);
     case "fixtures":
-      return renderFixtures(model, state.fixtureView, state.fixtureTeam);
+      return renderFixtures(model, resolvedFixtureView(), state.fixtureTeam);
     case "stats":
       return renderStats(model, state.statsSort);
     default:
@@ -1353,6 +1359,13 @@ async function postFantasyFeed(body) {
 // later" belongs next to "who am I playing now".
 function renderFantasyMatchupBody() {
   const f = state.fantasy;
+  // Deep-link cover only: the Matchup tab itself is disabled until the draft
+  // completes (fantasySubTabAvailable), so an in-app click can never land
+  // here early. Without this guard a pre-draft load would 400 ("draft not
+  // complete") into an error card with a Retry that can never succeed.
+  if (f.league?.league?.draftStatus !== "complete") {
+    return `<p class="note">Matchups appear once the draft is complete.</p>`;
+  }
   if (!f.matchup && !f.matchupLoading && !f.matchupError) loadFantasyMatchup(f.activeLeagueId);
   if (!f.seasonSchedule && !f.seasonScheduleLoading && !f.seasonScheduleError) loadFantasyLeagueSchedule(f.activeLeagueId);
   return `
@@ -1389,6 +1402,10 @@ async function loadFantasyLeagueSchedule(leagueId) {
 
 function renderFantasyStandingsBody() {
   const f = state.fantasy;
+  // Same deep-link cover as renderFantasyMatchupBody above.
+  if (f.league?.league?.draftStatus !== "complete") {
+    return `<p class="note">Standings appear once the draft is complete.</p>`;
+  }
   if (!f.standings && !f.standingsLoading && !f.standingsError) loadFantasyStandings(f.activeLeagueId);
   return `${renderFantasyStandingsPanel(f.standings, {
       error: f.standingsError,
@@ -1968,7 +1985,13 @@ async function openFantasyLeague(id) {
     // A tab named in the URL wins over the default, so a refresh lands on the
     // screen the manager was actually looking at. Consumed once: a later
     // openFantasyLeague (they navigated somewhere themselves) uses the default.
-    f.subTab = f.restoreSubTab ?? defaultFantasySubTab(detail.league.draftStatus);
+    // Clamped to the tabs this league currently has, so a stale bookmark (a
+    // waivers URL saved before a redraft, say) lands on the default instead of
+    // a disabled tab's body.
+    f.subTab =
+      f.restoreSubTab && fantasySubTabAvailable(f.restoreSubTab, detail.league.draftStatus)
+        ? f.restoreSubTab
+        : defaultFantasySubTab(detail.league.draftStatus);
     f.restoreSubTab = null;
     syncFantasyHash();
     // Best-effort: restores whatever shortlist this manager last saved for
@@ -3393,7 +3416,10 @@ function openTutorial(slug) {
   state.section = "learn";
   state.learn.slug = slug;
   state.learn.resolverMode = "faab";
-  window.history.replaceState(null, "", `#learn/${slug}`);
+  // pushState, not replaceState: a tutorial is a page of its own, so the
+  // browser's Back button returns to wherever it was opened from (the index,
+  // or a contextual link elsewhere). wireHashRouting handles the return trip.
+  window.history.pushState(null, "", `#learn/${slug}`);
   track("tutorial_opened", { slug });
   if (changingSection) renderAll();
   else renderLayout();
@@ -3457,7 +3483,12 @@ function setSection(section) {
   // A nav click always lands on that section's own default view: Learn's is
   // the tutorials index, not wherever a previous visit left off.
   if (section === "learn") state.learn.slug = null;
-  window.history.replaceState(null, "", `#${section === "scores" ? state.tab : section}`);
+  // pushState for top-level section moves, so the browser's Back button walks
+  // back through sections instead of leaving the site. Sub-navigation inside a
+  // section (scores tabs, fantasy sub-tabs) stays replaceState so tabs never
+  // stack up entries; wireHashRouting turns the resulting Back/Forward hash
+  // changes into renders.
+  window.history.pushState(null, "", `#${section === "scores" ? state.tab : section}`);
   metric("count", "section_view", 1, { tags: { section } });
   track("section_viewed", { section });
   // The sandbox is the top of the acquisition funnel and has no nav button of
@@ -3496,6 +3527,66 @@ function setTab(tab) {
   renderAll();
 }
 
+// Browser-driven hash changes: Back/Forward between the entries setSection and
+// openTutorial now push, plus a hand-edited hash or an in-page #link. This is
+// the read side of the URL contract whose write side is setSection/setTab/
+// syncFantasyHash. Programmatic pushState/replaceState never fires hashchange,
+// so this cannot loop with those writers; it re-derives state from the hash
+// with the same resolvers the boot path uses, so a hash means the same thing
+// however it arrives.
+function wireHashRouting() {
+  window.addEventListener("hashchange", () => {
+    const raw = window.location.hash.replace("#", "");
+    const fantasy = resolveInitialFantasyHash(raw);
+    const learn = resolveInitialLearnHash(raw);
+    const joinCode = resolveInitialJoinHash(raw);
+    const target = joinCode
+      ? "join"
+      : learn.section === "learn"
+        ? "learn"
+        : fantasy.section === "fantasy"
+          ? "fantasy"
+          : (HASH_ALIASES[raw] ?? raw);
+
+    if (target === "join") {
+      state.invite = initialInviteState(joinCode);
+      state.section = "join";
+    } else if (target === "learn") {
+      state.section = "learn";
+      state.learn.slug = learn.slug;
+    } else if (target === "fantasy") {
+      state.section = "fantasy";
+      const f = state.fantasy;
+      if (fantasy.leagueId != null && fantasy.leagueId !== f.activeLeagueId) {
+        // A different league than the one open: load it, restoring the tab the
+        // URL names (openFantasyLeague consumes restoreSubTab exactly as the
+        // boot-time restore does, including the availability clamp).
+        f.restoreSubTab = fantasy.subTab;
+        openFantasyLeague(fantasy.leagueId);
+        return;
+      }
+      if (fantasy.leagueId == null && f.activeLeagueId != null) {
+        closeFantasyLeague();
+        return;
+      }
+      if (fantasy.subTab && f.league) {
+        // Same transitional state the sub-tab click handler clears, minus the
+        // hash write: the browser already holds the hash that brought us here.
+        f.subTab = fantasy.subTab;
+        f.lineupEdit = null;
+        f.playerDrawerId = null;
+        f.waiverFlow = null;
+      }
+    } else if (NON_SCORES_SECTIONS.includes(target)) {
+      state.section = target;
+    } else {
+      state.section = "scores";
+      if (SCORES_TABS.includes(target)) state.tab = target;
+    }
+    renderAll();
+  });
+}
+
 function wireNav() {
   document.addEventListener("click", (event) => {
     const button = event.target.closest("[data-section-nav]");
@@ -3517,14 +3608,25 @@ function wireNav() {
   });
 }
 
+// Where the Fixtures panel lands when the visitor has not chosen: Results once
+// the competition has any, otherwise Upcoming, so pre-season never opens on an
+// empty list.
+function resolvedFixtureView() {
+  if (state.fixtureView) return state.fixtureView;
+  return model.matches.some((match) => isFinished(match.status)) ? "results" : "upcoming";
+}
+
 async function switchCompetition(code) {
   if (!COMPETITIONS[code] || code === state.competition) return;
   state.competition = code;
   // A club filter is meaningless across competitions: keeping "Arsenal"
   // selected on a switch to the Champions League would silently show an empty
   // fixture list for a club that is in the new competition under a different
-  // set of fixtures, or none at all.
+  // set of fixtures, or none at all. The fixtures view goes back to its
+  // data-driven default for the same reason: the new competition may be at a
+  // different point in its season.
   state.fixtureTeam = "All";
+  state.fixtureView = null;
   try {
     window.localStorage.setItem(COMPETITION_STORAGE_KEY, code);
   } catch {

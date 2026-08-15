@@ -1,4 +1,5 @@
 import { abbrFor, badgeFor } from "./badges.js";
+import { displayTeamName } from "./domain.js";
 import { dateLabel } from "./format.js";
 import { MAX_LEAGUE_SIZE } from "./fantasy.js";
 import { squadGameweekShape } from "./fantasyCalendar.js";
@@ -335,25 +336,36 @@ const FANTASY_SUBTAB_LABELS = {
   standings: "Standings",
 };
 
-// Feed leads the bar, and is where a running league lands by default (see
-// defaultFantasySubTab in app.js). League chat hidden behind a corner tab is
-// the version managers abandon for WhatsApp; the one that gets used is the one
-// they arrive on, where the moves and the talk about them share a timeline.
-// My board and Waivers are each live for exactly one half of a league's life
-// and disabled for the other, so the bar never grows: a board ranks players
-// nobody has drafted yet and is meaningless once every squad is fixed, which
-// is precisely when free agency and waivers begin.
-function renderFantasySubtabs(activeSubTab, waiversEnabled) {
-  const boardEnabled = !waiversEnabled;
+// Feed leads the bar (a running league lands on My team, see
+// defaultFantasySubTab in app.js, but the conversation stays one tap away at
+// the front of the bar rather than hidden behind a corner tab, which is the
+// version managers abandon for WhatsApp). The rest of the bar is gated by
+// where the league is in its life, so no tab ever offers a step out of
+// sequence: a board ranks players nobody has drafted yet and is meaningless
+// once every squad is fixed, which is precisely when free agency, matchups and
+// standings begin. Every gate lives in fantasySubTabAvailable so the disabled
+// attribute here, app.js's deep-link restore clamp and the body guards can
+// never disagree about which tabs a league currently has.
+export function fantasySubTabAvailable(subTab, draftStatus) {
+  if (subTab === "board") return draftStatus !== "complete";
+  if (subTab === "matchup" || subTab === "waivers" || subTab === "standings") return draftStatus === "complete";
+  return true; // feed, myteam, draftroom carry every phase
+}
+
+function renderFantasySubtabs(activeSubTab, draftStatus) {
+  const tab = (key, label) => {
+    const enabled = fantasySubTabAvailable(key, draftStatus);
+    return `<button class="fantasy-subtab ${activeSubTab === key ? "is-active" : ""}" type="button" data-fantasy-subtab="${key}" ${enabled ? "" : "disabled"}>${label}</button>`;
+  };
   return `
     <div class="fantasy-subtabs">
-      <button class="fantasy-subtab ${activeSubTab === "feed" ? "is-active" : ""}" type="button" data-fantasy-subtab="feed">Feed</button>
-      <button class="fantasy-subtab ${activeSubTab === "matchup" ? "is-active" : ""}" type="button" data-fantasy-subtab="matchup">Matchup</button>
-      <button class="fantasy-subtab ${activeSubTab === "myteam" ? "is-active" : ""}" type="button" data-fantasy-subtab="myteam">My team</button>
-      <button class="fantasy-subtab ${activeSubTab === "draftroom" ? "is-active" : ""}" type="button" data-fantasy-subtab="draftroom">Draft room</button>
-      <button class="fantasy-subtab ${activeSubTab === "board" ? "is-active" : ""}" type="button" data-fantasy-subtab="board" ${boardEnabled ? "" : "disabled"}>My board</button>
-      <button class="fantasy-subtab ${activeSubTab === "waivers" ? "is-active" : ""}" type="button" data-fantasy-subtab="waivers" ${waiversEnabled ? "" : "disabled"}>Waivers</button>
-      <button class="fantasy-subtab ${activeSubTab === "standings" ? "is-active" : ""}" type="button" data-fantasy-subtab="standings">Standings</button>
+      ${tab("feed", "Feed")}
+      ${tab("matchup", "Matchup")}
+      ${tab("myteam", "My team")}
+      ${tab("draftroom", "Draft room")}
+      ${tab("board", "My board")}
+      ${tab("waivers", "Waivers")}
+      ${tab("standings", "Standings")}
     </div>`;
 }
 
@@ -383,7 +395,7 @@ export function renderFantasyLeagueHeader(league, members, activeSubTab) {
         <span class="chip">Snake draft</span>
       </div>
     </div>
-    ${renderFantasySubtabs(activeSubTab, league.draftStatus === "complete")}`;
+    ${renderFantasySubtabs(activeSubTab, league.draftStatus)}`;
 }
 
 // Wraps a sub-tab's body with the shared header inside the standard .fantasy
@@ -1557,7 +1569,7 @@ function renderPlayerDrawer(player, { picks, statsById, priorSeasonStats, xpStat
         <div class="fantasy-drawer__head">
           ${badgeFor(player.team, "xl")}
           <p class="fantasy-drawer__name">${esc(player.name)}</p>
-          <p class="note">${esc(player.team)} · ${esc(player.position)}</p>
+          <p class="note">${esc(displayTeamName(player.team))} · ${esc(player.position)}</p>
           ${pickLabel ? `<span class="chip">Pick ${esc(pickLabel)}</span>` : ""}
         </div>
         <h4>Stats</h4>
@@ -1664,7 +1676,13 @@ function filterPlayers(players, filter, draftedIds, queuedIds) {
     if (filter?.position && filter.position !== "All" && player.position !== filter.position) return false;
     if (club !== "All" && player.team !== club) return false;
     if (!search) return true;
-    return player.name.toLowerCase().includes(search) || player.team.toLowerCase().includes(search);
+    // Match the display label too, so searching "forest" finds Nottingham's
+    // players even though the canonical key spells the club differently.
+    return (
+      player.name.toLowerCase().includes(search) ||
+      player.team.toLowerCase().includes(search) ||
+      displayTeamName(player.team).toLowerCase().includes(search)
+    );
   });
 }
 
@@ -1755,12 +1773,18 @@ export function renderFantasyPlayerRows(players, filter, context) {
 // player data (never a hardcoded team list, matching the "flows from the feed"
 // rule the rest of the app follows for badges/teams).
 function renderClubOptions(players, selectedClub) {
-  const clubs = [...new Set((players ?? []).map((player) => player.team).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  // Option VALUES stay the canonical join key (the filter compares against
+  // player.team); only the visible label goes through displayTeamName.
+  const clubs = [...new Set((players ?? []).map((player) => player.team).filter(Boolean))].sort((a, b) =>
+    displayTeamName(a).localeCompare(displayTeamName(b)),
+  );
   const selected = selectedClub ?? "All";
   const allOption = `<option value="All"${selected === "All" ? " selected" : ""}>All clubs</option>`;
   return (
     allOption +
-    clubs.map((club) => `<option value="${esc(club)}"${selected === club ? " selected" : ""}>${esc(club)}</option>`).join("")
+    clubs
+      .map((club) => `<option value="${esc(club)}"${selected === club ? " selected" : ""}>${esc(displayTeamName(club))}</option>`)
+      .join("")
   );
 }
 
@@ -2146,7 +2170,13 @@ function filterWireEntries(wire, filter) {
     if (filter?.position && filter.position !== "All" && player.position !== filter.position) return false;
     if (club !== "All" && player.team !== club) return false;
     if (!search) return true;
-    return player.name.toLowerCase().includes(search) || player.team.toLowerCase().includes(search);
+    // Match the display label too, so searching "forest" finds Nottingham's
+    // players even though the canonical key spells the club differently.
+    return (
+      player.name.toLowerCase().includes(search) ||
+      player.team.toLowerCase().includes(search) ||
+      displayTeamName(player.team).toLowerCase().includes(search)
+    );
   });
 }
 

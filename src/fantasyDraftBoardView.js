@@ -13,6 +13,7 @@
 // place for the tier maths and the taken markers to drift.
 
 import { abbrFor, badgeFor } from "./badges.js";
+import { displayTeamName } from "./domain.js";
 import { activeTier, boardRows, isCustomBoard, MAX_NOTE_LENGTH } from "./fantasyDraftBoard.js";
 
 function esc(value) {
@@ -46,7 +47,9 @@ function matchesFilter(row, filter) {
   const search = (filter?.search ?? "").trim().toLowerCase();
   if (!search) return true;
   return (
-    String(row.player.name).toLowerCase().includes(search) || String(row.player.team).toLowerCase().includes(search)
+    String(row.player.name).toLowerCase().includes(search) ||
+    String(row.player.team).toLowerCase().includes(search) ||
+    displayTeamName(row.player.team).toLowerCase().includes(search)
   );
 }
 

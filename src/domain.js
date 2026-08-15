@@ -52,6 +52,24 @@ export function normalizeTeamName(name) {
   return TEAM_ALIASES.get(key) ?? value;
 }
 
+// Presentable labels for the join keys that are not natural club names.
+// The canonical name itself cannot be renamed: it is stored in D1
+// (follows.team, fantasy_players.team) and in every baked data file, so a
+// changed key would silently break push targeting and the kickoff-lock join
+// across a deploy boundary. Views map it to a label at render time instead;
+// anything carrying the name as a VALUE (filter options, follow toggles,
+// joins) keeps the canonical form.
+const TEAM_DISPLAY_NAMES = new Map(
+  Object.entries({
+    "Brighton Hove": "Brighton",
+    Nottingham: "Nottm Forest",
+  }),
+);
+
+export function displayTeamName(name) {
+  return TEAM_DISPLAY_NAMES.get(name) ?? name;
+}
+
 // Prefer the feed's shortName ("Arsenal") over the legal name ("Arsenal FC") so the
 // canonical name reads naturally everywhere. Both mappers and the standings share
 // this so the join key is identical across the app.

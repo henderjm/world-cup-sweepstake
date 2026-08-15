@@ -655,15 +655,30 @@ test("renderFantasyLeagueHeader shows the purple eyebrow, the active sub-tab's t
   assert.match(html, /Snake draft/);
 });
 
-test("renderFantasyLeagueHeader marks the active sub-tab and leaves the other three live", () => {
-  const html = renderFantasyLeagueHeader({ name: "Test League" }, members, "myteam");
-  const myTeamButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="myteam">/)[0];
+test("renderFantasyLeagueHeader marks the active sub-tab and leaves the season tabs live once the draft is complete", () => {
+  const html = renderFantasyLeagueHeader({ name: "Test League", draftStatus: "complete" }, members, "myteam");
+  const myTeamButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="myteam"[^>]*>/)[0];
   assert.match(myTeamButton, /is-active/);
-  const matchupButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="matchup">/)[0];
+  const matchupButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="matchup"[^>]*>/)[0];
   assert.doesNotMatch(matchupButton, /disabled/);
-  const standingsButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="standings">/)[0];
+  const standingsButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="standings"[^>]*>/)[0];
   assert.doesNotMatch(standingsButton, /disabled/);
   assert.doesNotMatch(html, /Soon/);
+});
+
+// The gate that keeps every step in sequence: a league that has not drafted
+// has no matchups, no standings and no waiver wire, so those tabs are inert
+// until the draft completes rather than leading to a request that can only 400.
+test("renderFantasyLeagueHeader disables Matchup, Standings and Waivers until the draft is complete", () => {
+  for (const draftStatus of ["pending", "drafting"]) {
+    const html = renderFantasyLeagueHeader({ name: "Test League", draftStatus }, members, "draftroom");
+    for (const tab of ["matchup", "standings", "waivers"]) {
+      const button = html.match(new RegExp(`<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="${tab}"[^>]*>`))[0];
+      assert.match(button, /disabled/, `${tab} should be disabled while ${draftStatus}`);
+    }
+    const boardButton = html.match(/<button class="fantasy-subtab[^"]*" type="button" data-fantasy-subtab="board"[^>]*>/)[0];
+    assert.doesNotMatch(boardButton, /disabled/, `board should stay live while ${draftStatus}`);
+  }
 });
 
 test("renderFantasyLeagueHeader puts Feed first in the sub-tab bar and never disables it", () => {

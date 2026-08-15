@@ -321,6 +321,11 @@ button { font-family: inherit; cursor: pointer; }
 .compchip.is-locked { color: var(--faint); cursor: default; }
 .compchip .soon { border: none; padding: 0; }
 
+/* On the centered "waiting for the season" panel the chips are a static set,
+   not a scroll rail: wrap them instead of clipping "Conference League"
+   mid-word at the panel's edge. */
+.pending .compchips { flex-wrap: wrap; justify-content: center; overflow-x: visible; }
+
 /* Hero ------------------------------------------------------------------------ */
 
 .hero__head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px; }
@@ -2686,6 +2691,12 @@ button { font-family: inherit; cursor: pointer; }
 
 .tutorial {
   max-width: 720px;
+  width: 100%;
+  /* min-width: 0 so this grid item can shrink below its content's min-content
+     width on a phone; without it the resolver tables' nowrap cells push the
+     whole article wider than the viewport and the prose clips off-screen
+     (same guard as .panelcol and .fantasy). */
+  min-width: 0;
   margin: 0 auto;
 }
 
