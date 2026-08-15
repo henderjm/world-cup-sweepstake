@@ -14,6 +14,7 @@ import {
   validateAcquisition,
   waiverRunReady,
   waiverRunWindow,
+  dropGoesToWire,
 } from "../src/fantasyWaivers.js";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -641,4 +642,27 @@ test("the guaranteed gap between the last acceptable claim and the run is hours,
   const lastClaimAt = GW10_LAST_KICKOFF - WAIVER_QUIET_PERIOD_MS - 1;
   const runAt = waiverRunWindow({ matches: GW10, gameweek: 10, now: lastClaimAt }).earliestRunAt;
   assert.ok(runAt - lastClaimAt >= WAIVER_QUIET_PERIOD_MS + WAIVER_SETTLE_BUFFER_MS);
+});
+
+// -- When the wire starts ----------------------------------------------------
+//
+// A manager expected to be able to churn their squad freely before the season
+// starts, and was right to: the first waiver run cannot fire until gameweek 1
+// has settled, so a pre-season drop used to freeze that player for the whole
+// league for weeks.
+test("a player dropped before the season starts goes back to free agency, not the wire", () => {
+  assert.equal(dropGoesToWire({ preseason: true }), false);
+});
+
+test("once the season is under way a drop goes to the wire", () => {
+  assert.equal(dropGoesToWire({ preseason: false }), true);
+});
+
+// The conservative side of an unreadable feed is the wire: silently disabling
+// it league-wide on a blip mid-season is worse than the pre-season case it
+// would otherwise fix.
+test("an unknown season phase keeps the wire, rather than disabling it", () => {
+  assert.equal(dropGoesToWire({ preseason: null }), true);
+  assert.equal(dropGoesToWire({}), true);
+  assert.equal(dropGoesToWire(), true);
 });

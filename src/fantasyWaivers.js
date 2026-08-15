@@ -112,6 +112,29 @@ export function waiverRunReady({ matches, settledGameweek, now } = {}) {
 // Classifies one player's availability for a league. `ownedIds`/`wireIds`
 // accept a Set or a plain array (the same leniency draftLogic.js's
 // draftedIds uses), since callers reach for whichever is already at hand.
+// Does a dropped player go onto the WIRE, or straight back to free agency?
+//
+// The wire starts when the season does. Its whole job is to stop a
+// drop-and-re-add cycle dodging the waiver queue, and pre-season there is no
+// queue to dodge: no gameweek has scored, no run can fire, and nobody gains an
+// edge from churning a squad they only just drafted.
+//
+// What the wire DOES cost pre-season is real and one-directional. The first run
+// cannot happen until gameweek 1 has settled, so anyone dropped during normal
+// post-draft tinkering is frozen for WEEKS, for the entire league rather than
+// just the manager who dropped him, and that manager cannot undo their own
+// mistake either. A league tidying up its squads could quietly freeze a chunk
+// of the player pool before a ball is kicked.
+//
+// `preseason` comes from seasonPhase (src/fantasyDeadlines.js), which derives
+// it from the schedule rather than a date, so a moved opening fixture moves it.
+// An UNKNOWN phase (no readable feed) returns true, the pre-existing behaviour:
+// the conservative side here is the wire, since the alternative would silently
+// disable it for a whole league on a feed blip mid-season.
+export function dropGoesToWire({ preseason } = {}) {
+  return preseason !== true;
+}
+
 export function playerAvailability({ playerId, ownedIds, wireIds } = {}) {
   const owned = ownedIds instanceof Set ? ownedIds.has(playerId) : Boolean(ownedIds?.includes?.(playerId));
   if (owned) return "owned";
