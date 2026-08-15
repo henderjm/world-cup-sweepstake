@@ -1,7 +1,7 @@
 import { abbrFor, badgeFor } from "./badges.js";
 import { DATA_API } from "./data.js";
 import { normalizeTeamName } from "./domain.js";
-import { dayLabel, formatStage, isFinished, isLive, timeLabel } from "./format.js";
+import { byPosition, dayLabel, formatStage, isFinished, isLive, timeLabel } from "./format.js";
 import { banterAvailable, mountBanter, unmountBanter } from "./banter.js";
 
 // Match drawer, Squad Goals style: a right slide-in with the score up top, then a
@@ -191,7 +191,16 @@ function renderDetail(match, detail) {
     const starters = team.lineup
       .map((p) => `<li><span class="xi__num">${p.num ?? ""}</span>${esc(p.name)}<span class="xi__pos">${esc(shortPos(p.pos))}</span></li>`)
       .join("");
-    const bench = (team.bench ?? []).map((p) => esc(p.name)).join(", ");
+    // Keeper first, then defence, midfield, attack (issue #51). The feed lists
+    // substitutes in its own order, which is not the order anyone reads a bench
+    // in; the starting XI above already arrives grouped by position, so a bench
+    // that is not makes the two lists look like they follow different rules.
+    // Sorted here rather than in mapApiFootball.js, which is the ingestion
+    // contract and should keep transporting what the provider actually sent.
+    const bench = [...(team.bench ?? [])]
+      .sort(byPosition)
+      .map((p) => esc(p.name))
+      .join(", ");
     return `<div class="xi">
         <div class="xi__head">${badgeFor(normalizeTeamName(team.name))}<span>${esc(team.name)}</span>
           ${team.formation ? `<span class="xi__formation">${esc(team.formation)}</span>` : ""}
