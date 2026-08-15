@@ -1,5 +1,5 @@
 import { abbrFor, badgeFor } from "./badges.js";
-import { dateLabel, isLive as isLiveStatus, statusLabel } from "./format.js";
+import { byPosition, dateLabel, isLive as isLiveStatus, statusLabel } from "./format.js";
 import { MAX_LEAGUE_SIZE } from "./fantasy.js";
 import { squadGameweekShape, teamGameweekFixtures } from "./fantasyCalendar.js";
 import { WAIVER_MODES } from "./fantasyWaivers.js";
@@ -1613,9 +1613,17 @@ function renderBench({ roster, starterIds, benchIds, captainId, editState, stats
       ? legalSwapTargets({ starters: starterIds, captainId, bench: benchIds, roster }, pending)
       : new Set();
 
+  // Keeper first, then defence, midfield, attack (issue #51), matching
+  // PITCH_ROW_ORDER directly above it. The bench arrives in roster order (the
+  // order the squad was drafted in, since /lineup derives it as "roster minus
+  // starters"), which is the one thing on this screen that carries no meaning
+  // for the manager reading it. Display only: benchIds itself is the swap
+  // state and stays exactly as app.js holds it, so a re-render after a swap
+  // cannot reorder anything but the rows.
   const rows = benchIds
     .map((id) => byId.get(id))
     .filter(Boolean)
+    .sort(byPosition)
     .map((player) =>
       renderBenchRow(
         player,

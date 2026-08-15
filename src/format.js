@@ -79,6 +79,39 @@ export function formatStage(stage) {
   );
 }
 
+// Football's own order for a list of players: keeper, defence, midfield,
+// attack. A bench read in any other order (the provider's, or the order a
+// squad happened to be drafted in) reads as unsorted, because every other
+// place the sport lists players uses this one.
+//
+// Keyed on the first letter rather than an exact string on purpose: the same
+// four positions arrive spelled three ways in this codebase - API-Football's
+// "G"/"D"/"M"/"F", the football-data.org era's "Goalkeeper"/"Defence"/
+// "Midfield"/"Offence" still sitting in the committed seed files, and the
+// fantasy pool's own "GK"/"DEF"/"MID"/"FWD" - and a lookup table would have to
+// list all of them and then silently fail on the fourth spelling. "Attacker"
+// is the one word that does not share its initial with the group it belongs
+// to, so it is mapped explicitly.
+//
+// An unknown or missing position sorts LAST rather than first: API-Football
+// leaves `pos` null on some substitutes, and a gap in the feed must never push
+// an unlabelled player above the goalkeeper.
+const POSITION_RANK = { G: 0, D: 1, M: 2, F: 3, A: 3, O: 3 };
+export const UNKNOWN_POSITION_RANK = 4;
+
+export function positionRank(pos) {
+  const initial = String(pos ?? "").trim().charAt(0).toUpperCase();
+  return POSITION_RANK[initial] ?? UNKNOWN_POSITION_RANK;
+}
+
+// Sorts a copy, and Array.prototype.sort is stable, so players sharing a
+// position keep whatever order they arrived in (the provider's own listing for
+// a club's bench, draft order for a fantasy squad). `position` covers the
+// fantasy pool's field name, `pos` the mapped feed's.
+export function byPosition(a, b) {
+  return positionRank(a?.position ?? a?.pos) - positionRank(b?.position ?? b?.pos);
+}
+
 export function isLive(status) {
   return LIVE_STATUSES.has(status);
 }
