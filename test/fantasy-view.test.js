@@ -323,7 +323,7 @@ test("the Starred filter narrows the pool to queued players, and says so when no
   // An empty shortlist must explain itself rather than reading as "no players
   // match", which sounds like the other filters are at fault.
   const none = renderFantasyPlayerRows(players, { position: "All", search: "", starredOnly: true }, { ...context, queuedIds: new Set() });
-  assert.match(none, /You have not starred anyone yet/);
+  assert.match(none, /Tap ☆ on players to build your shortlist/);
 });
 
 test("renderFantasyPlayerRows shows a Starter tier chip and the real appearances count when the pool has prior-season enrichment", () => {
@@ -617,7 +617,7 @@ test("renderFantasyLobby shows a non-commissioner the scheduled time read-only, 
     schedule: { scheduledAt },
   });
   assert.match(html, /Draft scheduled/);
-  assert.match(html, /auto-picked from the players still available/);
+  assert.match(html, /autopick drafts for you/);
   assert.doesNotMatch(html, /data-fantasy-schedule-save/);
   assert.doesNotMatch(html, /data-fantasy-schedule-clear/);
 });
@@ -743,7 +743,7 @@ function pick(overallPick, round, pickInRound, userId, player) {
 
 test("renderFantasyMyTeamPanel nudges toward the Draft room before the caller has any picks", () => {
   const html = renderFantasyMyTeamPanel([], 1);
-  assert.match(html, /haven't drafted anyone yet/);
+  assert.match(html, /No picks yet\. Head to the Draft room/);
   assert.match(html, /Draft room/);
 });
 
@@ -1385,7 +1385,7 @@ test("renderFantasyStandingsPanel shows a loading note before standings have loa
 
 test("renderFantasyStandingsPanel shows a generic (non gameweek-1-specific) empty state when throughGameweek is 0", () => {
   const html = renderFantasyStandingsPanel({ throughGameweek: 0, standings: [] }, {});
-  assert.match(html, /Standings appear once your league's first gameweek finishes/);
+  assert.match(html, /Standings appear once the first gameweek finishes/);
   assert.doesNotMatch(html, /gameweek 1/i);
 });
 
@@ -1471,16 +1471,16 @@ test("renderFantasyWaiversPanel's status header explains faab mode and shows the
   const html = renderFantasyWaiversPanel(waiversFixture({ mode: "faab" }), { myUserId: 3, roster: [] });
   assert.match(html, /Blind bidding/);
   assert.doesNotMatch(html, /FAAB/); // issue #35: no unexplained acronyms in the UI
-  assert.match(html, /highest bid wins/i);
+  assert.match(html, /Highest blind bid wins/);
   assert.match(html, /80/); // myBudgetRemaining
-  assert.match(html, /league budget 100/);
+  assert.match(html, /of 100 credits/);
   assert.doesNotMatch(html, /Your priority:/);
 });
 
 test("renderFantasyWaiversPanel's status header explains rolling mode and shows the caller's priority ordinal instead of a budget", () => {
   const html = renderFantasyWaiversPanel(waiversFixture({ mode: "rolling", myPriority: 3 }), { myUserId: 3, roster: [] });
   assert.match(html, /Rolling list/);
-  assert.match(html, /back of the queue/i);
+  assert.match(html, /go to the back/i);
   assert.match(html, /Your priority:.*3rd of 3/s);
   assert.doesNotMatch(html, /credits left/);
 });
@@ -1505,7 +1505,7 @@ test("the settings tab disables the waiver form and explains why when the caller
     { seats: { total: 10, humans: 1, bots: 0, open: 9 }, schedule: null, waivers: withPending },
   );
   assert.match(html, /data-fantasy-settings-save[^>]*disabled/);
-  assert.match(html, /can't change until it resolves/);
+  assert.match(html, /Can't change while a claim is pending/);
 });
 
 test("renderFantasyWaiversPanel's my-claims section shows a pending claim with a Cancel action and a resolved one with its rejection reason", () => {
@@ -1683,7 +1683,7 @@ test("REGRESSION: the free-agent panel never says 'nothing is locked' above lock
 
   assert.match(html, /fantasy-chip--locked/, "the row is locked");
   assert.doesNotMatch(html, /nothing is locked/, "the panel must not contradict its own rows");
-  assert.match(html, /squad deadline has passed/);
+  assert.match(html, /Squad deadline passed/);
 });
 
 test("season points show once played and are omitted entirely before any match", () => {
@@ -1857,7 +1857,7 @@ test("the invite card leads with a shareable link and keeps the raw code below i
   assert.match(html, /data-fantasy-copy-invite="https:\/\/kickoffdraft\.com\/#join\/AB12CD34"/);
   assert.match(html, /Copy link/);
   assert.match(html, /data-fantasy-copy-invite="AB12CD34"/);
-  assert.match(html, /sees the league before being asked to sign in/);
+  assert.match(html, /Copy code/);
 });
 
 test("the standings table labels a bot row", () => {

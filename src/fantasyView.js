@@ -634,7 +634,7 @@ export function renderFantasyStandingsPanel(standings, { error = "", myUserId, p
     return `
       <section class="card fantasy-standings-empty">
         <h3 class="card__title">Standings</h3>
-        <p class="note">Standings appear once your league's first gameweek finishes. Nobody has a completed gameweek yet.</p>
+        <p class="note">Standings appear once the first gameweek finishes.</p>
       </section>`;
   }
 
@@ -823,7 +823,7 @@ export function renderFantasySettingsPanel(
         busy: teamNameBusy,
         error: teamNameError,
       })}
-      <p class="note--dim">The name the rest of the league sees, everywhere your team appears.</p>
+
     </section>`;
 
   if (!league?.isCommissioner) {
@@ -938,7 +938,7 @@ function renderBotFillCard(league, members, seats, { botBusy = false, botError =
   return `
     <section class="card fantasy-bots">
       <h3 class="card__title">Fill empty seats with bots</h3>
-      <p class="note">Draft on schedule instead of waiting for a full room.${hint("A bot autopicks its squad when its clock runs out and always fields a legal XI. It is labelled as a bot everywhere it appears, so nobody is misled into thinking they are playing a person.")}</p>
+      <p class="note">${hint("A bot autopicks its squad when its clock runs out and always fields a legal XI. It is labelled as a bot everywhere it appears.")}Fill open seats to draft on schedule.</p>
       ${
         seats.open
           ? `<div class="fantasy-bots__form">
@@ -984,8 +984,7 @@ export function renderChampionCard(league, members, { championBusy = false, cham
 
   return `
     <section class="card fantasy-champion">
-      <h3 class="card__title">Defending champion</h3>
-      <p class="note">If your league played somewhere else before this, name the manager who won it. They'll wear the trophy 🏆 beside their name all season, and everyone else will have something to take off them.</p>
+      <h3 class="card__title">Defending champion ${hint("Played somewhere else last season? Name the winner. They wear the trophy 🏆 until someone takes it off them.")}</h3>
       <div class="fantasy-champion__form">
         <select class="fantasy-input fantasy-champion__select" data-fantasy-champion-select ${championBusy ? "disabled" : ""}>
           <option value="">Nobody yet</option>
@@ -1069,14 +1068,14 @@ function renderInviteCard(league, inviteUrl) {
               <code class="fantasy-invite__link">${esc(inviteUrl)}</code>
               <button class="btn btn--primary" type="button" data-fantasy-copy-invite="${esc(inviteUrl)}">Copy link</button>
             </div>
-            <p class="note">Anyone opening this link sees the league before being asked to sign in.</p>`
+`
           : ""
       }
       <div class="fantasy-invite__row fantasy-invite__row--code">
         <code class="fantasy-invite__code">${esc(league.inviteCode)}</code>
         <button class="seg" type="button" data-fantasy-copy-invite="${esc(league.inviteCode)}">Copy code</button>
       </div>
-      <p class="note--dim">Or share the code on its own. Either works until the draft starts.</p>
+
     </section>`;
 }
 
@@ -1134,7 +1133,7 @@ export function renderFantasyInvitePreview(preview, { loading, error, signedIn, 
       </div>
       <section class="card fantasy-invitepage__what">
         <h3 class="card__title">What you're joining</h3>
-        <p class="note">Draft a 15-player squad. Play one manager head to head each gameweek. No two managers can own the same player.</p>
+        <p class="note">15-player squads. Head-to-head every gameweek. Every player owned once.</p>
         <p class="note--dim"><a href="learn/running-your-first-league/">How a draft league works →</a></p>
       </section>
       <section class="card">
@@ -1175,7 +1174,7 @@ function renderFantasyScheduleCard(league, schedule, { scheduleBusy, scheduleErr
         </div>`
       : league.isCommissioner
         ? `<p class="note--dim">Change or clear it in <button class="linklike" type="button" data-fantasy-subtab="settings">Settings</button>.</p>`
-        : `<p class="note">If you miss it, your squad will be auto-picked from the players still available.</p>`;
+        : `<p class="note">Miss it and autopick drafts for you.</p>`;
     return `
     <section class="card fantasy-schedule ${soon ? "is-soon" : ""}">
       <h3 class="card__title">Draft scheduled</h3>
@@ -1205,7 +1204,6 @@ function renderFantasyScheduleCard(league, schedule, { scheduleBusy, scheduleErr
   return `
     <section class="card fantasy-schedule">
       <h3 class="card__title">Schedule the draft</h3>
-      <p class="note">Pick a date and time so everyone shows up, instead of drafting the moment you click Start.</p>
       <div class="fantasy-schedule__form">
         <input type="datetime-local" class="fantasy-schedule__input" data-fantasy-schedule-input />
         <button class="btn btn--primary" type="button" data-fantasy-schedule-save ${scheduleBusy ? "disabled" : ""}>Schedule draft</button>
@@ -1437,7 +1435,7 @@ export function renderMySquad(picks, myUserId, { compact = true } = {}) {
 export function renderFantasyMyTeamPanel(picks, myUserId) {
   const hasPicks = (picks ?? []).some((pick) => pick.userId === myUserId);
   if (!hasPicks) {
-    return `<div class="fantasy-myteam-empty"><p class="note">You haven't drafted anyone yet. Head to the Draft room to make your first pick.</p></div>`;
+    return `<div class="fantasy-myteam-empty"><p class="note">No picks yet. Head to the Draft room.</p></div>`;
   }
   return renderMySquad(picks, myUserId, { compact: false });
 }
@@ -1964,7 +1962,7 @@ export function renderFantasyPlayerRows(players, filter, context) {
   const filtered = sortPoolBy(filterPlayers(ranked, filter, draftedIds, queuedIds), filter?.sort ?? DEFAULT_POOL_SORT);
   if (!filtered.length) {
     return filter?.starredOnly && !queuedIds?.size
-      ? `<p class="note">You have not starred anyone yet. Tap ☆ on a player to build your shortlist.</p>`
+      ? `<p class="note">Tap ☆ on players to build your shortlist.</p>`
       : `<p class="note">No players match.</p>`;
   }
   const enriched = hasPriorSeasonData(players);
@@ -2238,7 +2236,7 @@ function renderFantasyWaiversStatus(waivers) {
   const total = (priorities ?? []).length;
   const detail =
     mode === "faab"
-      ? `<p class="fantasy-waivers-status__detail"><strong>${esc(myBudgetRemaining)}</strong> credits left <span class="note--dim">(league budget ${esc(faabBudget)})</span></p>`
+      ? `<p class="fantasy-waivers-status__detail"><strong>${esc(myBudgetRemaining)}</strong> of ${esc(faabBudget)} credits</p>`
       : `<p class="fantasy-waivers-status__detail">Your priority: <strong>${esc(priorityOrdinalLabel(myPriority, total) || "-")}</strong></p>`;
 
   // Pre-season this must NOT describe a deadline, a quiet period or a "next
@@ -2253,18 +2251,20 @@ function renderFantasyWaiversStatus(waivers) {
   // locked" is flatly wrong there. Note a claim is still genuinely open in that
   // window: it resolves after the gameweek settles, so the squad deadline has
   // no bearing on it (see the reconciliation note in fantasyDeadlines.js).
+  // Pre-season the banner above already says the season start and that all is
+  // open, so this line carries only the one fact the banner does not: when a
+  // claim resolves. Repeating the banner was the wordiness people hated.
   const windowNote =
     preseason && !squadLocked
-      ? `Pre-season: transfers are open and nothing is locked. The season starts ${formatLocalSchedule(seasonStart)}.`
+      ? `Claims resolve after gameweek ${esc(currentGameweek)} finishes.`
       : claimWindowNote(claimWindow) || `Claims resolve after gameweek ${esc(currentGameweek)} finishes.`;
 
   return `
     <section class="card fantasy-waivers-status">
       <div class="fantasy-waivers-status__head">
-        <span class="chip fantasy-waivers-mode-chip fantasy-waivers-mode-chip--${esc(mode)}">${esc(waiverModeLabel(mode))}</span>
-        <p class="note ${!preseason && claimWindow?.deferred ? "fantasy-waivers-status__deferred" : ""}">${esc(windowNote)}</p>
+        <span class="chip fantasy-waivers-mode-chip fantasy-waivers-mode-chip--${esc(mode)}">${esc(waiverModeLabel(mode))}</span>${hint(`${waiverModeExplanation(mode)} ${windowNote}`)}
+        ${!preseason && claimWindow?.deferred ? `<p class="note fantasy-waivers-status__deferred">${esc(windowNote)}</p>` : ""}
       </div>
-      <p class="note">${esc(waiverModeExplanation(mode))}</p>
       ${detail}
       <button class="fantasy-waivers-status__help" type="button" data-tutorial-open="waivers">How do waivers work?</button>
     </section>`;
@@ -2367,21 +2367,16 @@ function renderFantasyFreeAgents(freeAgents, filter, lockedIds, context = {}) {
   // for two hours before the opening kickoff. Branching on pre-season alone put
   // "nothing is locked" directly above a list where every row said Locked.
   const lockNote = context.squadLocked
-    ? "This gameweek's squad deadline has passed, so every player is locked until the next gameweek opens."
+    ? "Squad deadline passed: locked until the next gameweek."
     : context.preseason
-      ? "Pre-season, so nothing is locked and every add is instant."
-      : "Everything locks two hours before the gameweek's first kickoff; a locked player shows Locked instead of Add, so nobody can bank a match that has already been decided.";
+      ? "" // the banner above already says everything is open
+      : "Locks two hours before the gameweek's first kickoff.";
   return `
     <section class="card fantasy-pool fantasy-fa-pool">
       <div class="fantasy-pool__scroll">
         <div class="fantasy-pool__sticky">
-          <h3 class="card__title">Free agents</h3>
-          <p class="note">Unowned and available now: add one instantly for a same-position drop from your squad. ${esc(lockNote)}</p>
-          ${
-            context.starters?.length
-              ? `<p class="note note--dim">The +/- figure is expected points a gameweek against your own worst starter at that position.</p>`
-              : ""
-          }
+          <h3 class="card__title">Free agents ${hint("Add instantly; you drop from the same position. +/- is xP a week versus your worst starter there.")}</h3>
+          ${lockNote ? `<p class="note">${esc(lockNote)}</p>` : ""}
           <div class="fantasy-pool__filters">
             <div class="segrow fantasy-pool__positions">${positionPills}</div>
             <select class="fantasy-select" data-fantasy-fa-club-filter>${renderClubOptions(freeAgents, filter?.club)}</select>
@@ -2448,8 +2443,7 @@ function renderFantasyWire(wire, filter) {
     <section class="card fantasy-pool fantasy-wire-pool">
       <div class="fantasy-pool__scroll">
         <div class="fantasy-pool__sticky">
-          <h3 class="card__title">Waiver wire</h3>
-          <p class="note">Recently dropped, locked until the next run resolves every claim in priority order.</p>
+          <h3 class="card__title">Waiver wire ${hint("Just dropped: claim them at the next run.")}</h3>
           <div class="fantasy-pool__filters">
             <div class="segrow fantasy-pool__positions">${positionPills}</div>
             <select class="fantasy-select" data-fantasy-wire-club-filter>${renderClubOptions(clubSource, filter?.club)}</select>
@@ -2618,7 +2612,7 @@ function renderFantasyWaiverSettings(waivers, { busy = false, error = "", headin
         <input class="fantasy-input" type="number" min="0" step="1" value="${esc(waivers.faabBudget)}" data-fantasy-settings-budget ${disabledAttr} />
         <button class="btn btn--primary" type="button" data-fantasy-settings-save ${disabledAttr}>${busy ? "Saving…" : "Save"}</button>
       </div>
-      ${blocked ? `<p class="note fantasy-form__error">You have a pending claim this gameweek: settings can't change until it resolves.</p>` : ""}
+      ${blocked ? `<p class="note fantasy-form__error">Can't change while a claim is pending.</p>` : ""}
       ${error ? `<p class="fantasy-form__error">${esc(error)}</p>` : ""}
     </section>`;
 }

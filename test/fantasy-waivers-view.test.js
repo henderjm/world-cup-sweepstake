@@ -31,8 +31,8 @@ test("waiverModeExplanation gives a distinct, honest sentence for each mode", ()
   const faab = waiverModeExplanation("faab");
   const rolling = waiverModeExplanation("rolling");
   const reverse = waiverModeExplanation("reverse_standings");
-  assert.match(faab, /highest bid wins/i);
-  assert.match(rolling, /back of the queue/i);
+  assert.match(faab, /highest blind bid wins/i);
+  assert.match(rolling, /go to the back/i);
   assert.match(reverse, /worst-placed manager/i);
   // All three are distinct sentences, not copy-pasted with a word swapped.
   assert.notEqual(faab, rolling);

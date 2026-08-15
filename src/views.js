@@ -644,7 +644,7 @@ export function renderSignedIn(model, account, isFollowed) {
           <span data-push-controls><span class="note">Checking…</span></span>
         </div>
         ${prefs}
-        <p class="note--dim" style="margin-top:10px;">Alerts follow your clubs and the switches above, delivered as push notifications to every device you enable.</p>
+        <p class="note--dim" style="margin-top:10px;">Pushed to every device you enable, for the clubs and events above.</p>
       </section>
     </div>`;
 }

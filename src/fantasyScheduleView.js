@@ -128,7 +128,7 @@ export function matchupTiming(matchup, now) {
     return {
       showScores: false,
       label: "Upcoming",
-      note: `The season starts ${formatLocalSchedule(seasonStart)}. This is your opening fixture; nothing has been played yet.`,
+      note: `Your opening fixture. Season starts ${formatLocalSchedule(seasonStart)}.`,
     };
   }
 
