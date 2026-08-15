@@ -18,6 +18,7 @@ import {
   renderFantasySessionExpired,
   renderFantasyStandingsPanel,
   renderFantasyWaiversPanel,
+  renderChampionCard,
   renderFantasyWireRows,
 } from "../src/fantasyView.js";
 
@@ -2037,4 +2038,105 @@ test("the pitch renders goalkeeper first and forwards last", () => {
     order,
     "pitch rows should run GK, DEF, MID, FWD from the top",
   );
+});
+
+
+// -- The defending champion (issue #43) -----------------------------------------
+
+const CHAMPION_MEMBERS = [
+  { userId: 1, name: "Alice", isChampion: false },
+  { userId: 2, name: "Rory", isChampion: true },
+  { userId: 7, name: "Bot Alfie", isBot: true, isChampion: false },
+];
+
+test("the standings table gives the trophy to exactly one manager", () => {
+  const standings = {
+    throughGameweek: 3,
+    standings: [
+      { userId: 2, name: "Rory", played: 3, wins: 3, draws: 0, losses: 0, pointsFor: 160, pointsAgainst: 120, recordPoints: 9 },
+      { userId: 1, name: "Alice", played: 3, wins: 0, draws: 0, losses: 3, pointsFor: 120, pointsAgainst: 160, recordPoints: 0 },
+    ],
+  };
+  const html = renderFantasyStandingsPanel(standings, { myUserId: 1, previousWinnerUserId: 2 });
+  assert.equal(html.match(/fantasy-chip--champion/g).length, 1);
+  const roryRow = html.match(/<div class="fantasy-standings-row[^"]*">[\s\S]*?Rory[\s\S]*?<\/div>/)[0];
+  assert.match(roryRow, /fantasy-chip--champion/);
+});
+
+test("no champion recorded means no trophy anywhere, and Average never wears one", () => {
+  const standings = {
+    throughGameweek: 3,
+    standings: [
+      { userId: 1, name: "Alice", played: 3, wins: 2, draws: 0, losses: 1, pointsFor: 160, pointsAgainst: 120, recordPoints: 6 },
+      // The Average opponent's sentinel id is 0 (src/fantasyAverage.js).
+      { userId: 0, name: "Average", isAverage: true, played: 3, wins: 1, draws: 0, losses: 2, pointsFor: 120, pointsAgainst: 160, recordPoints: 3 },
+    ],
+  };
+  assert.doesNotMatch(renderFantasyStandingsPanel(standings, { myUserId: 1 }), /fantasy-chip--champion/);
+  assert.doesNotMatch(
+    renderFantasyStandingsPanel(standings, { myUserId: 1, previousWinnerUserId: 0 }),
+    /fantasy-chip--champion/,
+  );
+});
+
+test("the matchup card marks a defending champion on either side", () => {
+  const matchup = {
+    gameweek: 4,
+    status: "live",
+    me: { userId: 1, name: "Alice", score: 42 },
+    opponent: { userId: 2, name: "Rory", score: 38 },
+  };
+  const opponentHolds = renderFantasyMatchupPanel(matchup, { previousWinnerUserId: 2 });
+  assert.equal(opponentHolds.match(/fantasy-chip--champion/g).length, 1);
+
+  const iHold = renderFantasyMatchupPanel(matchup, { previousWinnerUserId: 1 });
+  assert.equal(iHold.match(/fantasy-chip--champion/g).length, 1);
+
+  assert.doesNotMatch(renderFantasyMatchupPanel(matchup, {}), /fantasy-chip--champion/);
+});
+
+test("the lobby marks the champion's seat", () => {
+  const html = renderFantasyLobby(lobbyLeague(), CHAMPION_MEMBERS, { filter: { position: "All", search: "" } });
+  const roryRow = html.match(/<div class="fantasy-member-row">[\s\S]*?Rory[\s\S]*?<\/div>/)[0];
+  assert.match(roryRow, /fantasy-chip--champion/);
+  const aliceRow = html.match(/<div class="fantasy-member-row">[\s\S]*?Alice[\s\S]*?<\/div>/)[0];
+  assert.doesNotMatch(aliceRow, /fantasy-chip--champion/);
+});
+
+test("the champion picker never offers a bot manager", () => {
+  const html = renderChampionCard({ isCommissioner: true, previousWinnerUserId: 2 }, CHAMPION_MEMBERS);
+  assert.match(html, /data-fantasy-champion-select/);
+  assert.match(html, /<option value="2" selected>Rory<\/option>/);
+  assert.match(html, /<option value="1">Alice<\/option>/);
+  assert.doesNotMatch(html, /Bot Alfie/);
+  // Clearing has to be reachable from the same control that sets it.
+  assert.match(html, /value=""/);
+});
+
+test("a non-commissioner reads the champion as a fact, and sees nothing when there is none", () => {
+  const html = renderChampionCard({ isCommissioner: false, previousWinnerUserId: 2 }, CHAMPION_MEMBERS);
+  assert.match(html, /Rory/);
+  assert.doesNotMatch(html, /data-fantasy-champion-select/);
+  assert.doesNotMatch(html, /data-fantasy-champion-save/);
+
+  // An empty card explaining a control they do not have is worse than no card.
+  assert.equal(renderChampionCard({ isCommissioner: false, previousWinnerUserId: null }, CHAMPION_MEMBERS), "");
+});
+
+test("a champion who has left the league is not named by the card", () => {
+  const gone = renderChampionCard({ isCommissioner: false, previousWinnerUserId: 99 }, CHAMPION_MEMBERS);
+  assert.equal(gone, "");
+  const commissioner = renderChampionCard({ isCommissioner: true, previousWinnerUserId: 99 }, CHAMPION_MEMBERS);
+  assert.doesNotMatch(commissioner, /is the defending champion/);
+});
+
+test("the champion card escapes team names and its own error message", () => {
+  const html = renderChampionCard(
+    { isCommissioner: true, previousWinnerUserId: 2 },
+    [{ userId: 2, name: `<script>alert(1)</script>` }],
+    { championError: `bad <choice>` },
+  );
+  assert.doesNotMatch(html, /<script>alert/);
+  assert.match(html, /&lt;script&gt;/);
+  assert.match(html, /bad &lt;choice&gt;/);
 });

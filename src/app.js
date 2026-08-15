@@ -72,6 +72,7 @@ import {
   getLineup as apiGetLineup,
   isFantasyNotDeployed,
   joinLeague as apiJoinLeague,
+  clearLeagueChampion as apiClearLeagueChampion,
   listLeagues as apiListLeagues,
   loadBlendedXp,
   loadDraftQueue as apiLoadDraftQueue,
@@ -87,6 +88,7 @@ import {
   saveDraftQueue as apiSaveDraftQueue,
   saveWaiverSettings as apiSaveWaiverSettings,
   scheduleDraft as apiScheduleDraft,
+  setLeagueChampion as apiSetLeagueChampion,
   setLineup as apiSetLineup,
   startDraft as apiStartDraft,
   submitWaiverClaim as apiSubmitWaiverClaim,
@@ -128,8 +130,10 @@ import { DEFAULT_SCHEDULE_VIEW } from "./fantasyScheduleView.js";
 import { buildFreeAgentContext } from "./fantasyWaiversView.js";
 import { managerWeeklyMeans, simulatePlayoffOdds } from "./fantasyPlayoffOdds.js";
 import { renderFantasyPlayoffOddsPanel } from "./fantasyPlayoffOddsView.js";
+import { validateChampionChoice, withChampionFlags } from "./fantasyChampion.js";
 import { renderFantasyFeedPanel, renderFeedEntries } from "./fantasyChatView.js";
 import {
+  renderChampionCard,
   renderDraftErrorNotice,
   renderDraftStatusCard,
   renderFantasyComplete,
@@ -394,6 +398,8 @@ function initialFantasyState() {
     seasonScheduleView: DEFAULT_SCHEDULE_VIEW,
     botBusy: false, // bot seat add/remove in flight
     botError: "",
+    championBusy: false, // defending-champion save in flight (commissioner only)
+    championError: "",
     createBusy: false,
     createError: "",
     joinBusy: false,
@@ -963,6 +969,8 @@ function renderFantasy() {
                   inviteUrl: inviteUrlFor(league.inviteCode),
                   botBusy: f.botBusy,
                   botError: f.botError,
+                  championBusy: f.championBusy,
+                  championError: f.championError,
                 });
     elements.layout.innerHTML = renderFantasyLeagueShell(league, members, subTab, body);
     syncFantasyFeedPolling(subTab);
@@ -1108,7 +1116,7 @@ async function saveFantasyTeamName(value) {
     // panel renders is resolved SERVER-side (memberDisplayName), so a locally
     // patched copy would disagree with standings and the feed until next visit.
     f.teamNameEditing = false;
-    f.league = await apiLoadLeague(leagueId);
+    f.league = await fetchFantasyLeagueDetail(leagueId);
   } catch (error) {
     if (f.activeLeagueId !== leagueId) return;
     f.teamNameError = error.message || "Couldn't save that team name.";
@@ -1307,6 +1315,7 @@ function renderFantasyMatchupBody() {
       error: f.matchupError,
       leagueSize: f.league?.members?.length ?? null,
       now: Date.now(),
+      previousWinnerUserId: f.league?.league?.previousWinnerUserId ?? null,
     })}
     ${renderFantasySchedulePanel(f.seasonSchedule, {
       error: f.seasonScheduleError,
@@ -1336,8 +1345,13 @@ async function loadFantasyLeagueSchedule(leagueId) {
 function renderFantasyStandingsBody() {
   const f = state.fantasy;
   if (!f.standings && !f.standingsLoading && !f.standingsError) loadFantasyStandings(f.activeLeagueId);
-  return `${renderFantasyStandingsPanel(f.standings, { error: f.standingsError, myUserId: f.myUserId })}
-    ${renderFantasyPlayoffOddsBody()}`;
+  return `${renderFantasyStandingsPanel(f.standings, {
+      error: f.standingsError,
+      myUserId: f.myUserId,
+      previousWinnerUserId: f.league?.league?.previousWinnerUserId ?? null,
+    })}
+    ${renderFantasyPlayoffOddsBody()}
+    ${renderChampionCard(f.league?.league, f.league?.members, { championBusy: f.championBusy, championError: f.championError })}`;
 }
 
 // -- Playoff odds, under the standings table ------------------------------------
@@ -1594,7 +1608,7 @@ async function submitFantasyWaiverFlow() {
       // league's own cached roster too, so the My team pitch/bench and any
       // later drop picker see the swap immediately rather than on next visit.
       try {
-        f.league = await apiLoadLeague(f.activeLeagueId);
+        f.league = await fetchFantasyLeagueDetail(f.activeLeagueId);
       } catch {
         // best-effort refresh; the waivers reload below still succeeds
       }
@@ -1844,6 +1858,15 @@ async function joinFantasyLeague(code) {
   }
 }
 
+// The one path a league detail takes into state, so the champion flag can never
+// be stamped on some loads and not others. The Worker sends the holder as a
+// single id on the league (issue #43); this expands it onto the member rows the
+// renderers already read, exactly like the isBot flag beside it.
+async function fetchFantasyLeagueDetail(leagueId) {
+  const detail = await apiLoadLeague(leagueId);
+  return { ...detail, members: withChampionFlags(detail.members, detail.league?.previousWinnerUserId) };
+}
+
 async function openFantasyLeague(id) {
   teardownFantasyDraftRoom();
   const f = state.fantasy;
@@ -1879,6 +1902,8 @@ async function openFantasyLeague(id) {
   f.waiverSettingsError = "";
   f.scheduleBusy = false;
   f.scheduleError = "";
+  f.championBusy = false;
+  f.championError = "";
   f.seasonSchedule = null;
   f.seasonScheduleLoading = false;
   f.seasonScheduleError = "";
@@ -1890,7 +1915,7 @@ async function openFantasyLeague(id) {
   f.board = loadStoredBoard(String(id));
   renderLayout();
   try {
-    const detail = await apiLoadLeague(id);
+    const detail = await fetchFantasyLeagueDetail(id);
     if (f.activeLeagueId !== id) return; // navigated elsewhere mid-flight
     f.league = detail;
     f.myUserId = detail.viewerUserId ?? null;
@@ -2444,6 +2469,51 @@ async function removeFantasyBot(botUserId) {
   } catch (error) {
     f.botBusy = false;
     f.botError = error.message || "Couldn't remove that bot.";
+    renderLayout();
+  }
+}
+
+// The commissioner names (or clears) last season's winner. `value` is the
+// picker's raw value: "" is the "Nobody yet" option and means clear, which is
+// its own route rather than a POST of null - clearing and choosing are
+// different intentions and a null userId would be indistinguishable from a
+// broken form.
+//
+// Validated locally first with the same pure function the Worker uses, so an
+// illegal choice never becomes a round trip; the reload afterwards is the same
+// "refetch rather than patch" discipline as the bot controls, since the trophy
+// is stamped onto member rows when a league detail lands.
+async function saveFantasyChampion(value) {
+  const f = state.fantasy;
+  const leagueId = f.activeLeagueId;
+  const clearing = String(value ?? "") === "";
+
+  if (!clearing) {
+    const check = validateChampionChoice(f.league?.members, value);
+    if (!check.valid) {
+      f.championError = check.error;
+      renderLayout();
+      return;
+    }
+  }
+
+  f.championBusy = true;
+  f.championError = "";
+  renderLayout();
+  try {
+    if (clearing) await apiClearLeagueChampion(leagueId);
+    else await apiSetLeagueChampion(leagueId, Number(value));
+    if (f.activeLeagueId !== leagueId) return; // navigated away mid-flight
+    // Just the league detail, never openFantasyLeague: this control also lives
+    // under the standings, and re-opening the league would drop the
+    // commissioner back on the landing sub-tab as their reward for saving.
+    f.league = await fetchFantasyLeagueDetail(leagueId);
+    f.championBusy = false;
+    renderLayout();
+  } catch (error) {
+    if (f.activeLeagueId !== leagueId) return;
+    f.championBusy = false;
+    f.championError = error.message || "Couldn't save the defending champion.";
     renderLayout();
   }
 }
@@ -3893,6 +3963,11 @@ function wireLayoutControls() {
     if (fantasyAddBotsButton && !fantasyAddBotsButton.disabled) {
       const count = Number(elements.layout.querySelector("[data-fantasy-bot-count]")?.value ?? 1);
       addFantasyBots(count);
+      return;
+    }
+    const fantasyChampionSave = event.target.closest("[data-fantasy-champion-save]");
+    if (fantasyChampionSave && !fantasyChampionSave.disabled) {
+      saveFantasyChampion(elements.layout.querySelector("[data-fantasy-champion-select]")?.value ?? "");
       return;
     }
     const teamNameEdit = event.target.closest("[data-fantasy-teamname-edit]");

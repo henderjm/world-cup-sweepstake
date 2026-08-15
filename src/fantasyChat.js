@@ -47,6 +47,8 @@ export const CHAT_EVENTS = Object.freeze({
   TEAM_RENAMED: "team_renamed",
   BOTS_ADDED: "bots_added",
   BOT_REMOVED: "bot_removed",
+  CHAMPION_SET: "champion_set",
+  CHAMPION_CLEARED: "champion_cleared",
   DRAFT_STARTED: "draft_started",
   DRAFT_PICK: "draft_pick",
   DRAFT_COMPLETED: "draft_completed",
@@ -143,6 +145,19 @@ export function describeChatEvent(entry) {
 
     case CHAT_EVENTS.BOT_REMOVED:
       return { icon: "🤖", text: `${actor} removed ${payload.bot || "a bot manager"} from the league.` };
+
+    // A trophy appearing beside somebody's name with no explanation invites
+    // exactly one question, so the feed answers it as it happens. The holder's
+    // name is denormalised into the payload like every other name here, so the
+    // line still reads correctly after a rename.
+    case CHAT_EVENTS.CHAMPION_SET:
+      return {
+        icon: "🏆",
+        text: `${actor} named ${payload.manager || "a manager"} the defending champion.`,
+      };
+
+    case CHAT_EVENTS.CHAMPION_CLEARED:
+      return { icon: "🏆", text: `${actor} cleared the defending champion.` };
 
     case CHAT_EVENTS.DRAFT_STARTED:
       return {

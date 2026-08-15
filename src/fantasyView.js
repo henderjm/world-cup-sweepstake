@@ -26,6 +26,7 @@ import {
 } from "./fantasyDraft.js";
 import { DEFAULT_POOL_SORT, POOL_SORTS, rankDraftPool, sortPoolBy, startingUpgrade } from "./fantasyDraftRank.js";
 import { TEAM_NAME_MAX } from "./fantasyTeamName.js";
+import { championMember, eligibleChampions, isChampionId } from "./fantasyChampion.js";
 import { formatRecord } from "./fantasyHeadToHead.js";
 import { withBoardAnnotations } from "./fantasyDraftBoard.js";
 import { renderFantasyBoardPanel } from "./fantasyDraftBoardView.js";
@@ -83,8 +84,35 @@ const BOT_CHIP = `<span class="chip fantasy-chip--bot" title="A bot manager fill
 // all. Calling it a bot would claim a manager exists where none does.
 const AVERAGE_CHIP = `<span class="chip fantasy-chip--average" title="Not a manager: the median score of the managers who played each other this gameweek">AVG</span>`;
 
+// Last season's winner, named by the commissioner (issue #43). Shown wherever
+// the league sees a manager ONCE: the standings, the lobby, the matchup, the
+// draft order, the pick feed, the roster board and the invite preview.
+//
+// Deliberately NOT held to the BOT chip's "every single appearance" rule, and
+// the difference is what each chip is for. Omitting BOT anywhere misleads
+// somebody into thinking they are playing a person, so it appears every time a
+// bot does, however repetitive. The trophy is celebratory, so the season
+// schedule (38 rows, the same manager in every one) leaves it off: 38 trophies
+// in one scroll is wallpaper, and wallpaper is not a bounty to aim at.
+//
+// It stacks with the BOT chip rather than replacing it, though the combination
+// is unreachable - a bot cannot be named champion (see src/fantasyChampion.js).
+const CHAMPION_CHIP = `<span class="chip fantasy-chip--champion" title="Defending champion: won the league last season">🏆</span>`;
+
 function botChip(isBot) {
   return isBot ? ` ${BOT_CHIP}` : "";
+}
+
+function championChip(isChampion) {
+  return isChampion ? ` ${CHAMPION_CHIP}` : "";
+}
+
+// For the surfaces whose rows come from their own payload (standings, matchup,
+// schedule) rather than from the league's decorated member list: one league,
+// one holder, compared by id. isChampionId rejects null and the Average
+// opponent's 0 sentinel, so neither can wear a trophy by accident.
+function championChipForId(userId, previousWinnerUserId) {
+  return championChip(isChampionId(userId, previousWinnerUserId));
 }
 
 function opponentChip(opponent) {
@@ -106,6 +134,10 @@ function formatPoints(value) {
 
 function botChipForUser(userId, members) {
   return botChip(Boolean(members?.find((member) => member.userId === userId)?.isBot));
+}
+
+function championChipForUser(userId, members) {
+  return championChip(Boolean(members?.find((member) => member.userId === userId)?.isChampion));
 }
 
 // Small four-point sparkle, inline SVG (no external asset) for the suggested-pick
@@ -384,7 +416,10 @@ export function renderSquadDeadlineBanner(source, now = Date.now()) {
 // Whether scores may be shown at all is matchupTiming's decision, not this
 // renderer's: a fixture nobody has played is upcoming, and rendering it as 0-0
 // was the reported bug.
-export function renderFantasyMatchupPanel(matchup, { error = "", leagueSize = null, now = Date.now() } = {}) {
+export function renderFantasyMatchupPanel(
+  matchup,
+  { error = "", leagueSize = null, now = Date.now(), previousWinnerUserId = null } = {},
+) {
   if (!matchup) {
     return error
       ? `<div class="card"><p class="fantasy-form__error">${esc(error)}</p><button class="seg" type="button" data-fantasy-matchup-retry>Retry</button></div>`
@@ -421,12 +456,12 @@ export function renderFantasyMatchupPanel(matchup, { error = "", leagueSize = nu
       </div>
       <div class="fantasy-matchup__row">
         <div class="fantasy-matchup__side ${leader === "me" ? "is-ahead" : ""}">
-          <p class="fantasy-matchup__name">${esc(me.name)}</p>
+          <p class="fantasy-matchup__name">${esc(me.name)}${championChipForId(me.userId, previousWinnerUserId)}</p>
           <p class="fantasy-matchup__score">${showScores ? esc(me.score) : `<span class="fantasy-stat--empty">•</span>`}</p>
         </div>
         <span class="fantasy-matchup__vs">vs</span>
         <div class="fantasy-matchup__side fantasy-matchup__side--opponent ${leader === "opponent" ? "is-ahead" : ""}">
-          <p class="fantasy-matchup__name">${esc(opponent.name)}${opponentChip(opponent)}</p>
+          <p class="fantasy-matchup__name">${esc(opponent.name)}${opponentChip(opponent)}${championChipForId(opponent.userId, previousWinnerUserId)}</p>
           <p class="fantasy-matchup__score">${showScores ? esc(opponent.score) : `<span class="fantasy-stat--empty">•</span>`}</p>
         </div>
       </div>
@@ -532,7 +567,7 @@ export function renderFantasySchedulePanel(schedule, { error = "", myUserId, vie
 // row. throughGameweek === 0 means no gameweek has completed yet anywhere in
 // the season, not specifically "gameweek 1" (a league could start mid-season),
 // so the empty state stays generic rather than naming a gameweek number.
-export function renderFantasyStandingsPanel(standings, { error = "", myUserId } = {}) {
+export function renderFantasyStandingsPanel(standings, { error = "", myUserId, previousWinnerUserId = null } = {}) {
   if (!standings) {
     return error
       ? `<div class="card"><p class="fantasy-form__error">${esc(error)}</p><button class="seg" type="button" data-fantasy-standings-retry>Retry</button></div>`
@@ -554,7 +589,7 @@ export function renderFantasyStandingsPanel(standings, { error = "", myUserId } 
       const isMe = myUserId != null && row.userId === myUserId;
       return `<div class="fantasy-standings-row ${isMe ? "is-me" : ""}">
           <span class="fantasy-standings-row__rank">${index + 1}</span>
-          <span class="fantasy-standings-row__name">${esc(row.name)}${opponentChip(row)}${isMe ? ` <span class="note--dim">(you)</span>` : ""}</span>
+          <span class="fantasy-standings-row__name">${esc(row.name)}${opponentChip(row)}${championChipForId(row.userId, previousWinnerUserId)}${isMe ? ` <span class="note--dim">(you)</span>` : ""}</span>
           <span>${esc(row.played)}</span>
           <span>${esc(row.wins)}</span>
           <span>${esc(row.draws)}</span>
@@ -580,7 +615,7 @@ export function renderFantasyStandingsPanel(standings, { error = "", myUserId } 
       </div>
       <p class="note--dim fantasy-standings__footnote">PTS is the head-to-head record (win 3, draw 1, loss 0), not football points.</p>
     </section>
-    ${renderHeadToHeadCard(standings.headToHead)}`;
+    ${renderHeadToHeadCard(standings.headToHead, previousWinnerUserId)}`;
 }
 
 // Your record against each manager you have actually played (issue #41),
@@ -591,13 +626,13 @@ export function renderFantasyStandingsPanel(standings, { error = "", myUserId } 
 // Deliberately just a list rather than the full N-by-N grid every manager
 // against every other: the question people ask is "how do I do against you",
 // not "produce a matrix", and a 12-manager grid does not fit a phone.
-export function renderHeadToHeadCard(rows) {
+export function renderHeadToHeadCard(rows, previousWinnerUserId = null) {
   if (!rows?.length) return "";
 
   const body = rows
     .map(
       (row) => `<div class="fantasy-h2h-row">
-          <span class="fantasy-h2h-row__name">${esc(row.name)}${opponentChip(row)}</span>
+          <span class="fantasy-h2h-row__name">${esc(row.name)}${opponentChip(row)}${championChipForId(row.opponentId, previousWinnerUserId)}</span>
           <span class="fantasy-h2h-row__record">${esc(formatRecord(row))}</span>
           <span class="fantasy-h2h-row__pts">${formatPoints(row.pointsFor)} <span class="note--dim">to</span> ${formatPoints(row.pointsAgainst)}</span>
         </div>`,
@@ -696,6 +731,53 @@ function renderBotFillCard(league, members, seats, { botBusy = false, botError =
     </section>`;
 }
 
+// The commissioner names last season's winner (issue #43), and everyone else
+// reads who it is.
+//
+// Rendered in two places on purpose: the lobby, where a commissioner is already
+// setting the league up, and under the standings, which is where the trophy
+// itself is most visible and the only one of the two that still exists once the
+// draft is done. One renderer, two mount points - a commissioner who forgets in
+// August must not have to wait until next August.
+//
+// For a non-commissioner it is a fact, not a control, and a league with no
+// champion recorded shows them nothing at all rather than an empty card
+// explaining a feature they cannot use.
+export function renderChampionCard(league, members, { championBusy = false, championError = "" } = {}) {
+  const holder = championMember(members, league?.previousWinnerUserId);
+
+  if (!league?.isCommissioner) {
+    return holder
+      ? `<section class="card fantasy-champion">
+          <h3 class="card__title">Defending champion</h3>
+          <p class="fantasy-champion__holder">${CHAMPION_CHIP} <strong>${esc(holder.name)}</strong> won last season.</p>
+        </section>`
+      : "";
+  }
+
+  const options = eligibleChampions(members)
+    .map(
+      (member) =>
+        `<option value="${esc(member.userId)}"${isChampionId(member.userId, league.previousWinnerUserId) ? " selected" : ""}>${esc(member.name)}</option>`,
+    )
+    .join("");
+
+  return `
+    <section class="card fantasy-champion">
+      <h3 class="card__title">Defending champion</h3>
+      <p class="note">If your league played somewhere else before this, name the manager who won it. They'll wear the trophy 🏆 beside their name all season, and everyone else will have something to take off them.</p>
+      <div class="fantasy-champion__form">
+        <select class="fantasy-input fantasy-champion__select" data-fantasy-champion-select ${championBusy ? "disabled" : ""}>
+          <option value="">Nobody yet</option>
+          ${options}
+        </select>
+        <button class="btn btn--primary" type="button" data-fantasy-champion-save ${championBusy ? "disabled" : ""}>${championBusy ? "Saving…" : "Save"}</button>
+      </div>
+      ${holder ? `<p class="note--dim">${esc(holder.name)} is the defending champion. Choose “Nobody yet” to clear it.</p>` : ""}
+      ${championError ? `<p class="note fantasy-form__error">${esc(championError)}</p>` : ""}
+    </section>`;
+}
+
 export function renderFantasyLobby(
   league,
   members,
@@ -710,6 +792,8 @@ export function renderFantasyLobby(
     inviteUrl = "",
     botBusy = false,
     botError = "",
+    championBusy = false,
+    championError = "",
   } = {},
 ) {
   const sorted = [...members].sort(
@@ -719,7 +803,7 @@ export function renderFantasyLobby(
     .map(
       (member, index) => `<div class="fantasy-member-row">
         <span class="fantasy-member-row__pos">${member.draftPosition ?? index + 1}</span>
-        <span class="fantasy-member-row__name">${esc(member.name)}${botChip(member.isBot)}${member.userId === league.commissionerUserId ? ` <span class="note--dim">(commissioner)</span>` : ""}</span>
+        <span class="fantasy-member-row__name">${esc(member.name)}${botChip(member.isBot)}${championChip(member.isChampion)}${member.userId === league.commissionerUserId ? ` <span class="note--dim">(commissioner)</span>` : ""}</span>
       </div>`,
     )
     .join("");
@@ -743,6 +827,7 @@ export function renderFantasyLobby(
     </section>
     ${renderInviteCard(league, inviteUrl)}
     ${renderBotFillCard(league, sorted, seats ?? { total: members.length, humans: members.length, bots: 0, open: Math.max(0, MAX_LEAGUE_SIZE - members.length) }, { botBusy, botError })}
+    ${renderChampionCard(league, sorted, { championBusy, championError })}
     ${renderFantasyScheduleCard(league, schedule, { scheduleBusy, scheduleError })}
     <section class="card fantasy-start">${startControl}</section>
     ${renderScoutingSection(playerPool, filter ?? { position: "All", club: "All", search: "", hideTaken: true }, queuedIds, members.length)}`;
@@ -801,7 +886,7 @@ export function renderFantasyInvitePreview(preview, { loading, error, signedIn, 
   const roster = (managers ?? [])
     .map(
       (manager) => `<div class="fantasy-member-row">
-        <span class="fantasy-member-row__name">${esc(manager.name)}${botChip(manager.isBot)}${manager.isCommissioner ? ` <span class="note--dim">(commissioner)</span>` : ""}</span>
+        <span class="fantasy-member-row__name">${esc(manager.name)}${botChip(manager.isBot)}${championChip(manager.isChampion)}${manager.isCommissioner ? ` <span class="note--dim">(commissioner)</span>` : ""}</span>
       </div>`,
     )
     .join("");
@@ -916,7 +1001,7 @@ export function renderDraftStatusCard({ members, draft, myUserId, season, entrie
     .map((entry) => {
       const isMe = entry.userId === myUserId;
       return `<div class="fantasy-orderchip ${entry.isOnClock ? "is-onclock" : ""}">
-          ${esc(nameForUser(entry.userId, members))}${botChipForUser(entry.userId, members)}${isMe ? ` <span class="fantasy-orderchip__you">(you)</span>` : ""}
+          ${esc(nameForUser(entry.userId, members))}${botChipForUser(entry.userId, members)}${championChipForUser(entry.userId, members)}${isMe ? ` <span class="fantasy-orderchip__you">(you)</span>` : ""}
         </div>`;
     })
     .join("");
@@ -1029,7 +1114,7 @@ function renderPickFeed(picks, members) {
         <span class="fantasy-feed__pick">${formatPickNumber(pick.round, pick.pickInRound)}</span>
         ${badgeFor(pick.player.team)}
         <span class="fantasy-feed__player"><strong>${esc(pick.player.name)}</strong><span class="note--dim">${esc(pick.player.position)} · ${esc(abbrFor(pick.player.team))}</span></span>
-        <span class="fantasy-feed__by">${esc(nameForUser(pick.userId, members))}${botChipForUser(pick.userId, members)}${pick.viaQueue ? ` <span class="chip fantasy-chip--queue" title="Autopicked from this manager's own queue">Queue</span>` : ""}</span>
+        <span class="fantasy-feed__by">${esc(nameForUser(pick.userId, members))}${botChipForUser(pick.userId, members)}${championChipForUser(pick.userId, members)}${pick.viaQueue ? ` <span class="chip fantasy-chip--queue" title="Autopicked from this manager's own queue">Queue</span>` : ""}</span>
       </div>`,
     )
     .join("")}</div>`;
@@ -1834,7 +1919,7 @@ export function renderFantasyComplete(members, picks) {
         )
         .join("");
       return `<section class="card fantasy-roster-card">
-          <h3 class="card__title">${esc(member.name)}${botChip(member.isBot)}</h3>
+          <h3 class="card__title">${esc(member.name)}${botChip(member.isBot)}${championChip(member.isChampion)}</h3>
           <div class="fantasy-squad-rows">${rows || `<p class="note">No players.</p>`}</div>
         </section>`;
     })

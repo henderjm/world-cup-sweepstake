@@ -75,6 +75,23 @@ export async function setLeagueTeamName(leagueId, teamName) {
   return api(`/fantasy/league/${leagueId}/team-name`, { method: "POST", body: JSON.stringify({ teamName }) });
 }
 
+// Commissioner-only: names the manager holding last season's trophy (issue
+// #43). NOT pending-only, unlike the bot routes below - a league can record its
+// history at any point in the season. `userId` must be a member of this league
+// and must not be a bot; validate with validateChampionChoice
+// (src/fantasyChampion.js) first so the two cannot disagree about what is
+// legal. Returns { previousWinnerUserId }. Throws with error.status 403 for a
+// non-commissioner, 400 for a target that is not an eligible member.
+export async function setLeagueChampion(leagueId, userId) {
+  return api(`/fantasy/league/${leagueId}/champion`, { method: "POST", body: JSON.stringify({ userId }) });
+}
+
+// Commissioner-only: back to no champion recorded. Idempotent, so clearing a
+// league that has none is a 200 rather than an error.
+export async function clearLeagueChampion(leagueId) {
+  return api(`/fantasy/league/${leagueId}/champion`, { method: "DELETE" });
+}
+
 export async function addLeagueBots(leagueId, count) {
   return api(`/fantasy/league/${leagueId}/bots`, { method: "POST", body: JSON.stringify({ count }) });
 }

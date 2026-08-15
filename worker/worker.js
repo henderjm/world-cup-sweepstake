@@ -77,6 +77,7 @@ import {
   withAverageOpponent,
 } from "../src/fantasyAverage.js";
 import { validateTeamName } from "../src/fantasyTeamName.js";
+import { isChampionId, validateChampionChoice } from "../src/fantasyChampion.js";
 import { headToHeadFor } from "../src/fantasyHeadToHead.js";
 import { assignGameweeks, clubFixtureCounts, firstKickoffInGameweek, gameweekOf } from "../src/fantasyCalendar.js";
 import {
@@ -337,6 +338,18 @@ export default {
         Number(fantasyBotRemoveRoute[2]),
         cors,
       );
+    }
+    // The league's defending champion (issue #43). Commissioner-only, but
+    // deliberately NOT pending-only like the bot routes above: this is a
+    // historical fact about a season the app never saw, and a commissioner who
+    // only thinks of it in October must still be able to record it. POST names
+    // a holder, DELETE clears one, the same pair as the draft schedule.
+    const fantasyChampionRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/champion$/);
+    if (fantasyChampionRoute && request.method === "POST") {
+      return handleFantasyChampionSet(request, env, Number(fantasyChampionRoute[1]), cors);
+    }
+    if (fantasyChampionRoute && request.method === "DELETE") {
+      return handleFantasyChampionClear(request, env, Number(fantasyChampionRoute[1]), cors);
     }
     // Dead-team autopilot. Enabling is commissioner-only; disabling is also
     // allowed to the manager whose seat it is, because taking your own team
@@ -1422,6 +1435,123 @@ async function handleFantasyBotRemove(request, env, leagueId, botUserId, cors) {
   }
 }
 
+// -- The defending champion ------------------------------------------------------
+//
+// The commissioner names whoever holds last season's trophy, and that manager
+// wears it everywhere the league sees them (issue #43).
+//
+// The app derives every champion of every season it actually runs, from
+// fantasy_h2h_fixtures, with nothing recorded during the year. What it cannot
+// derive is a season it was not there for, and that is the season a league
+// arriving from a spreadsheet or another product brings with it. So this is one
+// stored fact with the commissioner as its only possible source; see
+// src/fantasyChampion.js for why it is a single holder rather than a history.
+//
+// Authorization is the commissioner check plus league-scoped membership of the
+// TARGET, which together are the whole surface: without the second one this
+// would store a bare user id belonging to anybody, and the value would then
+// silently never match a member.
+
+// Shared by both champion routes: the commissioner check, and the league row
+// the caller needs afterwards. Deliberately no draft_status condition, unlike
+// the bot routes, which is the difference worth stating out loud: filling a
+// seat changes who drafts and so must happen before the draft, while recording
+// who won last season changes nothing about play and is just as true in May.
+async function championAuthorize(env, leagueId, user) {
+  const league = await env.DB.prepare(
+    `SELECT id, commissioner_user_id, previous_winner_user_id FROM fantasy_leagues WHERE id = ?1`,
+  )
+    .bind(leagueId)
+    .first();
+  if (!league) return { error: { body: { error: "unknown league" }, status: 404 } };
+  if (league.commissioner_user_id !== user.id) {
+    return { error: { body: { error: "commissioner only" }, status: 403 } };
+  }
+  return { league };
+}
+
+// POST /fantasy/league/:id/champion. Body: { userId }.
+async function handleFantasyChampionSet(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "invalid JSON" }, 400, cors);
+  }
+
+  try {
+    const auth = await championAuthorize(env, leagueId, user);
+    if (auth.error) return json(auth.error.body, auth.error.status, cors);
+
+    // Validated against the league's own members by the same pure function the
+    // picker builds its options from, so the client can never offer a choice
+    // this would refuse. A bot is rejected here rather than only hidden in the
+    // UI: a bot seat was created for this league while it was still pending, so
+    // it cannot have won a season that predates the league.
+    const members = await env.DB.prepare(
+      `SELECT m.user_id, m.team_name, u.name, u.email, u.is_bot FROM fantasy_league_members m
+       JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
+    )
+      .bind(leagueId)
+      .all();
+    const memberList = (members.results ?? []).map((row) => ({
+      userId: row.user_id,
+      name: memberDisplayName(row),
+      isBot: Boolean(row.is_bot),
+    }));
+
+    const check = validateChampionChoice(memberList, body?.userId);
+    if (!check.valid) return json({ error: check.error }, 400, cors);
+
+    await env.DB.prepare(`UPDATE fantasy_leagues SET previous_winner_user_id = ?2 WHERE id = ?1`)
+      .bind(leagueId, check.userId)
+      .run();
+
+    // Announced like every other league change. A trophy appearing beside a
+    // name with no explanation is the version of this that starts an argument.
+    await postLeagueEvent(env, leagueId, CHAT_EVENTS.CHAMPION_SET, {
+      actor: memberDisplayName(user),
+      manager: memberList.find((member) => member.userId === check.userId)?.name ?? null,
+    });
+
+    return json({ previousWinnerUserId: check.userId }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// DELETE /fantasy/league/:id/champion: back to no champion recorded, the state
+// every league starts in. A no-op when there was none, rather than an error:
+// the end state the caller asked for is the one they get.
+async function handleFantasyChampionClear(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const auth = await championAuthorize(env, leagueId, user);
+    if (auth.error) return json(auth.error.body, auth.error.status, cors);
+
+    await env.DB.prepare(`UPDATE fantasy_leagues SET previous_winner_user_id = NULL WHERE id = ?1`)
+      .bind(leagueId)
+      .run();
+
+    if (auth.league.previous_winner_user_id != null) {
+      await postLeagueEvent(env, leagueId, CHAT_EVENTS.CHAMPION_CLEARED, {
+        actor: memberDisplayName(user),
+      });
+    }
+
+    return json({ previousWinnerUserId: null }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
 // -- Dead-team autopilot ---------------------------------------------------------
 //
 // A commissioner hands an abandoned team to the bots (ESPN's Auto Control).
@@ -1588,7 +1718,8 @@ async function handleFantasyInvitePreview(env, rawCode, cors) {
 
   try {
     const league = await env.DB.prepare(
-      `SELECT id, name, draft_status, commissioner_user_id FROM fantasy_leagues WHERE invite_code = ?1`,
+      `SELECT id, name, draft_status, commissioner_user_id, previous_winner_user_id
+       FROM fantasy_leagues WHERE invite_code = ?1`,
     )
       .bind(code)
       .first();
@@ -1605,6 +1736,11 @@ async function handleFantasyInvitePreview(env, rawCode, cors) {
       name: memberDisplayName(row),
       isBot: Boolean(row.is_bot),
       isCommissioner: row.user_id === league.commissioner_user_id,
+      // The one place a champion travels as a FLAG rather than as the league's
+      // id: this payload deliberately carries no user ids at all, and a
+      // defending champion is worth naming to somebody deciding whether to
+      // join. It leaks nothing the manager list beside it does not already.
+      isChampion: isChampionId(row.user_id, league.previous_winner_user_id),
     }));
 
     return json(
@@ -1671,7 +1807,8 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
 
   try {
     const league = await env.DB.prepare(
-      `SELECT id, name, commissioner_user_id, invite_code, draft_status FROM fantasy_leagues WHERE id = ?1`,
+      `SELECT id, name, commissioner_user_id, invite_code, draft_status, previous_winner_user_id
+       FROM fantasy_leagues WHERE id = ?1`,
     )
       .bind(leagueId)
       .first();
@@ -1742,6 +1879,13 @@ async function handleFantasyLeagueDetail(request, env, leagueId, cors) {
           commissionerUserId: league.commissioner_user_id,
           isCommissioner: league.commissioner_user_id === user.id,
           inviteCode: league.invite_code,
+          // Who holds last season's trophy (issue #43), or null. Sent as the
+          // bare id rather than as a flag on each member deliberately: it is
+          // ONE fact about the league, and every league surface the client
+          // renders already has both this payload and a user id to compare it
+          // against, so the standings, matchup and schedule reads need no
+          // champion field of their own to keep the trophy consistent.
+          previousWinnerUserId: league.previous_winner_user_id ?? null,
         },
         members: memberList,
         // Split rather than a single count: "6 managers" that silently counts
