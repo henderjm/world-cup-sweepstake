@@ -11,7 +11,11 @@
 //     amplify into unbounded upstream calls and burn the daily request budget.
 //   - Upstream calls are edge-cached, so a crowd of pollers collapses into roughly one
 //     upstream call per cache window. A per-isolate copy of the last good /live is
-//     served if upstream errors (stale-on-error).
+//     served if upstream errors (stale-on-error), annotated with its age. GET
+//     /:comp/live bounds that: past a grace window it 502s so the browser falls
+//     back to the hourly static bake rather than being handed a 200 that never
+//     changes again. The cron passes keep the unbounded copy, since what they read
+//     is the season schedule. See src/liveStale.js.
 //   - CORS is restricted to the site origin so other sites cannot freeload the quota.
 //   - Errors are generic; no token or upstream detail is leaked.
 //
@@ -153,6 +157,7 @@ import {
   usageDay,
 } from "../src/apiQuotaStore.js";
 import { createResponseCache, pruneCache, readCached, writeCached } from "../src/apiCache.js";
+import { markStaleLive, tooStaleForBrowser } from "../src/liveStale.js";
 import {
   BUDGET_NORMAL,
   allowsAnalysis,
@@ -183,7 +188,11 @@ const ALLOWED_ORIGINS = new Set([
 const REACTIONS = ["🔥", "😂", "😱", "🧂", "🐐", "💀"];
 const PAPER_RUN_TTL = 90 * 24 * 60 * 60; // 90 days
 
-// Best-effort stale fallback held in the isolate's memory, one entry per competition.
+// Best-effort stale fallback held in the isolate's memory, one entry per
+// competition, as { body, storedAt }. The timestamp is load-bearing rather than
+// incidental: without it the fallback had no expiry, and a sustained upstream
+// failure was served as a never-changing 200 for the life of the isolate, which
+// suppressed the browser's own static fallback (see src/liveStale.js).
 const lastLive = new Map();
 
 // Per-match detail is 3 upstream requests; pacing between matches keeps a busy
@@ -515,6 +524,20 @@ export default {
           : competitions[0];
         if (!comp) return json({ error: "unknown competition" }, 404, cors);
         const data = await getLive(comp, token);
+        // A stale-on-error body is fine for a blip and wrong for an outage. Past
+        // the grace window, 502 rather than hand the browser a 200 it will treat
+        // as current: loadLiveData() in src/data.js only falls back to the hourly
+        // static bake when this route does NOT answer 200, so a stale 200
+        // suppresses the fallback written for exactly this case, and by then the
+        // bake is the fresher of the two. This is what stopped the site updating
+        // while still looking alive.
+        if (tooStaleForBrowser(data)) {
+          console.error(
+            `live ${comp.code}: last good response is ${Math.round(data.staleAgeMs / 1000)}s old, ` +
+              `past the grace window; sending the browser to the static bake`,
+          );
+          return json({ error: "upstream unavailable" }, 502, cors);
+        }
         return json(data, 200, { ...cors, "Cache-Control": "public, max-age=15" });
       }
 
@@ -675,7 +698,7 @@ async function getLive(comp, token) {
       6 * 60 * 60,
     );
     const schedule = mapApiFootballMatches(schedulePayload);
-    const pollingMatches = carryForwardFixtureStates(schedule, lastLive.get(comp.code)?.matches);
+    const pollingMatches = carryForwardFixtureStates(schedule, lastLive.get(comp.code)?.body?.matches);
     const polling = fixturePollingPlan(pollingMatches, Date.now());
     let matches = pollingMatches;
     for (const request of polling.requests) {
@@ -699,13 +722,31 @@ async function getLive(comp, token) {
       matches,
       standings: standings
         ? mapApiFootballStandingsPayload(standings)
-        : lastLive.get(comp.code)?.standings ?? [],
+        : lastLive.get(comp.code)?.body?.standings ?? [],
     };
-    lastLive.set(comp.code, body);
+    lastLive.set(comp.code, { body, storedAt: Date.now() });
     return body;
   } catch (error) {
-    const stale = lastLive.get(comp.code);
-    if (stale) return stale; // serve stale rather than fail when upstream blips
+    // Serve our own last-known-good rather than fail, ANNOTATED with its age so
+    // the caller can decide whether it is fresh enough for its own purpose. The
+    // age is the whole point: the entry used to carry no timestamp, so a
+    // twenty-second blip and a six-hour outage were indistinguishable here and
+    // every consumer was handed the older one as though it were current.
+    //
+    // No time bound is applied at this level on purpose. The cron passes read
+    // this for the season schedule (kickoff locks, gameweek windows, scoring),
+    // which barely changes, so a stale copy still serves them correctly and is
+    // better than no feed; refusing it would make currentFantasyMatches fail
+    // open, and no feed means no kickoff lock. The browser-facing bound lives on
+    // the /:comp/live route instead. See src/liveStale.js.
+    const stale = markStaleLive(lastLive.get(comp.code));
+    if (stale) {
+      console.warn(
+        `live ${comp.code}: serving stale (${Math.round(stale.staleAgeMs / 1000)}s old): ` +
+          `${error?.message ?? error}`,
+      );
+      return stale;
+    }
     throw error;
   }
 }
