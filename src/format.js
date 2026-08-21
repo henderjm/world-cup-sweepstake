@@ -129,3 +129,38 @@ export function statusLabel(matchItem) {
 export function scorePart(score, side) {
   return Number.isFinite(score?.[side]) ? score[side] : "";
 }
+
+// The "updated" chip in the header.
+//
+// Normally this is the age of our last SUCCESSFUL fetch, which is what a reader
+// means by "is what I am looking at current". That was the only thing it ever
+// reported, and it made a specific failure invisible: when the Worker's upstream
+// is down it serves its own last-known-good copy (see src/liveStale.js), so we
+// really did just fetch, and what came back was old. The chip said "just now"
+// over a frozen scoreline, which is the most confident possible way to be wrong.
+//
+// So when the feed reports itself stale, the DATA's age is what gets shown, and
+// it is named as delayed rather than left to be read as a slow poll. The age is
+// the staleness the Worker measured plus however long ago we fetched it, because
+// both have elapsed since the data was actually current.
+export function updatedLabel({ fetchedAt, now = Date.now(), staleAgeMs = null } = {}) {
+  if (!fetchedAt) return { text: "loading", delayed: false };
+  const sinceFetch = Math.max(0, now - fetchedAt);
+  const delayed = Number.isFinite(staleAgeMs) && staleAgeMs !== null;
+  const age = delayed ? staleAgeMs + sinceFetch : sinceFetch;
+  // Phrased to read correctly after the static "Updated" label in App.svelte:
+  // "Updated 14m ago (delayed)", not "Updated delayed 14m ago".
+  return { text: delayed ? `${relativeAge(age)} (delayed)` : relativeAge(age), delayed };
+}
+
+// Seconds up to a minute, minutes up to an hour, then the wall-clock time, which
+// past an hour is more use than a growing minute count.
+function relativeAge(ms) {
+  const secs = Math.round(ms / 1000);
+  if (secs < 5) return "just now";
+  if (secs < 60) return `${secs}s ago`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+  return new Intl.DateTimeFormat("en-IE", { hour: "2-digit", minute: "2-digit" }).format(
+    new Date(Date.now() - ms),
+  );
+}

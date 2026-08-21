@@ -61,6 +61,33 @@ export function parseQuotaHeaders(headers) {
   };
 }
 
+// Affirmative evidence that upstream is REFUSING us for spend reasons, as
+// opposed to a gauge we merely could not read. The distinction is the whole
+// point: parseQuotaHeaders above is careful that "we do not know" and "none
+// left" never look the same, and src/apiBudget.js fails open on the former. A
+// refusal is neither of those. It is the provider stating the position
+// outright, and it arrives with NO quota headers at all, which is exactly why
+// the gauge went blind through the one incident it exists for.
+//
+// Two shapes, because API-Football uses both. A per-minute burst comes back as
+// HTTP 429. A spent daily/subscription allowance comes back 200 with an
+// `errors` object, which response.ok cannot see. Deliberately keyed on the
+// specific error keys the provider uses for allowance problems rather than on
+// "any error": a `token` or `bug` error is not a reason to start shedding.
+//
+// Note it does NOT try to tell a minute burst from a daily exhaustion. The
+// message does not reliably say, and the cool-off in apiQuotaStore re-arms on
+// every fresh refusal, so the two converge on the right behaviour without the
+// guess: a burst lapses after one window, a spent key stays pinned because the
+// passes that are never shed keep being refused.
+const LIMIT_ERROR_KEYS = new Set(["requests", "ratelimit"]);
+
+export function isLimitRejection(status, errors) {
+  if (Number(status) === 429) return true;
+  if (!errors || typeof errors !== "object" || Array.isArray(errors)) return false;
+  return Object.keys(errors).some((key) => LIMIT_ERROR_KEYS.has(key.toLowerCase()));
+}
+
 // One request's usage record, ready to be written. `cachedAt` is supplied by
 // the caller rather than read from a clock here, so this stays pure and the
 // Worker keeps a single source of time.

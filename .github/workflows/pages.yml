@@ -72,11 +72,29 @@ jobs:
       - name: Restore accumulated match detail
         uses: actions/cache@v4
         with:
+          # data/live.json and data/scorers.json are the legacy unnamespaced copies
+          # of the default competition, written by the same bake (see isDefault in
+          # scripts/fetch-live-data.mjs) so a browser still running a pre-namespace
+          # bundle keeps working. They need listing in their own right, because
+          # `data/*/live.json` matches data/PL/live.json but NOT data/live.json: the
+          # glob requires a directory segment. Without them a push-triggered deploy,
+          # which deliberately skips the fetch, shipped whatever is COMMITTED at
+          # those two paths, and the committed copies are football-data.org-era
+          # seeds whose fixture ids do not match the API-Football ids the Worker
+          # serves. Exactly the failure the "everything the bake writes must be in
+          # the Action cache path" invariant in CLAUDE.md describes, and invisible
+          # in CI because the deploy succeeds either way.
+          #
+          # Note these must stay OUTSIDE the block scalar below: inside a YAML `|`
+          # block a leading # is literal text, so a comment there would be handed
+          # to actions/cache as a glob pattern.
           path: |
             data/*/matches
             data/PL/players.json
             data/*/live.json
             data/*/scorers.json
+            data/live.json
+            data/scorers.json
           key: api-football-data-2026-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             api-football-data-2026-

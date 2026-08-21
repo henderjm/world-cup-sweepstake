@@ -174,6 +174,33 @@ button { font-family: inherit; cursor: pointer; }
 
 .updated { font-size: 11px; color: var(--faint); white-space: nowrap; }
 .updated time { color: var(--muted); font-weight: 600; }
+/* The feed is serving the Worker's last-known-good copy because upstream is
+   failing, so the scoreline on screen is not current. Coloured rather than left
+   to the tooltip: the whole point is that a frozen score used to look live. */
+.updated time.is-delayed { color: var(--gold); }
+
+/* This gameweek's points on the My team pitch. The live variant is the accent
+   rather than the plain text colour because a provisional figure is the one a
+   manager is watching change; the word "live" carries the meaning, the colour
+   only draws the eye. */
+.fantasy-pitch__total { color: var(--muted); font-weight: 600; }
+.fantasy-pitch__total.is-live { color: var(--accent); }
+.fantasy-pitch__pts {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  min-width: 18px;
+  padding: 1px 4px;
+  margin: 0;
+  border-radius: 5px;
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+}
+.fantasy-pitch__pts.is-live { background: var(--accent); color: var(--accent-ink); }
 
 /* Ticker -------------------------------------------------------------------- */
 

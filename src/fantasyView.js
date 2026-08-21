@@ -3,6 +3,7 @@ import { displayTeamName } from "./domain.js";
 import { byPosition, dateLabel, isLive as isLiveStatus, statusLabel } from "./format.js";
 import { MAX_LEAGUE_SIZE } from "./fantasy.js";
 import { squadGameweekShape, teamGameweekFixtures } from "./fantasyCalendar.js";
+import { breakdownTitle, squadPointsLabel } from "./fantasyLivePoints.js";
 import { fixtureOutlook, hasStrengthSignal } from "./fantasyFixtureOutlook.js";
 import { WAIVER_MODES } from "./fantasyWaivers.js";
 import {
@@ -1559,7 +1560,21 @@ function renderOpponentSuffix(player, opponents) {
   return ` · ${label ? esc(label) : "No fixture"}`;
 }
 
-function renderPitchTile(player, { isCaptain, isPending, isDimmed, editing }, statsById, xpStats, opponents) {
+// This gameweek's points for one player, with what earned them. Rendered only
+// once there is something to show: before a kick-off "0" and "nothing yet" are
+// different statements, and the tile already says which via its opponent line.
+// The figure is the player's OWN, undoubled for a captain, so these breakdown
+// parts add up to it (see handleFantasyLineupGet on why the total differs).
+function renderPitchPoints(entry) {
+  if (!entry || !Number.isFinite(entry.points)) return "";
+  const title = breakdownTitle(entry.breakdown);
+  const classes = ["fantasy-pitch__pts"];
+  if (entry.provisional) classes.push("is-live");
+  const label = `${entry.points} pts${entry.provisional ? ", still playing" : ""}${title ? `: ${title}` : ""}`;
+  return `<p class="${classes.join(" ")}" title="${esc(label)}" aria-label="${esc(label)}">${entry.points}</p>`;
+}
+
+function renderPitchTile(player, { isCaptain, isPending, isDimmed, editing }, statsById, xpStats, opponents, points) {
   const stats = normalizePlayerStats(statsById.get(player.id) ?? {});
   const badge = xpBadge(stats, player.position, xpStats);
   const classes = ["fantasy-pitch__player"];
@@ -1568,6 +1583,7 @@ function renderPitchTile(player, { isCaptain, isPending, isDimmed, editing }, st
   return `
     <div class="${classes.join(" ")}" data-fantasy-player-id="${player.id}" data-fantasy-slot="starter" role="button" tabindex="0">
       ${isCaptain ? `<span class="fantasy-pitch__capbadge" aria-label="Captain">C</span>` : ""}
+      ${renderPitchPoints(points?.players?.[player.id])}
       <span class="fantasy-pitch__crest">${badgeFor(player.team)}</span>
       <p class="fantasy-pitch__name">${esc(player.name)}</p>
       <p class="fantasy-pitch__club">${esc(abbrFor(player.team))}</p>
@@ -1577,7 +1593,7 @@ function renderPitchTile(player, { isCaptain, isPending, isDimmed, editing }, st
     </div>`;
 }
 
-function renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats, opponents }) {
+function renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats, opponents, points }) {
   const byId = new Map(roster.map((player) => [player.id, player]));
   const editing = Boolean(editState);
   const pending = editState?.pendingId ?? null;
@@ -1602,6 +1618,7 @@ function renderPitch({ roster, starterIds, benchIds, captainId, editState, stats
           statsById,
           xpStats,
           opponents,
+          points,
         ),
       )
       .join("");
@@ -1643,6 +1660,16 @@ function renderFixtureShapeNote(roster, clubFixtures) {
   return `<p class="note fantasy-lineup-note">This gameweek: ${parts.join("; ")}.</p>`;
 }
 
+// The squad's points beside the gameweek. "Live" is in the copy and not only the
+// colour: a provisional total moves (a clean sheet credited at 60 minutes is gone
+// by 75), and a manager who screenshots it deserves to know that from the text.
+function renderSquadPoints(points) {
+  const label = squadPointsLabel(points);
+  if (!label) return "";
+  const cls = label.provisional ? "fantasy-pitch__total is-live" : "fantasy-pitch__total";
+  return ` <span class="${cls}">· ${esc(label.text)}${label.provisional ? " live" : ""}</span>`;
+}
+
 function renderPitchHead(currentGameweek, lineup, editState, roster) {
   const editing = Boolean(editState);
   const controls = editing
@@ -1654,7 +1681,7 @@ function renderPitchHead(currentGameweek, lineup, editState, roster) {
   return `
     <div class="fantasy-pitch__head">
       <div>
-        <p class="fantasy-eyebrow">Gameweek ${currentGameweek ?? "?"}</p>
+        <p class="fantasy-eyebrow">Gameweek ${currentGameweek ?? "?"}${renderSquadPoints(lineup?.points)}</p>
         ${renderLineupSourceNote(lineup)}
         ${renderFixtureShapeNote(roster, lineup?.clubFixtures)}
       </div>
@@ -1897,7 +1924,7 @@ export function renderFantasyRosterPanel({
     ${deadlineCard}
     <section class="card fantasy-pitch">
       ${renderPitchHead(currentGameweek, lineup, editState, roster)}
-      ${renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats, opponents })}
+      ${renderPitch({ roster, starterIds, benchIds, captainId, editState, statsById, xpStats, opponents, points: lineup?.points })}
     </section>`;
 
   const drawerPlayer = drawerPlayerId != null ? (roster ?? []).find((player) => player.id === drawerPlayerId) ?? null : null;

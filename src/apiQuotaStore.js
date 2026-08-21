@@ -41,7 +41,7 @@ export function usageDay(at) {
 }
 
 export function createUsageBuffer() {
-  return { counts: new Map(), quota: new Map(), dropped: 0, latestQuota: null };
+  return { counts: new Map(), quota: new Map(), dropped: 0, latestQuota: null, limitedUntil: 0 };
 }
 
 // Folds one upstream response into the buffer. Returns the record so a caller
@@ -89,10 +89,46 @@ export function bufferUsage(buffer, { path, cacheStatus, headers, at }) {
   return record;
 }
 
-// The most pessimistic allowance reading this isolate has seen today, or null
-// if it has never seen one. Survives drainUsage on purpose (see bufferUsage).
+// How long an affirmative refusal from upstream keeps the guard rail at its
+// tightest level. Two minutes, chosen to clear API-Football's per-minute window
+// with margin rather than to outlast a spent daily allowance: every fresh
+// refusal RE-ARMS it, so a genuinely exhausted key stays pinned for as long as
+// it keeps being refused (getLive and the fantasy passes are never shed, so they
+// keep probing), while a one-minute burst lapses on its own. That re-arming is
+// what lets isLimitRejection avoid guessing which of the two it is looking at.
+//
+// A short window is also the cheap side of the trade. Over-shedding costs a
+// missing analysis card and a thinner match drawer for two minutes;
+// under-shedding costs the rest of the day's allowance, and getLive is what
+// fantasy scoring, waiver runs and the kickoff lock all read.
+export const LIMIT_COOLOFF_MS = 2 * 60 * 1000;
+
+// Records that upstream refused us for spend reasons. Kept on the buffer beside
+// the sticky gauge, and like it NOT cleared by drainUsage: this is live state
+// the budget guard rail reads, not ledger material bound for D1.
+export function markUpstreamLimited(buffer, at, cooloffMs = LIMIT_COOLOFF_MS) {
+  if (!buffer) return 0;
+  const until = Number(at) + cooloffMs;
+  if (!Number.isFinite(until)) return buffer.limitedUntil ?? 0;
+  // Monotonic, for the same reason the allowance reading is: a refusal seen out
+  // of order must never shorten a cool-off a later one already extended.
+  buffer.limitedUntil = Math.max(buffer.limitedUntil ?? 0, until);
+  return buffer.limitedUntil;
+}
+
+// The gauge the budget guard rail reads: the most pessimistic allowance reading
+// this isolate has seen today, plus how long any affirmative refusal keeps us
+// pinned. Survives drainUsage on purpose (see bufferUsage).
+//
+// Returns an object when EITHER is present, not just when there is a reading.
+// A cold isolate that has never seen a quota header and is then refused outright
+// is precisely the case that matters, and returning null there would hand the
+// guard rail "unknown" and make it fail open through the refusal.
 export function latestQuota(buffer) {
-  return buffer?.latestQuota ?? null;
+  const snapshot = buffer?.latestQuota ?? null;
+  const limitedUntil = buffer?.limitedUntil ?? 0;
+  if (!snapshot && !limitedUntil) return null;
+  return { ...(snapshot ?? {}), limitedUntil };
 }
 
 // Empties the buffer and hands back what was in it. Draining rather than
@@ -169,6 +205,12 @@ export function buildQuotaReport({ rows, quota, now }) {
       // Names which figure the projection is built on, so a reader can tell
       // "we measured this" from "the provider told us".
       usedSource: source,
+      // Whether upstream is refusing us for spend reasons RIGHT NOW. The
+      // headers alone cannot say: a refused response carries none, so the
+      // figures above are the last good reading and look healthy through the
+      // incident. This is the flag that tells an operator which they are
+      // looking at.
+      limited: Boolean(quota?.limitedUntil && now < quota.limitedUntil),
     },
     projection: projection
       ? { ...projection, elapsedFraction, verdict: quotaVerdict(projection, quota?.dailyLimit) }

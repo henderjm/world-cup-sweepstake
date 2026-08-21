@@ -50,7 +50,7 @@ import {
 } from "./account.js";
 import { disablePush, enablePush, pushState, sendTestPush } from "./push.js";
 import { setMatchModel, setupMatchDetail, openMatch } from "./matchDetail.js";
-import { isFinished, isLive } from "./format.js";
+import { isFinished, isLive, updatedLabel } from "./format.js";
 import { todayPaperRunDate } from "./paperRunModel.js";
 import {
   displayName,
@@ -477,6 +477,17 @@ function demoWasPlayed() {
 let pollTimer = null;
 let lastSignature = "";
 let lastFetchAt = 0;
+// Age of the data the feed last handed us, when the Worker reported it was serving
+// a stale copy, else null. Deliberately not read off `model`: see setUpdatedLabel.
+let feedStaleAgeMs = null;
+
+// One place, because all three of them (boot, poll, competition switch) have to
+// agree: a switch that recorded the fetch time but not the staleness would show
+// the previous competition's delay against the new one's data.
+function recordFeedFreshness(data) {
+  lastFetchAt = Date.now();
+  feedStaleAgeMs = data?.stale ? data.staleAgeMs ?? 0 : null;
+}
 
 const SHELL_IDS = ["ticker", "layout", "footer", "updated", "sectionNav", "bottomNav", "accountBtn"];
 const RELOAD_FLAG = "gs-shell-reloaded";
@@ -540,7 +551,7 @@ async function start() {
   restoreAccount().then(syncAccountButton);
 
   if (model.hasData) {
-    lastFetchAt = Date.now();
+    recordFeedFreshness(model);
     renderAll();
     const matchParam = new URLSearchParams(window.location.search).get("match");
     if (matchParam) {
@@ -595,18 +606,22 @@ function refreshOnForeground() {
 }
 
 // Relative "updated Xs ago" that ticks every second, so it is always visibly live.
+//
+// feedStaleAgeMs is tracked separately from `model` on purpose. poll() only
+// reassigns the model when the match signature actually moved, and a feed that has
+// frozen produces the same signature every time, so staleness read off the model
+// would be pinned at whatever it was when the scoreline last changed - which is
+// exactly the window this is meant to expose. It is refreshed on every successful
+// poll instead, so the chip starts telling the truth on the first stale response.
 function setUpdatedLabel() {
-  if (!lastFetchAt) {
-    elements.updated.textContent = "loading";
-    return;
+  const { text, delayed } = updatedLabel({ fetchedAt: lastFetchAt, staleAgeMs: feedStaleAgeMs });
+  elements.updated.textContent = text;
+  elements.updated.classList.toggle("is-delayed", delayed);
+  if (delayed) {
+    elements.updated.title = "Live data is delayed: the server could not reach the feed, so this is the last it saw.";
+  } else {
+    elements.updated.removeAttribute("title");
   }
-  const secs = Math.max(0, Math.round((Date.now() - lastFetchAt) / 1000));
-  let label;
-  if (secs < 5) label = "just now";
-  else if (secs < 60) label = `${secs}s ago`;
-  else if (secs < 3600) label = `${Math.floor(secs / 60)}m ago`;
-  else label = new Intl.DateTimeFormat("en-IE", { hour: "2-digit", minute: "2-digit" }).format(new Date(lastFetchAt));
-  elements.updated.textContent = label;
 }
 
 // Live refresh without a deploy: re-pull the model on an interval and re-render only
@@ -652,7 +667,10 @@ async function poll() {
     // A switch mid-flight makes this response stale; the switch already re-rendered.
     if (polledCompetition !== state.competition) return scheduleNextPoll();
     if (fresh.hasData) {
-      lastFetchAt = Date.now();
+      // Before the signature gate below, and outside it: a frozen feed yields an
+      // unchanged signature, so anything recorded inside that branch would never
+      // run for precisely the responses this exists to surface.
+      recordFeedFreshness(fresh);
       const signature = matchSignature(fresh);
       if (signature !== lastSignature) {
         lastSignature = signature;
@@ -2001,7 +2019,13 @@ async function saveFantasyLineup() {
     // taking control of their XI for the first time, which is a different and
     // far more interesting event than a regular weekly tweak.
     const lineupProperties = lineupSavedProperties(f, edit);
-    f.lineup = saved;
+    // MERGED, not replaced. The save response carries what the save changed
+    // (starters, bench, points) and deliberately not the context that a save
+    // cannot change: the deadline, the season phase and the gameweek's club
+    // fixture counts. Replacing the object outright dropped all three, so the
+    // deadline banner and the blank/double-gameweek note vanished from the pitch
+    // the moment a manager saved an XI and stayed gone until the next read.
+    f.lineup = { ...f.lineup, ...saved };
     track(FUNNEL_EVENTS.FANTASY_LINEUP_SAVED, lineupProperties);
     f.lineupEdit = null;
   } catch (error) {
@@ -3821,7 +3845,7 @@ async function switchCompetition(code) {
   model = fresh;
   setMatchModel(model);
   if (model.hasData) {
-    lastFetchAt = Date.now();
+    recordFeedFreshness(model);
     lastSignature = matchSignature(model);
   }
   renderAll();

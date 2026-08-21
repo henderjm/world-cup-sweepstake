@@ -52,6 +52,7 @@ export function buildModel(raw, scorerData = {}) {
       error: raw.error,
       competition,
       hasData: false,
+      ...staleness(raw),
     };
   }
 
@@ -61,12 +62,24 @@ export function buildModel(raw, scorerData = {}) {
     source: raw.source,
     lastUpdated: raw.lastUpdated,
     hasData: true,
+    ...staleness(raw),
     competition,
     matches,
     tables: buildLeagueTables(standingsPayload, competition, buildTeamPerformance(matches)),
     standings,
     scorers: scorerData.scorers ?? [],
   };
+}
+
+// The Worker marks a response it served from its own last-known-good copy when
+// upstream is failing (src/liveStale.js). Carried onto the model rather than
+// dropped, because the header's "updated" chip is otherwise free to report how
+// long ago WE fetched and say "just now" over a frozen scoreline. Absent on the
+// static fallback and on a healthy response, which is why the age is null rather
+// than 0: nothing is delayed, as opposed to delayed by no time at all.
+function staleness(raw) {
+  if (!raw?.stale) return { stale: false, staleAgeMs: null };
+  return { stale: true, staleAgeMs: Number.isFinite(raw.staleAgeMs) ? raw.staleAgeMs : 0 };
 }
 
 // Goal involvements are baked into a separate static file (data/<comp>/scorers.json)

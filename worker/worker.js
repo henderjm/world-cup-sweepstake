@@ -11,7 +11,11 @@
 //     amplify into unbounded upstream calls and burn the daily request budget.
 //   - Upstream calls are edge-cached, so a crowd of pollers collapses into roughly one
 //     upstream call per cache window. A per-isolate copy of the last good /live is
-//     served if upstream errors (stale-on-error).
+//     served if upstream errors (stale-on-error), annotated with its age. GET
+//     /:comp/live bounds that: past a grace window it 502s so the browser falls
+//     back to the hourly static bake rather than being handed a 200 that never
+//     changes again. The cron passes keep the unbounded copy, since what they read
+//     is the season schedule. See src/liveStale.js.
 //   - CORS is restricted to the site origin so other sites cannot freeload the quota.
 //   - Errors are generic; no token or upstream detail is leaked.
 //
@@ -63,6 +67,13 @@ import {
   validateLineupSelection,
 } from "../src/fantasyLineups.js";
 import { scoreMatchForPlayers } from "../src/fantasyScoring.js";
+import {
+  mergeMatchScoreRows,
+  parseStoredScores,
+  pointsBreakdownLines,
+  provisionalPlayerIds,
+  serializeScores,
+} from "../src/fantasyLivePoints.js";
 import {
   currentGameweekFromMatches,
   gameweekStatus,
@@ -141,7 +152,7 @@ import {
   buildDraftRecapPrompt,
   mergeDraftRecap,
 } from "../src/fantasyDraftRecapPrompt.js";
-import { endpointFamily, parseQuotaHeaders } from "../src/apiQuota.js";
+import { endpointFamily, isLimitRejection, parseQuotaHeaders } from "../src/apiQuota.js";
 import {
   bufferSize,
   bufferUsage,
@@ -150,9 +161,11 @@ import {
   createUsageBuffer,
   drainUsage,
   latestQuota,
+  markUpstreamLimited,
   usageDay,
 } from "../src/apiQuotaStore.js";
 import { createResponseCache, pruneCache, readCached, writeCached } from "../src/apiCache.js";
+import { markStaleLive, tooStaleForBrowser } from "../src/liveStale.js";
 import {
   BUDGET_NORMAL,
   allowsAnalysis,
@@ -183,7 +196,11 @@ const ALLOWED_ORIGINS = new Set([
 const REACTIONS = ["🔥", "😂", "😱", "🧂", "🐐", "💀"];
 const PAPER_RUN_TTL = 90 * 24 * 60 * 60; // 90 days
 
-// Best-effort stale fallback held in the isolate's memory, one entry per competition.
+// Best-effort stale fallback held in the isolate's memory, one entry per
+// competition, as { body, storedAt }. The timestamp is load-bearing rather than
+// incidental: without it the fallback had no expiry, and a sustained upstream
+// failure was served as a never-changing 200 for the life of the isolate, which
+// suppressed the browser's own static fallback (see src/liveStale.js).
 const lastLive = new Map();
 
 // Per-match detail is 3 upstream requests; pacing between matches keeps a busy
@@ -515,6 +532,20 @@ export default {
           : competitions[0];
         if (!comp) return json({ error: "unknown competition" }, 404, cors);
         const data = await getLive(comp, token);
+        // A stale-on-error body is fine for a blip and wrong for an outage. Past
+        // the grace window, 502 rather than hand the browser a 200 it will treat
+        // as current: loadLiveData() in src/data.js only falls back to the hourly
+        // static bake when this route does NOT answer 200, so a stale 200
+        // suppresses the fallback written for exactly this case, and by then the
+        // bake is the fresher of the two. This is what stopped the site updating
+        // while still looking alive.
+        if (tooStaleForBrowser(data)) {
+          console.error(
+            `live ${comp.code}: last good response is ${Math.round(data.staleAgeMs / 1000)}s old, ` +
+              `past the grace window; sending the browser to the static bake`,
+          );
+          return json({ error: "upstream unavailable" }, 502, cors);
+        }
         return json(data, 200, { ...cors, "Cache-Control": "public, max-age=15" });
       }
 
@@ -612,6 +643,12 @@ export default {
         await runCronPass("player-pool", () => ensureFantasyPlayerPool(env));
         await runCronPass("analysis", () => runScheduledAnalysis(env));
         await runCronPass("notifications", () => runScheduledNotifications(env));
+        // Behind analysis and notifications on purpose: both already fetch the
+        // three match-detail payloads for every live match, so on a healthy tick
+        // this pass is served entirely from the in-isolate response memo and
+        // costs nothing upstream. Ahead of scoring so a match that finishes this
+        // tick is settled by the pass below and its provisional row cleared.
+        await runCronPass("live-points", () => runScheduledLivePoints(env));
         await runCronPass("fantasy-scoring", () => runScheduledFantasyScoring(env));
         await runCronPass("waiver-runs", () => runScheduledWaiverRuns(env));
         await runCronPass("draft-reminders", () => runScheduledDraftReminders(env));
@@ -675,7 +712,7 @@ async function getLive(comp, token) {
       6 * 60 * 60,
     );
     const schedule = mapApiFootballMatches(schedulePayload);
-    const pollingMatches = carryForwardFixtureStates(schedule, lastLive.get(comp.code)?.matches);
+    const pollingMatches = carryForwardFixtureStates(schedule, lastLive.get(comp.code)?.body?.matches);
     const polling = fixturePollingPlan(pollingMatches, Date.now());
     let matches = pollingMatches;
     for (const request of polling.requests) {
@@ -699,13 +736,31 @@ async function getLive(comp, token) {
       matches,
       standings: standings
         ? mapApiFootballStandingsPayload(standings)
-        : lastLive.get(comp.code)?.standings ?? [],
+        : lastLive.get(comp.code)?.body?.standings ?? [],
     };
-    lastLive.set(comp.code, body);
+    lastLive.set(comp.code, { body, storedAt: Date.now() });
     return body;
   } catch (error) {
-    const stale = lastLive.get(comp.code);
-    if (stale) return stale; // serve stale rather than fail when upstream blips
+    // Serve our own last-known-good rather than fail, ANNOTATED with its age so
+    // the caller can decide whether it is fresh enough for its own purpose. The
+    // age is the whole point: the entry used to carry no timestamp, so a
+    // twenty-second blip and a six-hour outage were indistinguishable here and
+    // every consumer was handed the older one as though it were current.
+    //
+    // No time bound is applied at this level on purpose. The cron passes read
+    // this for the season schedule (kickoff locks, gameweek windows, scoring),
+    // which barely changes, so a stale copy still serves them correctly and is
+    // better than no feed; refusing it would make currentFantasyMatches fail
+    // open, and no feed means no kickoff lock. The browser-facing bound lives on
+    // the /:comp/live route instead. See src/liveStale.js.
+    const stale = markStaleLive(lastLive.get(comp.code));
+    if (stale) {
+      console.warn(
+        `live ${comp.code}: serving stale (${Math.round(stale.staleAgeMs / 1000)}s old): ` +
+          `${error?.message ?? error}`,
+      );
+      return stale;
+    }
     throw error;
   }
 }
@@ -2402,6 +2457,37 @@ async function handleFantasyLineupGet(request, env, leagueId, cors) {
     const squad = matches ? squadLockState({ matches, gameweek, now: Date.now() }) : null;
     const season = matches ? seasonPhase({ matches, now: Date.now() }) : null;
 
+    // This gameweek's points, settled and in-play merged. Best-effort: the pitch
+    // is a squad screen first, so a points read that fails leaves the XI on
+    // screen with no numbers rather than replacing it with an error card.
+    //
+    // Per-player figures are the player's OWN points, undoubled. `total` applies
+    // captaincy (rosterGameweekPoints doubles it outright), so the captain's card
+    // deliberately reads less than his contribution to the total: the C badge is
+    // what explains the gap, and doubling the card instead would make his
+    // breakdown lines below it add up to the wrong number.
+    const live = await fantasyLivePointsForGameweek(env, gameweek).catch(() => null);
+    const squadTotal = live ? rosterGameweekPoints({ starters }, live.points) : null;
+    const points = live
+      ? {
+          total: squadTotal.points,
+          // Any starter still in a match that has not settled. Per player rather
+          // than per squad because a staggered gameweek leaves one starter done
+          // while another is still on, and one flag would misdescribe both.
+          provisional: starters.some((entry) => live.provisionalIds.has(entry.playerId)),
+          players: Object.fromEntries(
+            [...starters.map((entry) => entry.playerId), ...bench].map((id) => [
+              id,
+              {
+                points: live.points.get(id) ?? 0,
+                provisional: live.provisionalIds.has(id),
+                breakdown: pointsBreakdownLines(live.breakdowns.get(id) ?? []),
+              },
+            ]),
+          ),
+        }
+      : null;
+
     return json(
       {
         gameweek,
@@ -2409,6 +2495,7 @@ async function handleFantasyLineupGet(request, env, leagueId, cors) {
         starters,
         bench,
         clubFixtures,
+        points,
         deadline: squad?.deadline ?? null,
         locked: squad?.locked ?? false,
         preseason: season?.preseason ?? false,
@@ -2559,7 +2646,30 @@ async function handleFantasyLineupSet(request, env, leagueId, cors) {
     // in the same request, before the next tick can overwrite this decision.
     await clearAutopilot(env, leagueId, user.id, "lineup");
 
-    return json({ gameweek, source: "set", starters: starterEntries, bench }, 200, cors);
+    // Points travel with the save because the squad TOTAL moves when a starter
+    // is swapped or the armband changes, so echoing the pre-save figure would
+    // leave a wrong number on screen until the next read. The other context the
+    // GET route sends (deadline, clubFixtures, season phase) is unaffected by a
+    // save and is carried over client-side instead of recomputed here.
+    const live = await fantasyLivePointsForGameweek(env, gameweek).catch(() => null);
+    const points = live
+      ? {
+          total: rosterGameweekPoints({ starters: starterEntries }, live.points).points,
+          provisional: starterEntries.some((entry) => live.provisionalIds.has(entry.playerId)),
+          players: Object.fromEntries(
+            [...starters, ...bench].map((id) => [
+              id,
+              {
+                points: live.points.get(id) ?? 0,
+                provisional: live.provisionalIds.has(id),
+                breakdown: pointsBreakdownLines(live.breakdowns.get(id) ?? []),
+              },
+            ]),
+          ),
+        }
+      : null;
+
+    return json({ gameweek, source: "set", starters: starterEntries, bench, points }, 200, cors);
   } catch {
     return json({ error: "fantasy unavailable" }, 502, cors);
   }
@@ -2682,6 +2792,126 @@ async function handleFantasyDraftQueueSet(request, env, leagueId, cors) {
 //     the first of his two matches away. Gameweek totals are always recomputed
 //     by resumming this table, never incremented, so the same idempotency
 //     extends to fantasy_gameweek_scores and fantasy_h2h_fixtures.
+
+// Provisional in-match fantasy points, so a manager watching their captain score
+// sees it instead of a zero until full time. Points only existed at full time
+// before this (runScheduledFantasyScoring filters on isMatchFinished), which is
+// correct for the permanent record and useless for the ninety minutes a manager
+// most wants to look.
+//
+// NOTHING here touches the settled record. Writes go to fantasy_live_match_points
+// and only there; fantasy_player_match_scores, fantasy_gameweek_scores and
+// fantasy_h2h_fixtures are untouched, because a head-to-head result recorded off
+// a match still being played would be wrong forever (fantasy_scored_matches would
+// already say that match was handled, so no later tick corrects it). See
+// src/fantasyLivePoints.js.
+async function runScheduledLivePoints(env) {
+  if (!env.DB || !env.API_FOOTBALL_KEY) return;
+  const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
+  if (!comp) return; // fantasy is PL-only
+
+  // Discretionary, and shed on the same predicate the notification pass uses for
+  // its live detail. A nicer screen is not a settled season: when the allowance
+  // is tight those calls belong to scoring and the waiver runs, which is exactly
+  // the ordering src/apiBudget.js encodes. Skipping also costs nothing
+  // permanent, since the settled pass recomputes every point at full time.
+  if (!allowsLiveEventDetail(currentBudgetLevel())) return;
+
+  let live;
+  try {
+    live = await getLive(comp, env.API_FOOTBALL_KEY);
+  } catch {
+    return; // feed down; the next tick retries
+  }
+
+  const matches = assignGameweeks(live.matches ?? []);
+  const inPlay = matches.filter((match) => isLive(match.status) && Number.isInteger(gameweekOf(match)));
+
+  const statements = [];
+  // Clear whatever is no longer live. The merge treats settled as the winner
+  // regardless, so a lingering row is stale rather than wrong, but keeping the
+  // table to "what is on right now" means the read never has to filter by age.
+  // Bounded either way: live matches are a handful, so the NOT IN list cannot
+  // grow the way an unchunked ledger IN clause did (see fantasyScoredMatchIds).
+  if (inPlay.length) {
+    const placeholders = inPlay.map((_, index) => `?${index + 1}`).join(", ");
+    statements.push(
+      env.DB.prepare(`DELETE FROM fantasy_live_match_points WHERE match_id NOT IN (${placeholders})`).bind(
+        ...inPlay.map((match) => match.id),
+      ),
+    );
+  } else {
+    // NOT IN () is not valid SQL, and with nothing live the whole table is stale.
+    statements.push(env.DB.prepare(`DELETE FROM fantasy_live_match_points`));
+  }
+
+  for (const [index, match] of inPlay.entries()) {
+    try {
+      if (index > 0) await sleep(MATCH_DETAIL_PACING_MS);
+      const detail = await fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY);
+      const scores = scoreMatchForPlayers(detail);
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO fantasy_live_match_points (match_id, gameweek, scores, computed_at)
+           VALUES (?1, ?2, ?3, datetime('now'))
+           ON CONFLICT(match_id) DO UPDATE SET gameweek = ?2, scores = ?3, computed_at = datetime('now')`,
+        ).bind(match.id, gameweekOf(match), serializeScores(scores)),
+      );
+    } catch {
+      // One match's detail failing must not cost the others theirs. Nothing is
+      // written for it this tick and the next one retries from scratch.
+    }
+  }
+
+  try {
+    await env.DB.batch(statements);
+  } catch (error) {
+    console.warn(`live points: write failed: ${error?.message ?? error}`);
+  }
+}
+
+// Settled and provisional points for one gameweek, merged so no match is ever
+// counted twice, plus which players are still provisional and what earned them
+// their points. Settled always wins a match; see src/fantasyLivePoints.js for
+// why that decision has to be made per MATCH and not per player.
+async function fantasyLivePointsForGameweek(env, gameweek) {
+  const [settledRows, liveRows] = await Promise.all([
+    env.DB.prepare(
+      `SELECT match_id, player_id, points, breakdown FROM fantasy_player_match_scores WHERE gameweek = ?1`,
+    )
+      .bind(gameweek)
+      .all(),
+    env.DB.prepare(`SELECT match_id, gameweek, scores FROM fantasy_live_match_points WHERE gameweek = ?1`)
+      .bind(gameweek)
+      .all(),
+  ]);
+
+  const settled = (settledRows.results ?? []).map((row) => {
+    let breakdown = {};
+    try {
+      breakdown = row.breakdown ? JSON.parse(row.breakdown) : {};
+    } catch {
+      breakdown = {}; // a stored blob we cannot read costs a stat line, not the points
+    }
+    return { matchId: row.match_id, playerId: row.player_id, points: row.points, breakdown };
+  });
+  const provisional = (liveRows.results ?? []).flatMap((row) =>
+    parseStoredScores({ matchId: row.match_id, gameweek: row.gameweek, scores: row.scores }),
+  );
+
+  const merged = mergeMatchScoreRows({ settled, provisional });
+  const breakdowns = new Map();
+  for (const row of merged) {
+    if (!row?.breakdown) continue;
+    if (!breakdowns.has(row.playerId)) breakdowns.set(row.playerId, []);
+    breakdowns.get(row.playerId).push(row.breakdown);
+  }
+  return {
+    points: sumPlayerPoints(merged),
+    provisionalIds: provisionalPlayerIds(provisional, settled),
+    breakdowns,
+  };
+}
 
 async function runScheduledFantasyScoring(env) {
   if (!env.DB || !env.API_FOOTBALL_KEY) return;
@@ -6095,11 +6325,22 @@ async function fetchUpstream(url, path, token, cacheTtl) {
   // own memo into it would conflate two different caches and hide a
   // regression in the one we do not control.
   recordUpstreamUsage(path, response);
-  if (!response.ok) throw new Error(`upstream ${response.status}`);
+  if (!response.ok) {
+    // A 429 is the per-minute cap. Marked before throwing, because the gauge
+    // cannot see it: a refused response carries no quota headers.
+    noteLimitRejection(path, response.status, null);
+    throw new Error(`upstream ${response.status}`);
+  }
   let payload;
+  // Parsed into its own binding so the `errors` object survives the assert
+  // throwing. It is the only place a spent allowance is named on a 200, and
+  // re-reading the body after that is not possible.
+  let body;
   try {
-    payload = assertApiFootballPayload(await response.json());
+    body = await response.json();
+    payload = assertApiFootballPayload(body);
   } catch (error) {
+    noteLimitRejection(path, response.status, body?.errors);
     // API-Football answers 200 with an `errors` object for the failures that
     // matter most (plan limits, a rate limit, a bad season), so response.ok
     // above never sees them and the caller only learns that something threw.
@@ -6140,6 +6381,23 @@ const USAGE_RETENTION_DAYS = 14;
 let usageFlushedAt = 0;
 let usageFlushInFlight = null;
 
+// Upstream has refused us for spend reasons. Wrapped exactly as
+// recordUpstreamUsage is, and for the same reason: a fault in the measurement
+// must never break the request it is measuring. Logged at warn because it is the
+// event that makes the Worker start shedding, so it should be findable.
+function noteLimitRejection(path, status, errors) {
+  try {
+    if (!isLimitRejection(status, errors)) return;
+    markUpstreamLimited(usageBuffer, Date.now());
+    console.warn(
+      `upstream refusing ${endpointFamily(path)} (status ${status}); ` +
+        `shedding discretionary calls for the cool-off`,
+    );
+  } catch {
+    // measurement must never break the request
+  }
+}
+
 function recordUpstreamUsage(path, response) {
   try {
     bufferUsage(usageBuffer, {
@@ -6160,7 +6418,7 @@ function recordUpstreamUsage(path, response) {
 // the answer is "spend normally", never "fail the request".
 function currentBudgetLevel() {
   try {
-    return budgetLevel(latestQuota(usageBuffer));
+    return budgetLevel(latestQuota(usageBuffer), Date.now());
   } catch {
     return BUDGET_NORMAL;
   }
@@ -6273,9 +6531,21 @@ async function handleQuotaHealth(env, cors) {
       upstream: row.upstream === 1,
       count: row.calls,
     }));
+    // The daily figures come from D1 (they outlive any one isolate), but whether
+    // upstream is refusing us RIGHT NOW is live in-isolate state, so the two are
+    // merged here. Note the honest limitation: this answers for the isolate that
+    // happened to serve this request, so a refusal being felt elsewhere can read
+    // as false. That is still strictly better than the figures alone, which look
+    // healthy through a refusal by construction, since a refused response
+    // carries no quota headers to lower them.
+    const live = latestQuota(usageBuffer);
     const report = buildQuotaReport({
       rows,
-      quota: quota ? { dailyLimit: quota.daily_limit, dailyRemaining: quota.daily_remaining } : null,
+      quota: {
+        dailyLimit: quota?.daily_limit ?? null,
+        dailyRemaining: quota?.daily_remaining ?? null,
+        limitedUntil: live?.limitedUntil ?? 0,
+      },
       now,
     });
     return json(report, 200, { ...cors, "Cache-Control": "no-store" });
