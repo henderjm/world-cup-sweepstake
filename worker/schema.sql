@@ -560,3 +560,27 @@ CREATE TABLE IF NOT EXISTS api_usage_quota (
   daily_remaining INTEGER,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Provisional in-match fantasy points, one row per LIVE match.
+--
+-- Deliberately separate from fantasy_player_match_scores, which is the settled
+-- record and feeds the permanent rollups (fantasy_gameweek_scores, then
+-- fantasy_h2h_fixtures). A head-to-head result recorded off a match still being
+-- played would be wrong forever, because fantasy_scored_matches would already
+-- say that match was handled, so nothing here is ever handed to the rollup. Read
+-- by the lineup route, written by the minute cron, never settled.
+--
+-- One row per match rather than per player: a whole match's scores live in the
+-- JSON blob, which keeps the write to one statement per live match per tick
+-- instead of ~30, and keying on the match is what lets the merge decide per
+-- match which source owns it (settled always wins; see src/fantasyLivePoints.js).
+-- Rows are deleted once the match settles, so this table only ever holds
+-- whatever is on right now.
+CREATE TABLE IF NOT EXISTS fantasy_live_match_points (
+  match_id INTEGER PRIMARY KEY,
+  gameweek INTEGER NOT NULL,
+  scores TEXT NOT NULL,       -- JSON: { "<playerId>": { points, breakdown } }
+  computed_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_fantasy_live_match_points_gw
+  ON fantasy_live_match_points (gameweek);

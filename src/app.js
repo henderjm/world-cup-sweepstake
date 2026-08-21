@@ -2019,7 +2019,13 @@ async function saveFantasyLineup() {
     // taking control of their XI for the first time, which is a different and
     // far more interesting event than a regular weekly tweak.
     const lineupProperties = lineupSavedProperties(f, edit);
-    f.lineup = saved;
+    // MERGED, not replaced. The save response carries what the save changed
+    // (starters, bench, points) and deliberately not the context that a save
+    // cannot change: the deadline, the season phase and the gameweek's club
+    // fixture counts. Replacing the object outright dropped all three, so the
+    // deadline banner and the blank/double-gameweek note vanished from the pitch
+    // the moment a manager saved an XI and stayed gone until the next read.
+    f.lineup = { ...f.lineup, ...saved };
     track(FUNNEL_EVENTS.FANTASY_LINEUP_SAVED, lineupProperties);
     f.lineupEdit = null;
   } catch (error) {
