@@ -145,7 +145,7 @@ import {
   buildDraftRecapPrompt,
   mergeDraftRecap,
 } from "../src/fantasyDraftRecapPrompt.js";
-import { endpointFamily, parseQuotaHeaders } from "../src/apiQuota.js";
+import { endpointFamily, isLimitRejection, parseQuotaHeaders } from "../src/apiQuota.js";
 import {
   bufferSize,
   bufferUsage,
@@ -154,6 +154,7 @@ import {
   createUsageBuffer,
   drainUsage,
   latestQuota,
+  markUpstreamLimited,
   usageDay,
 } from "../src/apiQuotaStore.js";
 import { createResponseCache, pruneCache, readCached, writeCached } from "../src/apiCache.js";
@@ -6136,11 +6137,22 @@ async function fetchUpstream(url, path, token, cacheTtl) {
   // own memo into it would conflate two different caches and hide a
   // regression in the one we do not control.
   recordUpstreamUsage(path, response);
-  if (!response.ok) throw new Error(`upstream ${response.status}`);
+  if (!response.ok) {
+    // A 429 is the per-minute cap. Marked before throwing, because the gauge
+    // cannot see it: a refused response carries no quota headers.
+    noteLimitRejection(path, response.status, null);
+    throw new Error(`upstream ${response.status}`);
+  }
   let payload;
+  // Parsed into its own binding so the `errors` object survives the assert
+  // throwing. It is the only place a spent allowance is named on a 200, and
+  // re-reading the body after that is not possible.
+  let body;
   try {
-    payload = assertApiFootballPayload(await response.json());
+    body = await response.json();
+    payload = assertApiFootballPayload(body);
   } catch (error) {
+    noteLimitRejection(path, response.status, body?.errors);
     // API-Football answers 200 with an `errors` object for the failures that
     // matter most (plan limits, a rate limit, a bad season), so response.ok
     // above never sees them and the caller only learns that something threw.
@@ -6181,6 +6193,23 @@ const USAGE_RETENTION_DAYS = 14;
 let usageFlushedAt = 0;
 let usageFlushInFlight = null;
 
+// Upstream has refused us for spend reasons. Wrapped exactly as
+// recordUpstreamUsage is, and for the same reason: a fault in the measurement
+// must never break the request it is measuring. Logged at warn because it is the
+// event that makes the Worker start shedding, so it should be findable.
+function noteLimitRejection(path, status, errors) {
+  try {
+    if (!isLimitRejection(status, errors)) return;
+    markUpstreamLimited(usageBuffer, Date.now());
+    console.warn(
+      `upstream refusing ${endpointFamily(path)} (status ${status}); ` +
+        `shedding discretionary calls for the cool-off`,
+    );
+  } catch {
+    // measurement must never break the request
+  }
+}
+
 function recordUpstreamUsage(path, response) {
   try {
     bufferUsage(usageBuffer, {
@@ -6201,7 +6230,7 @@ function recordUpstreamUsage(path, response) {
 // the answer is "spend normally", never "fail the request".
 function currentBudgetLevel() {
   try {
-    return budgetLevel(latestQuota(usageBuffer));
+    return budgetLevel(latestQuota(usageBuffer), Date.now());
   } catch {
     return BUDGET_NORMAL;
   }
@@ -6314,9 +6343,21 @@ async function handleQuotaHealth(env, cors) {
       upstream: row.upstream === 1,
       count: row.calls,
     }));
+    // The daily figures come from D1 (they outlive any one isolate), but whether
+    // upstream is refusing us RIGHT NOW is live in-isolate state, so the two are
+    // merged here. Note the honest limitation: this answers for the isolate that
+    // happened to serve this request, so a refusal being felt elsewhere can read
+    // as false. That is still strictly better than the figures alone, which look
+    // healthy through a refusal by construction, since a refused response
+    // carries no quota headers to lower them.
+    const live = latestQuota(usageBuffer);
     const report = buildQuotaReport({
       rows,
-      quota: quota ? { dailyLimit: quota.daily_limit, dailyRemaining: quota.daily_remaining } : null,
+      quota: {
+        dailyLimit: quota?.daily_limit ?? null,
+        dailyRemaining: quota?.daily_remaining ?? null,
+        limitedUntil: live?.limitedUntil ?? 0,
+      },
       now,
     });
     return json(report, 200, { ...cors, "Cache-Control": "no-store" });

@@ -60,7 +60,27 @@ function reading(value) {
   return Number(value);
 }
 
-export function budgetLevel(quota) {
+// `now` is passed in rather than read from a clock, so this stays pure. Omitting
+// it disables the refusal check rather than throwing, which is the fail-open
+// direction: a caller that cannot supply a clock falls back to judging by the
+// gauge alone, exactly as before this existed.
+export function budgetLevel(quota, now = null) {
+  // An affirmative refusal outranks the gauge, and has to be checked FIRST.
+  // A refused response carries no quota headers at all, so the reading below is
+  // whatever was last seen while things were healthy: it reads NORMAL through
+  // the very incident this guard rail exists for. That was the blind spot.
+  //
+  // This is not a hole in the fail-open rule, it is the other side of it. That
+  // rule is about ABSENT data ("we could not read the gauge" must never look
+  // like "none left"). A refusal is present data: upstream saying outright that
+  // it will not serve us. Treating that as NORMAL is not failing open, it is
+  // ignoring the only unambiguous signal we ever get.
+  const limitedUntil = reading(quota?.limitedUntil);
+  const at = reading(now);
+  if (Number.isFinite(limitedUntil) && Number.isFinite(at) && at < limitedUntil) {
+    return BUDGET_CRITICAL;
+  }
+
   const limit = reading(quota?.dailyLimit);
   const remaining = reading(quota?.dailyRemaining);
   // Fail open. Note that limit <= 0 lands here too: a zero limit would make
