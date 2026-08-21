@@ -1,0 +1,7 @@
+[     180ms] [ERROR] VITE_POSTHOG_KEY and VITE_POSTHOG_HOST variables required by PostHog are missing or un-configured, this causes events to be silently missed. This error stops appearing once VITE_POSTHOG_KEY and VITE_POSTHOG_HOST are configured @ http://localhost:8731/@vite/client:524
+[     440ms] [ERROR] Failed to load resource: the server responded with a status of 502 () @ https://goon-squad-data.gs-wc.workers.dev/PL/live:0
+[   60502ms] [ERROR] Failed to load resource: the server responded with a status of 502 () @ https://goon-squad-data.gs-wc.workers.dev/PL/live:0
+[  120648ms] [ERROR] Failed to load resource: the server responded with a status of 502 () @ https://goon-squad-data.gs-wc.workers.dev/PL/live:0
+[  180703ms] [ERROR] Failed to load resource: the server responded with a status of 502 () @ https://goon-squad-data.gs-wc.workers.dev/PL/live:0
+[  240754ms] [ERROR] Failed to load resource: the server responded with a status of 502 () @ https://goon-squad-data.gs-wc.workers.dev/PL/live:0
+[  300780ms] [ERROR] Failed to load resource: the server responded with a status of 502 () @ https://goon-squad-data.gs-wc.workers.dev/PL/live:0

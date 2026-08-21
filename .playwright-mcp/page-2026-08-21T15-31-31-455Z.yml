@@ -1,0 +1,19 @@
+- generic [ref=f3e3]:
+  - banner [ref=f3e4]:
+    - button "KD Kickoff Draft Draft · Waivers · Head-to-Head" [ref=f3e5] [cursor=pointer]:
+      - generic [ref=f3e6]: KD
+      - generic [ref=f3e7]:
+        - strong [ref=f3e8]: Kickoff Draft
+        - generic [ref=f3e9]: Draft · Waivers · Head-to-Head
+    - navigation "Sections" [ref=f3e10]:
+      - button "Scores" [ref=f3e11] [cursor=pointer]
+      - button "Fantasy" [ref=f3e12] [cursor=pointer]
+      - button "Paper Run" [ref=f3e13] [cursor=pointer]
+      - button "Learn" [ref=f3e14] [cursor=pointer]
+    - generic [ref=f3e15]:
+      - text: Updated
+      - time [ref=f3e16]: …
+    - button "Sign in" [ref=f3e17] [cursor=pointer]
+  - generic "Live and recent scores" [ref=f3e18]
+  - main [ref=f3e19]
+  - contentinfo [ref=f3e20]

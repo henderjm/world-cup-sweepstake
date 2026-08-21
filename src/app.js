@@ -552,6 +552,46 @@ async function start() {
   }
 
   startPolling();
+  watchForeground();
+}
+
+// Everything on screen is server state fetched at some earlier moment, and a
+// backgrounded tab is where that moment gets old: mobile browsers throttle
+// timers hard, so the scores poll below can be minutes behind by the time
+// someone comes back, and the fantasy panels are lazily loaded exactly once and
+// then trusted for the whole session, so they never catch up at all. That left
+// one honest instruction, "reload the page", which is not a thing to ask of
+// somebody checking their own team.
+//
+// So returning to the app re-reads it. Both events are registered because
+// neither covers the other: visibilitychange fires for a backgrounded tab or a
+// locked phone, focus for a window that was merely behind another one.
+function watchForeground() {
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshOnForeground();
+  });
+  window.addEventListener("focus", () => refreshOnForeground());
+}
+
+// One foreground, one refresh. A real return to the app fires BOTH events
+// (measured in a browser: unlatched, this ran the whole refresh twice), and the
+// window is wide enough to swallow that pair while staying far below the poll's
+// own 20-second live cadence, so a genuine second foreground is never ignored.
+const FOREGROUND_COALESCE_MS = 2000;
+let lastForegroundAt = 0;
+
+// Cancels the pending poll rather than waiting it out, then lets poll()
+// reschedule as normal, so coming back to a live match shows the score now
+// instead of up to a minute later. poll() already keeps the last good model on
+// failure and only re-renders when the match signature actually moved.
+function refreshOnForeground() {
+  const now = Date.now();
+  if (now - lastForegroundAt < FOREGROUND_COALESCE_MS) return;
+  lastForegroundAt = now;
+  if (pollTimer) window.clearTimeout(pollTimer);
+  pollTimer = null;
+  poll();
+  refreshFantasySquadState();
 }
 
 // Relative "updated Xs ago" that ticks every second, so it is always visibly live.
@@ -594,7 +634,13 @@ function startPolling() {
   scheduleNextPoll();
 }
 
+// Clears any pending timer before arming the next one, so there is only ever
+// one poll loop. Nothing but poll() used to reach here, which made that true by
+// accident; a second entry point (refreshOnForeground) turns "two overlapping
+// polls" into "two timers, forever", each of which arms its own successor, so
+// the poll rate would double on every foreground rather than once.
 function scheduleNextPoll() {
+  if (pollTimer) window.clearTimeout(pollTimer);
   const hasLive = (model.matches ?? []).some((item) => isLive(item.status));
   pollTimer = window.setTimeout(poll, hasLive ? 20000 : 60000);
 }
@@ -1174,6 +1220,55 @@ async function saveFantasyTeamName(value) {
     f.teamNameError = error.message || "Couldn't save that team name.";
   } finally {
     if (f.activeLeagueId === leagueId) f.teamNameBusy = false;
+  }
+  if (state.section === "fantasy") renderLayout();
+}
+
+// The two payloads every squad screen reads: the league detail's roster, and
+// the lineup, whose starters and bench are bare player ids resolved against
+// that roster. They are refetched together because they are only meaningful
+// together, and they are refetched at all because a squad changes without the
+// manager doing anything on this device: a waiver run fires on the cron, dead-team
+// autopilot writes an XI, or they made the swap on their phone. loadFantasyLineup
+// and the league detail are both first-paint loaders guarded on absence, so
+// neither can do this job.
+//
+// Event-driven rather than a poll on purpose: a squad does not change second to
+// second, and returning to the app or opening the tab are exactly the moments a
+// stale screen would be read. Upstream cost is nil, since both routes resolve
+// the gameweek from the same memoised feed.
+//
+// Skipped while a lineup edit or a claim flow is open: both hold pending ids
+// picked from the squad currently on screen, so replacing it underneath them
+// would silently discard what the manager was in the middle of doing. They are
+// short-lived, and the next foreground or tab switch refreshes anyway.
+// The tabs whose bodies resolve player ids against the cached roster: the My
+// team pitch and bench, the Matchup gameweek tracker, and the Waivers drop
+// picker. Feed, Standings and Settings read none of it, so arriving on them
+// spends nothing.
+const SQUAD_SUBTABS = new Set(["myteam", "matchup", "waivers"]);
+
+let fantasyRefreshInFlight = false;
+
+async function refreshFantasySquadState() {
+  const f = state.fantasy;
+  const leagueId = f.activeLeagueId;
+  if (state.section !== "fantasy" || leagueId == null) return;
+  if (f.league?.league?.draftStatus !== "complete") return;
+  if (f.lineupEdit || f.waiverFlow || fantasyRefreshInFlight) return;
+  fantasyRefreshInFlight = true;
+  try {
+    const [league, lineup] = await Promise.all([fetchFantasyLeagueDetail(leagueId), apiGetLineup(leagueId)]);
+    if (f.activeLeagueId !== leagueId) return; // navigated away mid-flight
+    f.league = league;
+    f.lineup = lineup;
+    f.lineupError = "";
+  } catch {
+    // Best-effort by definition: what is on screen came from these same two
+    // routes, so a failed refresh leaves the best answer available rather than
+    // replacing a working screen with an error card.
+  } finally {
+    fantasyRefreshInFlight = false;
   }
   if (state.section === "fantasy") renderLayout();
 }
@@ -3658,6 +3753,10 @@ function wireHashRouting() {
         f.lineupEdit = null;
         f.playerDrawerId = null;
         f.waiverFlow = null;
+        // And the same re-read, for the same reason: arriving on a squad tab by
+        // Back/Forward is arriving on it, and the cached roster is as old here
+        // as it is on a click.
+        if (SQUAD_SUBTABS.has(f.subTab)) refreshFantasySquadState();
       }
     } else if (NON_SCORES_SECTIONS.includes(target)) {
       state.section = target;
@@ -4190,6 +4289,11 @@ function wireLayoutControls() {
       state.fantasy.waiverFlow = null;
       syncFantasyHash();
       renderLayout();
+      // Paint first, then re-read: the three tabs that render the squad all
+      // resolve player ids against the cached roster, and arriving on one is
+      // the moment a session-old copy of it gets looked at. Cleared the edit
+      // and flow state just above, so the refresh's own guard cannot block it.
+      if (SQUAD_SUBTABS.has(state.fantasy.subTab)) refreshFantasySquadState();
       return;
     }
     const fantasyCopyButton = event.target.closest("[data-fantasy-copy-invite]");
