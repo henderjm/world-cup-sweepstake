@@ -4066,20 +4066,6 @@ async function handleFantasyFreeAgentAdd(request, env, leagueId, cors) {
       }
     }
 
-    // Guarded on the add player still being unowned/unwired at write time:
-    // two managers racing the same free agent can both pass the read-time
-    // check above, but only one INSERT...SELECT...WHERE can win the roster
-    // slot, the same defense-in-depth pattern the league-join route uses.
-    const insert = await env.DB.prepare(
-      `INSERT INTO fantasy_rosters (league_id, user_id, player_id, acquired_via)
-       SELECT ?1, ?2, ?3, 'free_agent'
-       WHERE NOT EXISTS (SELECT 1 FROM fantasy_rosters WHERE league_id = ?1 AND player_id = ?3)
-         AND NOT EXISTS (SELECT 1 FROM fantasy_waiver_wire WHERE league_id = ?1 AND player_id = ?3)`,
-    )
-      .bind(leagueId, user.id, addPlayerId)
-      .run();
-    if ((insert.meta?.changes ?? 0) === 0) return json({ error: "Player is not a free agent" }, 400, cors);
-
     // Before the season starts, a dropped player goes straight back to free
     // agency instead of onto the waiver wire.
     //
@@ -4099,22 +4085,57 @@ async function handleFantasyFreeAgentAdd(request, env, leagueId, cors) {
     // to the wire, which is the conservative side of a fail-open: the worst
     // case is the pre-existing behaviour, not an unprotected wire mid-season.
     const preseason = matches ? seasonPhase({ matches, now: Date.now() }).preseason : null;
-    const dropStatements = [
-      env.DB.prepare(`DELETE FROM fantasy_rosters WHERE league_id = ?1 AND user_id = ?2 AND player_id = ?3`).bind(
-        leagueId,
-        user.id,
-        dropPlayerId,
-      ),
+
+    // The swap is ONE batch, so it is one transaction: SQUAD_SLOTS sums to
+    // exactly SQUAD_SIZE, which makes "add one, drop one" an invariant rather
+    // than two related writes, and a half-applied swap breaks it. The add used
+    // to commit on its own before the drop's batch was even built, so a failure
+    // in between left a 16-man squad no route could repair; the manager's own
+    // next swap would then be validated against an illegal roster.
+    //
+    // Both statements carry the whole condition rather than trusting the
+    // read-time checks above, because two managers can race the same free agent
+    // and both pass those. The DELETE fires only if the add is still unowned
+    // and unwired, exactly the guard the INSERT used to carry alone. The INSERT
+    // then fires only if this manager's roster is one short of the size we read,
+    // which is true only if our own DELETE landed: it is the one condition that
+    // cannot be satisfied by a concurrent request having already dropped that
+    // player for us, so the pair is all-or-nothing in both directions. Neither
+    // firing means the whole batch changed nothing, which is what the 400 below
+    // reports.
+    const addAvailable = `NOT EXISTS (SELECT 1 FROM fantasy_rosters WHERE league_id = ?1 AND player_id = ?4)
+         AND NOT EXISTS (SELECT 1 FROM fantasy_waiver_wire WHERE league_id = ?1 AND player_id = ?4)`;
+    const writes = [
+      env.DB.prepare(
+        `DELETE FROM fantasy_rosters
+         WHERE league_id = ?1 AND user_id = ?2 AND player_id = ?3
+           AND ${addAvailable}`,
+      ).bind(leagueId, user.id, dropPlayerId, addPlayerId),
+      env.DB.prepare(
+        `INSERT INTO fantasy_rosters (league_id, user_id, player_id, acquired_via)
+         SELECT ?1, ?2, ?4, 'free_agent'
+         WHERE ${addAvailable}
+           AND (SELECT COUNT(*) FROM fantasy_rosters WHERE league_id = ?1 AND user_id = ?2) = ?3`,
+      ).bind(leagueId, user.id, roster.length - 1, addPlayerId),
     ];
     if (dropGoesToWire({ preseason })) {
-      dropStatements.push(
+      // Same all-or-nothing reasoning: the wire row is a consequence of the
+      // swap, so it is conditioned on the swap having actually happened (the
+      // add on this roster, the drop off it) rather than on reaching this line.
+      writes.push(
         env.DB.prepare(
-          `INSERT INTO fantasy_waiver_wire (league_id, player_id, clears_after_gameweek) VALUES (?1, ?2, ?3)
+          `INSERT INTO fantasy_waiver_wire (league_id, player_id, clears_after_gameweek)
+           SELECT ?1, ?2, ?3
+           WHERE EXISTS (SELECT 1 FROM fantasy_rosters WHERE league_id = ?1 AND user_id = ?4 AND player_id = ?5)
+             AND NOT EXISTS (SELECT 1 FROM fantasy_rosters WHERE league_id = ?1 AND user_id = ?4 AND player_id = ?2)
            ON CONFLICT(league_id, player_id) DO UPDATE SET added_at = datetime('now'), clears_after_gameweek = ?3`,
-        ).bind(leagueId, dropPlayerId, gameweek),
+        ).bind(leagueId, dropPlayerId, gameweek, user.id, addPlayerId),
       );
     }
-    await env.DB.batch(dropStatements);
+    const written = await env.DB.batch(writes);
+    if ((written[1]?.meta?.changes ?? 0) === 0) {
+      return json({ error: "Player is not a free agent" }, 400, cors);
+    }
 
     await postLeagueEvent(env, leagueId, CHAT_EVENTS.FREE_AGENT_ADD, {
       actor: memberDisplayName(user),

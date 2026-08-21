@@ -1867,7 +1867,17 @@ export function renderFantasyRosterPanel({
   const opponents = buildOpponentLabels(roster, matches, lineup.gameweek ?? currentGameweek);
   const starterIds = editState ? editState.starters : lineup.starters.map((entry) => entry.playerId);
   const captainId = editState ? editState.captainId : (lineup.starters.find((entry) => entry.isCaptain)?.playerId ?? null);
-  const benchIds = editState ? editState.bench : lineup.bench;
+  // Derived from the roster rather than read off lineup.bench, which is the
+  // same rule the Worker applies (handleFantasyLineupGet: roster minus
+  // starters) computed where the roster actually is. Identical whenever the two
+  // payloads agree, and strictly better when they do not: the pitch can only
+  // ever render a starter it can resolve, so a bench taken on trust let a
+  // roster player belong to neither list and vanish from the screen entirely.
+  // Deriving it means the worst a stale XI can do is seat somebody, never lose
+  // them, and the squad always adds up to fifteen.
+  const benchIds = editState
+    ? editState.bench
+    : (roster ?? []).filter((player) => !starterIds.includes(player.id)).map((player) => player.id);
 
   // The deadline leads the pitch: it is the one thing a manager has to know
   // before deciding whether it is even worth opening the editor. The lineup

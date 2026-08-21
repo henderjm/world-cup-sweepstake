@@ -1353,6 +1353,109 @@ test("a waiver run takes a lease, and its batch rolls late claims forward before
   );
 });
 
+// -- An instant free-agent swap is one transaction ----------------------------
+//
+// SQUAD_SLOTS sums to exactly SQUAD_SIZE, so "add one, drop one" is a roster
+// invariant rather than two related writes. The add used to commit on its own
+// and the drop followed in a separate batch, so anything failing in between
+// left a 16-man squad no route could repair. This asserts the shape that makes
+// that impossible: both roster writes in ONE batch, the DELETE first (the
+// INSERT's roster-count guard only holds if its own DELETE already landed), and
+// the add-availability check on both so a concurrent claim on the same free
+// agent cannot half-apply the pair.
+//
+// Bindings carry no API_FOOTBALL_KEY on purpose: currentFantasyMatches returns
+// null without one, which takes the fail-open path through the kickoff lock and
+// no network, and leaves the season phase unknown so the waiver-wire write is
+// included too.
+function freeAgentDb(batches, ranDirectly) {
+  const roster = Array.from({ length: 15 }, (_, index) => ({
+    id: index + 1,
+    name: `Player ${index + 1}`,
+    team: "Test FC",
+    position: "FWD",
+  }));
+  const make = (sql) => {
+    const normalised = sql.replace(/\s+/g, " ").trim();
+    const statement = {
+      sql: normalised,
+      bound: [],
+      bind: (...args) => {
+        statement.bound = args;
+        return statement;
+      },
+      first: async () => {
+        if (normalised.startsWith("SELECT u.id, u.email")) return { id: 7, email: "manager@example.com", name: "Manager" };
+        if (normalised.includes("SELECT draft_status FROM fantasy_leagues")) return { draft_status: "complete" };
+        if (normalised.includes("FROM fantasy_league_members WHERE league_id")) return { x: 1 };
+        if (normalised.includes("FROM fantasy_players WHERE id")) {
+          const id = statement.bound[0];
+          return { id, name: `Player ${id}`, team: "Test FC", position: "FWD" };
+        }
+        // The add is owned by nobody and sits on no wire: a free agent.
+        return null;
+      },
+      all: async () => (normalised.includes("FROM fantasy_rosters r") ? { results: roster } : { results: [] }),
+      run: async () => {
+        ranDirectly.push(normalised);
+        return { success: true, meta: { changes: 1, last_row_id: 1 } };
+      },
+    };
+    return statement;
+  };
+  return {
+    prepare: make,
+    batch: async (statements) => {
+      batches.push(statements.map((statement) => statement.sql));
+      return statements.map(() => ({ success: true, meta: { changes: 1 } }));
+    },
+  };
+}
+
+test("an instant free-agent swap writes the add and the drop in one batch, drop first", async () => {
+  const batches = [];
+  const ranDirectly = [];
+  const response = await worker.fetch(
+    new Request("https://example.com/fantasy/league/1/freeagents/add", {
+      method: "POST",
+      headers: { Authorization: "Bearer test-session-token-0123456789", "Content-Type": "application/json" },
+      body: JSON.stringify({ addPlayerId: 99, dropPlayerId: 5 }),
+    }),
+    {
+      API_FOOTBALL_COMPETITIONS: "PL:2026",
+      FANTASY_GAMEWEEK_OVERRIDE: "1",
+      DB: freeAgentDb(batches, ranDirectly),
+    },
+    { waitUntil: () => {} },
+  );
+  assert.equal(response.status, 200);
+
+  const swap = batches.find((sqls) => sqls.some((sql) => sql.startsWith("DELETE FROM fantasy_rosters")));
+  assert.ok(swap, "the swap never reached a batch");
+
+  const drop = swap.findIndex((sql) => sql.startsWith("DELETE FROM fantasy_rosters"));
+  const add = swap.findIndex((sql) => sql.startsWith("INSERT INTO fantasy_rosters"));
+  assert.ok(add >= 0, "the add is not in the same batch as the drop, so the swap can still half-apply");
+  assert.ok(drop < add, "the add's roster-count guard only holds once its own drop has landed");
+  assert.ok(
+    swap.some((sql) => sql.startsWith("INSERT INTO fantasy_waiver_wire")),
+    "the wire row is a consequence of the swap and belongs in its transaction",
+  );
+
+  // Both roster writes carry the add-availability guard: two managers racing
+  // the same free agent both pass the read-time check above it.
+  for (const sql of [swap[drop], swap[add]]) {
+    assert.match(sql, /NOT EXISTS \(SELECT 1 FROM fantasy_rosters WHERE league_id = \?1 AND player_id = \?4\)/);
+    assert.match(sql, /NOT EXISTS \(SELECT 1 FROM fantasy_waiver_wire WHERE league_id = \?1 AND player_id = \?4\)/);
+  }
+  assert.match(swap[add], /SELECT COUNT\(\*\) FROM fantasy_rosters WHERE league_id = \?1 AND user_id = \?2\) = \?3/);
+
+  assert.ok(
+    !ranDirectly.some((sql) => sql.startsWith("INSERT INTO fantasy_rosters")),
+    "the add ran on its own again, outside the swap's transaction",
+  );
+});
+
 // -- API-Football quota analytics, end to end ---------------------------------
 //
 // Same anti-short-circuit discipline as the blocks above, and it needs more

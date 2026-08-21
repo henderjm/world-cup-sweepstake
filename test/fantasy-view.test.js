@@ -893,6 +893,40 @@ test("renderFantasyRosterPanel keeps the bench in position order mid-swap, witho
   assert.match(tileClasses(html, 12) ?? "", /is-pending/);
 });
 
+// Two instant free-agent swaps land while the cached /lineup payload still
+// describes the pre-swap squad: starter 11 and bench 13 are gone, 16 and 17 are
+// in. The pitch can only render a starter it can resolve, so 11 simply drops
+// out of it; taking lineup.bench on trust used to drop 13 as well and never
+// mention 16 or 17 at all, showing a full 15-man squad as 13 players and
+// reading as lost players rather than a stale screen. Deriving the bench from
+// the roster means the worst a stale XI can do is seat somebody.
+test("renderFantasyRosterPanel shows every rostered player even when the cached lineup predates a swap", () => {
+  const swapped = rosterFixture()
+    .filter((player) => player.id !== 11 && player.id !== 13)
+    .concat([pooledPlayer(16, "FWD", "Signed Forward"), pooledPlayer(17, "DEF", "Signed Defender")]);
+
+  const html = renderFantasyRosterPanel({
+    currentGameweek: 5,
+    roster: swapped,
+    lineup: baseLineup(), // starters [1..11], bench [12, 13, 14, 15]: both stale
+    playerPool: [],
+    picks: [],
+    editState: null,
+    drawerPlayerId: null,
+    lineupError: "",
+  });
+
+  const onScreen = new Set(
+    [...html.matchAll(/data-fantasy-player-id="(\d+)" data-fantasy-slot="/g)].map((m) => Number(m[1])),
+  );
+  assert.deepEqual(
+    [...onScreen].sort((a, b) => a - b),
+    swapped.map((player) => player.id).sort((a, b) => a - b),
+  );
+  assert.deepEqual(benchOrder(html), [12, 17, 14, 15, 16]);
+  assert.ok(!onScreen.has(11) && !onScreen.has(13), "the dropped players are gone from both the pitch and the bench");
+});
+
 test("renderFantasyRosterPanel shows a real xP value for a player the pool has stats for, a placeholder otherwise", () => {
   const html = renderFantasyRosterPanel({
     currentGameweek: 5,

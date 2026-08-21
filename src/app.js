@@ -1734,11 +1734,25 @@ async function submitFantasyWaiverFlow() {
   try {
     if (flow.path === "free_agent") {
       await apiAddFreeAgent(f.activeLeagueId, { addPlayerId: flow.addPlayer.id, dropPlayerId: flow.dropPlayerId });
-      // The roster changed instantly (unlike a queued claim): refresh the
-      // league's own cached roster too, so the My team pitch/bench and any
-      // later drop picker see the swap immediately rather than on next visit.
+      // The roster changed instantly (unlike a queued claim), so BOTH cached
+      // copies of it have to move together: the league detail's roster, and the
+      // lineup, whose starters/bench are bare player ids the pitch resolves
+      // against that roster. Refreshing only the roster left the two
+      // disagreeing, and the My team pitch reads the intersection: a dropped
+      // starter stayed in the stale XI where he no longer resolved and rendered
+      // as nothing, while the player just added appeared in neither the stale
+      // starters nor the stale bench. Two swaps therefore showed a full 15-man
+      // squad as 13, which reads as lost players rather than a stale screen.
+      // Any in-flight lineup edit is dropped for the same reason: its pending
+      // id arrays were built from the pre-swap squad.
       try {
-        f.league = await fetchFantasyLeagueDetail(f.activeLeagueId);
+        const [league, lineup] = await Promise.all([
+          fetchFantasyLeagueDetail(f.activeLeagueId),
+          apiGetLineup(f.activeLeagueId),
+        ]);
+        f.league = league;
+        f.lineup = lineup;
+        f.lineupEdit = null;
       } catch {
         // best-effort refresh; the waivers reload below still succeeds
       }
