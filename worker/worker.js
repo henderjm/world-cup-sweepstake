@@ -141,7 +141,7 @@ import {
   buildDraftRecapPrompt,
   mergeDraftRecap,
 } from "../src/fantasyDraftRecapPrompt.js";
-import { endpointFamily } from "../src/apiQuota.js";
+import { endpointFamily, parseQuotaHeaders } from "../src/apiQuota.js";
 import {
   bufferSize,
   bufferUsage,
@@ -569,7 +569,16 @@ export default {
         return json({ ok: true, service: "goon-squad-data" }, 200, cors);
       }
       return json({ error: "not found" }, 404, cors);
-    } catch {
+    } catch (error) {
+      // The 502 body stays deliberately vague (it is public, and an upstream's
+      // own error text is not ours to forward), but throwing it away entirely
+      // left this branch completely unobservable: a live 502 on /:comp/live
+      // could not be told apart from a plan problem, a per-minute rate limit or
+      // a mapping bug without shipping a log line to find out. assertApiFootballPayload
+      // puts the upstream's own `errors` object in the message, which is the
+      // one thing that actually names the cause, and it carries no key.
+      // Same reasoning as fetchSupplementaryJson naming which endpoint degraded.
+      console.error(`route failed: ${url.pathname}: ${error?.message ?? error}`);
       return json({ error: "upstream unavailable" }, 502, cors);
     }
   },
@@ -6087,7 +6096,26 @@ async function fetchUpstream(url, path, token, cacheTtl) {
   // regression in the one we do not control.
   recordUpstreamUsage(path, response);
   if (!response.ok) throw new Error(`upstream ${response.status}`);
-  const payload = assertApiFootballPayload(await response.json());
+  let payload;
+  try {
+    payload = assertApiFootballPayload(await response.json());
+  } catch (error) {
+    // API-Football answers 200 with an `errors` object for the failures that
+    // matter most (plan limits, a rate limit, a bad season), so response.ok
+    // above never sees them and the caller only learns that something threw.
+    // The allowance is logged with it because it is the difference between two
+    // very different problems wearing the same 502: a per-MINUTE cap we are
+    // bursting through, and a DAILY one we have spent. /health/quota reports
+    // only the daily figures, so the minute pair is otherwise invisible.
+    const quota = parseQuotaHeaders(response.headers);
+    console.error(
+      `upstream rejected ${endpointFamily(path)}: ${error?.message ?? error} ` +
+        `[minute ${quota.minuteRemaining}/${quota.minuteLimit}, day ${quota.dailyRemaining}/${quota.dailyLimit}, ` +
+        `cf-cache-status ${response.headers.get("cf-cache-status") ?? "absent"}, ` +
+        `upstream cache-control ${response.headers.get("cache-control") ?? "absent"}]`,
+    );
+    throw error;
+  }
   // Stored only on success. A thrown error must never be memoised: a single
   // upstream blip would otherwise be replayed as a failure for the whole
   // window, turning a one-second fault into a six-hour outage.
