@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   MAX_CACHE_ENTRIES,
+  MAX_STALE_GRACE_MS,
   MAX_TTL_SECONDS,
+  classifyColoEntry,
   cacheStats,
   cachedEntryCount,
   createResponseCache,
@@ -104,4 +106,43 @@ test("a null cache is inert rather than a crash", () => {
   assert.equal(pruneCache(null, 0), 0);
   assert.equal(cachedEntryCount(null), 0);
   assert.equal(cacheStats(null).hitRate, null);
+});
+
+// -- the colo cache's freshness policy -----------------------------------------
+// Same guarantee as the memo (fresh means inside the caller's own declared
+// ttl), plus a bounded "stale" band served only as a fallback when a live
+// upstream read just failed.
+
+test("a colo entry is fresh inside the declared ttl and expired past it with no grace", () => {
+  assert.equal(classifyColoEntry({ storedAt: 0, now: 59_000, ttlMs: 60_000 }), "fresh");
+  assert.equal(classifyColoEntry({ storedAt: 0, now: 60_000, ttlMs: 60_000 }), "fresh");
+  assert.equal(classifyColoEntry({ storedAt: 0, now: 60_001, ttlMs: 60_000 }), "expired");
+});
+
+test("grace opens a stale band after the ttl, and only after it", () => {
+  const graceMs = 10 * 60 * 1000;
+  assert.equal(classifyColoEntry({ storedAt: 0, now: 61_000, ttlMs: 60_000, graceMs }), "stale");
+  assert.equal(classifyColoEntry({ storedAt: 0, now: 60_000 + graceMs, ttlMs: 60_000, graceMs }), "stale");
+  assert.equal(classifyColoEntry({ storedAt: 0, now: 60_001 + graceMs, ttlMs: 60_000, graceMs }), "expired");
+});
+
+test("grace is clamped to the maximum, so no call site can serve arbitrarily old data", () => {
+  const huge = 24 * 60 * 60 * 1000;
+  assert.equal(
+    classifyColoEntry({ storedAt: 0, now: 60_000 + MAX_STALE_GRACE_MS, ttlMs: 60_000, graceMs: huge }),
+    "stale",
+  );
+  assert.equal(
+    classifyColoEntry({ storedAt: 0, now: 60_001 + MAX_STALE_GRACE_MS, ttlMs: 60_000, graceMs: huge }),
+    "expired",
+  );
+});
+
+test("garbage in means expired, never a confident answer", () => {
+  assert.equal(classifyColoEntry({ storedAt: NaN, now: 0, ttlMs: 60_000 }), "expired");
+  assert.equal(classifyColoEntry({ storedAt: "not a time", now: 0, ttlMs: 60_000 }), "expired");
+  assert.equal(classifyColoEntry({ storedAt: 0, now: 1000, ttlMs: 0 }), "expired");
+  assert.equal(classifyColoEntry({ storedAt: 0, now: 1000, ttlMs: -5 }), "expired");
+  // a stored-at in the future means a clock ran backwards; not evidence of freshness
+  assert.equal(classifyColoEntry({ storedAt: 5000, now: 1000, ttlMs: 60_000 }), "expired");
 });

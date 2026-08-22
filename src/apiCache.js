@@ -48,6 +48,38 @@ export const MAX_CACHE_ENTRIES = 96;
 // passing a nonsense ttl cannot pin a stale payload in memory for a season.
 export const MAX_TTL_SECONDS = 6 * 60 * 60;
 
+// -- the colo cache's freshness policy ----------------------------------------
+//
+// The in-process memo above dies with its isolate, and the cf edge cache the
+// call sites hoped for has never worked at all: api-sports is itself behind
+// Cloudflare, and a zone-to-zone fetch IGNORES our cacheEverything/cacheTtl
+// (every response comes back cf-cache-status DYNAMIC, upstream cache-control
+// no-store). The Worker therefore keeps parsed payloads in caches.default
+// under its OWN synthetic keys, which the other zone cannot veto. This is the
+// pure freshness decision for those entries; the Cache API wiring lives in
+// worker/worker.js.
+//
+// An entry within the caller's declared ttl is "fresh": the same guarantee the
+// memo gives, extended across isolates in a colo. Between ttl and ttl+grace it
+// is "stale": served ONLY as a fallback when a live upstream read just failed,
+// because on a refused matchday a few-minutes-old timeline is a better answer
+// than an empty one. Grace is opt-in per call site and defaults to zero, and
+// the SETTLING pass must never opt in (a stale payload scored and marked in
+// fantasy_scored_matches would be wrong forever; see isSettleableDetail).
+export const MAX_STALE_GRACE_MS = 30 * 60 * 1000;
+
+export function classifyColoEntry({ storedAt, now, ttlMs, graceMs = 0 }) {
+  const at = Number(storedAt);
+  const ttl = Number(ttlMs);
+  if (!Number.isFinite(at) || !Number.isFinite(now) || !Number.isFinite(ttl) || ttl <= 0) return "expired";
+  const age = now - at;
+  if (age < 0) return "expired"; // a clock that ran backwards is not evidence of freshness
+  if (age <= ttl) return "fresh";
+  const grace = Math.min(Math.max(Number(graceMs) || 0, 0), MAX_STALE_GRACE_MS);
+  if (age <= ttl + grace) return "stale";
+  return "expired";
+}
+
 export function createResponseCache() {
   return { entries: new Map(), hits: 0, misses: 0, evictions: 0 };
 }

@@ -8,6 +8,20 @@
 
 import { SCORING, bucketPosition } from "./fantasy.js";
 
+// Whether a match detail is complete enough to SETTLE from. A degraded read
+// (the Worker names each supplementary payload it had to skip or fake empty on
+// detail.degraded) scores cleanly through scoreMatchForPlayers, and that is
+// exactly the danger: no lineups and no player stats means no appearance
+// points for anybody, so a match settled off one looks finished, gets marked
+// in fantasy_scored_matches, and is wrong FOREVER. GW1 2026-27's Friday
+// opener settled with 7 players and 19 points during an upstream refusal
+// window. The settling pass must skip such a read and retry next tick;
+// provisional consumers (live points, the drawer) may still render it.
+export function isSettleableDetail(detail) {
+  if (!detail) return false;
+  return !(Array.isArray(detail.degraded) && detail.degraded.length > 0);
+}
+
 // Returns a Map<playerId, { points, breakdown }>. Players who never appear in a
 // lineup, bench, goal, card, or sub entry are simply absent from the map — there
 // is nothing to score for them.

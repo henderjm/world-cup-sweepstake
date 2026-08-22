@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { scoreMatchForPlayers } from "../src/fantasyScoring.js";
+import { isSettleableDetail, scoreMatchForPlayers } from "../src/fantasyScoring.js";
 import { SCORING } from "../src/fantasy.js";
 
 // A minimal mapped-detail fixture: home 2-0 away, one goal with an
@@ -96,4 +96,18 @@ test("an unused substitute is absent from or scoreless in the result", () => {
   const scores = scoreMatchForPlayers(fixture());
   const entry = scores.get(6);
   assert.ok(!entry || entry.points === 0);
+});
+
+// -- the settle guard -----------------------------------------------------------
+// A degraded detail read scores cleanly (no lineups + no player stats = no
+// appearance points for anybody) and fantasy_scored_matches would then stop any
+// later tick from correcting it. GW1 2026-27's Friday opener settled with 7
+// players and 19 points during an upstream refusal window.
+
+test("a degraded detail must never settle; a healthy or merely empty one may", () => {
+  assert.equal(isSettleableDetail({ degraded: ["/fixtures/lineups", "/fixtures/players"] }), false);
+  assert.equal(isSettleableDetail({ degraded: ["/fixtures/events"] }), false);
+  assert.equal(isSettleableDetail({ home: {}, away: {} }), true, "no degraded field at all is a healthy read");
+  assert.equal(isSettleableDetail({ degraded: [] }), true, "an empty list means nothing degraded");
+  assert.equal(isSettleableDetail(null), false, "no detail is not settleable either");
 });

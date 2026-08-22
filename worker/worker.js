@@ -66,7 +66,7 @@ import {
   resolveEffectiveLineup,
   validateLineupSelection,
 } from "../src/fantasyLineups.js";
-import { scoreMatchForPlayers } from "../src/fantasyScoring.js";
+import { isSettleableDetail, scoreMatchForPlayers } from "../src/fantasyScoring.js";
 import {
   mergeMatchScoreRows,
   parseStoredScores,
@@ -164,7 +164,15 @@ import {
   markUpstreamLimited,
   usageDay,
 } from "../src/apiQuotaStore.js";
-import { createResponseCache, pruneCache, readCached, writeCached } from "../src/apiCache.js";
+import {
+  MAX_STALE_GRACE_MS,
+  MAX_TTL_SECONDS,
+  classifyColoEntry,
+  createResponseCache,
+  pruneCache,
+  readCached,
+  writeCached,
+} from "../src/apiCache.js";
 import { markStaleLive, tooStaleForBrowser } from "../src/liveStale.js";
 import {
   BUDGET_NORMAL,
@@ -582,7 +590,7 @@ export default {
         // returned for zero upstream calls. It always answers with a real
         // match rather than an error, naming whatever it could not fetch on
         // detail.degraded exactly as a genuine upstream failure would.
-        const detail = await fetchMatchDetail(id, token, profile, known, currentBudgetLevel());
+        const detail = await fetchMatchDetail(id, token, profile, known, currentBudgetLevel(), MATCH_DETAIL_STALE_GRACE_MS);
         // The browser cache window follows the same reasoning as the edge one:
         // a finished match does not need re-fetching every 25 seconds. A read
         // that degraded is capped much shorter so a transient upstream fault
@@ -876,7 +884,8 @@ function analysisWorthGenerating(match) {
 }
 
 async function generateAnalysis(env, match, live, token, detail = null) {
-  detail = detail ?? (await fetchMatchDetail(match.id, token));
+  // Analysis never settles anything, so the live stale grace is safe here too.
+  detail = detail ?? (await fetchMatchDetail(match.id, token, undefined, null, BUDGET_NORMAL, MATCH_DETAIL_STALE_GRACE_MS));
 
   // Model override must support adaptive thinking + structured outputs.
   const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 60_000 });
@@ -2941,6 +2950,17 @@ async function runScheduledFantasyScoring(env) {
     try {
       if (index > 0) await sleep(MATCH_DETAIL_PACING_MS);
       const detail = await fetchMatchDetail(match.id, env.API_FOOTBALL_KEY);
+      // A degraded read scores cleanly and settles WRONG FOREVER: no lineups
+      // and no player stats means no appearance points for anybody, and
+      // fantasy_scored_matches stops any later tick from correcting it. GW1's
+      // Friday opener settled with 7 players during a refusal window. Skip it;
+      // it never reaches fantasy_scored_matches, so the next tick retries.
+      if (!isSettleableDetail(detail)) {
+        console.warn(
+          `fantasy scoring: match ${match.id} detail degraded (${(detail.degraded ?? []).join(", ")}); deferring to a later tick`,
+        );
+        continue;
+      }
       const scores = scoreMatchForPlayers(detail);
       // Players never in the baked squad pool (a late loan, a call-up who
       // missed the fetch:fantasy-players bake) still need a fantasy_players
@@ -6190,7 +6210,7 @@ function corsHeaders(request) {
 // in the edge cache, chosen from the fixture's state rather than fixed. Defaults
 // to the live windows so any caller that has not classified the match gets the
 // safe-but-expensive behaviour rather than accidentally serving stale scores.
-async function fetchMatchDetail(id, token, profile = MATCH_DETAIL_LIVE, summary = null, level = BUDGET_NORMAL) {
+async function fetchMatchDetail(id, token, profile = MATCH_DETAIL_LIVE, summary = null, level = BUDGET_NORMAL, staleGraceMs = 0) {
   // Interactive detail reads include the fixture endpoint for half-time scores and
   // referee data.
   //
@@ -6232,15 +6252,23 @@ async function fetchMatchDetail(id, token, profile = MATCH_DETAIL_LIVE, summary 
     return { ...detail, degraded };
   }
 
-  const fixture = await fetchJson(`/fixtures?id=${id}`, token, profile.fixture);
+  // The load-bearing fixture payload takes the same stale grace when the
+  // caller opted in: for the drawer a slightly aged fixture read still names
+  // the teams, kickoff and venue, where a throw is a 502 with nothing at all.
+  // The stale serve is marked degraded like any other, and settled scoring
+  // passes no grace, so it can never settle off any of this.
+  const fixture = await fetchJson(`/fixtures?id=${id}`, token, profile.fixture, {
+    staleGraceMs,
+    onStale: () => degraded.push("/fixtures"),
+  });
   const lineups = plan.lineups
-    ? await fetchSupplementaryJson(`/fixtures/lineups?fixture=${id}`, token, profile.lineups, degraded)
+    ? await fetchSupplementaryJson(`/fixtures/lineups?fixture=${id}`, token, profile.lineups, degraded, staleGraceMs)
     : skip("/fixtures/lineups");
   const events = plan.events
-    ? await fetchSupplementaryJson(`/fixtures/events?fixture=${id}`, token, profile.events, degraded)
+    ? await fetchSupplementaryJson(`/fixtures/events?fixture=${id}`, token, profile.events, degraded, staleGraceMs)
     : skip("/fixtures/events");
   const players = plan.players
-    ? await fetchSupplementaryJson(`/fixtures/players?fixture=${id}`, token, profile.players, degraded)
+    ? await fetchSupplementaryJson(`/fixtures/players?fixture=${id}`, token, profile.players, degraded, staleGraceMs)
     : skip("/fixtures/players");
   const detail = mapApiFootballMatchDetail(fixture, lineups, events, players);
   // Present only when something actually degraded, so a healthy read keeps the
@@ -6257,11 +6285,22 @@ async function fetchMatchDetail(id, token, profile = MATCH_DETAIL_LIVE, summary 
 // response. The fetch is still recorded as spend by fetchJson before it throws.
 const EMPTY_API_PAYLOAD = Object.freeze({ response: [] });
 
-async function fetchSupplementaryJson(path, token, cacheTtl, degraded) {
+// How far behind a served match-detail payload may run when upstream is
+// refusing us: ten minutes of staleness on a timeline or a lineup is a far
+// better answer than an empty drawer, which is what a GW1 refusal window
+// produced ("worked briefly, refreshed, gone again"). Only the DRAWER and the
+// live cron passes (analysis, notifications, provisional points) opt in;
+// settled scoring never does, because stale-settled is wrong forever.
+const MATCH_DETAIL_STALE_GRACE_MS = 10 * 60 * 1000;
+
+async function fetchSupplementaryJson(path, token, cacheTtl, degraded, staleGraceMs = 0) {
+  const family = endpointFamily(path);
   try {
-    return await fetchJson(path, token, cacheTtl);
+    // A stale serve still lands on `degraded`: the payload is real but its
+    // latest minutes may be missing, and the drawer's "some detail is
+    // temporarily unavailable" note is the honest label for that.
+    return await fetchJson(path, token, cacheTtl, { staleGraceMs, onStale: () => degraded.push(family) });
   } catch (error) {
-    const family = endpointFamily(path);
     degraded.push(family);
     console.warn(`match detail: ${family} unavailable, serving empty`, error?.message ?? error);
     return EMPTY_API_PAYLOAD;
@@ -6274,9 +6313,13 @@ async function fetchLiveMatchDetail(summary, token) {
   // remain minute-fresh; lineups are effectively immutable after kick-off and player
   // totals only need a five-minute scoring cadence. At ~105 live minutes this costs
   // about 133 requests per match instead of 420.
-  const lineups = await fetchJson(`/fixtures/lineups?fixture=${summary.id}`, token, 15 * 60);
-  const events = await fetchJson(`/fixtures/events?fixture=${summary.id}`, token, 60);
-  const players = await fetchJson(`/fixtures/players?fixture=${summary.id}`, token, 5 * 60);
+  // Live consumers only (analysis, notifications, provisional points), so the
+  // stale grace is safe: nothing here settles anything, and a few-minutes-old
+  // timeline beats a refused tick doing no work at all.
+  const stale = { staleGraceMs: MATCH_DETAIL_STALE_GRACE_MS };
+  const lineups = await fetchJson(`/fixtures/lineups?fixture=${summary.id}`, token, 15 * 60, stale);
+  const events = await fetchJson(`/fixtures/events?fixture=${summary.id}`, token, 60, stale);
+  const players = await fetchJson(`/fixtures/players?fixture=${summary.id}`, token, 5 * 60, stale);
   return mapApiFootballMatchDetailFromSummary(summary, lineups, events, players);
 }
 
@@ -6290,7 +6333,13 @@ const responseCache = createResponseCache();
 // the second and both would go out.
 const inflightRequests = new Map();
 
-async function fetchJson(path, token, cacheTtl) {
+// `opts.staleGraceMs` opts this call into the serve-stale-on-failure fallback:
+// when the live upstream read fails AND the colo cache holds a copy no older
+// than ttl+grace, that copy is returned instead of throwing, and `opts.onStale`
+// (if given) is called so the caller can report the payload as degraded. The
+// default is 0: no staleness beyond the declared ttl, ever. The settling pass
+// must never pass a grace (see isSettleableDetail).
+async function fetchJson(path, token, cacheTtl, opts = {}) {
   const url = `${API}${path}`;
   const now = Date.now();
 
@@ -6299,11 +6348,106 @@ async function fetchJson(path, token, cacheTtl) {
   const inflight = inflightRequests.get(url);
   if (inflight) return inflight;
 
-  const request = fetchUpstream(url, path, token, cacheTtl).finally(() => {
+  const request = fetchWithColoCache(url, path, token, cacheTtl, opts).finally(() => {
     inflightRequests.delete(url);
   });
   inflightRequests.set(url, request);
   return request;
+}
+
+// The colo cache: parsed payloads in caches.default under our own synthetic
+// keys. It exists because the cf edge cache the fetch options ask for has
+// NEVER worked: api-sports is itself behind Cloudflare, a zone-to-zone fetch
+// ignores our cacheEverything/cacheTtl, and every response comes back
+// cf-cache-status DYNAMIC with upstream cache-control no-store (measured
+// GW1 2026-27, which is also the day the shared-egress-IP per-minute refusals
+// made every avoidable upstream call expensive). Same-freshness semantics as
+// the in-isolate memo (an entry is fresh within the caller's own declared
+// ttl), shared across isolates in the colo and surviving isolate eviction.
+// The freshness decision is the pure classifyColoEntry in src/apiCache.js.
+const COLO_CACHE_BASE = "https://goon-squad-data.internal/upstream";
+const coloKey = (path) => `${COLO_CACHE_BASE}${path}`;
+
+async function readColoCache(path, cacheTtl, graceMs) {
+  try {
+    const hit = await caches.default.match(coloKey(path));
+    if (!hit) return undefined;
+    const storedAt = Number(hit.headers.get("x-gs-stored-at"));
+    const state = classifyColoEntry({ storedAt, now: Date.now(), ttlMs: Number(cacheTtl) * 1000, graceMs });
+    if (state === "expired") return undefined;
+    return { payload: await hit.json(), state, storedAt };
+  } catch {
+    return undefined; // the cache must never break the request it rides on
+  }
+}
+
+async function writeColoCache(path, payload, cacheTtl) {
+  try {
+    const ttl = Number(cacheTtl);
+    if (!Number.isFinite(ttl) || ttl <= 0) return; // no declared window, no storage (same rule as writeCached)
+    // Stored past the fresh window by the maximum grace so the stale fallback
+    // has something to reach for; reads enforce the real semantics from
+    // x-gs-stored-at, so the generous max-age can never make a FRESH answer
+    // out of an old entry.
+    const keepSeconds = Math.min(ttl, MAX_TTL_SECONDS) + Math.ceil(MAX_STALE_GRACE_MS / 1000);
+    await caches.default.put(
+      coloKey(path),
+      new Response(JSON.stringify(payload), {
+        headers: {
+          "content-type": "application/json",
+          "cache-control": `public, max-age=${keepSeconds}`,
+          "x-gs-stored-at": String(Date.now()),
+        },
+      }),
+    );
+  } catch {
+    // storing is best-effort; the payload is already on its way to the caller
+  }
+}
+
+// A colo-cache hit is recorded as a CACHED call: it is Cloudflare's per-colo
+// cache absorbing demand before origin, which is exactly what cacheHitRate was
+// defined to measure back when the cf fetch options were believed to do this.
+// A memo hit still records nothing (it is not a cache we operate to protect
+// the allowance, it is this isolate remembering its own work).
+const NO_QUOTA_HEADERS = { get: () => null };
+function recordColoCacheHit(path) {
+  try {
+    bufferUsage(usageBuffer, { path, cacheStatus: "hit", headers: NO_QUOTA_HEADERS, at: Date.now() });
+  } catch {
+    // measurement must never break the request
+  }
+}
+
+async function fetchWithColoCache(url, path, token, cacheTtl, { staleGraceMs = 0, onStale = null } = {}) {
+  const fresh = await readColoCache(path, cacheTtl, 0);
+  if (fresh !== undefined) {
+    recordColoCacheHit(path);
+    // Memoised with only the REMAINING freshness, so hopping memo -> colo ->
+    // memo can never compound two full windows into 2x the declared ttl.
+    const remainingSeconds = Number(cacheTtl) - Math.floor((Date.now() - fresh.storedAt) / 1000);
+    writeCached(responseCache, url, fresh.payload, remainingSeconds, Date.now());
+    return fresh.payload;
+  }
+  try {
+    const payload = await fetchUpstream(url, path, token, cacheTtl);
+    await writeColoCache(path, payload, cacheTtl);
+    return payload;
+  } catch (error) {
+    if (staleGraceMs > 0) {
+      const stale = await readColoCache(path, cacheTtl, staleGraceMs);
+      if (stale !== undefined) {
+        console.warn(
+          `serving ${endpointFamily(path)} ${Math.round((Date.now() - stale.storedAt) / 1000)}s stale after upstream failure: ${error?.message ?? error}`,
+        );
+        // Deliberately NOT memoised: the next caller should try upstream again
+        // rather than inherit a stale answer as though it were fresh.
+        if (onStale) onStale();
+        return stale.payload;
+      }
+    }
+    throw error;
+  }
 }
 
 async function fetchUpstream(url, path, token, cacheTtl) {
