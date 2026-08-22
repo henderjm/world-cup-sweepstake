@@ -6405,6 +6405,27 @@ const responseCache = createResponseCache();
 // the second and both would go out.
 const inflightRequests = new Map();
 
+// Every genuine upstream call in this isolate is spaced out by a minimum gap.
+// api-sports runs a BURST limiter at its edge that is separate from the
+// per-minute counter (their support confirms it, and GW1 measured it: refusals
+// with the key's minute counter at 296/300), and a cron tick used to fire its
+// whole batch in the same instant, which is exactly the signature it punishes.
+// The gap only applies to calls that actually reach origin; memo and colo
+// cache hits never wait. The chain never rejects, so one failed fetch cannot
+// wedge every later one behind it.
+const UPSTREAM_MIN_GAP_MS = 200;
+let upstreamPacer = Promise.resolve();
+let lastUpstreamAt = 0;
+function paceUpstream() {
+  const turn = upstreamPacer.then(async () => {
+    const wait = lastUpstreamAt + UPSTREAM_MIN_GAP_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+    lastUpstreamAt = Date.now();
+  });
+  upstreamPacer = turn.catch(() => {});
+  return turn;
+}
+
 // `opts.staleGraceMs` opts this call into the serve-stale-on-failure fallback:
 // when the live upstream read fails AND the colo cache holds a copy no older
 // than ttl+grace, that copy is returned instead of throwing, and `opts.onStale`
@@ -6523,6 +6544,7 @@ async function fetchWithColoCache(url, path, token, cacheTtl, { staleGraceMs = 0
 }
 
 async function fetchUpstream(url, path, token, cacheTtl) {
+  await paceUpstream();
   const response = await fetch(url, {
     headers: { "x-apisports-key": token },
     cf: { cacheTtl, cacheEverything: true },
