@@ -1,0 +1,37 @@
+# Feeds live match detail into the Worker's KV safety copy from GitHub's
+# egress IPs, which api-sports trusts (the hourly Pages bake proves it), on a
+# five-minute cadence through the same 11:00-22:00 UTC window the bake uses.
+# See scripts/feed-live-details.mjs for the full rationale; the short version
+# is that api-sports soft-throttles the shared Cloudflare Workers IPs with
+# 200-with-empty responses, so the Worker cannot always read data that
+# provably exists. Missing secrets make the script a green no-op on purpose.
+name: Feed live match detail
+
+on:
+  schedule:
+    - cron: "*/5 11-22 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: live-detail-feeder
+  cancel-in-progress: false
+
+jobs:
+  feed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Feed live match detail
+        run: node scripts/feed-live-details.mjs
+        env:
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          DETAIL_INGEST_TOKEN: ${{ secrets.DETAIL_INGEST_TOKEN }}
+          API_FOOTBALL_COMPETITIONS: "PL:2026"

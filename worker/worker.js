@@ -515,6 +515,22 @@ export default {
       return handleQuotaHealth(env, cors);
     }
 
+    // Live match detail pushed from OUTSIDE the Worker's own egress. api-sports
+    // both hard-refuses (429/rateLimit) and SOFT-throttles (200-with-empty for
+    // fixtures that have data) the shared Cloudflare Workers IPs, measured
+    // conclusively on GW1: the same key, the same second, returned full
+    // lineups to a residential IP and results:0 to the Worker. GitHub Actions'
+    // IPs are trusted (the hourly bake proves it), so a small scheduled job
+    // (scripts/feed-live-details.mjs) fetches the payloads there and pushes
+    // them here, into the same KV safety copy the drawer already serves from.
+    // Bearer-gated on DETAIL_INGEST_TOKEN; unset means 501, exactly like the
+    // other optional bindings. Registered above the API-key gate because
+    // mapping a pushed payload needs no upstream credentials.
+    const ingestRoute = url.pathname.match(/^\/ingest\/detail\/(\d{1,12})$/);
+    if (ingestRoute && request.method === "POST") {
+      return handleDetailIngest(request, env, Number(ingestRoute[1]), cors);
+    }
+
     const token = env.API_FOOTBALL_KEY;
     if (!token) return json({ error: "service not configured" }, 500, cors);
     const competitions = parseCompetitions(env);
@@ -6407,6 +6423,43 @@ async function storeLastGoodDetail(env, detail) {
     );
   } catch {
     // best-effort: the detail is already on its way to whoever asked for it
+  }
+}
+
+// The ingest side of the feeder: raw API-Football payloads, fetched by a
+// GitHub Action from an egress api-sports does not throttle, mapped HERE so
+// the ingestion contract stays in one place (mapApiFootballMatchDetail), then
+// stored through the same substance-guarded storeLastGoodDetail as every
+// other safety copy. The Worker's own fresher reads still win whenever they
+// succeed: this only refreshes the snapshot a degraded read falls back to.
+const INGEST_MAX_BODY_BYTES = 1_500_000;
+
+async function handleDetailIngest(request, env, id, cors) {
+  const secret = env.DETAIL_INGEST_TOKEN;
+  if (!secret || !env.ANALYSIS_CACHE) return json({ error: "ingest not configured" }, 501, cors);
+  const auth = request.headers.get("Authorization") ?? "";
+  if (auth !== `Bearer ${secret}`) return json({ error: "unauthorized" }, 401, cors);
+  let body;
+  try {
+    const raw = await request.text();
+    if (raw.length > INGEST_MAX_BODY_BYTES) return json({ error: "payload too large" }, 413, cors);
+    body = JSON.parse(raw);
+  } catch {
+    return json({ error: "bad payload" }, 400, cors);
+  }
+  try {
+    const detail = mapApiFootballMatchDetail(
+      body?.fixture ?? { response: [] },
+      body?.lineups ?? { response: [] },
+      body?.events ?? { response: [] },
+      body?.players ?? { response: [] },
+    );
+    if (detail.id !== id) return json({ error: "fixture id mismatch" }, 400, cors);
+    if (!detailHasSubstance(detail)) return json({ stored: false, reason: "no substance" }, 200, cors);
+    await storeLastGoodDetail(env, detail);
+    return json({ stored: true }, 200, cors);
+  } catch {
+    return json({ error: "unmappable payload" }, 400, cors);
   }
 }
 
