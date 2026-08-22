@@ -320,7 +320,7 @@ export function renderTable(model) {
     .map((table) => {
       const rows = table.rows
         .map(
-          (row) => `<div class="ltable__row">
+          (row) => `<div class="ltable__row${row.live ? " is-liverow" : ""}">
             <span class="ltable__pos"><span class="zbar ${row.zone ? `zbar--${row.zone.tone}` : ""}"></span><span class="ltable__posnum">${row.position}</span></span>
             <span class="ltable__club">${badgeFor(row.team)}<span class="ltable__team">${esc(displayTeamName(row.team))}</span></span>
             <span class="ltable__num">${row.played}</span>
@@ -335,6 +335,11 @@ export function renderTable(model) {
         .join("");
       return `<section class="card ltable">
           ${model.tables.length > 1 ? `<h3 class="card__title">${esc(table.name)}</h3>` : ""}
+          ${
+            table.live
+              ? `<p class="note ltable__livenote">Includes matches in progress, so these figures are provisional and can still change.</p>`
+              : ""
+          }
           <div class="ltable__row ltable__head">
             <span>#</span><span>Club</span><span class="ltable__num">P</span>
             <span class="ltable__num ltable__wdl">W</span><span class="ltable__num ltable__wdl">D</span><span class="ltable__num ltable__wdl">L</span>

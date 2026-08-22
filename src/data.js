@@ -3,6 +3,7 @@ import { DEFAULT_COMPETITION_CODE, competitionFor, zoneFor } from "./competition
 import { registerTeams } from "./badges.js";
 import { locationForMatch } from "./locations.js";
 import { trackException } from "./telemetry.js";
+import { withLiveTable } from "./liveTable.js";
 
 // Set this to your deployed Cloudflare Worker origin to serve live data without a
 // deploy, e.g. "https://goon-squad-data.<your-subdomain>.workers.dev". Leave empty to
@@ -58,14 +59,27 @@ export function buildModel(raw, scorerData = {}) {
 
   registerTeams(collectTeams(matches, standings));
 
+  // The provider recomputes standings at FULL TIME, so the table sat still all
+  // afternoon while matches were being played. Live results are folded in here,
+  // once, so every table consumer sees the same figures; `tablesLive` lets the
+  // view say so rather than showing numbers that quietly disagree with the
+  // provider's own. See src/liveTable.js.
+  const baseTables = buildLeagueTables(standingsPayload, competition, buildTeamPerformance(matches));
+  const { tables, live: tablesLive } = withLiveTable({
+    tables: baseTables,
+    matches,
+    zones: competition.zones,
+  });
+
   return {
     source: raw.source,
     lastUpdated: raw.lastUpdated,
     hasData: true,
     ...staleness(raw),
+    tablesLive,
     competition,
     matches,
-    tables: buildLeagueTables(standingsPayload, competition, buildTeamPerformance(matches)),
+    tables,
     standings,
     scorers: scorerData.scorers ?? [],
   };
@@ -177,6 +191,9 @@ function buildLeagueTables(standings, competition, performance = new Map()) {
           lost: row.lost ?? 0,
           points: row.points ?? 0,
           goalDifference: row.goalDifference ?? 0,
+          // Carried so the live table can apply the real third tiebreak (points,
+          // then goal difference, then goals scored) rather than stopping at GD.
+          goalsFor: row.goalsFor ?? 0,
           form: performance.get(team)?.form ?? [],
           zone: zoneFor(position, competition.zones),
         };

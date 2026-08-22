@@ -211,6 +211,12 @@ button { font-family: inherit; cursor: pointer; }
    The bare time reads as "hasn't started", which is the part that was false. */
 .mline__st.is-overdue { color: var(--gold); }
 
+/* A table row whose figures include a match still being played. Deliberately a
+   tint and a left edge rather than recolouring the numbers: the row is not
+   wrong, it is provisional, and the note above the table carries the meaning. */
+.ltable__row.is-liverow { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent-line); }
+.ltable__livenote { margin: 0 0 8px; }
+
 /* Ticker -------------------------------------------------------------------- */
 
 .ticker {
