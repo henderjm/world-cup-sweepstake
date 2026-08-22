@@ -21,6 +21,16 @@
 // Missing secrets exit 0 with a note rather than failing the workflow: the
 // feeder is an optional layer, and a red run every five minutes on a repo
 // without the token configured would be alarm fatigue, not information.
+//
+// Candidates are discovered from api-sports DIRECTLY (today's fixtures for
+// each configured league, one call per competition, mapped through the shared
+// ingestion contract), never from the Worker's own /:comp/live: the whole
+// reason this script exists is that the Worker's egress cannot be trusted to
+// read upstream, and the first version asked it anyway, got a 502 from a cold
+// colo, and fed nothing.
+
+import { COMPETITIONS as COMPETITION_CONFIG } from "../src/competitions.js";
+import { mapApiFootballMatches } from "../src/mapApiFootball.js";
 
 const WORKER_ORIGIN = process.env.WORKER_ORIGIN ?? "https://goon-squad-data.gs-wc.workers.dev";
 const API = "https://v3.football.api-sports.io";
@@ -28,7 +38,11 @@ const KEY = process.env.API_FOOTBALL_KEY;
 const TOKEN = process.env.DETAIL_INGEST_TOKEN;
 const COMPETITIONS = (process.env.API_FOOTBALL_COMPETITIONS ?? "PL:2026")
   .split(",")
-  .map((pair) => pair.split(":")[0].trim())
+  .map((pair) => {
+    const [code, season] = pair.split(":").map((part) => part.trim());
+    const leagueId = COMPETITION_CONFIG[code]?.apiFootballLeagueId;
+    return code && season && leagueId ? { code, season, leagueId } : null;
+  })
   .filter(Boolean);
 
 const LINEUP_LEAD_MS = 70 * 60 * 1000;
@@ -82,19 +96,19 @@ async function main() {
     return;
   }
   const now = Date.now();
+  const today = new Date(now).toISOString().slice(0, 10);
   let fed = 0;
-  for (const code of COMPETITIONS) {
-    let live;
+  for (const { code, season, leagueId } of COMPETITIONS) {
+    let matches;
     try {
-      const response = await fetch(`${WORKER_ORIGIN}/${encodeURIComponent(code)}/live`);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      live = await response.json();
+      const payload = await apiGet(`/fixtures?league=${leagueId}&season=${season}&date=${today}`);
+      matches = mapApiFootballMatches(payload);
     } catch (error) {
-      console.log(`feeder: could not read ${code} live feed (${error.message}); skipping`);
+      console.log(`feeder: could not read ${code} fixtures for ${today} (${error.message}); skipping`);
       continue;
     }
-    const candidates = (live.matches ?? []).filter((match) => worthFeeding(match, now));
-    console.log(`${code}: ${candidates.length} match(es) worth feeding`);
+    const candidates = matches.filter((match) => worthFeeding(match, now));
+    console.log(`${code}: ${candidates.length} of ${matches.length} match(es) today worth feeding`);
     for (const match of candidates) {
       try {
         await feedMatch(match.id);
