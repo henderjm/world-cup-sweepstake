@@ -719,8 +719,29 @@ async function runCronPass(name, run) {
   }
 }
 
+// How far behind a getLive payload may run when upstream refuses the fetch.
+// Without this every isolate fell back to its own PRIVATE last-known-good
+// (`lastLive`), and a browser polling through a refusal window bounced between
+// isolates whose copies diverged: GW1's watcher logged the match minute going
+// 20' -> 17' between polls with the feed 8 minutes old. The colo cache gives
+// every isolate in a colo the colo's freshest successful copy instead, bounded
+// tight because live scores age fast; `lastLive` remains the last resort when
+// even the colo has nothing. Safe for every reader: the cron passes read this
+// feed for statuses and kickoff times, where five minutes of staleness only
+// DELAYS a settle or holds a lock, never invents one.
+const LIVE_FEED_STALE_GRACE_MS = 5 * 60 * 1000;
+
 async function getLive(comp, token) {
   try {
+    // A stale-served payload backdates the body's lastUpdated below, so the
+    // "updated" chip can never say "just now" over a scoreline that is not.
+    let staleAgeMs = 0;
+    const stale = {
+      staleGraceMs: LIVE_FEED_STALE_GRACE_MS,
+      onStale: (ageMs) => {
+        staleAgeMs = Math.max(staleAgeMs, Number(ageMs) || 0);
+      },
+    };
     // The cron can tick every minute without calling upstream every minute. The
     // season schedule is the clock: idle fixtures make no status request, upcoming
     // fixtures refresh every 15 minutes (with the final cache clipped to kickoff),
@@ -729,6 +750,7 @@ async function getLive(comp, token) {
       `/fixtures?league=${comp.leagueId}&season=${comp.season}`,
       token,
       6 * 60 * 60,
+      stale,
     );
     const schedule = mapApiFootballMatches(schedulePayload);
     const pollingMatches = carryForwardFixtureStates(schedule, lastLive.get(comp.code)?.body?.matches);
@@ -739,6 +761,7 @@ async function getLive(comp, token) {
         `/fixtures?ids=${request.fixtures.map((match) => match.id).join("-")}`,
         token,
         request.ttl,
+        stale,
       );
       matches = mergeFixtureUpdates(matches, mapApiFootballMatches(livePayload));
     }
@@ -746,10 +769,11 @@ async function getLive(comp, token) {
       `/standings?league=${comp.leagueId}&season=${comp.season}`,
       token,
       polling.mode === "live" || polling.mode === "kickoff_wait" ? 5 * 60 : 6 * 60 * 60,
+      stale,
     ).catch(() => null);
     const body = {
       source: "API-Football",
-      lastUpdated: new Date().toISOString(),
+      lastUpdated: new Date(Date.now() - staleAgeMs).toISOString(),
       competition: comp.code,
       season: comp.season,
       matches,
@@ -6537,8 +6561,10 @@ async function fetchWithColoCache(url, path, token, cacheTtl, { staleGraceMs = 0
           `serving ${endpointFamily(path)} ${Math.round((Date.now() - stale.storedAt) / 1000)}s stale after upstream failure: ${error?.message ?? error}`,
         );
         // Deliberately NOT memoised: the next caller should try upstream again
-        // rather than inherit a stale answer as though it were fresh.
-        if (onStale) onStale();
+        // rather than inherit a stale answer as though it were fresh. The age
+        // is handed to onStale so a caller can backdate its own freshness
+        // stamp (getLive does).
+        if (onStale) onStale(Date.now() - stale.storedAt);
         return stale.payload;
       }
     }
