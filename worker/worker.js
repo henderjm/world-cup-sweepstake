@@ -2835,7 +2835,7 @@ async function runScheduledLivePoints(env) {
   // is tight those calls belong to scoring and the waiver runs, which is exactly
   // the ordering src/apiBudget.js encodes. Skipping also costs nothing
   // permanent, since the settled pass recomputes every point at full time.
-  if (!allowsLiveEventDetail(currentBudgetLevel())) return;
+  if (!allowsLiveEventDetail(currentAllowanceLevel())) return;
 
   let live;
   try {
@@ -5841,7 +5841,7 @@ async function notifyCompetition(env, comp) {
     let reds = prev?.reds ?? 0;
     let lastRed = null;
     let detailMinute = null;
-    if (isLive(match.status) && allowsLiveEventDetail(currentBudgetLevel())) {
+    if (isLive(match.status) && allowsLiveEventDetail(currentAllowanceLevel())) {
       try {
         if (liveDetailFetches > 0) await sleep(MATCH_DETAIL_PACING_MS);
         liveDetailFetches += 1;
@@ -6635,6 +6635,22 @@ function recordUpstreamUsage(path, response) {
 function currentBudgetLevel() {
   try {
     return budgetLevel(latestQuota(usageBuffer), Date.now());
+  } catch {
+    return BUDGET_NORMAL;
+  }
+}
+
+// The ALLOWANCE-ONLY level: same gauge, refusal cool-off ignored (budgetLevel's
+// contract: omitting `now` disables the refusal check). The fixed-cost cron
+// detail fetches gate on this one, because a refusal cool-off pinning critical
+// was blocking the very reads that refill the KV safety copy the shed drawer
+// then serves from, and a refused call is not billed against the daily
+// allowance anyway (through GW1's refusals the provider's own used-count ran
+// ~800 below our attempt count). A genuinely spent day still sheds exactly as
+// before, and the traffic-scaled drawer route keeps the refusal-aware level.
+function currentAllowanceLevel() {
+  try {
+    return budgetLevel(latestQuota(usageBuffer));
   } catch {
     return BUDGET_NORMAL;
   }
