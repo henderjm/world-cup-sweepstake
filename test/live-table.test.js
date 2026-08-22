@@ -97,9 +97,9 @@ test("goals scored is the third tiebreak, after points and goal difference", () 
   assert.equal(alpha.position, 2);
 });
 
-test("a FINISHED match is never applied", () => {
-  // The provider may or may not have processed it yet, and the payload gives no
-  // way to tell. Applying it would double-count for as long as they took.
+test("a FINISHED match the provider has already counted is not applied again", () => {
+  // played=1 on both rows and one finished match each: the counts agree, so
+  // folding it in would double-count.
   const rows = [row("Arsenal"), row("Chelsea")];
   const { rows: out, applied } = applyLiveResults({
     rows,
@@ -107,6 +107,73 @@ test("a FINISHED match is never applied", () => {
   });
   assert.equal(applied, 0);
   assert.equal(out, rows, "a no-op must return the original array by reference");
+});
+
+test("a FINISHED match the played counts prove is missing IS applied", () => {
+  // GW1 2026-27: Hull beat Man United in the early kickoff, the standings
+  // refresh was being refused upstream, and the table showed both on played 0
+  // for hours while the form dots already knew the result.
+  const rows = [
+    row("Hull City", { played: 0, won: 0, points: 0, goalDifference: 0, goalsFor: 0 }),
+    row("Man Utd", { played: 0, won: 0, points: 0, goalDifference: 0, goalsFor: 0 }),
+  ];
+  const { rows: out, applied } = applyLiveResults({
+    rows,
+    matches: [match("Hull City", "Man Utd", 2, 1, "FINISHED")],
+  });
+  assert.equal(applied, 1);
+  const hull = out.find((r) => r.team === "Hull City");
+  const utd = out.find((r) => r.team === "Man Utd");
+  assert.deepEqual([hull.played, hull.won, hull.points, hull.goalDifference], [1, 1, 3, 1]);
+  assert.deepEqual([utd.played, utd.lost, utd.points, utd.goalDifference], [1, 1, 0, -1]);
+  assert.equal(hull.position, 1);
+});
+
+test("the deficit nominates a club's most recent finished match, not an old one", () => {
+  // Both clubs have two finished matches and the provider has counted one each:
+  // the missing result is the latest one, the mutual fixture.
+  const rows = [
+    row("Alpha", { played: 1, won: 1, points: 3, goalDifference: 1, goalsFor: 1 }),
+    row("Beta", { played: 1, won: 1, points: 3, goalDifference: 2, goalsFor: 2 }),
+  ];
+  const earlier = { ...match("Alpha", "Yankee", 1, 0, "FINISHED"), utcDate: "2026-08-15T14:00:00.000Z" };
+  const earlier2 = { ...match("Beta", "Xray", 2, 0, "FINISHED"), utcDate: "2026-08-15T14:00:00.000Z" };
+  const latest = { ...match("Alpha", "Beta", 0, 3, "FINISHED"), utcDate: "2026-08-22T14:00:00.000Z" };
+  const { rows: out, applied } = applyLiveResults({ rows, matches: [earlier, latest, earlier2] });
+  assert.equal(applied, 1);
+  const beta = out.find((r) => r.team === "Beta");
+  assert.deepEqual([beta.played, beta.points, beta.goalDifference], [2, 6, 5]);
+});
+
+test("a finished match only one club's deficit nominates is left alone", () => {
+  // Alpha is one behind but Beta is fully counted: the snapshot is ambiguous
+  // (a bad join or mid-update), so nothing is folded in and it self-corrects.
+  const rows = [
+    row("Alpha", { played: 0, won: 0, points: 0, goalDifference: 0, goalsFor: 0 }),
+    row("Beta", { played: 1, won: 1, points: 3, goalDifference: 3, goalsFor: 3 }),
+  ];
+  const { applied } = applyLiveResults({
+    rows,
+    matches: [match("Alpha", "Beta", 0, 3, "FINISHED")],
+  });
+  assert.equal(applied, 0);
+});
+
+test("a reconciled finished result and a live match fold together", () => {
+  // The early kickoff has finished and is missing from the standings while the
+  // 3pm round is in play: both must land, and the reconciled played count must
+  // not trip the provider-is-ahead guard on the live fixture.
+  const rows = [
+    row("Hull City", { played: 0, won: 0, points: 0, goalDifference: 0, goalsFor: 0 }),
+    row("Man Utd", { played: 0, won: 0, points: 0, goalDifference: 0, goalsFor: 0 }),
+    row("Arsenal", { played: 0, won: 0, points: 0, goalDifference: 0, goalsFor: 0 }),
+    row("Chelsea", { played: 0, won: 0, points: 0, goalDifference: 0, goalsFor: 0 }),
+  ];
+  const early = { ...match("Hull City", "Man Utd", 2, 1, "FINISHED"), utcDate: "2026-08-22T11:30:00.000Z" };
+  const { rows: out, applied } = applyLiveResults({ rows, matches: [early, match("Arsenal", "Chelsea", 1, 0)] });
+  assert.equal(applied, 2);
+  assert.equal(out.find((r) => r.team === "Hull City").points, 3);
+  assert.equal(out.find((r) => r.team === "Arsenal").points, 3);
 });
 
 test("a live match with no score yet is not applied", () => {
@@ -244,13 +311,13 @@ test("the table renderer labels a live table and marks the moved rows", async ()
     competition: { name: "PL", zones: [] },
     tables: [{ name: "PL", live: true, rows: [row("Arsenal", { live: true }), row("Chelsea")] }],
   });
-  assert.match(html, /Includes matches in progress/);
+  assert.match(html, /As it stands/);
   assert.match(html, /is-liverow/);
 
   const quiet = renderTable({
     competition: { name: "PL", zones: [] },
     tables: [{ name: "PL", rows: [row("Arsenal")] }],
   });
-  assert.doesNotMatch(quiet, /Includes matches in progress/);
+  assert.doesNotMatch(quiet, /As it stands/);
   assert.doesNotMatch(quiet, /is-liverow/);
 });

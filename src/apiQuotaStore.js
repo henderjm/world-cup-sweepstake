@@ -41,7 +41,7 @@ export function usageDay(at) {
 }
 
 export function createUsageBuffer() {
-  return { counts: new Map(), quota: new Map(), dropped: 0, latestQuota: null, limitedUntil: 0 };
+  return { counts: new Map(), quota: new Map(), dropped: 0, latestQuota: null, limitedUntil: 0, lastMinute: null };
 }
 
 // Folds one upstream response into the buffer. Returns the record so a caller
@@ -86,6 +86,15 @@ export function bufferUsage(buffer, { path, cacheStatus, headers, at }) {
       buffer.latestQuota = { day, dailyLimit: record.dailyLimit, dailyRemaining: record.dailyRemaining };
     }
   }
+  // The minute pair is latest-wins, not monotonic like the daily reading: the
+  // provider's minute counter resets every sixty seconds, so only the freshest
+  // reading means anything and it goes stale just as fast. `at` rides along so
+  // a reader can tell a live reading from one left over from the last burst.
+  // This is what puts the per-minute cap on /health/quota at all; a refusal
+  // (which carries no headers) was otherwise the only place it ever surfaced.
+  if (record.minuteLimit != null || record.minuteRemaining != null) {
+    buffer.lastMinute = { minuteLimit: record.minuteLimit, minuteRemaining: record.minuteRemaining, at: record.at ?? null };
+  }
   return record;
 }
 
@@ -128,7 +137,7 @@ export function latestQuota(buffer) {
   const snapshot = buffer?.latestQuota ?? null;
   const limitedUntil = buffer?.limitedUntil ?? 0;
   if (!snapshot && !limitedUntil) return null;
-  return { ...(snapshot ?? {}), limitedUntil };
+  return { ...(snapshot ?? {}), limitedUntil, minute: buffer?.lastMinute ?? null };
 }
 
 // Empties the buffer and hands back what was in it. Draining rather than
@@ -211,6 +220,16 @@ export function buildQuotaReport({ rows, quota, now }) {
       // incident. This is the flag that tells an operator which they are
       // looking at.
       limited: Boolean(quota?.limitedUntil && now < quota.limitedUntil),
+      // When the current refusal cool-off lapses (re-armed by every fresh
+      // refusal), null when none is live. Lets an operator see "pinned for
+      // another 90 seconds" instead of polling the boolean.
+      limitedUntil: quota?.limitedUntil && now < quota.limitedUntil ? new Date(quota.limitedUntil).toISOString() : null,
+      // The provider's per-minute pair from the freshest genuine upstream
+      // response this isolate has seen, with when it was read. Stale within a
+      // minute by construction; it is here because a per-minute refusal was
+      // otherwise invisible on this report, the daily figures being healthy
+      // through one by construction. GW1 2026 was exactly that incident.
+      minute: quota?.minute ?? null,
     },
     projection: projection
       ? { ...projection, elapsedFraction, verdict: quotaVerdict(projection, quota?.dailyLimit) }

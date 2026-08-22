@@ -87,7 +87,7 @@ export function trackGameweek({ matches, roster, starterIds, gameweek }) {
   return { players, counts, fixtures };
 }
 
-// "6 done · 3 in play · 2 to come" — the one line worth reading at a glance.
+// "6 done · 3 in play · 2 to play" — the one line worth reading at a glance.
 // Zero-valued parts are omitted rather than printed as "0 in play", which is
 // noise on a Tuesday. Returns "" for an empty XI so a caller can drop the line
 // entirely rather than render an empty bar.
@@ -96,7 +96,7 @@ export function trackerSummary(counts) {
   const parts = [];
   if (counts.done) parts.push(`${counts.done} done`);
   if (counts.inPlay) parts.push(`${counts.inPlay} in play`);
-  if (counts.toCome) parts.push(`${counts.toCome} to come`);
+  if (counts.toCome) parts.push(`${counts.toCome} to play`);
   if (counts.blank) parts.push(`${counts.blank} blank`);
   return parts.join(" · ");
 }

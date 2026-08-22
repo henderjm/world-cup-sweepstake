@@ -312,6 +312,10 @@ function mapLineupPlayer(player) {
     name: decodeEntities(player?.name ?? ""),
     pos: player?.pos ?? null,
     num: player?.number ?? null,
+    // "row:col" on the provider's formation grid (row 1 is the keeper), null
+    // for a substitute or when the provider has not placed the XI yet. The
+    // drawer's pitch view needs it; transported untouched like everything else.
+    grid: player?.grid ?? null,
   };
 }
 

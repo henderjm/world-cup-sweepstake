@@ -10,6 +10,8 @@ import {
   chunkRows,
   createUsageBuffer,
   drainUsage,
+  latestQuota,
+  markUpstreamLimited,
   reportedUsage,
   usageDay,
 } from "../src/apiQuotaStore.js";
@@ -81,6 +83,62 @@ test("the lowest remaining seen in a day wins, so an out-of-order reading cannot
   const { quota } = drainUsage(buffer);
   assert.equal(quota.length, 1);
   assert.equal(quota[0].dailyRemaining, 900);
+});
+
+// -- the per-minute gauge ------------------------------------------------------
+// GW1 of 2026-27: the Worker spent an afternoon being refused per-minute with
+// 6,300 of the daily 7,500 still unspent, and /health/quota had nowhere to show
+// it because only the daily pair was ever surfaced.
+
+const minuteHeaders = (minuteRemaining, dailyRemaining = 7000) =>
+  headers({
+    "x-ratelimit-requests-limit": "7500",
+    "x-ratelimit-requests-remaining": String(dailyRemaining),
+    "X-RateLimit-Limit": "300",
+    "X-RateLimit-Remaining": String(minuteRemaining),
+  });
+
+test("the freshest genuine minute reading wins; the counter resets every minute so newer beats lower", () => {
+  const buffer = createUsageBuffer();
+  bufferUsage(buffer, { path: "/fixtures", cacheStatus: "MISS", headers: minuteHeaders(12), at: AT });
+  bufferUsage(buffer, { path: "/fixtures", cacheStatus: "MISS", headers: minuteHeaders(280), at: "2026-07-28T12:01:00.000Z" });
+  const gauge = latestQuota(buffer);
+  assert.deepEqual(gauge.minute, { minuteLimit: 300, minuteRemaining: 280, at: "2026-07-28T12:01:00.000Z" });
+});
+
+test("a cache hit's replayed minute headers never move the minute gauge", () => {
+  const buffer = createUsageBuffer();
+  bufferUsage(buffer, { path: "/fixtures", cacheStatus: "MISS", headers: minuteHeaders(5), at: AT });
+  bufferUsage(buffer, { path: "/fixtures", cacheStatus: "HIT", headers: minuteHeaders(299), at: "2026-07-28T12:01:00.000Z" });
+  assert.equal(latestQuota(buffer).minute.minuteRemaining, 5);
+});
+
+test("the report carries the minute pair and says when the refusal cool-off lapses", () => {
+  const buffer = createUsageBuffer();
+  bufferUsage(buffer, { path: "/fixtures", cacheStatus: "MISS", headers: minuteHeaders(0), at: AT });
+  const now = Date.parse(AT);
+  markUpstreamLimited(buffer, now);
+  const live = latestQuota(buffer);
+  const report = buildQuotaReport({
+    rows: [],
+    quota: { dailyLimit: 7500, dailyRemaining: 7000, limitedUntil: live.limitedUntil, minute: live.minute },
+    now,
+  });
+  assert.equal(report.quota.limited, true);
+  assert.equal(report.quota.limitedUntil, new Date(live.limitedUntil).toISOString());
+  assert.deepEqual(report.quota.minute, { minuteLimit: 300, minuteRemaining: 0, at: AT });
+});
+
+test("with no refusal live the report says limitedUntil null rather than a stale instant", () => {
+  const now = Date.parse(AT);
+  const report = buildQuotaReport({
+    rows: [],
+    quota: { dailyLimit: 7500, dailyRemaining: 7000, limitedUntil: now - 1, minute: null },
+    now,
+  });
+  assert.equal(report.quota.limited, false);
+  assert.equal(report.quota.limitedUntil, null);
+  assert.equal(report.quota.minute, null);
 });
 
 test("calls either side of UTC midnight are filed under their own days", () => {

@@ -470,9 +470,9 @@ export function renderFantasyMatchupPanel(
   const timing = matchupTiming(matchup, now);
   const banner = renderSquadDeadlineBanner(matchup, now);
 
-  // "6 done · 3 in play · 2 to come" under a score, while the gameweek is
+  // "6 done · 3 in play · 2 to play" under a score, while the gameweek is
   // being played: the score says who is ahead, this says whether that lead is
-  // safe. Only rendered when scores are (a pre-kickoff "11 to come" is noise,
+  // safe. Only rendered when scores are (a pre-kickoff "11 to play" is noise,
   // and settled weeks need no reminder that everyone finished) and only when
   // the worker actually sent progress, so an older payload renders exactly as
   // before. Lit while any of that side's players are on a pitch.

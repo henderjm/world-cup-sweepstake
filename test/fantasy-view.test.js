@@ -1270,7 +1270,7 @@ test("a live matchup shows each side's progress, lit for the side with players o
     me: { userId: 1, name: "Alex", score: 41, progress: { total: 11, done: 6, inPlay: 3, toCome: 2, blank: 0 } },
     opponent: { userId: 2, name: "Sam", score: 38, progress: { total: 11, done: 11, inPlay: 0, toCome: 0, blank: 0 } },
   });
-  assert.match(html, /6 done · 3 in play · 2 to come/);
+  assert.match(html, /6 done · 3 in play · 2 to play/);
   assert.match(html, /11 done/);
   // My three players are on a pitch; Sam is finished. Only my line is lit.
   const lit = (html.match(/fantasy-matchup__progress is-live/g) ?? []).length;
@@ -1284,7 +1284,7 @@ test("progress stays quiet before kickoff and when an older worker sends none", 
     me: { userId: 1, name: "Alex", score: 0, progress: { total: 11, done: 0, inPlay: 0, toCome: 11, blank: 0 } },
     opponent: { userId: 2, name: "Sam", score: 0, progress: { total: 11, done: 0, inPlay: 0, toCome: 11, blank: 0 } },
   });
-  assert.doesNotMatch(preKickoff, /fantasy-matchup__progress/, "11 to come before kickoff is noise, not information");
+  assert.doesNotMatch(preKickoff, /fantasy-matchup__progress/, "11 to play before kickoff is noise, not information");
 
   const older = renderFantasyMatchupPanel({
     gameweek: 7,
@@ -1306,7 +1306,7 @@ test("the Average bye card carries your own progress while the gameweek runs", (
     { leagueSize: 9 },
   );
   assert.match(html, /You play Average/);
-  assert.match(html, /6 done · 3 in play · 2 to come/);
+  assert.match(html, /6 done · 3 in play · 2 to play/);
 });
 
 test("a pre-season matchup reads as upcoming and names the season start, with no countdown", () => {
@@ -2480,7 +2480,7 @@ test("the tracker names your players in each fixture and leads with the live one
   };
   const html = renderGameweekTracker(tracker, { gameweek: 6 });
   assert.match(html, /Gameweek 6/);
-  assert.match(html, /1 in play · 1 to come/);
+  assert.match(html, /1 in play · 1 to play/);
   assert.match(html, /Saka/);
   assert.match(html, /2 – 1/);
   assert.ok(html.indexOf("Saka") < html.indexOf("Palmer"), "the live fixture leads");

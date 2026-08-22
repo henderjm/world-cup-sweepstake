@@ -186,32 +186,8 @@ function renderDetail(match, detail) {
         .join("")}`
     : "";
 
-  const xi = (team) => {
-    if (!team?.lineup?.length) return "";
-    const starters = team.lineup
-      .map((p) => `<li><span class="xi__num">${p.num ?? ""}</span>${esc(p.name)}<span class="xi__pos">${esc(shortPos(p.pos))}</span></li>`)
-      .join("");
-    // Keeper first, then defence, midfield, attack (issue #51). The feed lists
-    // substitutes in its own order, which is not the order anyone reads a bench
-    // in; the starting XI above already arrives grouped by position, so a bench
-    // that is not makes the two lists look like they follow different rules.
-    // Sorted here rather than in mapApiFootball.js, which is the ingestion
-    // contract and should keep transporting what the provider actually sent.
-    const bench = [...(team.bench ?? [])]
-      .sort(byPosition)
-      .map((p) => esc(p.name))
-      .join(", ");
-    return `<div class="xi">
-        <div class="xi__head">${badgeFor(normalizeTeamName(team.name))}<span>${esc(displayTeamName(normalizeTeamName(team.name)))}</span>
-          ${team.formation ? `<span class="xi__formation">${esc(team.formation)}</span>` : ""}
-          ${team.coach ? `<span class="xi__coach">${esc(team.coach)}</span>` : ""}
-        </div>
-        <ol class="xi__players">${starters}</ol>
-        ${bench ? `<p class="xi__bench"><span>Bench</span>${bench}</p>` : ""}
-      </div>`;
-  };
   const lineups = detail.home?.lineup?.length || detail.away?.lineup?.length
-    ? `<h4>Line-ups</h4>${xi(detail.home)}${xi(detail.away)}`
+    ? `<h4>Line-ups</h4>${renderLineup(detail.home)}${renderLineup(detail.away)}`
     : "";
 
   const meta = [
@@ -222,14 +198,73 @@ function renderDetail(match, detail) {
 
   if (!timeline && !lineups) return scheduledNote(match);
 
+  // The Worker names which supplementary payloads it had to skip on
+  // detail.degraded (allowance shedding or an upstream blip). Whatever DID
+  // arrive still renders above; this line stops the gaps reading as "nothing
+  // happened in this match".
+  const degraded = Array.isArray(detail.degraded) && detail.degraded.length > 0;
+
   return `
     ${timeline}
     ${lineups}
     ${meta.length ? `<div class="dz__meta">${meta.join("")}</div>` : ""}
-    <p class="note--dim" style="margin-top:14px;">Lineups, scorers, substitutions and cards update throughout the match.</p>`;
+    <p class="note--dim" style="margin-top:14px;">${
+      degraded
+        ? "Some match detail is temporarily unavailable and comes back automatically."
+        : "Lineups, scorers, substitutions and cards update throughout the match."
+    }</p>`;
+}
+
+// One team's line-up block: header (badge, name, formation, coach), then the
+// starters drawn on a pitch when the feed placed all eleven on its formation
+// grid, else the flat two-column list, then the bench. Exported so the pitch
+// markup can be exercised without a DOM.
+export function renderLineup(team) {
+  if (!team?.lineup?.length) return "";
+  const rows = pitchRows(team.lineup);
+  const starters = rows
+    ? `<div class="xi-pitch">${rows
+        .map(
+          (line) =>
+            `<div class="xi-pitch__row">${line
+              .map(
+                (p) =>
+                  `<div class="xi-pitch__player"><span class="xi-pitch__num">${p.num ?? ""}</span><span class="xi-pitch__name">${esc(surname(p.name))}</span></div>`,
+              )
+              .join("")}</div>`,
+        )
+        .join("")}</div>`
+    : `<ol class="xi__players">${team.lineup
+        .map((p) => `<li><span class="xi__num">${p.num ?? ""}</span>${esc(p.name)}<span class="xi__pos">${esc(shortPos(p.pos))}</span></li>`)
+        .join("")}</ol>`;
+  // Keeper first, then defence, midfield, attack (issue #51). The feed lists
+  // substitutes in its own order, which is not the order anyone reads a bench
+  // in; the starting XI above already arrives grouped by position (or drawn on
+  // the pitch), so a bench that is not makes the two lists look like they
+  // follow different rules. Sorted here rather than in mapApiFootball.js, which
+  // is the ingestion contract and should keep transporting what the provider
+  // actually sent.
+  const bench = [...(team.bench ?? [])]
+    .sort(byPosition)
+    .map((p) => esc(p.name))
+    .join(", ");
+  return `<div class="xi">
+      <div class="xi__head">${badgeFor(normalizeTeamName(team.name))}<span>${esc(displayTeamName(normalizeTeamName(team.name)))}</span>
+        ${team.formation ? `<span class="xi__formation">${esc(team.formation)}</span>` : ""}
+        ${team.coach ? `<span class="xi__coach">${esc(team.coach)}</span>` : ""}
+      </div>
+      ${starters}
+      ${bench ? `<p class="xi__bench"><span>Bench</span>${bench}</p>` : ""}
+    </div>`;
 }
 
 function scheduledNote(match) {
+  // A live match with nothing to show has DEGRADED, not "not started": the
+  // pre-kickoff copy on a match at 45' claims the game has not begun, which is
+  // worse than admitting the feed is busy (seen shedding supplementary detail
+  // through the GW1 per-minute refusals).
+  if (isLive(match.status))
+    return `<p class="dz__loading">Live match detail is temporarily unavailable while the data feed catches up. The score stays live and the timeline comes back automatically.</p>`;
   if (isFinished(match.status)) return `<p class="dz__loading">Match detail is loading on the next data refresh.</p>`;
   return `<p class="dz__loading">Line-ups and events appear once the feed publishes them, usually about an hour before kick-off.</p>`;
 }
@@ -246,6 +281,33 @@ function shortPos(pos) {
   if (!pos) return "";
   const map = { Goalkeeper: "GK", Defence: "DF", Midfield: "MF", Offence: "FW", Attacker: "FW", Defender: "DF", Midfielder: "MF" };
   return map[pos] ?? pos.slice(0, 3).toUpperCase();
+}
+
+// Formation rows from the provider's per-player grid ("row:col", row 1 the
+// keeper). All eleven or nothing: one unplaced starter and the drawn shape
+// would lie about the formation, so any gap falls back to the flat list. Old
+// static match files carry no grid at all and take that fallback wholesale.
+export function pitchRows(lineup) {
+  if (!lineup?.length) return null;
+  const rows = new Map();
+  for (const p of lineup) {
+    const placed = /^(\d+):(\d+)$/.exec(String(p.grid ?? ""));
+    if (!placed) return null;
+    const row = Number(placed[1]);
+    if (!rows.has(row)) rows.set(row, []);
+    rows.get(row).push({ ...p, col: Number(placed[2]) });
+  }
+  return [...rows.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, line]) => line.sort((a, b) => a.col - b.col));
+}
+
+// A pitch tile fits a surname, not "Konstantinos Tzolakis". Everything after
+// the first word survives so "van Dijk" stays whole; a single-word name is
+// already as short as it gets.
+export function surname(name) {
+  const parts = String(name ?? "").trim().split(/\s+/);
+  return parts.length > 1 ? parts.slice(1).join(" ") : (parts[0] ?? "");
 }
 
 function esc(value) {
