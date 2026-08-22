@@ -37,7 +37,7 @@ import {
   mapApiFootballStandingsPayload,
   mergeFixtureUpdates,
 } from "../src/mapApiFootball.js";
-import { isLive } from "../src/format.js";
+import { isFinished, isLive } from "../src/format.js";
 import {
   MATCH_DETAIL_LIVE,
   matchDetailBrowserMaxAge,
@@ -591,13 +591,24 @@ export default {
         // match rather than an error, naming whatever it could not fetch on
         // detail.degraded exactly as a genuine upstream failure would.
         let detail = await fetchMatchDetail(id, token, profile, known, currentBudgetLevel(), MATCH_DETAIL_STALE_GRACE_MS);
-        if (Array.isArray(detail.degraded) && detail.degraded.length) {
-          // A degraded read swaps in the last COMPLETE snapshot from KV when
-          // one exists (see storeLastGoodDetail). The degraded list survives
-          // on the response: the snapshot can lag by a tick, and the client's
-          // "some detail is catching up" note is the honest label for that.
+        const degradedRead = Array.isArray(detail.degraded) && detail.degraded.length > 0;
+        // A substanceless read of a match that has kicked off is upstream's
+        // 200-with-empty failure shape wearing a clean face: a match at 32'
+        // whose previous read carried full lineups does not legitimately have
+        // nothing. It is treated exactly like a degraded read.
+        const emptyLie = !degradedRead && !detailHasSubstance(detail) && (isLive(known.status) || isFinished(known.status));
+        if (degradedRead || emptyLie) {
+          // Swap in the last substantial snapshot from KV when one exists (see
+          // storeLastGoodDetail). The degraded list survives on the response:
+          // the snapshot can lag by a tick, and the client's "some detail is
+          // catching up" note is the honest label for that.
           const stored = await readLastGoodDetail(env, id);
-          if (stored) detail = { ...stored.detail, degraded: detail.degraded };
+          if (stored) {
+            detail = {
+              ...stored.detail,
+              degraded: degradedRead ? detail.degraded : ["/fixtures/lineups", "/fixtures/events", "/fixtures/players"],
+            };
+          }
         } else {
           // A complete read doubles as the next refusal window's safety copy.
           await storeLastGoodDetail(env, detail);
@@ -6366,10 +6377,27 @@ const MATCH_DETAIL_STALE_GRACE_MS = 10 * 60 * 1000;
 const LAST_DETAIL_TTL_SECONDS = 6 * 60 * 60;
 const lastDetailKey = (id) => `detail:last:${id}`;
 
+// Whether a mapped detail carries anything worth preserving. "Complete by the
+// degraded list" is not enough: upstream returns 200-with-empty under load for
+// fixtures that HAVE data (seen at 32' of a live match), and such a read is
+// clean-shaped but must never overwrite a snapshot with real content, nor is
+// it worth serving over one.
+function detailHasSubstance(detail) {
+  return Boolean(
+    detail?.home?.lineup?.length ||
+      detail?.away?.lineup?.length ||
+      detail?.goals?.length ||
+      detail?.cards?.length ||
+      detail?.subs?.length ||
+      detail?.playerStats?.length,
+  );
+}
+
 async function storeLastGoodDetail(env, detail) {
   try {
     if (!env?.ANALYSIS_CACHE || !detail || detail.id == null) return;
     if (Array.isArray(detail.degraded) && detail.degraded.length) return;
+    if (!detailHasSubstance(detail)) return; // an empty snapshot preserves nothing and can only mask a good one
     await env.ANALYSIS_CACHE.put(
       lastDetailKey(detail.id),
       JSON.stringify({ storedAt: Date.now(), detail }),
@@ -6493,7 +6521,13 @@ async function readColoCache(path, cacheTtl, graceMs) {
     const hit = await caches.default.match(coloKey(path));
     if (!hit) return undefined;
     const storedAt = Number(hit.headers.get("x-gs-stored-at"));
-    const state = classifyColoEntry({ storedAt, now: Date.now(), ttlMs: Number(cacheTtl) * 1000, graceMs });
+    // The entry carries the ttl it was STORED under (an empty payload is
+    // capped to a minute, see effectiveCacheTtl); freshness honours whichever
+    // of the two windows is tighter, so a capped entry can never ride a
+    // caller's longer declared window back to "fresh".
+    const storedTtl = Number(hit.headers.get("x-gs-fresh-ttl"));
+    const ttlSeconds = Number.isFinite(storedTtl) && storedTtl > 0 ? Math.min(Number(cacheTtl), storedTtl) : Number(cacheTtl);
+    const state = classifyColoEntry({ storedAt, now: Date.now(), ttlMs: ttlSeconds * 1000, graceMs });
     if (state === "expired") return undefined;
     return { payload: await hit.json(), state, storedAt };
   } catch {
@@ -6517,6 +6551,9 @@ async function writeColoCache(path, payload, cacheTtl) {
           "content-type": "application/json",
           "cache-control": `public, max-age=${keepSeconds}`,
           "x-gs-stored-at": String(Date.now()),
+          // The window this entry was stored under; reads honour the tighter
+          // of this and the caller's own declared ttl.
+          "x-gs-fresh-ttl": String(ttl),
         },
       }),
     );
@@ -6551,7 +6588,7 @@ async function fetchWithColoCache(url, path, token, cacheTtl, { staleGraceMs = 0
   }
   try {
     const payload = await fetchUpstream(url, path, token, cacheTtl);
-    await writeColoCache(path, payload, cacheTtl);
+    await writeColoCache(path, payload, effectiveCacheTtl(payload, cacheTtl));
     return payload;
   } catch (error) {
     if (staleGraceMs > 0) {
@@ -6570,6 +6607,19 @@ async function fetchWithColoCache(url, path, token, cacheTtl, { staleGraceMs = 0
     }
     throw error;
   }
+}
+
+// An EMPTY payload (`response: []`) is a legitimate answer only until it is
+// not: pre-match it is exactly right, but under load api-sports also returns
+// 200-with-empty for fixtures that HAVE data (seen live at 32' of GW1's late
+// kickoff: lineups the previous read carried came back []). Caching an empty
+// answer for the caller's full declared window pinned that nothing for up to
+// fifteen minutes, so an empty payload is cacheable for at most a minute:
+// right answers re-confirm cheaply, wrong ones expire fast.
+const EMPTY_PAYLOAD_TTL_SECONDS = 60;
+function effectiveCacheTtl(payload, cacheTtl) {
+  const empty = Array.isArray(payload?.response) && payload.response.length === 0;
+  return empty ? Math.min(Number(cacheTtl) || 0, EMPTY_PAYLOAD_TTL_SECONDS) : cacheTtl;
 }
 
 async function fetchUpstream(url, path, token, cacheTtl) {
@@ -6627,7 +6677,7 @@ async function fetchUpstream(url, path, token, cacheTtl) {
   // Stored only on success. A thrown error must never be memoised: a single
   // upstream blip would otherwise be replayed as a failure for the whole
   // window, turning a one-second fault into a six-hour outage.
-  writeCached(responseCache, url, payload, cacheTtl, Date.now());
+  writeCached(responseCache, url, payload, effectiveCacheTtl(payload, cacheTtl), Date.now());
   return payload;
 }
 

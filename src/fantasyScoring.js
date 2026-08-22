@@ -19,7 +19,12 @@ import { SCORING, bucketPosition } from "./fantasy.js";
 // provisional consumers (live points, the drawer) may still render it.
 export function isSettleableDetail(detail) {
   if (!detail) return false;
-  return !(Array.isArray(detail.degraded) && detail.degraded.length > 0);
+  if (Array.isArray(detail.degraded) && detail.degraded.length > 0) return false;
+  // Upstream's other failure shape wears a clean face: 200-with-empty payloads
+  // for a fixture that HAS data (seen mid-match on GW1's late kickoff). A
+  // played match always has a lineup and player minutes, so a read carrying
+  // neither is that failure, not a goalless game, and settles nothing.
+  return Boolean(detail.home?.lineup?.length || detail.away?.lineup?.length || detail.playerStats?.length);
 }
 
 // Returns a Map<playerId, { points, breakdown }>. Players who never appear in a

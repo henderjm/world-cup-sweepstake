@@ -104,10 +104,20 @@ test("an unused substitute is absent from or scoreless in the result", () => {
 // later tick from correcting it. GW1 2026-27's Friday opener settled with 7
 // players and 19 points during an upstream refusal window.
 
-test("a degraded detail must never settle; a healthy or merely empty one may", () => {
+test("a degraded detail must never settle, and neither may a clean-shaped read with no substance", () => {
   assert.equal(isSettleableDetail({ degraded: ["/fixtures/lineups", "/fixtures/players"] }), false);
   assert.equal(isSettleableDetail({ degraded: ["/fixtures/events"] }), false);
-  assert.equal(isSettleableDetail({ home: {}, away: {} }), true, "no degraded field at all is a healthy read");
-  assert.equal(isSettleableDetail({ degraded: [] }), true, "an empty list means nothing degraded");
-  assert.equal(isSettleableDetail(null), false, "no detail is not settleable either");
+  // Upstream's 200-with-empty failure shape: clean degraded list, nothing in
+  // it. A played match always has a lineup and player minutes.
+  assert.equal(isSettleableDetail({ home: {}, away: {} }), false);
+  assert.equal(isSettleableDetail({ degraded: [], home: {}, away: {} }), false);
+  assert.equal(isSettleableDetail(null), false);
+  const xi = [{ id: 1, name: "A" }];
+  assert.equal(isSettleableDetail({ home: { lineup: xi }, away: {} }), true, "a lineup is substance");
+  assert.equal(isSettleableDetail({ home: {}, away: {}, playerStats: [{ playerId: 1 }] }), true, "player minutes are substance");
+  assert.equal(
+    isSettleableDetail({ degraded: ["/fixtures/players"], home: { lineup: xi }, away: {} }),
+    false,
+    "substance does not excuse a degraded payload",
+  );
 });
