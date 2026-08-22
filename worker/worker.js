@@ -602,8 +602,10 @@ export default {
           // storeLastGoodDetail). The degraded list survives on the response:
           // the snapshot can lag by a tick, and the client's "some detail is
           // catching up" note is the honest label for that.
+          // Substance is required on the READ side too: a snapshot stored
+          // before the substance guard existed can itself be the empty lie.
           const stored = await readLastGoodDetail(env, id);
-          if (stored) {
+          if (stored && detailHasSubstance(stored.detail)) {
             detail = {
               ...stored.detail,
               degraded: degradedRead ? detail.degraded : ["/fixtures/lineups", "/fixtures/events", "/fixtures/players"],
@@ -6588,7 +6590,13 @@ async function fetchWithColoCache(url, path, token, cacheTtl, { staleGraceMs = 0
   }
   try {
     const payload = await fetchUpstream(url, path, token, cacheTtl);
-    await writeColoCache(path, payload, effectiveCacheTtl(payload, cacheTtl));
+    // An empty payload is never written to the colo cache at all: cache.put
+    // REPLACES the entry at the key, and GW1's late kickoff showed upstream
+    // serving 200-with-empty mid-match for a fixture whose previous reads
+    // carried full lineups, which clobbered the good copy the stale fallback
+    // existed to serve. The in-isolate memo still holds empties briefly
+    // (effectiveCacheTtl caps them at a minute) so herds stay absorbed.
+    if (!isEmptyPayload(payload)) await writeColoCache(path, payload, cacheTtl);
     return payload;
   } catch (error) {
     if (staleGraceMs > 0) {
@@ -6617,9 +6625,11 @@ async function fetchWithColoCache(url, path, token, cacheTtl, { staleGraceMs = 0
 // fifteen minutes, so an empty payload is cacheable for at most a minute:
 // right answers re-confirm cheaply, wrong ones expire fast.
 const EMPTY_PAYLOAD_TTL_SECONDS = 60;
+function isEmptyPayload(payload) {
+  return Array.isArray(payload?.response) && payload.response.length === 0;
+}
 function effectiveCacheTtl(payload, cacheTtl) {
-  const empty = Array.isArray(payload?.response) && payload.response.length === 0;
-  return empty ? Math.min(Number(cacheTtl) || 0, EMPTY_PAYLOAD_TTL_SECONDS) : cacheTtl;
+  return isEmptyPayload(payload) ? Math.min(Number(cacheTtl) || 0, EMPTY_PAYLOAD_TTL_SECONDS) : cacheTtl;
 }
 
 async function fetchUpstream(url, path, token, cacheTtl) {
