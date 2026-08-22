@@ -2972,6 +2972,9 @@ async function runScheduledFantasyScoring(env) {
         );
         continue;
       }
+      // This read just proved itself complete, so it doubles as the drawer's
+      // cross-colo safety copy; a finished match's detail never changes again.
+      await storeLastGoodDetail(env, detail);
       const scores = scoreMatchForPlayers(detail);
       // Players never in the baked squad pool (a late loan, a call-up who
       // missed the fetch:fantasy-players bake) still need a fantasy_players
