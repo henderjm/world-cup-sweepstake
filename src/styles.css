@@ -202,6 +202,15 @@ button { font-family: inherit; cursor: pointer; }
 }
 .fantasy-pitch__pts.is-live { background: var(--accent); color: var(--accent-ink); }
 
+/* The live feed is behind. Gold rather than the red used for errors: nothing is
+   broken from the reader's point of view, the numbers are just old, and an alarm
+   colour over a working scoreboard would overstate it. */
+.feeddelay { border-left: 3px solid var(--gold); margin-bottom: 12px; }
+.feeddelay__title { margin: 0 0 4px; font-weight: 700; color: var(--gold); }
+/* A fixture whose kickoff has passed while the feed still calls it pre-match.
+   The bare time reads as "hasn't started", which is the part that was false. */
+.mline__st.is-overdue { color: var(--gold); }
+
 /* Ticker -------------------------------------------------------------------- */
 
 .ticker {

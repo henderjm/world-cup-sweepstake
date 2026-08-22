@@ -3,6 +3,7 @@ import { COMPETITIONS } from "./competitions.js";
 import { displayTeamName } from "./domain.js";
 import { compareByGoals, compareByInvolvements } from "./scorers.js";
 import { dateLabel, dayLabel, formatStage, isFinished, isLive, statusLabel } from "./format.js";
+import { feedDelayNotice, isOverdueFixture } from "./fixtureFreshness.js";
 import { learnPages } from "./learnSeo.js";
 import { TUTORIALS } from "./tutorials.js";
 
@@ -191,8 +192,16 @@ export function renderScoresTabs(model, activeTab) {
 
 function matchLine(match) {
   const live = isLive(match.status);
+  // A fixture whose kickoff is well past while the feed still calls it pre-match
+  // is one we have lost track of. Showing the bare kickoff time there reads as
+  // "hasn't started", which is the false claim; the time plus an explicit mark
+  // keeps the fact we do know and drops the one we do not.
+  const overdue = isOverdueFixture(match);
+  const statusText = overdue ? `${statusLabel(match)} ?` : statusLabel(match);
   return `<div class="mline" data-match-id="${match.id ?? ""}" role="button" tabindex="0">
-      <span class="mline__st ${live ? "is-live" : ""}">${esc(statusLabel(match))}</span>
+      <span class="mline__st ${live ? "is-live" : ""}${overdue ? " is-overdue" : ""}"${
+        overdue ? ` title="Kick-off has passed but we have no update for this match yet — live data is behind."` : ""
+      }>${esc(statusText)}</span>
       <span class="mline__side mline__side--h"><span class="mline__name">${esc(displayTeamName(match.homeTeam))}</span>${badgeFor(match.homeTeam)}</span>
       <span class="mline__score">${scoreText(match)}${penaltyTag(match)}</span>
       <span class="mline__side">${badgeFor(match.awayTeam)}<span class="mline__name">${esc(displayTeamName(match.awayTeam))}</span></span>
@@ -212,6 +221,40 @@ function liveCard(match) {
         <span class="lcard__score">${Number.isFinite(match.score?.away) ? match.score.away : "–"}</span>
       </div>
     </div>`;
+}
+
+// Says out loud that the live feed is behind, instead of leaving a played match
+// sitting there with a kickoff time as though it had not started. Named fixtures
+// rather than a generic warning, because "Hull City v Man United kicked off 47
+// minutes ago" is checkable and "something may be stale" is not.
+//
+// Deliberately does NOT guess a scoreline or promote the match to live. We do not
+// know the score, and a fabricated one would be worse than an honest gap.
+function renderFeedDelayBanner(model, now) {
+  const notice = feedDelayNotice({
+    matches: model.matches,
+    stale: Boolean(model.stale),
+    staleAgeMs: model.staleAgeMs ?? null,
+    now,
+  });
+  if (!notice) return "";
+
+  const minutes = notice.behindByMs != null ? Math.round(notice.behindByMs / 60000) : null;
+  const named = notice.overdue
+    .slice(0, 3)
+    .map((match) => `${displayTeamName(match.homeTeam)} v ${displayTeamName(match.awayTeam)}`)
+    .join(", ");
+  const extra = notice.overdue.length > 3 ? ` and ${notice.overdue.length - 3} more` : "";
+
+  const detail = named
+    ? `${esc(named)}${esc(extra)} should have kicked off${minutes ? ` about ${minutes} minutes ago` : ""}, but we have had no update since.`
+    : `The scores below may be up to ${minutes ?? "a few"} minutes old.`;
+
+  return `
+    <section class="card feeddelay" role="status">
+      <p class="feeddelay__title">Live data is behind</p>
+      <p class="note">${detail} Showing the last figures we have rather than guessing.</p>
+    </section>`;
 }
 
 // -- Live & today -----------------------------------------------------------------------
@@ -243,6 +286,7 @@ export function renderLive(model) {
     </section>`;
 
   return `
+    ${renderFeedDelayBanner(model, now)}
     ${
       live.length
         ? `<div class="livehead"><span class="livehead__dot"></span><h3>Live now</h3></div>
