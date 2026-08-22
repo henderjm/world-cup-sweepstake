@@ -590,7 +590,18 @@ export default {
         // returned for zero upstream calls. It always answers with a real
         // match rather than an error, naming whatever it could not fetch on
         // detail.degraded exactly as a genuine upstream failure would.
-        const detail = await fetchMatchDetail(id, token, profile, known, currentBudgetLevel(), MATCH_DETAIL_STALE_GRACE_MS);
+        let detail = await fetchMatchDetail(id, token, profile, known, currentBudgetLevel(), MATCH_DETAIL_STALE_GRACE_MS);
+        if (Array.isArray(detail.degraded) && detail.degraded.length) {
+          // A degraded read swaps in the last COMPLETE snapshot from KV when
+          // one exists (see storeLastGoodDetail). The degraded list survives
+          // on the response: the snapshot can lag by a tick, and the client's
+          // "some detail is catching up" note is the honest label for that.
+          const stored = await readLastGoodDetail(env, id);
+          if (stored) detail = { ...stored.detail, degraded: detail.degraded };
+        } else {
+          // A complete read doubles as the next refusal window's safety copy.
+          await storeLastGoodDetail(env, detail);
+        }
         // The browser cache window follows the same reasoning as the edge one:
         // a finished match does not need re-fetching every 25 seconds. A read
         // that degraded is capped much shorter so a transient upstream fault
@@ -5835,6 +5846,8 @@ async function notifyCompetition(env, comp) {
         if (liveDetailFetches > 0) await sleep(MATCH_DETAIL_PACING_MS);
         liveDetailFetches += 1;
         const detail = await fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY);
+        // Every good live read doubles as the drawer's cross-colo safety copy.
+        await storeLastGoodDetail(env, detail);
         // YELLOW_RED is a second-yellow dismissal, not a separate RED booking.
         const redCards = (detail.cards ?? []).filter(
           (card) => card.card === "RED" || card.card === "YELLOW_RED",
@@ -6310,6 +6323,47 @@ const EMPTY_API_PAYLOAD = Object.freeze({ response: [] });
 // live cron passes (analysis, notifications, provisional points) opt in;
 // settled scoring never does, because stale-settled is wrong forever.
 const MATCH_DETAIL_STALE_GRACE_MS = 10 * 60 * 1000;
+
+// The last COMPLETE detail per match, in KV, because the colo cache cannot
+// help the colo that needs it: entries are written where a fetch SUCCEEDS, the
+// cron warms only the colo it runs in, and the colo being refused is exactly
+// the one that cannot warm itself (verified live on GW1: cachedCalls climbing
+// globally while a drawer read in another colo still degraded to empty). KV is
+// global, and the analysis pass already established this pattern: the cron
+// writes, the route reads. Only a read with NOTHING on `degraded` is stored,
+// so a served copy is always a complete snapshot; it can lag by up to a tick
+// plus KV propagation, which is why the route reaches for it only AFTER its
+// own read degraded, and keeps the degraded list on the response so the
+// client still says some detail is catching up. Settled scoring never reads
+// this (it calls fetchMatchDetail directly and refuses degraded reads).
+const LAST_DETAIL_TTL_SECONDS = 6 * 60 * 60;
+const lastDetailKey = (id) => `detail:last:${id}`;
+
+async function storeLastGoodDetail(env, detail) {
+  try {
+    if (!env?.ANALYSIS_CACHE || !detail || detail.id == null) return;
+    if (Array.isArray(detail.degraded) && detail.degraded.length) return;
+    await env.ANALYSIS_CACHE.put(
+      lastDetailKey(detail.id),
+      JSON.stringify({ storedAt: Date.now(), detail }),
+      { expirationTtl: LAST_DETAIL_TTL_SECONDS },
+    );
+  } catch {
+    // best-effort: the detail is already on its way to whoever asked for it
+  }
+}
+
+async function readLastGoodDetail(env, id) {
+  try {
+    if (!env?.ANALYSIS_CACHE) return null;
+    const raw = await env.ANALYSIS_CACHE.get(lastDetailKey(id));
+    if (!raw) return null;
+    const stored = JSON.parse(raw);
+    return stored?.detail ? stored : null;
+  } catch {
+    return null;
+  }
+}
 
 async function fetchSupplementaryJson(path, token, cacheTtl, degraded, staleGraceMs = 0) {
   const family = endpointFamily(path);
