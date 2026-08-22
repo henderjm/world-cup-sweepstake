@@ -6242,14 +6242,32 @@ async function fetchMatchDetail(id, token, profile = MATCH_DETAIL_LIVE, summary 
   // score, kickoff, venue and status, which is a real answer. Only reachable
   // when a summary was supplied, so the cron paths (which pass none) keep
   // their strict behaviour and can never be silently emptied by a budget dip.
+  // A payload the budget DECLINED still gets a free look at the colo cache:
+  // shedding exists to protect the upstream allowance, and a cache read spends
+  // none of it. The cron's own live fetches keep these entries warm, so a
+  // drawer opened at the tightest level usually still shows a live-ish
+  // timeline for zero upstream calls. A fresh entry is served as a normal
+  // answer; a stale one is marked degraded; no entry degrades to empty
+  // exactly as before.
+  const declined = async (path, cacheTtl) => {
+    const family = endpointFamily(path);
+    const cached = staleGraceMs > 0 ? await readColoCache(path, cacheTtl, staleGraceMs) : undefined;
+    if (cached === undefined) return skip(path);
+    if (cached.state === "fresh") recordColoCacheHit(path);
+    else degraded.push(family);
+    return cached.payload;
+  };
+
   if (!plan.fixture && summary) {
+    // Cache keys carry the fixture id exactly as the cron's own fetches write
+    // them; a bare family would silently miss every entry.
     const detail = mapApiFootballMatchDetailFromSummary(
       summary,
-      skip("/fixtures/lineups"),
-      skip("/fixtures/events"),
-      skip("/fixtures/players"),
+      await declined(`/fixtures/lineups?fixture=${id}`, profile.lineups),
+      await declined(`/fixtures/events?fixture=${id}`, profile.events),
+      await declined(`/fixtures/players?fixture=${id}`, profile.players),
     );
-    return { ...detail, degraded };
+    return degraded.length ? { ...detail, degraded } : detail;
   }
 
   // The load-bearing fixture payload takes the same stale grace when the
@@ -6263,13 +6281,13 @@ async function fetchMatchDetail(id, token, profile = MATCH_DETAIL_LIVE, summary 
   });
   const lineups = plan.lineups
     ? await fetchSupplementaryJson(`/fixtures/lineups?fixture=${id}`, token, profile.lineups, degraded, staleGraceMs)
-    : skip("/fixtures/lineups");
+    : await declined(`/fixtures/lineups?fixture=${id}`, profile.lineups);
   const events = plan.events
     ? await fetchSupplementaryJson(`/fixtures/events?fixture=${id}`, token, profile.events, degraded, staleGraceMs)
-    : skip("/fixtures/events");
+    : await declined(`/fixtures/events?fixture=${id}`, profile.events);
   const players = plan.players
     ? await fetchSupplementaryJson(`/fixtures/players?fixture=${id}`, token, profile.players, degraded, staleGraceMs)
-    : skip("/fixtures/players");
+    : await declined(`/fixtures/players?fixture=${id}`, profile.players);
   const detail = mapApiFootballMatchDetail(fixture, lineups, events, players);
   // Present only when something actually degraded, so a healthy read keeps the
   // exact shape the baked static files carry. It names the endpoint rather
