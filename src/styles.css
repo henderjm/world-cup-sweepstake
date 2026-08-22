@@ -938,6 +938,51 @@ button { font-family: inherit; cursor: pointer; }
 .xi__bench { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
 .xi__bench span { color: var(--faint); font-weight: 700; text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.08em; margin-right: 6px; }
 
+/* Drawer line-up pitch: the provider's formation grid drawn as one half, keeper
+   at the top attacking down toward the halfway line. Same field language as the
+   fantasy My team pitch (dark-green tint, hairline markings) so the two pitches
+   in the app read as the same object. Falls back to .xi__players when a lineup
+   arrives without grid data. */
+.xi-pitch {
+  background: var(--fantasy-pitch-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 4px 2px;
+  background-image:
+    radial-gradient(circle at 50% 100%, transparent 42px, rgb(255 255 255 / 0.07) 43px, transparent 44px),
+    linear-gradient(rgb(255 255 255 / 0.07), rgb(255 255 255 / 0.07));
+  background-size: 100% 100%, 100% 1px;
+  background-position: 0 0, 0 100%;
+  background-repeat: no-repeat;
+  margin: 2px 0 4px;
+}
+.xi-pitch__row { display: flex; justify-content: space-evenly; gap: 2px; margin: 0 0 10px; }
+.xi-pitch__player { flex: 0 1 68px; min-width: 44px; text-align: center; }
+.xi-pitch__num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0 auto;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.xi-pitch__name {
+  display: block;
+  margin-top: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #c6cdd4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .dz__meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px; font-size: 11px; color: var(--muted); }
 .dz__meta b { color: var(--faint); font-weight: 700; text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.08em; margin-right: 5px; }
 

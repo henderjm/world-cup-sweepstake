@@ -109,7 +109,7 @@ test("merges API-Football fixture, lineup, event and player-stat responses", () 
     },
     {
       response: [
-        { team: { id: 1, name: "Arsenal", logo: "a.png" }, formation: "4-3-3", coach: { name: "Coach A" }, startXI: [{ player: { id: 10, name: "Player A", number: 7, pos: "F" } }], substitutes: [] },
+        { team: { id: 1, name: "Arsenal", logo: "a.png" }, formation: "4-3-3", coach: { name: "Coach A" }, startXI: [{ player: { id: 10, name: "Player A", number: 7, pos: "F", grid: "4:1" } }], substitutes: [] },
         { team: { id: 2, name: "Liverpool", logo: "l.png" }, formation: "4-2-3-1", coach: { name: "Coach B" }, startXI: [{ player: { id: 20, name: "Player B", number: 1, pos: "G" } }], substitutes: [] },
       ],
     },
@@ -130,6 +130,10 @@ test("merges API-Football fixture, lineup, event and player-stat responses", () 
 
   assert.equal(detail.status, "FINISHED");
   assert.equal(detail.home.formation, "4-3-3");
+  // The formation grid is transported for the drawer's pitch view; a player
+  // the provider has not placed maps to null rather than disappearing.
+  assert.equal(detail.home.lineup[0].grid, "4:1");
+  assert.equal(detail.away.lineup[0].grid, null);
   assert.deepEqual(detail.goals[0], { minute: 20, injuryTime: null, type: "REGULAR", team: "Arsenal", scorerId: 10, scorer: "Player A", assistId: 11, assist: "Helper", home: 1, away: 0 });
   assert.deepEqual(detail.cards.map((card) => card.card), ["YELLOW", "YELLOW_RED"]);
   assert.deepEqual(detail.playerStats[0], { playerId: 10, player: "Player A", team: "Arsenal", minutes: 90, position: "F", tackles: 2, blocks: 0, interceptions: 1 });

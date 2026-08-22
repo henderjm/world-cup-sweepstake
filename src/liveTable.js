@@ -11,17 +11,27 @@
 // This applies live matches on top, which is the FotMob-style "live table"
 // managers actually watch on a Saturday: where would my club be right now.
 //
-// ONLY live matches are applied, never finished ones. A match in progress cannot
-// be in the provider's standings yet, whereas a match that has just ended may or
-// may not have been processed, and there is no way to tell from the payload which.
-// Applying those would double-count for however long the provider took. The
-// existing few-minute lag after full time is the honest alternative and it
-// self-corrects.
+// Live matches are applied unconditionally: a match in progress cannot be in
+// the provider's standings yet. A FINISHED match may or may not have been
+// processed, and the payload does not say which, so those are folded in only
+// when the played counts prove the provider has not counted them: a club whose
+// feed-finished matches outnumber its `playedGames` is missing exactly that
+// many results, and since a provider integrates chronologically the missing
+// ones are the most recent. A fixture is applied only when BOTH clubs' deficits
+// nominate it, which is what makes double-counting impossible; anything
+// ambiguous is left alone and self-corrects when the provider catches up.
 //
-// The guard below makes that safe even if a provider disagrees: if its `played`
-// count for a club already exceeds the finished matches we can see, it is ahead
-// of us and counting something we think is in progress, so that fixture is left
-// alone rather than added twice.
+// The first version trusted "the provider processes full time within minutes"
+// and applied nothing finished. GW1 of 2026-27 disproved it: the standings
+// refresh was being refused upstream for stretches of the afternoon, so an
+// early kickoff that had ended stayed out of the table for HOURS while the
+// form dots (computed from the matches) already showed the result, and the
+// table contradicted itself on screen.
+//
+// The same played-count guard protects the live branch in the other direction:
+// if the provider's `played` for a club already exceeds the finished matches we
+// can see, it is ahead of us and counting something we think is in progress, so
+// that fixture is left alone rather than added twice.
 
 import { isFinished, isLive } from "./format.js";
 import { normalizeTeamName } from "./domain.js";
@@ -66,6 +76,35 @@ function compareRows(a, b) {
   return String(a.team).localeCompare(String(b.team));
 }
 
+// The finished matches the provider's standings have provably not counted yet.
+// Per club, deficit = feed-finished matches minus `playedGames`; the deficit
+// nominates that club's most RECENT finished fixtures (a provider integrates
+// chronologically, so the missing ones are the latest). Only a fixture both
+// clubs nominate is returned: one-sided evidence means a join failed or the
+// snapshot is mid-update, and half-certainty is left to self-correct instead.
+// Returned oldest first so folding is deterministic.
+function missingFinishedResults(matches, byTeam) {
+  const newestFirst = (matches ?? [])
+    .filter((match) => isFinished(match.status) && hasScore(match.score))
+    .sort((a, b) => (Date.parse(b.utcDate) || 0) - (Date.parse(a.utcDate) || 0));
+  const perTeam = new Map();
+  for (const match of newestFirst) {
+    for (const team of [normalizeTeamName(match.homeTeam), normalizeTeamName(match.awayTeam)]) {
+      if (!byTeam.has(team)) continue;
+      if (!perTeam.has(team)) perTeam.set(team, []);
+      perTeam.get(team).push(match);
+    }
+  }
+  const nominations = new Map();
+  for (const [team, list] of perTeam) {
+    const deficit = list.length - (byTeam.get(team).played ?? 0);
+    for (let i = 0; i < deficit; i += 1) {
+      nominations.set(list[i], (nominations.get(list[i]) ?? 0) + 1);
+    }
+  }
+  return newestFirst.filter((match) => nominations.get(match) === 2).reverse();
+}
+
 // Returns { rows, liveTeams, applied }. `rows` is re-sorted with positions and
 // zones recomputed; `liveTeams` is the set of clubs whose row moved, so the view
 // can mark them; `applied` is how many fixtures were folded in.
@@ -80,21 +119,7 @@ export function applyLiveResults({ rows, matches, zones = [] } = {}) {
   const liveTeams = new Set();
   let applied = 0;
 
-  for (const match of matches ?? []) {
-    if (!isLive(match.status) || !hasScore(match.score)) continue;
-    const home = byTeam.get(normalizeTeamName(match.homeTeam));
-    const away = byTeam.get(normalizeTeamName(match.awayTeam));
-    // A club absent from the table (a cup guest, a name we could not join) is
-    // skipped rather than invented: half a fixture applied would be worse than
-    // none of it.
-    if (!home || !away) continue;
-
-    // The provider is ahead of us on either club: it has already counted a match
-    // we believe is still in progress. Leave this fixture alone.
-    const homeAhead = (home.played ?? 0) > (finished.get(home.team) ?? 0);
-    const awayAhead = (away.played ?? 0) > (finished.get(away.team) ?? 0);
-    if (homeAhead || awayAhead) continue;
-
+  const fold = (match, home, away) => {
     const h = outcome(match.score.home, match.score.away);
     const a = outcome(match.score.away, match.score.home);
     const diff = match.score.home - match.score.away;
@@ -118,6 +143,30 @@ export function applyLiveResults({ rows, matches, zones = [] } = {}) {
     liveTeams.add(home.team);
     liveTeams.add(away.team);
     applied += 1;
+  };
+
+  // Finished-but-uncounted results first, so a club's `played` is reconciled
+  // before the live guard below reads it.
+  for (const match of missingFinishedResults(matches, byTeam)) {
+    fold(match, byTeam.get(normalizeTeamName(match.homeTeam)), byTeam.get(normalizeTeamName(match.awayTeam)));
+  }
+
+  for (const match of matches ?? []) {
+    if (!isLive(match.status) || !hasScore(match.score)) continue;
+    const home = byTeam.get(normalizeTeamName(match.homeTeam));
+    const away = byTeam.get(normalizeTeamName(match.awayTeam));
+    // A club absent from the table (a cup guest, a name we could not join) is
+    // skipped rather than invented: half a fixture applied would be worse than
+    // none of it.
+    if (!home || !away) continue;
+
+    // The provider is ahead of us on either club: it has already counted a match
+    // we believe is still in progress. Leave this fixture alone.
+    const homeAhead = (home.played ?? 0) > (finished.get(home.team) ?? 0);
+    const awayAhead = (away.played ?? 0) > (finished.get(away.team) ?? 0);
+    if (homeAhead || awayAhead) continue;
+
+    fold(match, home, away);
   }
 
   if (!applied) return { rows, liveTeams, applied: 0 };

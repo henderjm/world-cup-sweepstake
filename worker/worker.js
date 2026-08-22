@@ -6545,6 +6545,9 @@ async function handleQuotaHealth(env, cors) {
         dailyLimit: quota?.daily_limit ?? null,
         dailyRemaining: quota?.daily_remaining ?? null,
         limitedUntil: live?.limitedUntil ?? 0,
+        // Per-minute pair, in-isolate like the refusal flag and honest about
+        // the same limitation: it answers for the isolate serving this request.
+        minute: live?.minute ?? null,
       },
       now,
     });

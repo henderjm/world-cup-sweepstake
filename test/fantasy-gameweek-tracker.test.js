@@ -117,7 +117,7 @@ test("live fixtures sort above upcoming, and upcoming above finished", () => {
 });
 
 test("trackerSummary omits empty parts and says nothing for an empty XI", () => {
-  assert.equal(trackerSummary({ total: 11, done: 6, inPlay: 3, toCome: 2, blank: 0 }), "6 done · 3 in play · 2 to come");
+  assert.equal(trackerSummary({ total: 11, done: 6, inPlay: 3, toCome: 2, blank: 0 }), "6 done · 3 in play · 2 to play");
   assert.equal(trackerSummary({ total: 11, done: 11, inPlay: 0, toCome: 0, blank: 0 }), "11 done");
   assert.equal(trackerSummary({ total: 0, done: 0, inPlay: 0, toCome: 0, blank: 0 }), "");
   assert.equal(trackerSummary(null), "");

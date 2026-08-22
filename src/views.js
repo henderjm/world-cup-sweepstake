@@ -200,7 +200,7 @@ function matchLine(match) {
   const statusText = overdue ? `${statusLabel(match)} ?` : statusLabel(match);
   return `<div class="mline" data-match-id="${match.id ?? ""}" role="button" tabindex="0">
       <span class="mline__st ${live ? "is-live" : ""}${overdue ? " is-overdue" : ""}"${
-        overdue ? ` title="Kick-off has passed but we have no update for this match yet — live data is behind."` : ""
+        overdue ? ` title="Kick-off has passed but there is no update for this match yet: the live feed is running behind."` : ""
       }>${esc(statusText)}</span>
       <span class="mline__side mline__side--h"><span class="mline__name">${esc(displayTeamName(match.homeTeam))}</span>${badgeFor(match.homeTeam)}</span>
       <span class="mline__score">${scoreText(match)}${penaltyTag(match)}</span>
@@ -337,7 +337,7 @@ export function renderTable(model) {
           ${model.tables.length > 1 ? `<h3 class="card__title">${esc(table.name)}</h3>` : ""}
           ${
             table.live
-              ? `<p class="note ltable__livenote">Includes matches in progress, so these figures are provisional and can still change.</p>`
+              ? `<p class="note ltable__livenote">As it stands: includes today's results and matches still in play, so these figures can still change.</p>`
               : ""
           }
           <div class="ltable__row ltable__head">
