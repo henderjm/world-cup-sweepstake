@@ -12,6 +12,7 @@ import {
   renderFantasyLeagueList,
   renderFantasyLobby,
   renderFantasyMatchupPanel,
+  renderFantasyGameweekBoard,
   renderMyTeamMatchupStrip,
   renderFantasyMyTeamPanel,
   renderFantasyPlayerPool,
@@ -2610,4 +2611,76 @@ test("a bye week shows only the manager's own score, never an invented Average n
 test("no matchup payload renders nothing rather than a loading hole", () => {
   assert.equal(renderMyTeamMatchupStrip(null), "");
   assert.equal(renderMyTeamMatchupStrip(undefined), "");
+});
+
+// -- the league gameweek scoreboard -----------------------------------------------
+// "I want to see everyone in the league's players and what they're scoring
+// this week": every fixture, expandable to both XIs once the deadline has
+// revealed them.
+
+const boardSide = (userId, name, score, starters = null, inPlay = 0) => ({
+  userId,
+  name,
+  isBot: false,
+  score,
+  progress: { total: 11, done: 3, inPlay, toCome: 11 - 3 - inPlay, blank: 0 },
+  starters,
+});
+
+test("a revealed live board shows every fixture's scores and both XIs with per-player points", () => {
+  const html = renderFantasyGameweekBoard(
+    {
+      gameweek: 1,
+      status: "live",
+      revealed: true,
+      fixtures: [
+        {
+          home: boardSide(1, "Goon Squad", 41, [{ playerId: 9, name: "Erling Haaland", position: "FWD", isCaptain: true, points: 8, provisional: true }], 3),
+          away: boardSide(2, "Sam", 38, [{ playerId: 11, name: "Mohamed Salah", position: "FWD", isCaptain: false, points: 2, provisional: false }]),
+        },
+      ],
+      byes: [],
+    },
+    { myUserId: 1 },
+  );
+  assert.match(html, /Around the league/);
+  assert.match(html, /Goon Squad/);
+  assert.match(html, /41/);
+  assert.match(html, /38/);
+  assert.match(html, /Erling Haaland/);
+  assert.match(html, /Mohamed Salah/);
+  assert.match(html, /fantasy-gwb__cap/, "the captain is marked");
+  assert.match(html, /is-me/, "my own side is highlighted");
+});
+
+test("before the deadline the board names the fixtures but reveals nobody's XI", () => {
+  const html = renderFantasyGameweekBoard({
+    gameweek: 1,
+    status: "scheduled",
+    revealed: false,
+    fixtures: [{ home: boardSide(1, "Goon Squad", 0), away: boardSide(2, "Sam", 0) }],
+    byes: [],
+  });
+  assert.match(html, /Line-ups are revealed at the squad deadline/);
+  assert.doesNotMatch(html, /fantasy-gwb__players/);
+  assert.match(html, /•/, "no 0-0 for a fixture nobody has played");
+});
+
+test("the unpaired manager plays Average with no invented number for it", () => {
+  const html = renderFantasyGameweekBoard({
+    gameweek: 1,
+    status: "live",
+    revealed: true,
+    fixtures: [],
+    byes: [boardSide(3, "Loner FC", 27, [{ playerId: 5, name: "A Player", position: "MID", isCaptain: false, points: 3, provisional: false }], 1)],
+  });
+  assert.match(html, /Loner FC/);
+  assert.match(html, /Average/);
+  assert.match(html, /settles? when the gameweek finishes/i);
+  assert.doesNotMatch(html, /Average[^<]*<\/span>\s*<span[^>]*>0</, "Average never shows a zero mid-week");
+});
+
+test("no board payload renders nothing; an error renders the error", () => {
+  assert.equal(renderFantasyGameweekBoard(null), "");
+  assert.match(renderFantasyGameweekBoard(null, { error: "nope" }), /nope/);
 });

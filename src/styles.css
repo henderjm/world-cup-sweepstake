@@ -3499,6 +3499,48 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-mustrip__label { margin-left: auto; flex: none; }
 .fantasy-mustrip__label.is-live { background: var(--fantasy-soft); color: var(--fantasy-accent-2); }
 
+/* The league gameweek scoreboard: every fixture this week, expandable to both
+   starting XIs with per-player points once the deadline has revealed them. */
+.fantasy-gwb__fixture { border-top: 1px solid var(--line); }
+.fantasy-gwb__fixture:first-of-type { border-top: 0; }
+.fantasy-gwb__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 2px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+}
+.fantasy-gwb__row::-webkit-details-marker { display: none; }
+.fantasy-gwb__side { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.fantasy-gwb__side--away { text-align: right; }
+.fantasy-gwb__side.is-me { color: var(--fantasy-accent-2); }
+.fantasy-gwb__vs { flex: none; color: var(--faint); font-size: 11px; }
+.fantasy-gwb__score { flex: none; font-weight: 800; font-variant-numeric: tabular-nums; min-width: 26px; text-align: center; }
+.fantasy-gwb__score.is-live { color: var(--fantasy-accent); }
+.fantasy-gwb__squads { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 4px 2px 12px; }
+@media (max-width: 560px) {
+  .fantasy-gwb__squads { grid-template-columns: 1fr; }
+}
+.fantasy-gwb__teamname { margin: 0 0 4px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.fantasy-gwb__players { list-style: none; margin: 0; padding: 0; }
+.fantasy-gwb__player { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 0; color: #c6cdd4; }
+.fantasy-gwb__player.is-live .fantasy-gwb__pts { color: var(--fantasy-accent); }
+.fantasy-gwb__pos { flex: none; width: 30px; color: var(--faint); font-size: 10px; text-transform: uppercase; }
+.fantasy-gwb__pname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fantasy-gwb__cap {
+  display: inline-block;
+  margin-left: 5px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--fantasy-soft);
+  color: var(--fantasy-accent-2);
+  font-size: 9px;
+  font-weight: 800;
+}
+.fantasy-gwb__pts { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; }
+
 /* Head-to-head list under the standings (issue #41). Same row rhythm as the
    table above it, but three columns rather than nine: this answers "how do I
    do against you", and a full N-by-N grid does not fit a phone. */

@@ -529,6 +529,82 @@ export function renderFantasyMatchupPanel(
     </section>`;
 }
 
+// -- The whole league's gameweek scoreboard ---------------------------------------
+//
+// "I want to see everyone in the league's players and what they're scoring
+// this week." Every fixture of the current gameweek with both sides' live
+// scores, each expandable to the two starting XIs with per-player points.
+// Line-ups appear only once the payload says `revealed` (the squad deadline
+// has passed; before that, watching an opponent's XI would be scouting, not a
+// scoreboard). Per-player figures are UNDOUBLED with a (C) marker while side
+// scores apply captaincy, the same split as the My team pitch.
+
+function renderBoardStarters(side) {
+  if (!side?.starters?.length) return "";
+  const rows = side.starters
+    .map(
+      (starter) =>
+        `<li class="fantasy-gwb__player ${starter.provisional ? "is-live" : ""}">
+          <span class="fantasy-gwb__pos">${esc(starter.position ?? "")}</span>
+          <span class="fantasy-gwb__pname">${esc(starter.name)}${starter.isCaptain ? `<span class="fantasy-gwb__cap">C</span>` : ""}</span>
+          <span class="fantasy-gwb__pts">${esc(starter.points)}</span>
+        </li>`,
+    )
+    .join("");
+  return `<div class="fantasy-gwb__team">
+      <p class="fantasy-gwb__teamname">${esc(side.name)}${botChip(side.isBot)}</p>
+      <ul class="fantasy-gwb__players">${rows}</ul>
+    </div>`;
+}
+
+function renderBoardSide(side, myUserId, { away = false } = {}) {
+  const live = Boolean(side?.progress?.inPlay);
+  return `<span class="fantasy-gwb__side ${away ? "fantasy-gwb__side--away" : ""} ${side?.userId === myUserId ? "is-me" : ""}">
+      ${esc(side?.name ?? "")}${botChip(side?.isBot)}
+    </span>
+    <span class="fantasy-gwb__score ${live ? "is-live" : ""}">${esc(side?.score ?? 0)}</span>`;
+}
+
+export function renderFantasyGameweekBoard(board, { myUserId = null, error = "", now = Date.now() } = {}) {
+  if (!board) {
+    return error ? `<div class="card"><p class="fantasy-form__error">${esc(error)}</p></div>` : "";
+  }
+  const showScores = board.status === "live" || board.status === "final";
+  const score = (side) => (showScores ? side : { ...side, score: "•" });
+
+  const fixtureRow = (home, away) => {
+    const summary = `<summary class="fantasy-gwb__row">
+        ${renderBoardSide(score(home), myUserId)}
+        <span class="fantasy-gwb__vs">v</span>
+        ${renderBoardSide(score(away), myUserId, { away: true })}
+      </summary>`;
+    const body = board.revealed
+      ? `<div class="fantasy-gwb__squads">${renderBoardStarters(home)}${renderBoardStarters(away)}</div>`
+      : `<p class="note--dim">Line-ups are revealed at the squad deadline.</p>`;
+    return `<details class="fantasy-gwb__fixture">${summary}${body}</details>`;
+  };
+
+  const byeRow = (side) => `<details class="fantasy-gwb__fixture">
+      <summary class="fantasy-gwb__row">
+        ${renderBoardSide(score(side), myUserId)}
+        <span class="fantasy-gwb__vs">v</span>
+        <span class="fantasy-gwb__side fantasy-gwb__side--away">Average</span>
+        <span class="fantasy-gwb__score">${showScores ? `<span class="fantasy-stat--empty" title="Average is the league median and settles when the gameweek finishes">…</span>` : "•"}</span>
+      </summary>
+      ${
+        board.revealed
+          ? `<div class="fantasy-gwb__squads">${renderBoardStarters(side)}<p class="note--dim">Average has no squad: it scores the median of the managers who played each other, settled when the gameweek finishes.</p></div>`
+          : `<p class="note--dim">Line-ups are revealed at the squad deadline.</p>`
+      }
+    </details>`;
+
+  return `<section class="card fantasy-gwb">
+      <h3 class="card__title">Around the league</h3>
+      ${(board.fixtures ?? []).map((fixture) => fixtureRow(fixture.home, fixture.away)).join("")}
+      ${(board.byes ?? []).map((side) => byeRow(side)).join("")}
+    </section>`;
+}
+
 // -- The league's season schedule ------------------------------------------------
 //
 // The concrete missing feature: 38 gameweeks of fixtures existed from the

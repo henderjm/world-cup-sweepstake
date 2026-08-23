@@ -450,6 +450,11 @@ export default {
     if (fantasyLineupRoute && request.method === "POST") {
       return handleFantasyLineupSet(request, env, Number(fantasyLineupRoute[1]), cors);
     }
+    const fantasyGameweekBoardRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/gameweek$/);
+    if (fantasyGameweekBoardRoute && request.method === "GET") {
+      return handleFantasyGameweekBoard(request, env, Number(fantasyGameweekBoardRoute[1]), cors);
+    }
+
     const fantasyMatchupRoute = url.pathname.match(/^\/fantasy\/league\/(\d+)\/matchup$/);
     if (fantasyMatchupRoute && request.method === "GET") {
       return handleFantasyMatchup(request, env, Number(fantasyMatchupRoute[1]), cors);
@@ -3342,6 +3347,19 @@ async function handleFantasyPlayersXp(env, cors) {
   }
 }
 
+// One manager's LIVE gameweek score: the settled-plus-provisional merge the
+// My team pitch already renders, rolled up with captaincy through the same
+// rosterGameweekPoints, so a scoreboard total can never disagree with the
+// tiles under it. fantasy_gameweek_scores stays the SETTLED record that
+// standings and waiver priority read; this is the number shown while matches
+// are on, and the two converge at full time because both sum the same
+// per-match rows. `live` is a fantasyLivePointsForGameweek result, fetched
+// once by the caller and shared across every manager it scores.
+async function fantasyLiveScoreFor(env, leagueId, userId, gameweek, live) {
+  const { starters } = await resolveManagerLineup(env, leagueId, userId, gameweek);
+  return rosterGameweekPoints({ starters }, live.points).points;
+}
+
 async function fantasyGameweekScore(env, leagueId, userId, gameweek) {
   const row = await env.DB.prepare(
     `SELECT points FROM fantasy_gameweek_scores WHERE league_id = ?1 AND user_id = ?2 AND gameweek = ?3`,
@@ -3433,7 +3451,11 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
       return trackGameweek({ matches, roster, starterIds: starters.map((entry) => entry.playerId), gameweek }).counts;
     };
 
-    const meScore = await fantasyGameweekScore(env, leagueId, user.id, gameweek);
+    // Scores are LIVE (settled plus provisional, captaincy applied), not the
+    // settled rollup alone: a matchup that only moved when a whole match
+    // settled was the "no idea how my team is doing" complaint in one line.
+    const livePoints = await fantasyLivePointsForGameweek(env, gameweek);
+    const meScore = await fantasyLiveScoreFor(env, leagueId, user.id, gameweek, livePoints);
     // Through memberDisplayName like every other surface, so a manager who has
     // named their team sees that name here too. Reading user.name directly was
     // the one place a team name did not reach (issue #48).
@@ -3464,7 +3486,7 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
     const opponentId = fixture.home_user_id === user.id ? fixture.away_user_id : fixture.home_user_id;
     const [opponentRow, opponentScore, opponentProgress] = await Promise.all([
       env.DB.prepare(`SELECT name, email, is_bot FROM users WHERE id = ?1`).bind(opponentId).first(),
-      fantasyGameweekScore(env, leagueId, opponentId, gameweek),
+      fantasyLiveScoreFor(env, leagueId, opponentId, gameweek, livePoints),
       progressFor(opponentId),
     ]);
     const opponent = {
@@ -3476,6 +3498,111 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
     };
 
     return json({ gameweek, status, me, opponent, ...timing }, 200, cors);
+  } catch {
+    return json({ error: "fantasy unavailable" }, 502, cors);
+  }
+}
+
+// GET /fantasy/league/:id/gameweek: the whole league's current gameweek at
+// once — every fixture with both sides' LIVE scores and, once the squad
+// deadline has passed, each side's starting XI with per-player points. This is
+// the scoreboard managers actually watch on a Saturday ("I want to see
+// everyone in the league's players and what they're scoring this week").
+//
+// The privacy rule: lineups are hidden until the gameweek's squad deadline,
+// because revealing who an opponent is starting while they can still change it
+// is scouting, not a scoreboard; after the deadline every XI is public, the
+// same convention every established H2H product ships. An unreadable feed
+// reveals nothing (`revealed` stays false), which errs on the private side.
+// Per-player figures are UNDOUBLED with an isCaptain flag, exactly like the
+// My team pitch, while each side's score applies captaincy: the same
+// deliberate split documented on the in-match points invariant.
+//
+// The unpaired manager in an odd league appears under `byes` with their own
+// live score and XI but NO invented Average number: the median exists only
+// once the gameweek finishes counting (src/fantasyAverage.js).
+async function handleFantasyGameweekBoard(request, env, leagueId, cors) {
+  if (!env.DB) return json({ error: "fantasy not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const membership = await env.DB.prepare(
+      `SELECT 1 AS x FROM fantasy_league_members WHERE league_id = ?1 AND user_id = ?2`,
+    )
+      .bind(leagueId, user.id)
+      .first();
+    if (!membership) return json({ error: "not a member" }, 403, cors);
+
+    const gameweek = await currentFantasyGameweek(env);
+    const matches = await currentFantasyMatches(env);
+    const status = matches ? gameweekStatus(matches, gameweek) : "scheduled";
+    const timetable = matches ? gameweekTimetable({ matches, gameweek, now: Date.now() }) : null;
+    const revealed = Boolean(timetable?.squad.locked);
+
+    const [memberRows, fixtureRows] = await Promise.all([
+      env.DB.prepare(
+        `SELECT m.user_id, m.team_name, u.name, u.email, u.is_bot FROM fantasy_league_members m
+         JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
+      )
+        .bind(leagueId)
+        .all(),
+      env.DB.prepare(
+        `SELECT home_user_id, away_user_id FROM fantasy_h2h_fixtures WHERE league_id = ?1 AND gameweek = ?2`,
+      )
+        .bind(leagueId, gameweek)
+        .all(),
+    ]);
+    const members = memberRows.results ?? [];
+    const livePoints = await fantasyLivePointsForGameweek(env, gameweek);
+
+    const sideFor = async (userId) => {
+      const row = members.find((member) => member.user_id === userId);
+      const side = {
+        userId,
+        name: memberDisplayName(row ?? {}),
+        isBot: Boolean(row?.is_bot),
+        score: 0,
+        progress: null,
+        starters: null,
+      };
+      const { roster, starters } = await resolveManagerLineup(env, leagueId, userId, gameweek);
+      side.score = rosterGameweekPoints({ starters }, livePoints.points).points;
+      if (matches) {
+        const starterIds = starters.map((entry) => entry.playerId);
+        side.progress = trackGameweek({ matches, roster, starterIds, gameweek }).counts;
+      }
+      if (revealed) {
+        const byId = new Map(roster.map((player) => [player.id, player]));
+        side.starters = starters.map((entry) => ({
+          playerId: entry.playerId,
+          name: byId.get(entry.playerId)?.name ?? "",
+          position: byId.get(entry.playerId)?.position ?? null,
+          isCaptain: Boolean(entry.isCaptain),
+          points: livePoints.points.get(entry.playerId) ?? 0,
+          provisional: livePoints.provisionalIds.has(entry.playerId),
+        }));
+      }
+      return side;
+    };
+
+    const fixtures = [];
+    const paired = new Set();
+    for (const fixture of fixtureRows.results ?? []) {
+      paired.add(fixture.home_user_id);
+      paired.add(fixture.away_user_id);
+      fixtures.push({ home: await sideFor(fixture.home_user_id), away: await sideFor(fixture.away_user_id) });
+    }
+    const byes = [];
+    for (const member of members.filter((entry) => !paired.has(entry.user_id))) {
+      byes.push(await sideFor(member.user_id));
+    }
+
+    return json(
+      { gameweek, status, revealed, deadline: timetable?.squad.deadline ?? null, fixtures, byes },
+      200,
+      cors,
+    );
   } catch {
     return json({ error: "fantasy unavailable" }, 502, cors);
   }

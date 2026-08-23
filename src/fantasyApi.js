@@ -196,6 +196,14 @@ export async function loadMatchup(leagueId) {
   return api(`/fantasy/league/${leagueId}/matchup`);
 }
 
+// GET the whole league's current gameweek: every fixture with both sides'
+// live scores and, once the squad deadline has passed, each side's starting
+// XI with per-player points. { gameweek, status, revealed, deadline,
+// fixtures: [{ home, away }], byes: [side] }.
+export async function loadGameweekBoard(leagueId) {
+  return api(`/fantasy/league/${leagueId}/gameweek`);
+}
+
 // GET the league's WHOLE head-to-head season: { currentGameweek, preseason,
 // seasonStart, members: [{ userId, name, isBot }], gameweeks: [{ gameweek,
 // kickoff, deadline, fixtures: [{ homeUserId, awayUserId, homeScore,

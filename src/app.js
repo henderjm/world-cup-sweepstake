@@ -80,6 +80,7 @@ import {
   loadLeague as apiLoadLeague,
   loadLeagueFeed as apiLoadLeagueFeed,
   loadLeagueSchedule as apiLoadLeagueSchedule,
+  loadGameweekBoard as apiLoadGameweekBoard,
   loadMatchup as apiLoadMatchup,
   postLeagueFeed as apiPostLeagueFeed,
   loadPlayerPool,
@@ -148,6 +149,7 @@ import {
   renderFantasyLeagueList,
   renderFantasyLeagueShell,
   renderFantasyLobby,
+  renderFantasyGameweekBoard,
   renderFantasyMatchupPanel,
   renderFantasySchedulePanel,
   renderFantasyMyTeamPanel,
@@ -412,6 +414,9 @@ function initialFantasyState() {
     lineupEdit: null, // working copy while editing: { starters, captainId, bench, pendingId, saving, error }
     playerDrawerId: null, // My team pitch/bench: id of the player whose stats drawer is open
     matchup: null, // { gameweek, status, me, opponent } from GET .../matchup
+    gwBoard: null, // the whole league's gameweek from GET .../gameweek (fixtures, byes, revealed XIs)
+    gwBoardLoading: false,
+    gwBoardError: "",
     matchupLoading: false,
     matchupError: "",
     standings: null, // { throughGameweek, standings } from GET .../standings
@@ -707,6 +712,9 @@ function refreshLiveMatchup(fresh) {
   if (Date.now() - lastMatchupRefreshAt < 60000) return;
   lastMatchupRefreshAt = Date.now();
   loadFantasyMatchup(f.activeLeagueId);
+  // The league scoreboard refreshes on the same throttled cadence; like the
+  // matchup, the stale copy stays on screen until the fresh one lands.
+  if (f.gwBoard) loadFantasyGameweekBoard(f.activeLeagueId);
 }
 
 // -- Rendering -----------------------------------------------------------------
@@ -1525,6 +1533,7 @@ function renderFantasyMatchupBody() {
     return `<p class="note">Matchups appear once the draft is complete.</p>`;
   }
   if (!f.matchup && !f.matchupLoading && !f.matchupError) loadFantasyMatchup(f.activeLeagueId);
+  if (!f.gwBoard && !f.gwBoardLoading && !f.gwBoardError) loadFantasyGameweekBoard(f.activeLeagueId);
   if (!f.seasonSchedule && !f.seasonScheduleLoading && !f.seasonScheduleError) loadFantasyLeagueSchedule(f.activeLeagueId);
   // The lineup is what says which eleven to track. Loaded lazily here the same
   // way My team does, so opening Matchup first still fills the tracker.
@@ -1537,11 +1546,30 @@ function renderFantasyMatchupBody() {
       now: Date.now(),
       previousWinnerUserId: f.league?.league?.previousWinnerUserId ?? null,
     })}
+    ${renderFantasyGameweekBoard(f.gwBoard, { myUserId: f.myUserId, error: f.gwBoardError })}
     ${renderFantasySchedulePanel(f.seasonSchedule, {
       error: f.seasonScheduleError,
       myUserId: f.myUserId,
       view: f.seasonScheduleView,
     })}`;
+}
+
+async function loadFantasyGameweekBoard(leagueId) {
+  const f = state.fantasy;
+  if (f.gwBoardLoading) return;
+  f.gwBoardLoading = true;
+  f.gwBoardError = "";
+  try {
+    const board = await apiLoadGameweekBoard(leagueId);
+    if (f.activeLeagueId !== leagueId) return; // navigated elsewhere mid-flight
+    f.gwBoard = board;
+  } catch (error) {
+    if (f.activeLeagueId !== leagueId) return;
+    f.gwBoardError = error.message || "Couldn't load the gameweek.";
+  } finally {
+    if (f.activeLeagueId === leagueId) f.gwBoardLoading = false;
+  }
+  if (state.section === "fantasy") renderLayout();
 }
 
 async function loadFantasyLeagueSchedule(leagueId) {
@@ -2180,6 +2208,9 @@ async function openFantasyLeague(id) {
   f.lineupEdit = null;
   f.playerDrawerId = null;
   f.matchup = null;
+  f.gwBoard = null;
+  f.gwBoardLoading = false;
+  f.gwBoardError = "";
   f.matchupLoading = false;
   f.matchupError = "";
   f.standings = null;
@@ -2861,6 +2892,9 @@ function closeFantasyLeague() {
   f.lineupEdit = null;
   f.playerDrawerId = null;
   f.matchup = null;
+  f.gwBoard = null;
+  f.gwBoardLoading = false;
+  f.gwBoardError = "";
   f.matchupLoading = false;
   f.matchupError = "";
   f.standings = null;
