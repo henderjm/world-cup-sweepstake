@@ -47,6 +47,14 @@ const COMPETITIONS = (process.env.API_FOOTBALL_COMPETITIONS ?? "PL:2026")
 
 const LINEUP_LEAD_MS = 70 * 60 * 1000;
 const FULL_TIME_TAIL_MS = 3 * 60 * 60 * 1000;
+// The mapped feed carries no full-time timestamp, so the post-whistle tail is
+// anchored on kickoff plus a typical match length. The first version measured
+// FULL_TIME_TAIL_MS from kickoff alone, which cut the real tail after the
+// whistle to ~70 minutes: on the 2026-27 opening Saturday the three 14:00
+// matches fell out of the window before this workflow's first run of the day,
+// and were never fed at all. The wide anchor also absorbs GitHub's cron
+// drift, which stretches the nominal 5-minute cadence to 15-30 minutes.
+const TYPICAL_MATCH_MS = 2 * 60 * 60 * 1000;
 const PACING_MS = 400;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -58,7 +66,7 @@ function worthFeeding(match, now) {
   if (match.status === "TIMED" || match.status === "SCHEDULED") {
     return kickoff - now <= LINEUP_LEAD_MS && kickoff - now > 0;
   }
-  if (match.status === "FINISHED") return now - kickoff <= FULL_TIME_TAIL_MS;
+  if (match.status === "FINISHED") return now - kickoff <= TYPICAL_MATCH_MS + FULL_TIME_TAIL_MS;
   return false;
 }
 

@@ -38,6 +38,7 @@ import {
   mergeFixtureUpdates,
 } from "../src/mapApiFootball.js";
 import { isFinished, isLive } from "../src/format.js";
+import { detailHasSubstance, detailSubstanceScore, DETAIL_SECTION_COUNT } from "../src/matchDetailSubstance.js";
 import {
   MATCH_DETAIL_LIVE,
   matchDetailBrowserMaxAge,
@@ -6489,10 +6490,29 @@ async function fetchMatchDetail(id, token, profile = MATCH_DETAIL_LIVE, summary 
   // the teams, kickoff and venue, where a throw is a 502 with nothing at all.
   // The stale serve is marked degraded like any other, and settled scoring
   // passes no grace, so it can never settle off any of this.
-  const fixture = await fetchJson(`/fixtures?id=${id}`, token, profile.fixture, {
-    staleGraceMs,
-    onStale: () => degraded.push("/fixtures"),
-  });
+  let fixture;
+  try {
+    fixture = await fetchJson(`/fixtures?id=${id}`, token, profile.fixture, {
+      staleGraceMs,
+      onStale: () => degraded.push("/fixtures"),
+    });
+  } catch (error) {
+    // Refusal state is per isolate (latestQuota/markUpstreamLimited live in
+    // isolate memory), so a COLD isolate still reads level `normal` mid-outage,
+    // takes this strict path and used to 502 a drawer whose summary it was
+    // already holding. A caller with a summary degrades to the same
+    // build-from-summary answer the shed path serves; the cron paths pass no
+    // summary and keep the throw, so settled scoring stays strict.
+    if (!summary) throw error;
+    degraded.push("/fixtures");
+    const detail = mapApiFootballMatchDetailFromSummary(
+      summary,
+      await declined(`/fixtures/lineups?fixture=${id}`, profile.lineups),
+      await declined(`/fixtures/events?fixture=${id}`, profile.events),
+      await declined(`/fixtures/players?fixture=${id}`, profile.players),
+    );
+    return { ...detail, degraded };
+  }
   const lineups = plan.lineups
     ? await fetchSupplementaryJson(`/fixtures/lineups?fixture=${id}`, token, profile.lineups, degraded, staleGraceMs)
     : await declined(`/fixtures/lineups?fixture=${id}`, profile.lineups);
@@ -6538,36 +6558,44 @@ const MATCH_DETAIL_STALE_GRACE_MS = 10 * 60 * 1000;
 // client still says some detail is catching up. Settled scoring never reads
 // this (it calls fetchMatchDetail directly and refuses degraded reads).
 const LAST_DETAIL_TTL_SECONDS = 6 * 60 * 60;
+// A FINISHED match's detail is immutable, and nothing ever re-fetches it once
+// the feeder's post-whistle window closes, so letting its snapshot expire on
+// the live 6-hour TTL erased every drawer the morning after the 2026-27
+// opening Saturday: upstream was still refusing the Worker's egress, KV had
+// forgotten everything it knew, and there was nowhere left to read from. A
+// week comfortably outlives any refusal window and the storage cost is a few
+// tens of KB per fixture.
+const LAST_DETAIL_FINISHED_TTL_SECONDS = 7 * 24 * 60 * 60;
 const lastDetailKey = (id) => `detail:last:${id}`;
 
-// Whether a mapped detail carries anything worth preserving. "Complete by the
-// degraded list" is not enough: upstream returns 200-with-empty under load for
-// fixtures that HAVE data (seen at 32' of a live match), and such a read is
-// clean-shaped but must never overwrite a snapshot with real content, nor is
-// it worth serving over one.
-function detailHasSubstance(detail) {
-  return Boolean(
-    detail?.home?.lineup?.length ||
-      detail?.away?.lineup?.length ||
-      detail?.goals?.length ||
-      detail?.cards?.length ||
-      detail?.subs?.length ||
-      detail?.playerStats?.length,
-  );
-}
+// detailHasSubstance/detailSubstanceScore live in src/matchDetailSubstance.js,
+// shared with the browser's own Worker-vs-static-bake arbitration so the two
+// judgements cannot drift.
 
 async function storeLastGoodDetail(env, detail) {
   try {
-    if (!env?.ANALYSIS_CACHE || !detail || detail.id == null) return;
-    if (Array.isArray(detail.degraded) && detail.degraded.length) return;
-    if (!detailHasSubstance(detail)) return; // an empty snapshot preserves nothing and can only mask a good one
+    if (!env?.ANALYSIS_CACHE || !detail || detail.id == null) return false;
+    if (Array.isArray(detail.degraded) && detail.degraded.length) return false;
+    const score = detailSubstanceScore(detail);
+    if (score === 0) return false; // an empty snapshot preserves nothing and can only mask a good one
+    if (score < DETAIL_SECTION_COUNT) {
+      // Partial-but-clean is upstream's per-endpoint soft throttle wearing a
+      // clean face: a players-only read stored here on opening weekend
+      // clobbered the feeder's complete snapshot, which was exactly the copy
+      // the next degraded read swapped in. A fuller snapshot always wins; the
+      // extra KV read is only paid on partial reads, never the healthy path.
+      const stored = await readLastGoodDetail(env, detail.id);
+      if (stored && detailSubstanceScore(stored.detail) > score) return false;
+    }
     await env.ANALYSIS_CACHE.put(
       lastDetailKey(detail.id),
       JSON.stringify({ storedAt: Date.now(), detail }),
-      { expirationTtl: LAST_DETAIL_TTL_SECONDS },
+      { expirationTtl: isFinished(detail.status) ? LAST_DETAIL_FINISHED_TTL_SECONDS : LAST_DETAIL_TTL_SECONDS },
     );
+    return true;
   } catch {
     // best-effort: the detail is already on its way to whoever asked for it
+    return false;
   }
 }
 
@@ -6601,8 +6629,11 @@ async function handleDetailIngest(request, env, id, cors) {
     );
     if (detail.id !== id) return json({ error: "fixture id mismatch" }, 400, cors);
     if (!detailHasSubstance(detail)) return json({ stored: false, reason: "no substance" }, 200, cors);
-    await storeLastGoodDetail(env, detail);
-    return json({ stored: true }, 200, cors);
+    // stored:false here means the guard kept an existing FULLER snapshot; the
+    // feeder logs the response verbatim, so the reason must name that rather
+    // than claim a store that never happened.
+    const stored = await storeLastGoodDetail(env, detail);
+    return json(stored ? { stored: true } : { stored: false, reason: "kept a fuller snapshot" }, 200, cors);
   } catch {
     return json({ error: "unmappable payload" }, 400, cors);
   }

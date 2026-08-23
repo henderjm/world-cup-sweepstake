@@ -3,6 +3,7 @@ import { DATA_API } from "./data.js";
 import { displayTeamName, normalizeTeamName } from "./domain.js";
 import { byPosition, dayLabel, formatStage, isFinished, isLive, timeLabel } from "./format.js";
 import { banterAvailable, mountBanter, unmountBanter } from "./banter.js";
+import { detailSubstanceScore, DETAIL_SECTION_COUNT, fillDetailSections } from "./matchDetailSubstance.js";
 
 // Match drawer, Squad Goals style: a right slide-in with the score up top, then a
 // single scroll of AI analysis, timeline (goals, cards, subs merged in match order),
@@ -56,26 +57,38 @@ async function loadDetail(match) {
     if (slot) slot.innerHTML = scheduledNote(match);
     return;
   }
-  const sources = [];
-  if (DATA_API) sources.push(`${DATA_API}/match/${match.id}`);
-  sources.push(
-    `./data/${encodeURIComponent(model.competition.code)}/matches/${match.id}.json?cache=${Date.now()}`,
-  );
+  const staticSrc = `./data/${encodeURIComponent(model.competition.code)}/matches/${match.id}.json?cache=${Date.now()}`;
 
-  for (const src of sources) {
-    try {
-      const response = await fetch(src, { cache: "no-store" });
-      if (!response.ok) continue;
-      const detail = await response.json();
-      if (openId !== match.id) return; // a different match was opened meanwhile
-      panel.querySelector("#mdBody").innerHTML = renderDetail(match, detail);
-      return;
-    } catch {
-      // try the next source
-    }
+  // The Worker answers first, but a Worker 200 with empty sections must not
+  // suppress the static bake: upstream soft-throttles the Worker's egress
+  // per endpoint (players present, lineups and events empty, nothing flagged),
+  // while the bake runs on GitHub's egress upstream trusts and so often holds
+  // the more complete copy of a match that has kicked off. On the 2026-27
+  // opening weekend the one match whose Worker read failed OUTRIGHT rendered
+  // fine through this fallback, and the four partial 200s rendered broken.
+  // So: for a started match whose Worker read is missing any section, fetch
+  // the baked copy too and fill the gaps section by section
+  // (fillDetailSections; the fresher Worker read always wins a section it has).
+  let detail = DATA_API ? await fetchDetailJson(`${DATA_API}/match/${match.id}`) : null;
+  const started = isLive(match.status) || isFinished(match.status);
+  if (!detail || (started && detailSubstanceScore(detail) < DETAIL_SECTION_COUNT)) {
+    const baked = await fetchDetailJson(staticSrc);
+    if (baked) detail = fillDetailSections(detail, baked);
   }
-  if (openId === match.id && panel.querySelector("#mdBody")) {
-    panel.querySelector("#mdBody").innerHTML = scheduledNote(match);
+
+  if (openId !== match.id) return; // a different match was opened meanwhile
+  const body = panel.querySelector("#mdBody");
+  if (!body) return;
+  body.innerHTML = detail ? renderDetail(match, detail) : scheduledNote(match);
+}
+
+async function fetchDetailJson(src) {
+  try {
+    const response = await fetch(src, { cache: "no-store" });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
   }
 }
 

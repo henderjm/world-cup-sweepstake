@@ -1646,16 +1646,24 @@ test("one failing supplementary payload no longer throws away the three that wor
   }
 });
 
-test("a failure on the fixture payload itself is still an honest 502", async () => {
-  // Fail-soft must not become fail-silent. Without the fixture payload there
-  // are no teams, no kickoff and no venue, so there is no match to describe and
-  // a real upstream outage must still read as one.
+test("a failure on the fixture payload degrades to the summary the route already holds", async () => {
+  // This used to be "an honest 502", and production proved that honesty
+  // self-defeating: refusal state is per isolate, so a cold isolate took this
+  // strict path mid-outage and 502'd a drawer whose summary (teams, kickoff,
+  // venue) it was already holding from findKnownMatch. Fail-soft still must
+  // not become fail-silent, so the answer names the failure on `degraded`
+  // rather than passing as a healthy read; only the cron paths, which pass no
+  // summary, keep the throw (settled scoring stays strict).
   const restore = stubUpstream({
     [`/fixtures?id=${FIXTURE_IDS.fixtureFailure}`]: () => new Response("down", { status: 500 }),
   });
   try {
     const response = await usageCall(`/match/${FIXTURE_IDS.fixtureFailure}`, usageDb(), []);
-    assert.equal(response.status, 502);
+    assert.equal(response.status, 200);
+    const detail = await response.json();
+    assert.equal(detail.home.name, "Arsenal");
+    assert.equal(detail.away.name, "Coventry City");
+    assert.ok(Array.isArray(detail.degraded) && detail.degraded.includes("/fixtures"));
   } finally {
     restore();
   }
@@ -1684,6 +1692,105 @@ test("the per-IP detail limiter answers 429 once its window is spent", async () 
   } finally {
     restore();
   }
+});
+
+// -- /ingest/detail/:id and the KV snapshot guard ------------------------------
+
+test("a partial clean read never clobbers a fuller snapshot, and a finished one keeps for a week", async () => {
+  // The players-only / lineups-only shape is upstream's per-endpoint soft
+  // throttle wearing a clean face: nothing on `degraded`, real data in one
+  // section, nothing in the others. On the 2026-27 opening weekend such a read
+  // overwrote the feeder's complete snapshot in KV, and the 6-hour TTL then
+  // erased what was left overnight, so the morning-after drawers were empty
+  // for matches whose full detail the feeder had already delivered.
+  const INGEST_ID = 1557399;
+  const finishedFixture = {
+    errors: [],
+    results: 1,
+    response: [
+      {
+        fixture: {
+          id: INGEST_ID,
+          date: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+          status: { short: "FT", elapsed: 90 },
+          venue: { name: "Emirates Stadium", city: "London" },
+          referee: "M Oliver",
+        },
+        league: { round: "Regular Season - 2" },
+        teams: {
+          home: { id: 42, name: "Arsenal", logo: "h.png" },
+          away: { id: 1076, name: "Coventry City", logo: "a.png" },
+        },
+        goals: { home: 1, away: 0 },
+        score: { halftime: { home: 1, away: 0 }, penalty: { home: null, away: null } },
+      },
+    ],
+  };
+  const lineupsPayload = {
+    errors: [],
+    results: 1,
+    response: [
+      {
+        team: { id: 42, name: "Arsenal", logo: "h.png" },
+        formation: "4-3-3",
+        coach: { name: "Coach" },
+        startXI: [{ player: { id: 1, name: "Keeper", pos: "G", number: 1, grid: "1:1" } }],
+        substitutes: [],
+      },
+    ],
+  };
+  const eventsPayload = {
+    errors: [],
+    results: 1,
+    response: [
+      {
+        time: { elapsed: 10, extra: null },
+        type: "Goal",
+        detail: "Normal Goal",
+        team: { id: 42, name: "Arsenal" },
+        player: { id: 2, name: "Striker" },
+        assist: { id: null, name: null },
+      },
+    ],
+  };
+  const empty = { errors: [], results: 0, response: [] };
+
+  const kv = new Map();
+  const puts = [];
+  const ANALYSIS_CACHE = {
+    get: async (key) => kv.get(key) ?? null,
+    put: async (key, value, options) => {
+      kv.set(key, value);
+      puts.push({ key, options });
+    },
+  };
+  const ingest = (body) =>
+    worker.fetch(
+      new Request(`https://example.test/ingest/detail/${INGEST_ID}`, {
+        method: "POST",
+        headers: { Authorization: "Bearer feed-secret", "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      { ...env, DETAIL_INGEST_TOKEN: "feed-secret", ANALYSIS_CACHE },
+      { waitUntil: () => {} },
+    );
+
+  // A complete read stores, and FINISHED detail is immutable so it keeps for a
+  // week rather than evaporating on the live 6-hour TTL.
+  const full = await ingest({ fixture: finishedFixture, lineups: lineupsPayload, events: eventsPayload, players: empty });
+  assert.deepEqual(await full.json(), { stored: true });
+  assert.equal(puts.length, 1);
+  assert.equal(puts[0].options.expirationTtl, 7 * 24 * 60 * 60);
+
+  // A lineups-only read of the same match has less substance: kept out.
+  const partial = await ingest({ fixture: finishedFixture, lineups: lineupsPayload, events: empty, players: empty });
+  assert.deepEqual(await partial.json(), { stored: false, reason: "kept a fuller snapshot" });
+  assert.equal(puts.length, 1);
+
+  // An equally full, fresher read still wins its overwrite.
+  const again = await ingest({ fixture: finishedFixture, lineups: lineupsPayload, events: eventsPayload, players: empty });
+  assert.deepEqual(await again.json(), { stored: true });
+  assert.equal(puts.length, 2);
 });
 
 // -- The API-Football budget guard rail, end to end ---------------------------
