@@ -5,6 +5,7 @@
 
 import {
   buildTeamPerformance,
+  canonicalizeStandingsOrder,
   displayTeamName,
   mapStandings,
   normalizeTeamName,
@@ -94,7 +95,7 @@ export function buildAnalysisPrompt(detail, live) {
   const matches = live?.matches ?? [];
   const competition = competitionFor(live?.competition);
   const standings = mapStandings(
-    { standings: live?.standings ?? [] },
+    { standings: canonicalizeStandingsOrder(live?.standings ?? []) },
     competition.zones,
   );
   const performance = buildTeamPerformance(matches);

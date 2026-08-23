@@ -125,6 +125,31 @@ export function alphabetizeStandings(standings) {
   }));
 }
 
+// The provider's own `position`/`rank` does not reliably apply the Premier
+// League tiebreak (points, then goal difference, then goals scored, then the
+// club name) to rows dead level on all three: verified live on the 2026-27
+// season's matchday 1, where API-Football ranked Manchester United above
+// Crystal Palace and Tottenham above Coventry City despite each pair being
+// identical on points/GD/goals scored, while every published table (and this
+// app's own live-table tiebreak in liveTable.js) orders both pairs the other
+// way round alphabetically. Re-deriving `position` here, once, before either
+// `mapStandings` or `buildLeagueTables` reads it, is what keeps the standings
+// map and the rendered table from disagreeing with each other as well as with
+// the real table. Every other field is passed through untouched.
+export function canonicalizeStandingsOrder(standings) {
+  return (standings ?? []).map((standing) => ({
+    ...standing,
+    table: [...(standing.table ?? [])]
+      .sort((a, b) => {
+        if ((b.points ?? 0) !== (a.points ?? 0)) return (b.points ?? 0) - (a.points ?? 0);
+        if ((b.goalDifference ?? 0) !== (a.goalDifference ?? 0)) return (b.goalDifference ?? 0) - (a.goalDifference ?? 0);
+        if ((b.goalsFor ?? 0) !== (a.goalsFor ?? 0)) return (b.goalsFor ?? 0) - (a.goalsFor ?? 0);
+        return teamName(a.team).localeCompare(teamName(b.team));
+      })
+      .map((row, index) => ({ ...row, position: index + 1 })),
+  }));
+}
+
 // Standings keyed by team. `zones` comes from the competition config and stamps each
 // row with the coloured band it sits in (European places, relegation, ...), or null
 // for the neutral middle of the table.
