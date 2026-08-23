@@ -35,6 +35,34 @@ const LOCAL_CRESTS = new Map([
   ["Tottenham", "assets/crests/tottenham.png"],
 ]);
 
+// Real broadcast three-letter codes, hardcoded because API-Football never
+// supplies a `tla` (mapApiFootball.js hardcodes it null) and the word-initials
+// fallback below is frequently wrong ("Leeds United" -> LUN, not LEE). Same
+// narrow-override pattern as LOCAL_CRESTS above; teams not listed here fall
+// through to the initials heuristic.
+const TEAM_TLAS = new Map([
+  ["Arsenal", "ARS"],
+  ["Aston Villa", "AVL"],
+  ["Bournemouth", "BOU"],
+  ["Brentford", "BRE"],
+  ["Brighton Hove", "BHA"],
+  ["Chelsea", "CHE"],
+  ["Coventry City", "COV"],
+  ["Crystal Palace", "CRY"],
+  ["Everton", "EVE"],
+  ["Fulham", "FUL"],
+  ["Hull City", "HUL"],
+  ["Ipswich Town", "IPS"],
+  ["Leeds United", "LEE"],
+  ["Liverpool", "LIV"],
+  ["Man City", "MCI"],
+  ["Man United", "MUN"],
+  ["Newcastle", "NEW"],
+  ["Nottingham", "NFO"],
+  ["Sunderland", "SUN"],
+  ["Tottenham", "TOT"],
+]);
+
 export function registerTeams(entries) {
   entries.forEach((info, team) => {
     const key = normalizeTeamName(team);
@@ -49,7 +77,7 @@ export function registerTeams(entries) {
 // Three-letter mark for text contexts (ticker) and the no-crest fallback.
 export function abbrFor(team) {
   const key = normalizeTeamName(team);
-  const known = TEAMS.get(key)?.tla;
+  const known = TEAMS.get(key)?.tla ?? TEAM_TLAS.get(key);
   if (known) return known;
   const words = key.split(/\s+/).filter(Boolean);
   if (words.length >= 2) return (words[0][0] + words[1][0] + (words[2]?.[0] ?? words[1][1] ?? "")).toUpperCase();
