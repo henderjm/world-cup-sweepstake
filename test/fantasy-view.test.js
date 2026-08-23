@@ -12,6 +12,7 @@ import {
   renderFantasyLeagueList,
   renderFantasyLobby,
   renderFantasyMatchupPanel,
+  renderMyTeamMatchupStrip,
   renderFantasyMyTeamPanel,
   renderFantasyPlayerPool,
   renderFantasyPlayerRows,
@@ -2561,4 +2562,52 @@ test("with no feed the pitch omits the fixture line rather than claiming none", 
   });
   assert.doesNotMatch(html, /No fixture/);
   assert.doesNotMatch(html, /fantasy-pitch__opp/);
+});
+
+// -- the My team matchup strip ---------------------------------------------------
+// The glance that answers "how is my team doing and how is my opponent doing"
+// on the screen a manager lands on, without hunting for the Matchup tab.
+
+test("the strip shows both live scores and navigates to the Matchup tab", () => {
+  const html = renderMyTeamMatchupStrip({
+    gameweek: 1,
+    status: "live",
+    me: { userId: 1, name: "Goon Squad", score: 41, progress: { total: 11, done: 6, inPlay: 3, toCome: 2, blank: 0 } },
+    opponent: { userId: 2, name: "Bot Ederson's XI", score: 38, progress: { total: 11, done: 11, inPlay: 0, toCome: 0, blank: 0 } },
+  });
+  assert.match(html, /data-fantasy-subtab="matchup"/);
+  assert.match(html, /41/);
+  assert.match(html, /38/);
+  assert.match(html, /Goon Squad/);
+  assert.match(html, /Bot Ederson&#39;s XI|Bot Ederson's XI/);
+  assert.match(html, /is-live/);
+  assert.match(html, /Live/);
+});
+
+test("before kickoff the strip shows placeholders, never a 0-0 that was not played", () => {
+  const html = renderMyTeamMatchupStrip({
+    gameweek: 1,
+    status: "scheduled",
+    me: { userId: 1, name: "Goon Squad", score: 0 },
+    opponent: { userId: 2, name: "Sam", score: 0 },
+  });
+  assert.match(html, /•/);
+  assert.doesNotMatch(html, /is-live/);
+});
+
+test("a bye week shows only the manager's own score, never an invented Average number", () => {
+  const html = renderMyTeamMatchupStrip({
+    gameweek: 1,
+    status: "live",
+    me: { userId: 1, name: "Goon Squad", score: 41, progress: { total: 11, done: 6, inPlay: 3, toCome: 2, blank: 0 } },
+    opponent: null,
+  });
+  assert.match(html, /You play Average/);
+  assert.match(html, /41/);
+  assert.doesNotMatch(html, /41&nbsp;:&nbsp;/);
+});
+
+test("no matchup payload renders nothing rather than a loading hole", () => {
+  assert.equal(renderMyTeamMatchupStrip(null), "");
+  assert.equal(renderMyTeamMatchupStrip(undefined), "");
 });

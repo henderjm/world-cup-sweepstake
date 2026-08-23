@@ -681,10 +681,32 @@ async function poll() {
       }
       setUpdatedLabel();
     }
+    refreshLiveMatchup(fresh);
   } catch {
     // keep the last good model and try again next cycle
   }
   scheduleNextPoll();
+}
+
+// A matchup score frozen at whenever its tab first loaded is exactly the
+// "no idea how my team is doing" complaint: the payload was fetched once and
+// cached for the league. While matches are live and a squad-facing tab is on
+// screen, re-fetch it on the poll cadence, throttled to once a minute so the
+// live cadence's 20-second ticks do not triple the load. The stale copy stays
+// on screen until the fresh one lands (loadFantasyMatchup only replaces on
+// success), so a refresh can never flash "Loading…" over a score.
+let lastMatchupRefreshAt = 0;
+function refreshLiveMatchup(fresh) {
+  const f = state.fantasy;
+  if (state.section !== "fantasy" || !f?.activeLeagueId || !f.matchup) return;
+  // A null subTab means the default landing tab, which for a complete league
+  // is My team, exactly the screen the strip lives on.
+  const subTab = f.subTab ?? defaultFantasySubTab(f.league?.league?.draftStatus ?? "");
+  if (subTab !== "myteam" && subTab !== "matchup") return;
+  if (!(fresh.matches ?? []).some((item) => isLive(item.status))) return;
+  if (Date.now() - lastMatchupRefreshAt < 60000) return;
+  lastMatchupRefreshAt = Date.now();
+  loadFantasyMatchup(f.activeLeagueId);
 }
 
 // -- Rendering -----------------------------------------------------------------
@@ -1190,6 +1212,10 @@ function renderFantasyMyTeamBody(league, room) {
   }
   const f = state.fantasy;
   if (!f.lineup && !f.lineupLoading && !f.lineupError) loadFantasyLineup(f.activeLeagueId);
+  // The matchup strip above the pitch needs the same payload the Matchup tab
+  // loads; fetched lazily exactly the same way, and its absence renders as
+  // nothing rather than a loading hole.
+  if (!f.matchup && !f.matchupLoading && !f.matchupError) loadFantasyMatchup(f.activeLeagueId);
   return renderFantasyRosterPanel({
     currentGameweek: f.league.currentGameweek,
     roster: f.league.roster,
@@ -1209,6 +1235,7 @@ function renderFantasyMyTeamBody(league, room) {
     teamNameFallback: f.league.viewerAccountName ?? "",
     // Same feed the tracker uses; no extra request.
     matches: model?.matches ?? null,
+    matchup: f.matchup,
   });
 }
 

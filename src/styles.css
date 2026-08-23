@@ -3454,6 +3454,51 @@ button { font-family: inherit; cursor: pointer; }
 .fantasy-teamname__edit:hover { opacity: 1; }
 .fantasy-teamname__input { flex: 1 1 220px; min-width: 0; }
 
+/* The matchup glance strip on My team: your score against theirs, one tap
+   from the full Matchup tab. Same card language as everything else; the score
+   goes fantasy-purple while either side has players on a pitch. */
+.fantasy-mustrip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+.fantasy-mustrip:hover { border-color: var(--fantasy-line); }
+.fantasy-mustrip__gw {
+  color: var(--faint);
+  font-weight: 800;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex: none;
+}
+.fantasy-mustrip__side {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+.fantasy-mustrip__score {
+  flex: none;
+  font-weight: 800;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.fantasy-mustrip__score.is-live { color: var(--fantasy-accent); }
+.fantasy-mustrip__label { margin-left: auto; flex: none; }
+.fantasy-mustrip__label.is-live { background: var(--fantasy-soft); color: var(--fantasy-accent-2); }
+
 /* Head-to-head list under the standings (issue #41). Same row rhythm as the
    table above it, but three columns rather than nine: this answers "how do I
    do against you", and a full N-by-N grid does not fit a phone. */

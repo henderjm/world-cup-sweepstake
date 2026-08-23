@@ -1864,6 +1864,36 @@ function renderPlayerDrawer(player, { picks, statsById, priorSeasonStats, xpStat
 // editing - every id array/captainId this function reads comes from editState
 // when present, else straight off `lineup`, so there is exactly one source of
 // truth for "what the pitch currently shows" at any given moment.
+// The one line a manager actually opens the app for on a Saturday: their own
+// live score against their opponent's, on the screen they land on. The
+// Matchup tab keeps the full view; this is the glance, and tapping it goes
+// there (the existing data-fantasy-subtab delegation handles the click).
+// Rendered only once a matchup payload exists: the pitch is complete without
+// it, so a still-loading matchup is a quiet absence, never a hole. Score
+// visibility is matchupTiming's decision, exactly as on the Matchup tab, so
+// the two surfaces can never disagree about whether a number may be shown.
+export function renderMyTeamMatchupStrip(matchup, { now = Date.now() } = {}) {
+  if (!matchup?.me) return "";
+  const timing = matchupTiming(matchup, now);
+  const live = Boolean(matchup.me.progress?.inPlay || matchup.opponent?.progress?.inPlay);
+  const score = (side) => (timing.showScores ? String(side?.score ?? 0) : "•");
+  // A bye week shows only the manager's own score: Average is the MEDIAN of
+  // the finished gameweek and does not exist while it is still being scored
+  // (see src/fantasyAverage.js), so inventing a 0 for it here would be a
+  // scoreline against a number that has not finished counting.
+  const middle = matchup.opponent
+    ? `<span class="fantasy-mustrip__score ${live ? "is-live" : ""}">${score(matchup.me)}&nbsp;:&nbsp;${score(matchup.opponent)}</span>
+      <span class="fantasy-mustrip__side">${esc(matchup.opponent.name)}</span>`
+    : `<span class="fantasy-mustrip__score ${live ? "is-live" : ""}">${score(matchup.me)}</span>
+      <span class="fantasy-mustrip__side">You play Average</span>`;
+  return `<button class="fantasy-mustrip" type="button" data-fantasy-subtab="matchup" aria-label="Open your Gameweek ${esc(matchup.gameweek)} matchup">
+      <span class="fantasy-mustrip__gw">GW${esc(matchup.gameweek)}</span>
+      <span class="fantasy-mustrip__side">${esc(matchup.me.name)}</span>
+      ${middle}
+      <span class="chip fantasy-mustrip__label ${live ? "is-live" : ""}">${esc(timing.label)}</span>
+    </button>`;
+}
+
 export function renderFantasyRosterPanel({
   currentGameweek,
   roster,
@@ -1878,6 +1908,7 @@ export function renderFantasyRosterPanel({
   teamName = null,
   teamNameFallback = "",
   matches = null,
+  matchup = null,
   now = Date.now(),
 }) {
   if (!lineup) {
@@ -1931,6 +1962,7 @@ export function renderFantasyRosterPanel({
 
   return `
     ${renderTeamNameRow({ teamName, fallbackName: teamNameFallback, editable: false })}
+    ${renderMyTeamMatchupStrip(matchup, { now })}
     <div class="fantasy-myteam-grid">
       <div class="fantasy-myteam-grid__main">
         ${pitchCard}

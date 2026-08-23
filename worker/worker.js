@@ -2921,7 +2921,19 @@ async function runScheduledLivePoints(env) {
   for (const [index, match] of inPlay.entries()) {
     try {
       if (index > 0) await sleep(MATCH_DETAIL_PACING_MS);
-      const detail = await fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY);
+      let detail = await fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY);
+      // Upstream's 200-with-empty soft throttle scores as an empty map, and
+      // the upsert below would OVERWRITE a good provisional row with zeros:
+      // managers watched their live score flicker to 0-0 through GW1's
+      // afternoon. A substanceless read falls back to the KV safety copy the
+      // feeder keeps fresh; if even that has nothing, the match is skipped so
+      // the last written row stands (stale beats zeroed, and settled still
+      // wins the match at full time regardless).
+      if (!detailHasSubstance(detail)) {
+        const stored = await readLastGoodDetail(env, match.id);
+        if (!stored || !detailHasSubstance(stored.detail)) continue;
+        detail = stored.detail;
+      }
       const scores = scoreMatchForPlayers(detail);
       statements.push(
         env.DB.prepare(
@@ -5904,13 +5916,19 @@ async function notifyCompetition(env, comp) {
         const detail = await fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY);
         // Every good live read doubles as the drawer's cross-colo safety copy.
         await storeLastGoodDetail(env, detail);
-        // YELLOW_RED is a second-yellow dismissal, not a separate RED booking.
-        const redCards = (detail.cards ?? []).filter(
-          (card) => card.card === "RED" || card.card === "YELLOW_RED",
-        );
-        reds = redCards.length;
-        lastRed = redCards[redCards.length - 1] ?? null;
-        detailMinute = detail.minute ?? null;
+        // A substanceless read is upstream's 200-with-empty throttle, not a
+        // match with no cards: resetting `reds` to zero off one would regress
+        // the signature and re-fire the same dismissal on recovery, so it is
+        // treated exactly like the fetch failure below and carried forward.
+        if (detailHasSubstance(detail)) {
+          // YELLOW_RED is a second-yellow dismissal, not a separate RED booking.
+          const redCards = (detail.cards ?? []).filter(
+            (card) => card.card === "RED" || card.card === "YELLOW_RED",
+          );
+          reds = redCards.length;
+          lastRed = redCards[redCards.length - 1] ?? null;
+          detailMinute = detail.minute ?? null;
+        }
       } catch {
         // detail blip: reds/minute carry forward from the last good read above
       }
