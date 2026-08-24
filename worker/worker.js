@@ -248,10 +248,10 @@ function parseCompetitions(env) {
 // open cost 6 calls for a Premier League fixture and 8 for a Champions League
 // one, not 4. On a warm isolate the memo in fetchJson makes every one of them
 // free and only the match-detail payloads are actually spent.
-async function findKnownMatch(competitions, id, token) {
+async function findKnownMatch(competitions, id, token, env = null) {
   for (const comp of competitions) {
     try {
-      const live = await getLive(comp, token);
+      const live = await getLive(comp, token, env);
       const match = live.matches.find((entry) => entry.id === id);
       if (match) return match;
     } catch {
@@ -537,6 +537,13 @@ export default {
       return handleDetailIngest(request, env, Number(ingestRoute[1]), cors);
     }
 
+    // The same rescue for the scoreboard: today's fixtures, pushed from the
+    // egress api-sports actually answers. See the live-fixtures safety copy.
+    const liveIngestRoute = url.pathname.match(/^\/ingest\/live\/([A-Za-z0-9]{2,6})$/);
+    if (liveIngestRoute && request.method === "POST") {
+      return handleLiveIngest(request, env, liveIngestRoute[1], cors);
+    }
+
     const token = env.API_FOOTBALL_KEY;
     if (!token) return json({ error: "service not configured" }, 500, cors);
     const competitions = parseCompetitions(env);
@@ -561,7 +568,7 @@ export default {
           ? competitions.find((entry) => entry.code === liveRoute[1].toUpperCase())
           : competitions[0];
         if (!comp) return json({ error: "unknown competition" }, 404, cors);
-        const data = await getLive(comp, token);
+        const data = await getLive(comp, token, env);
         // A stale-on-error body is fine for a blip and wrong for an outage. Past
         // the grace window, 502 rather than hand the browser a 200 it will treat
         // as current: loadLiveData() in src/data.js only falls back to the hourly
@@ -599,7 +606,7 @@ export default {
           }
         }
         const id = Number(detailRoute[1]);
-        const known = await findKnownMatch(competitions, id, token);
+        const known = await findKnownMatch(competitions, id, token, env);
         if (!known) {
           return json({ error: "unknown match" }, 404, cors);
         }
@@ -766,7 +773,7 @@ async function runCronPass(name, run) {
 // DELAYS a settle or holds a lock, never invents one.
 const LIVE_FEED_STALE_GRACE_MS = 5 * 60 * 1000;
 
-async function getLive(comp, token) {
+async function getLive(comp, token, env = null) {
   try {
     // A stale-served payload backdates the body's lastUpdated below, so the
     // "updated" chip can never say "just now" over a scoreline that is not.
@@ -791,24 +798,70 @@ async function getLive(comp, token) {
     const pollingMatches = carryForwardFixtureStates(schedule, lastLive.get(comp.code)?.body?.matches);
     const polling = fixturePollingPlan(pollingMatches, Date.now());
     let matches = pollingMatches;
+    // A refused status batch is caught rather than thrown, because the pushed
+    // safety copy below may still be able to answer it. Nothing is served on the
+    // strength of the schedule alone: if the overlay cannot supply live scores
+    // either, the error is rethrown and the existing stale/502/bake path runs
+    // exactly as before. Serving the season schedule as though it were current
+    // would state "not kicked off" as fact about a match in its second half,
+    // which is the falsehood src/fixtureFreshness.js exists to prevent.
+    let liveReadFailed = null;
     for (const request of polling.requests) {
-      const livePayload = await fetchJson(
-        `/fixtures?ids=${request.fixtures.map((match) => match.id).join("-")}`,
-        token,
-        request.ttl,
-        stale,
-      );
-      matches = mergeFixtureUpdates(matches, mapApiFootballMatches(livePayload));
+      try {
+        const livePayload = await fetchJson(
+          `/fixtures?ids=${request.fixtures.map((match) => match.id).join("-")}`,
+          token,
+          request.ttl,
+          stale,
+        );
+        matches = mergeFixtureUpdates(matches, mapApiFootballMatches(livePayload));
+      } catch (error) {
+        liveReadFailed = error;
+      }
     }
+
+    // How far behind the live scores in `matches` actually are. A refused batch
+    // means we hold none at all, which is worse than any finite age, so the
+    // pushed copy wins by default whenever it exists.
+    let liveAgeMs = liveReadFailed ? Number.POSITIVE_INFINITY : staleAgeMs;
+    let overlaid = false;
+    if (liveAgeMs > 0) {
+      const ingested = await readIngestedLive(env, comp.code);
+      if (ingested && ingested.ageMs < liveAgeMs) {
+        matches = mergeFixtureUpdates(matches, ingested.matches);
+        liveAgeMs = ingested.ageMs;
+        overlaid = true;
+      }
+    }
+    // Neither source could supply live scores. Rethrow so the existing
+    // stale-then-502-then-static-bake path runs untouched: serving the season
+    // schedule as a fresh 200 would assert "not kicked off" about a match in
+    // its second half, which is precisely the falsehood src/fixtureFreshness.js
+    // was written to stop the app from stating.
+    if (!Number.isFinite(liveAgeMs)) throw liveReadFailed;
     const standings = await fetchJson(
       `/standings?league=${comp.leagueId}&season=${comp.season}`,
       token,
       polling.mode === "live" || polling.mode === "kickoff_wait" ? 5 * 60 : 6 * 60 * 60,
       stale,
     ).catch(() => null);
+    // An overlaid body stamps the age of the scores it is actually carrying;
+    // anything else keeps the existing accounting untouched. Taking the smaller
+    // of the two would be the one genuinely dangerous answer: with a healthy
+    // schedule read (staleAgeMs 0) and scores from a copy pushed a minute ago,
+    // it would stamp "just now" over a minute-old scoreline, which is the exact
+    // dishonesty the backdating in getLive exists to prevent.
+    const bodyAgeMs = overlaid ? liveAgeMs : staleAgeMs;
     const body = {
       source: "API-Football",
-      lastUpdated: new Date(Date.now() - staleAgeMs).toISOString(),
+      lastUpdated: new Date(Date.now() - bodyAgeMs).toISOString(),
+      // Marked, not silently substituted. The browser's "delayed" chip reads
+      // body.stale and never lastUpdated (recordFeedFreshness in src/app.js), so
+      // an unannounced overlay would say "updated just now" over a scoreline
+      // several minutes old. `ingestedLive` is what earns it the wider grace in
+      // src/liveStale.js, since it competes with the bake rather than replacing
+      // a live read.
+      ...(overlaid ? { stale: true, staleAgeMs: liveAgeMs, ingestedLive: true } : {}),
       competition: comp.code,
       season: comp.season,
       matches,
@@ -816,7 +869,10 @@ async function getLive(comp, token) {
         ? mapApiFootballStandingsPayload(standings)
         : lastLive.get(comp.code)?.body?.standings ?? [],
     };
-    lastLive.set(comp.code, { body, storedAt: Date.now() });
+    // Backdated by the body's own age, so that when this entry is later served
+    // as the stale fallback, markStaleLive reports how old the SCORES are rather
+    // than how long ago this isolate happened to assemble them.
+    lastLive.set(comp.code, { body, storedAt: Date.now() - bodyAgeMs });
     return body;
   } catch (error) {
     // Serve our own last-known-good rather than fail, ANNOTATED with its age so
@@ -833,6 +889,26 @@ async function getLive(comp, token) {
     // the /:comp/live route instead. See src/liveStale.js.
     const stale = markStaleLive(lastLive.get(comp.code));
     if (stale) {
+      // Even here the pushed copy can be the freshest live scores in the
+      // building: this branch is reached when the SCHEDULE read failed too, and
+      // the schedule is the one thing staleness does not hurt. Overlaying it
+      // onto the last-known-good keeps the same well-formed body (standings and
+      // all) and moves only the scores, which is the whole difference between a
+      // frozen scoreboard and a live one during a refusal window.
+      const ingested = await readIngestedLive(env, comp.code);
+      if (ingested && ingested.ageMs < stale.staleAgeMs) {
+        console.warn(
+          `live ${comp.code}: upstream refused, overlaying fixtures pushed ` +
+            `${Math.round(ingested.ageMs / 1000)}s ago: ${error?.message ?? error}`,
+        );
+        return {
+          ...stale,
+          matches: mergeFixtureUpdates(stale.matches, ingested.matches),
+          lastUpdated: new Date(ingested.storedAt).toISOString(),
+          staleAgeMs: ingested.ageMs,
+          ingestedLive: true,
+        };
+      }
       console.warn(
         `live ${comp.code}: serving stale (${Math.round(stale.staleAgeMs / 1000)}s old): ` +
           `${error?.message ?? error}`,
@@ -895,7 +971,7 @@ async function runScheduledAnalysis(env) {
 async function analyseCompetition(env, comp) {
   let live;
   try {
-    live = await getLive(comp, env.API_FOOTBALL_KEY);
+    live = await getLive(comp, env.API_FOOTBALL_KEY, env);
   } catch {
     return; // feed down; the next tick retries
   }
@@ -2418,7 +2494,7 @@ async function currentFantasyGameweek(env) {
 
     const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
     if (!comp || !env.API_FOOTBALL_KEY) return 1;
-    const live = await getLive(comp, env.API_FOOTBALL_KEY);
+    const live = await getLive(comp, env.API_FOOTBALL_KEY, env);
     return currentGameweekFromMatches(live.matches, Date.now());
   } catch {
     return 1;
@@ -2442,7 +2518,7 @@ async function currentFantasyMatches(env) {
     if (!env.API_FOOTBALL_KEY) return null;
     const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
     if (!comp) return null;
-    const live = await getLive(comp, env.API_FOOTBALL_KEY);
+    const live = await getLive(comp, env.API_FOOTBALL_KEY, env);
     return assignGameweeks(live.matches ?? []);
   } catch {
     return null;
@@ -2898,7 +2974,7 @@ async function runScheduledLivePoints(env) {
 
   let live;
   try {
-    live = await getLive(comp, env.API_FOOTBALL_KEY);
+    live = await getLive(comp, env.API_FOOTBALL_KEY, env);
   } catch {
     return; // feed down; the next tick retries
   }
@@ -3011,7 +3087,7 @@ async function runScheduledFantasyScoring(env) {
 
   let live;
   try {
-    live = await getLive(comp, env.API_FOOTBALL_KEY);
+    live = await getLive(comp, env.API_FOOTBALL_KEY, env);
   } catch {
     return; // feed down; the next tick retries
   }
@@ -3265,7 +3341,7 @@ async function runScheduledFantasyXpBlend(env) {
     // this tick (same edge cache, same reasoning as the scheduled() handler's
     // own docstring on why these passes run sequentially rather than in
     // parallel).
-    const live = await getLive(comp, env.API_FOOTBALL_KEY);
+    const live = await getLive(comp, env.API_FOOTBALL_KEY, env);
     const currentGameweek = currentGameweekFromMatches(live.matches, Date.now());
     const latestCompleted = currentGameweek - 1;
     if (latestCompleted < 1) return; // season hasn't produced a completed gameweek yet
@@ -5992,7 +6068,7 @@ async function runScheduledNotifications(env) {
 }
 
 async function notifyCompetition(env, comp) {
-  const live = await getLive(comp, env.API_FOOTBALL_KEY);
+  const live = await getLive(comp, env.API_FOOTBALL_KEY, env);
   const now = Date.now();
   const relevant = live.matches.filter((match) => {
     if (isLive(match.status)) return true;
@@ -6175,7 +6251,7 @@ const MAX_BANTER_MESSAGES_PER_MATCH = 500;
 
 async function handleBanter(request, env, id, competitions, token, cors) {
   if (!env.DB) return json({ error: "banter not configured" }, 503, cors);
-  if (!(await findKnownMatch(competitions, id, token))) {
+  if (!(await findKnownMatch(competitions, id, token, env))) {
     return json({ error: "unknown match" }, 404, cors);
   }
 
@@ -6634,6 +6710,102 @@ async function handleDetailIngest(request, env, id, cors) {
     // than claim a store that never happened.
     const stored = await storeLastGoodDetail(env, detail);
     return json(stored ? { stored: true } : { stored: false, reason: "kept a fuller snapshot" }, 200, cors);
+  } catch {
+    return json({ error: "unmappable payload" }, 400, cors);
+  }
+}
+
+// -- The live-fixtures safety copy --------------------------------------------
+// The scoreboard's equivalent of detail:last:<id>, and it exists for exactly
+// the same reason.
+//
+// Everything that MOVES during a match - the score, the minute, the status -
+// reaches this Worker through one path only: fetchJson against api-sports from
+// Cloudflare's shared egress, the egress api-sports both hard-refuses (429) and
+// soft-throttles (200-with-empty for fixtures that provably have data). The
+// match drawer already had a way out of that: the feeder pushes detail in from
+// GitHub's trusted egress and a refused read swaps in the KV snapshot. The
+// SCOREBOARD had none. When the status batch was refused, getLive threw, the
+// route served the isolate's last-known-good until LIVE_STALE_GRACE_MS ran out
+// and then 502'd the browser to the hourly static bake - so a live score sat
+// somewhere between five and sixty minutes behind while the drawer for the same
+// match was current. That is the "we are not getting updates for the live match"
+// report this fixes.
+//
+// The feeder already fetches today's fixtures on every run to decide which
+// matches are worth feeding, and used to throw that payload away. Pushing it
+// here costs NO additional upstream call and no new secret.
+//
+// Three hours of TTL: this rescues an in-progress match, and a copy older than
+// the afternoon it belongs to can only mislead. Freshness is decided per read
+// against storedAt, never by the TTL.
+const INGESTED_LIVE_TTL_SECONDS = 3 * 60 * 60;
+const ingestedLiveKey = (comp) => `live:last:${comp}`;
+
+async function storeIngestedLive(env, comp, matches) {
+  try {
+    if (!env?.ANALYSIS_CACHE || !comp || !Array.isArray(matches) || !matches.length) return false;
+    await env.ANALYSIS_CACHE.put(
+      ingestedLiveKey(comp),
+      JSON.stringify({ storedAt: Date.now(), matches }),
+      { expirationTtl: INGESTED_LIVE_TTL_SECONDS },
+    );
+    return true;
+  } catch {
+    return false; // best-effort, exactly like storeLastGoodDetail
+  }
+}
+
+// Returns the pushed fixtures with the age the caller has to reason about, or
+// null. The age is the whole point: this copy is only ever worth overlaying
+// when it is FRESHER than what our own read produced, and the caller cannot
+// work that out from the matches alone.
+async function readIngestedLive(env, comp) {
+  try {
+    if (!env?.ANALYSIS_CACHE) return null;
+    const raw = await env.ANALYSIS_CACHE.get(ingestedLiveKey(comp));
+    if (!raw) return null;
+    const stored = JSON.parse(raw);
+    if (!Array.isArray(stored?.matches) || !stored.matches.length) return null;
+    const storedAt = Number(stored.storedAt);
+    if (!Number.isFinite(storedAt)) return null;
+    return { matches: stored.matches, storedAt, ageMs: Math.max(0, Date.now() - storedAt) };
+  } catch {
+    return null;
+  }
+}
+
+// The ingest side. Raw API-Football fixtures, fetched by the GitHub Action from
+// an egress api-sports answers in full, mapped HERE so the ingestion contract
+// stays in mapApiFootball.js exactly as the detail ingest does.
+//
+// An EMPTY push is refused rather than stored. A day with no fixtures maps to
+// [] just as a soft-throttled read does, and the two are indistinguishable from
+// here; storing [] could only ever mask a good copy and can never rescue
+// anybody, which is the same lesson the colo cache learned the hard way.
+async function handleLiveIngest(request, env, code, cors) {
+  const secret = env.DETAIL_INGEST_TOKEN;
+  if (!secret || !env.ANALYSIS_CACHE) return json({ error: "ingest not configured" }, 501, cors);
+  const auth = request.headers.get("Authorization") ?? "";
+  if (auth !== `Bearer ${secret}`) return json({ error: "unauthorized" }, 401, cors);
+  // Bounded to the configured competitions so a pushed code can never mint an
+  // arbitrary KV key. parseCompetitions needs no API key, so this stays above
+  // the credential gate with the detail ingest.
+  const comp = parseCompetitions(env).find((entry) => entry.code === code.toUpperCase());
+  if (!comp) return json({ error: "unknown competition" }, 404, cors);
+  let body;
+  try {
+    const raw = await request.text();
+    if (raw.length > INGEST_MAX_BODY_BYTES) return json({ error: "payload too large" }, 413, cors);
+    body = JSON.parse(raw);
+  } catch {
+    return json({ error: "bad payload" }, 400, cors);
+  }
+  try {
+    const matches = mapApiFootballMatches(body?.fixtures ?? { response: [] });
+    if (!matches.length) return json({ stored: false, reason: "no fixtures" }, 200, cors);
+    const stored = await storeIngestedLive(env, comp.code, matches);
+    return json(stored ? { stored: true, matches: matches.length } : { stored: false, reason: "store failed" }, 200, cors);
   } catch {
     return json({ error: "unmappable payload" }, 400, cors);
   }
