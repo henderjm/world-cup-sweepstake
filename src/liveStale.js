@@ -36,6 +36,19 @@
 // live score can lag before the reader is handed something else.
 export const LIVE_STALE_GRACE_MS = 10 * 60 * 1000;
 
+// The window for a body carrying fixtures PUSHED in from the feeder's egress
+// (`ingestedLive`), which is a different trade-off and so a different number.
+//
+// The bound above is really the answer to "our own last-known-good, or the
+// hourly bake?", and past ten minutes the bake is likely the fresher of the
+// two. A pushed copy is not our last-known-good going off: it is a second live
+// source, refreshed every minute while a match is on and every few minutes
+// otherwise, and it is competing against the same hourly bake. Judging it by
+// the ten-minute rule would throw away a twenty-minute-old copy of a live score
+// in favour of a bake that averages thirty and can be sixty. So it keeps its
+// own window, set below the bake's worst case rather than at our own.
+export const INGESTED_LIVE_GRACE_MS = 45 * 60 * 1000;
+
 // A served stale body is MARKED rather than silently substituted. `lastUpdated`
 // already tells the truth about age, but only if a reader thinks to compare it to
 // the clock; an explicit flag lets the route, a health check or an operator
@@ -59,5 +72,6 @@ export function markStaleLive(entry, now = Date.now()) {
 // a stale one is servable only inside the grace window.
 export function tooStaleForBrowser(body) {
   if (!body?.stale) return false;
-  return (body.staleAgeMs ?? 0) > LIVE_STALE_GRACE_MS;
+  const grace = body.ingestedLive ? INGESTED_LIVE_GRACE_MS : LIVE_STALE_GRACE_MS;
+  return (body.staleAgeMs ?? 0) > grace;
 }

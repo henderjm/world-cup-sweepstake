@@ -1,6 +1,10 @@
 # Feeds live match detail into the Worker's KV safety copy from GitHub's
 # egress IPs, which api-sports trusts (the hourly Pages bake proves it), on a
 # five-minute cadence through the same 11:00-22:00 UTC window the bake uses.
+# A run also pushes today's fixtures to /ingest/live/:comp as the live
+# SCOREBOARD's safety copy, and keeps pushing once a minute for as long as a
+# match is in play, because GitHub stretches this five-minute cron to 15-30
+# minutes and a scoreboard copy that old is not worth overlaying.
 # See scripts/feed-live-details.mjs for the full rationale; the short version
 # is that api-sports soft-throttles the shared Cloudflare Workers IPs with
 # 200-with-empty responses, so the Worker cannot always read data that
@@ -19,7 +23,7 @@ concurrency:
 jobs:
   feed:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 8
     steps:
       - name: Check out
         uses: actions/checkout@v4

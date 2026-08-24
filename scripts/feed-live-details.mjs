@@ -14,9 +14,7 @@
 //
 // Which matches matter: anything in play, anything within LINEUP_LEAD_MS of
 // kickoff (teams are published about an hour before), and anything finished
-// within FULL_TIME_TAIL_MS (full-time reads and late settling). The list of
-// candidates comes from the Worker's own public /:comp/live feed, which costs
-// no upstream call here.
+// within FULL_TIME_TAIL_MS (full-time reads and late settling).
 //
 // Missing secrets exit 0 with a note rather than failing the workflow: the
 // feeder is an optional layer, and a red run every five minutes on a repo
@@ -28,6 +26,21 @@
 // reason this script exists is that the Worker's egress cannot be trusted to
 // read upstream, and the first version asked it anyway, got a 502 from a cold
 // colo, and fed nothing.
+//
+// That same discovery call is ALSO the live scoreboard's safety copy, and
+// pushing it costs nothing extra. Everything that moves during a match reaches
+// the Worker through the one egress api-sports refuses, so a refused status
+// batch used to freeze the score, the minute and the status until the browser
+// was 502'd to the hourly static bake - up to an hour behind, while the drawer
+// for the same match was current off this very feeder. Today's fixtures are
+// therefore POSTed to /ingest/live/:comp on every pass, and getLive overlays
+// them whenever its own read of those fixtures is missing or older.
+//
+// Because GitHub stretches a five-minute cron to 15-30 minutes, one push per
+// run would leave the copy too old to be worth overlaying for most of a match.
+// So a run keeps working for LOOP_BUDGET_MS, pushing once a minute for as long
+// as a match is actually in play. The upstream cost is one fixtures call per
+// pass on an egress that answers, and passes stop the moment nothing is live.
 
 import { COMPETITIONS as COMPETITION_CONFIG } from "../src/competitions.js";
 import { mapApiFootballMatches } from "../src/mapApiFootball.js";
@@ -56,6 +69,10 @@ const FULL_TIME_TAIL_MS = 3 * 60 * 60 * 1000;
 // drift, which stretches the nominal 5-minute cadence to 15-30 minutes.
 const TYPICAL_MATCH_MS = 2 * 60 * 60 * 1000;
 const PACING_MS = 400;
+// How long one run keeps pushing, and how often. Bounded well inside the
+// workflow's own timeout so a run always exits on its own terms.
+const LOOP_BUDGET_MS = Number(process.env.FEEDER_LOOP_BUDGET_MS ?? 4 * 60 * 1000);
+const LOOP_INTERVAL_MS = Number(process.env.FEEDER_LOOP_INTERVAL_MS ?? 60 * 1000);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -80,6 +97,23 @@ async function apiGet(path) {
   return payload;
 }
 
+// The scoreboard copy: the discovery payload, pushed verbatim for the Worker to
+// map. Failure is logged and swallowed - detail feeding is the job this script
+// was written for and must not be lost to a scoreboard push going wrong.
+async function feedLive(code, fixtures) {
+  try {
+    const response = await fetch(`${WORKER_ORIGIN}/ingest/live/${code}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ fixtures }),
+    });
+    const result = await response.json().catch(() => ({}));
+    console.log(`${code}: live ingest ${response.status} ${JSON.stringify(result)}`);
+  } catch (error) {
+    console.log(`${code}: live ingest failed (${error.message})`);
+  }
+}
+
 async function feedMatch(id) {
   const fixture = await apiGet(`/fixtures?id=${id}`);
   await sleep(PACING_MS);
@@ -98,23 +132,32 @@ async function feedMatch(id) {
   if (!response.ok && response.status !== 200) throw new Error(`ingest ${id}: HTTP ${response.status}`);
 }
 
-async function main() {
-  if (!KEY || !TOKEN) {
-    console.log("feeder: API_FOOTBALL_KEY or DETAIL_INGEST_TOKEN not configured; nothing to do");
-    return;
-  }
+// One pass over every configured competition: discover today's fixtures, push
+// them as the scoreboard safety copy, and (on the first pass of a run) feed the
+// detail payloads for the matches that matter. Reports whether anything is
+// actually in play, which is what decides whether the run keeps going.
+async function runPass({ feedDetail }) {
   const now = Date.now();
   const today = new Date(now).toISOString().slice(0, 10);
   let fed = 0;
+  let live = false;
   for (const { code, season, leagueId } of COMPETITIONS) {
+    let payload;
     let matches;
     try {
-      const payload = await apiGet(`/fixtures?league=${leagueId}&season=${season}&date=${today}`);
+      payload = await apiGet(`/fixtures?league=${leagueId}&season=${season}&date=${today}`);
       matches = mapApiFootballMatches(payload);
     } catch (error) {
       console.log(`feeder: could not read ${code} fixtures for ${today} (${error.message}); skipping`);
       continue;
     }
+    // Pushed before the detail fan-out below, deliberately: the scoreboard is
+    // what a reader is staring at while a match is on, and a slow or failing
+    // detail pass must never hold it up.
+    await feedLive(code, payload);
+    if (matches.some((match) => match.status === "IN_PLAY" || match.status === "PAUSED")) live = true;
+    if (!feedDetail) continue;
+
     const candidates = matches.filter((match) => worthFeeding(match, now));
     console.log(`${code}: ${candidates.length} of ${matches.length} match(es) today worth feeding`);
     for (const match of candidates) {
@@ -128,7 +171,33 @@ async function main() {
       await sleep(PACING_MS);
     }
   }
-  console.log(`feeder: done, ${fed} match(es) fed`);
+  return { fed, live };
+}
+
+async function main() {
+  if (!KEY || !TOKEN) {
+    console.log("feeder: API_FOOTBALL_KEY or DETAIL_INGEST_TOKEN not configured; nothing to do");
+    return;
+  }
+  const deadline = Date.now() + LOOP_BUDGET_MS;
+  let passes = 0;
+  let fed = 0;
+  for (;;) {
+    // Detail is fed once per run on purpose. It is the DRAWER's safety copy and
+    // moves on the timescale of goals; the scoreboard moves on the timescale of
+    // a clock. Feeding detail every pass would multiply a run's upstream cost
+    // several times over to refresh something nobody watches tick.
+    const result = await runPass({ feedDetail: passes === 0 });
+    fed += result.fed;
+    passes += 1;
+    if (!result.live) {
+      console.log("feeder: nothing in play; one pass is enough");
+      break;
+    }
+    if (Date.now() + LOOP_INTERVAL_MS >= deadline) break;
+    await sleep(LOOP_INTERVAL_MS);
+  }
+  console.log(`feeder: done, ${fed} match(es) fed across ${passes} pass(es)`);
 }
 
 await main();
