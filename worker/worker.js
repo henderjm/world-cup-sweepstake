@@ -805,8 +805,29 @@ async function getLive(comp, token, env = null) {
     // exactly as before. Serving the season schedule as though it were current
     // would state "not kicked off" as fact about a match in its second half,
     // which is the falsehood src/fixtureFreshness.js exists to prevent.
+    //
+    // A refusal is not the only shape that loses the live scores. api-sports'
+    // soft throttle answers 200-with-empty for fixtures that HAVE data
+    // (measured GW1 2026-27: the same key answered a residential IP in full
+    // while the Worker got `results: 0` in the same second), and that clean
+    // face used to sail straight past this handling: nothing merged, nothing
+    // thrown, so the schedule's "not kicked off" went out as a FRESH 200 about
+    // a match in its second half -- suppressing the "delayed" chip and the
+    // browser's static-bake fallback in the same breath, while the memo
+    // replayed the empty for up to a minute per isolate. So the KICKED-OFF
+    // batch is now judged by what it ANSWERED, not by whether it threw: a
+    // batch that answered none of its fixtures is the throttle wearing a 200
+    // and takes exactly the refusal's rescue path below. Only the kicked-off
+    // batch: an empty answer about pre-match fixtures costs nothing (the
+    // schedule already states their truth), which is also why a failed
+    // pre-match batch no longer fails the whole read -- marking it failed let
+    // an older pushed copy overwrite kicked-off scores that had just arrived.
     let liveReadFailed = null;
+    let activeFixtureCount = 0;
+    let answeredActiveCount = 0;
     for (const request of polling.requests) {
+      const carriesLiveTruth = request.mode !== "pre_match";
+      if (carriesLiveTruth) activeFixtureCount += request.fixtures.length;
       try {
         const livePayload = await fetchJson(
           `/fixtures?ids=${request.fixtures.map((match) => match.id).join("-")}`,
@@ -814,10 +835,34 @@ async function getLive(comp, token, env = null) {
           request.ttl,
           stale,
         );
-        matches = mergeFixtureUpdates(matches, mapApiFootballMatches(livePayload));
+        const updates = mapApiFootballMatches(livePayload);
+        matches = mergeFixtureUpdates(matches, updates);
+        if (carriesLiveTruth) {
+          const answered = new Set(updates.map((match) => match.id));
+          answeredActiveCount += request.fixtures.filter((match) => answered.has(match.id)).length;
+        }
       } catch (error) {
-        liveReadFailed = error;
+        if (carriesLiveTruth) {
+          liveReadFailed = error;
+        } else {
+          console.warn(
+            `live ${comp.code}: pre-match status batch failed, the schedule stands in: ${error?.message ?? error}`,
+          );
+        }
       }
+    }
+    if (!liveReadFailed && activeFixtureCount > 0 && answeredActiveCount === 0) {
+      liveReadFailed = new Error(
+        `status batch answered 0 of ${activeFixtureCount} kicked-off fixtures (the soft throttle's 200-with-empty)`,
+      );
+    } else if (!liveReadFailed && answeredActiveCount < activeFixtureCount) {
+      // Never observed upstream (the throttle empties whole requests, not ids
+      // within one), so it is logged rather than handled: the unanswered
+      // fixtures keep their carried state, and this line is what would tell us
+      // the shape is real if it ever happens.
+      console.warn(
+        `live ${comp.code}: status batch answered ${answeredActiveCount} of ${activeFixtureCount} kicked-off fixtures; the rest keep their carried state`,
+      );
     }
 
     // How far behind the live scores in `matches` actually are. A refused batch
