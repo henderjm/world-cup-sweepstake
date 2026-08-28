@@ -1,0 +1,66 @@
+# Deploys the Cloudflare Worker on every push to main that could change its
+# behavior. This closes the gap where a Worker fix merged to main was NOT in
+# production until somebody remembered to run `npx wrangler deploy` by hand:
+# pages.yml redeploys the site on every merge, so the repo LOOKED shipped
+# while the Worker kept running the old code.
+#
+# `src/**` is a deploy trigger on purpose: worker.js imports the shared pure
+# modules from ../src (mapApiFootball, apiCache, draftLogic, ...), so a change
+# there changes the deployed Worker too. A UI-only src change costs one
+# redundant deploy, which is idempotent and cheap; missing a shared-module
+# change would repeat exactly the stale-production problem this exists to end.
+#
+# Secrets follow the DETAIL_INGEST_TOKEN convention: an unset
+# CLOUDFLARE_API_TOKEN is a green no-op run with a message, never a red X on
+# every merge. The token needs the "Edit Cloudflare Workers" permission;
+# account_id is pinned in worker/wrangler.toml so no account variable is
+# needed here. Wrangler vars are applied on every deploy, and a CI checkout of
+# main is by definition the up-to-date checkout wrangler.toml's note asks for.
+name: Deploy Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "worker/**"
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/deploy-worker.yml"
+  workflow_dispatch:
+
+# Serialize deploys; a superseded queued deploy is cancelled because the newer
+# push deploys a strictly newer main.
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Check for deploy token
+        id: token
+        run: echo "have=${{ secrets.CLOUDFLARE_API_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+      # The Worker bundles @anthropic-ai/sdk and @pushforge/builder from the
+      # root node_modules, so the install happens at the repo root.
+      - name: Install dependencies
+        if: steps.token.outputs.have == 'true'
+        run: npm ci
+      # wrangler@4 rather than a bare wrangler: the rate-limit unsafe.bindings
+      # syntax in wrangler.toml needs 4.36.0+ (see CLAUDE.md), and pinning the
+      # major keeps a future wrangler@5 from changing deploy semantics under us.
+      - name: Deploy Worker
+        if: steps.token.outputs.have == 'true'
+        working-directory: worker
+        run: npx --yes wrangler@4 deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Skip (no token configured)
+        if: steps.token.outputs.have != 'true'
+        run: echo "CLOUDFLARE_API_TOKEN repo secret is not set; skipping Worker deploy. Add it to enable auto-deploy, then re-run via workflow_dispatch."
