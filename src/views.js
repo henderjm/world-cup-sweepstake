@@ -175,6 +175,7 @@ const SCORES_TABS = [
   ["tables", "Table"],
   ["knockout", "Knockout"],
   ["fixtures", "Fixtures"],
+  ["predict", "Predict"],
   ["stats", "Player stats"],
 ];
 

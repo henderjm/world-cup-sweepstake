@@ -174,6 +174,13 @@ import {
   readCached,
   writeCached,
 } from "../src/apiCache.js";
+import {
+  canPredict,
+  predictionFantasyBonus,
+  scoreForMatch,
+  summarizePredictions,
+  validatePredictionInput,
+} from "../src/predictions.js";
 import { markStaleLive, tooStaleForBrowser } from "../src/liveStale.js";
 import {
   BUDGET_NORMAL,
@@ -558,6 +565,19 @@ export default {
       return handleBanter(request, env, Number(banterRoute[1]), competitions, token, cors);
     }
 
+    // Prediction game: GET is the caller's own history, POST saves or changes
+    // one prediction. Both need a session, but the GAME does not: a signed-out
+    // visitor plays entirely in their browser (localStorage, scored by the
+    // same src/predictions.js), and these routes are only the "signed in keeps
+    // your history" half. POST validates the id against the real fixtures
+    // exactly like banter, so junk ids cannot fill the table.
+    if (url.pathname === "/predictions" && request.method === "GET") {
+      return handlePredictionsGet(request, env, cors);
+    }
+    if (url.pathname === "/predictions" && request.method === "POST") {
+      return handlePredictionSet(request, env, competitions, token, cors);
+    }
+
     if (request.method !== "GET") return json({ error: "method not allowed" }, 405, cors);
 
     try {
@@ -711,6 +731,11 @@ export default {
         // tick is settled by the pass below and its provisional row cleared.
         await runCronPass("live-points", () => runScheduledLivePoints(env));
         await runCronPass("fantasy-scoring", () => runScheduledFantasyScoring(env));
+        // Behind fantasy scoring so a tick that settles both a match's player
+        // points and its predictions recomputes the gameweek once with
+        // everything in it; reads only the getLive feeds the passes above
+        // already fetched, so a healthy tick costs nothing upstream.
+        await runCronPass("prediction-scoring", () => runScheduledPredictionScoring(env));
         await runCronPass("waiver-runs", () => runScheduledWaiverRuns(env));
         await runCronPass("draft-reminders", () => runScheduledDraftReminders(env));
         await runCronPass("xp-blend", () => runScheduledFantasyXpBlend(env));
@@ -3321,6 +3346,14 @@ async function recomputeLeagueGameweek(env, leagueId, gameweek, playerPoints) {
     gwScores.set(userId, points);
   }
 
+  // The prediction-game bonus (see predictionBonuses) is part of the settled
+  // gameweek total, so standings, h2h fixtures and recaps inherit it with no
+  // reader changes; recomputes converge because it is derived fresh each time.
+  const bonuses = await predictionBonuses(env, memberIds, gameweek);
+  for (const [userId, bonus] of bonuses) {
+    gwScores.set(userId, (gwScores.get(userId) ?? 0) + bonus);
+  }
+
   await env.DB.batch(
     memberIds.map((userId) =>
       env.DB.prepare(
@@ -3577,7 +3610,12 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
     // settled rollup alone: a matchup that only moved when a whole match
     // settled was the "no idea how my team is doing" complaint in one line.
     const livePoints = await fantasyLivePointsForGameweek(env, gameweek);
-    const meScore = await fantasyLiveScoreFor(env, leagueId, user.id, gameweek, livePoints);
+    // The prediction-game bonus is added here for the same reason live points
+    // are: the settled rollup (which already carries it) and this live total
+    // must never disagree over the same week. See predictionBonuses.
+    const bonusFor = async (userId) => (await predictionBonuses(env, [userId], gameweek)).get(userId) ?? 0;
+    const meScore =
+      (await fantasyLiveScoreFor(env, leagueId, user.id, gameweek, livePoints)) + (await bonusFor(user.id));
     // Through memberDisplayName like every other surface, so a manager who has
     // named their team sees that name here too. Reading user.name directly was
     // the one place a team name did not reach (issue #48).
@@ -3608,7 +3646,7 @@ async function handleFantasyMatchup(request, env, leagueId, cors) {
     const opponentId = fixture.home_user_id === user.id ? fixture.away_user_id : fixture.home_user_id;
     const [opponentRow, opponentScore, opponentProgress] = await Promise.all([
       env.DB.prepare(`SELECT name, email, is_bot FROM users WHERE id = ?1`).bind(opponentId).first(),
-      fantasyLiveScoreFor(env, leagueId, opponentId, gameweek, livePoints),
+      (async () => (await fantasyLiveScoreFor(env, leagueId, opponentId, gameweek, livePoints)) + (await bonusFor(opponentId)))(),
       progressFor(opponentId),
     ]);
     const opponent = {
@@ -3677,6 +3715,14 @@ async function handleFantasyGameweekBoard(request, env, leagueId, cors) {
     ]);
     const members = memberRows.results ?? [];
     const livePoints = await fantasyLivePointsForGameweek(env, gameweek);
+    // Same reason as the matchup route: the live total must carry the same
+    // prediction-game bonus the settled rollup does. One grouped query for the
+    // whole league rather than one per side.
+    const bonuses = await predictionBonuses(
+      env,
+      members.map((member) => member.user_id),
+      gameweek,
+    );
 
     const sideFor = async (userId) => {
       const row = members.find((member) => member.user_id === userId);
@@ -3689,7 +3735,7 @@ async function handleFantasyGameweekBoard(request, env, leagueId, cors) {
         starters: null,
       };
       const { roster, starters } = await resolveManagerLineup(env, leagueId, userId, gameweek);
-      side.score = rosterGameweekPoints({ starters }, livePoints.points).points;
+      side.score = rosterGameweekPoints({ starters }, livePoints.points).points + (bonuses.get(userId) ?? 0);
       if (matches) {
         const starterIds = starters.map((entry) => entry.playerId);
         side.progress = trackGameweek({ matches, roster, starterIds, gameweek }).counts;
@@ -6387,6 +6433,229 @@ async function readBanter(env, id, userId) {
       })),
     signedIn: Boolean(userId),
   };
+}
+
+// -- Prediction game (D1-backed) ----------------------------------------------
+// Anyone can play; the Worker only ever sees SIGNED-IN play. A signed-out
+// visitor's predictions live in their browser's localStorage and are scored
+// there by the same src/predictions.js imported here, so the two paths cannot
+// disagree about a verdict. These routes and the cron pass below are the
+// "signed in keeps your history" half, plus the fantasy hook: each EXACT
+// prediction adds PREDICTION_FANTASY_BONUS to that manager's fantasy gameweek
+// total (see predictionBonuses for where that is applied and why it is
+// derived, never stored).
+
+async function handlePredictionsGet(request, env, cors) {
+  if (!env.DB) return json({ error: "predictions not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+  const rows = await env.DB.prepare(
+    `SELECT match_id, competition, home_goals, away_goals, gameweek, points, exact, actual_home, actual_away
+     FROM prediction_entries WHERE user_id = ?1 ORDER BY match_id`,
+  )
+    .bind(user.id)
+    .all();
+  const predictions = (rows.results ?? []).map((row) => ({
+    matchId: row.match_id,
+    competition: row.competition,
+    homeGoals: row.home_goals,
+    awayGoals: row.away_goals,
+    gameweek: row.gameweek,
+    points: row.points,
+    exact: row.exact == null ? null : Boolean(row.exact),
+    actualHome: row.actual_home,
+    actualAway: row.actual_away,
+  }));
+  return json({ predictions, summary: summarizePredictions(predictions) }, 200, cors);
+}
+
+async function handlePredictionSet(request, env, competitions, token, cors) {
+  if (!env.DB) return json({ error: "predictions not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "sign in to keep predictions" }, 401, cors);
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "bad body" }, 400, cors);
+  }
+  const matchId = Number(body?.matchId);
+  if (!Number.isInteger(matchId) || matchId <= 0) return json({ error: "bad match id" }, 400, cors);
+  const input = validatePredictionInput(body);
+  if (!input.ok) return json({ error: input.error }, 400, cors);
+
+  // findKnownMatch's loop, with the competition kept: the row stores it so
+  // history can be read per competition. Same memoised getLive underneath, so
+  // a warm isolate spends nothing upstream.
+  let found = null;
+  for (const comp of competitions) {
+    try {
+      const live = await getLive(comp, token, env);
+      const match = (live.matches ?? []).find((entry) => entry.id === matchId);
+      if (match) {
+        found = { comp, match };
+        break;
+      }
+    } catch {
+      // one competition's feed being down must not 404 the others
+    }
+  }
+  if (!found) return json({ error: "unknown match" }, 404, cors);
+  // FAILS CLOSED (see canPredict in src/predictions.js): a prediction taken on
+  // a match already in play is just reading the scoreboard.
+  if (!canPredict(found.match)) return json({ error: "predictions are locked for this match" }, 409, cors);
+
+  // The points IS NULL guard on the update arm makes a scored row immutable
+  // even if the feed above lags reality: a lost race changes nothing rather
+  // than rewriting settled history.
+  const result = await env.DB.prepare(
+    `INSERT INTO prediction_entries (user_id, match_id, competition, home_goals, away_goals)
+     VALUES (?1, ?2, ?3, ?4, ?5)
+     ON CONFLICT(user_id, match_id) DO UPDATE SET
+       home_goals = ?4, away_goals = ?5, updated_at = datetime('now')
+       WHERE prediction_entries.points IS NULL`,
+  )
+    .bind(user.id, matchId, found.comp.code, input.homeGoals, input.awayGoals)
+    .run();
+  if ((result.meta?.changes ?? 0) === 0) {
+    return json({ error: "predictions are locked for this match" }, 409, cors);
+  }
+  return json(
+    {
+      prediction: {
+        matchId,
+        competition: found.comp.code,
+        homeGoals: input.homeGoals,
+        awayGoals: input.awayGoals,
+        points: null,
+        exact: null,
+      },
+    },
+    200,
+    cors,
+  );
+}
+
+// Settles predictions off the FEED SUMMARY, never match detail: the final
+// scoreline is on the fixture row itself, so this pass reads only the same
+// getLive the passes ahead of it already fetched (a healthy tick costs nothing
+// upstream) and is immune to the degraded-detail problem that makes fantasy
+// scoring defer. "WHERE points IS NULL" is the dedup ledger: a row is scored
+// exactly once, and a pass that dies mid-match is retried for the unscored
+// remainder next tick.
+//
+// Any PL gameweek that gained an EXACT prediction then gets the same
+// recomputeFantasyGameweek the fantasy pass uses, so the bonus lands even when
+// this was the gameweek's last settle and no later fantasy tick would have
+// recomputed it (fantasy scoring only recomputes on ITS OWN new settles).
+async function runScheduledPredictionScoring(env) {
+  if (!env.DB || !env.API_FOOTBALL_KEY) return;
+  const unscored = await env.DB.prepare(`SELECT DISTINCT match_id FROM prediction_entries WHERE points IS NULL`).all();
+  const wanted = new Set((unscored.results ?? []).map((row) => row.match_id));
+  if (!wanted.size) return;
+
+  const touchedGameweeks = new Set();
+  for (const comp of parseCompetitions(env)) {
+    if (!wanted.size) break;
+    let live;
+    try {
+      live = await getLive(comp, env.API_FOOTBALL_KEY, env);
+    } catch {
+      continue; // this competition's feed is down; its predictions wait a tick
+    }
+    // Only PL fixtures get a gameweek stamp: the calendar (and the fantasy
+    // bonus it exists for) is PL-only, exactly like the rest of fantasy.
+    const matches = comp.code === "PL" ? assignGameweeks(live.matches ?? []) : (live.matches ?? []);
+    for (const match of matches) {
+      if (!wanted.has(match.id)) continue;
+      wanted.delete(match.id); // fixture ids are globally unique; no other competition will carry it
+      try {
+        const exactCount = await scorePredictionsForMatch(env, match, comp.code);
+        const gameweek = comp.code === "PL" ? gameweekOf(match) : null;
+        if (exactCount > 0 && Number.isInteger(gameweek)) touchedGameweeks.add(gameweek);
+      } catch {
+        // one broken match must not block the others; its rows stay
+        // points IS NULL, so the next tick retries them from scratch
+      }
+    }
+  }
+
+  for (const gameweek of touchedGameweeks) {
+    try {
+      await recomputeFantasyGameweek(env, gameweek);
+    } catch {
+      // one gameweek's rollup failing must not block the others
+    }
+  }
+}
+
+// Scores every unscored prediction for one feed match. No-op (returns 0)
+// unless the match is finished with both final goals present: an AWARDED
+// fixture can arrive scoreless for a tick, and scoring against a half-known
+// result would be the prediction game's version of settling a degraded read.
+// Returns how many predictions scored EXACT, the fantasy-bonus trigger.
+async function scorePredictionsForMatch(env, match, compCode) {
+  if (!isMatchFinished(match)) return 0;
+  const finalHome = match.score?.home;
+  const finalAway = match.score?.away;
+  if (!Number.isFinite(finalHome) || !Number.isFinite(finalAway)) return 0;
+
+  const rows = await env.DB.prepare(
+    `SELECT user_id, home_goals, away_goals FROM prediction_entries WHERE match_id = ?1 AND points IS NULL`,
+  )
+    .bind(match.id)
+    .all();
+  const entries = rows.results ?? [];
+  if (!entries.length) return 0;
+
+  const rawGameweek = compCode === "PL" ? gameweekOf(match) : null;
+  const gameweek = Number.isInteger(rawGameweek) ? rawGameweek : null;
+  let exactCount = 0;
+  const updates = entries.map((row) => {
+    // The same verdict function the signed-out browser scores with.
+    const verdict = scoreForMatch({ homeGoals: row.home_goals, awayGoals: row.away_goals }, match);
+    if (verdict.exact) exactCount += 1;
+    return env.DB.prepare(
+      `UPDATE prediction_entries
+       SET points = ?1, exact = ?2, actual_home = ?3, actual_away = ?4, gameweek = ?5, scored_at = datetime('now')
+       WHERE user_id = ?6 AND match_id = ?7 AND points IS NULL`,
+    ).bind(verdict.points, verdict.exact ? 1 : 0, finalHome, finalAway, gameweek, row.user_id, match.id);
+  });
+  // Chunked like fantasyScoredMatchIds: one popular match can carry more
+  // predictions than is polite for a single D1 batch.
+  for (let i = 0; i < updates.length; i += SCORED_MATCH_ID_CHUNK) {
+    await env.DB.batch(updates.slice(i, i + SCORED_MATCH_ID_CHUNK));
+  }
+  return exactCount;
+}
+
+// The fantasy bonus: +PREDICTION_FANTASY_BONUS per EXACT prediction in the
+// gameweek, per league the predictor manages in. DERIVED from
+// prediction_entries on every rollup and read, never stored anywhere: a stored
+// bonus would be a second copy of a derivable fact, the same reasoning as the
+// Average opponent and the read-time lineup fallback, and deriving means a
+// recompute can only ever converge. Applied in the three places a gameweek
+// total is assembled - recomputeLeagueGameweek (the settled rollup that
+// standings, h2h fixtures and recaps read) and the matchup/board live totals -
+// so no surface can disagree with another over the same week.
+async function predictionBonuses(env, memberIds, gameweek) {
+  const bonuses = new Map();
+  if (!memberIds.length || !Number.isInteger(gameweek)) return bonuses;
+  for (let i = 0; i < memberIds.length; i += SCORED_MATCH_ID_CHUNK) {
+    const chunk = memberIds.slice(i, i + SCORED_MATCH_ID_CHUNK);
+    const placeholders = chunk.map((_, index) => `?${index + 2}`).join(",");
+    const rows = await env.DB.prepare(
+      `SELECT user_id, COUNT(*) AS exact_count FROM prediction_entries
+       WHERE gameweek = ?1 AND exact = 1 AND user_id IN (${placeholders})
+       GROUP BY user_id`,
+    )
+      .bind(gameweek, ...chunk)
+      .all();
+    for (const row of rows.results ?? []) {
+      bonuses.set(row.user_id, predictionFantasyBonus(row.exact_count));
+    }
+  }
+  return bonuses;
 }
 
 // -- Daily Paper Run (KV-backed) --------------------------------------------
