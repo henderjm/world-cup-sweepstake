@@ -51,6 +51,16 @@ import {
 import { disablePush, enablePush, pushState, sendTestPush } from "./push.js";
 import { setMatchModel, setupMatchDetail, openMatch } from "./matchDetail.js";
 import { isFinished, isLive, updatedLabel } from "./format.js";
+import { renderPredictPanel } from "./predictionsView.js";
+import { canPredict, validatePredictionInput } from "./predictions.js";
+import {
+  fetchMyPredictions,
+  loadLocalPredictions,
+  predictionsAvailable,
+  saveLocalPrediction,
+  submitPrediction,
+  syncLocalPredictions,
+} from "./predictionsApi.js";
 import { todayPaperRunDate } from "./paperRunModel.js";
 import {
   displayName,
@@ -205,7 +215,7 @@ const elements = {
   updated: document.querySelector("#updated"),
 };
 
-const SCORES_TABS = ["live", "tables", "knockout", "fixtures", "stats"];
+const SCORES_TABS = ["live", "tables", "knockout", "fixtures", "predict", "stats"];
 const HASH_ALIASES = { goldenboot: "stats", paperrun: "play" };
 const COMPETITION_STORAGE_KEY = "gs-competition";
 
@@ -296,6 +306,7 @@ const state = {
     loading: false,
     mount: null,
   },
+  predict: initialPredictState(),
   fantasy: Object.assign(initialFantasyState(), {
     // Where the URL says we should be. Consumed once, by renderFantasy, as soon
     // as there is a session to load it with (see restoreFantasyRoute).
@@ -537,6 +548,11 @@ async function start() {
   onAccountChange(() => {
     syncAccountButton();
     if (state.section === "you") renderLayout();
+    // Signing in or out changes whose predictions the Predict tab shows (and
+    // the sign-in also triggers the one-time local -> server bridge on the
+    // next load), so the cached server copy must not survive the switch.
+    state.predict = initialPredictState();
+    if (state.section === "scores" && state.tab === "predict") renderLayout();
     if (!isSignedIn()) {
       // Signing out mid-draft must drop the socket, not just swap the panel for
       // the signed-out card underneath it.
@@ -822,11 +838,164 @@ function renderPanel() {
       return renderKnockout(model);
     case "fixtures":
       return renderFixtures(model, resolvedFixtureView(), state.fixtureTeam);
+    case "predict":
+      return renderPredict();
     case "stats":
       return renderStats(model, state.statsSort);
     default:
       return renderLive(model);
   }
+}
+
+// -- Prediction game (Predict tab) -------------------------------------------
+// Anyone can play: signed out, predictions live in localStorage and are scored
+// in the view by the same src/predictions.js the Worker's cron uses; signed
+// in, they persist through /predictions and the history header comes from the
+// Worker's own rollup. See src/predictions.js's header for why one module
+// scores both paths.
+
+function initialPredictState() {
+  return {
+    server: null, // rows from GET /predictions when signed in; null = not loaded
+    summary: null,
+    loading: false,
+    error: null,
+    synced: false, // the one-time local -> server bridge has run this session
+    drafts: new Map(), // matchId -> { home, away } unsaved input text, so a re-render never eats typing
+    saved: new Set(), // matchIds saved this session, for the row's "Saved" flash
+  };
+}
+
+function renderPredict() {
+  const signedIn = isSignedIn();
+  if (signedIn) ensurePredictionsLoaded();
+  return renderPredictPanel({
+    model,
+    signedIn,
+    available: predictionsAvailable(),
+    predictions: predictionMap(signedIn),
+    serverSummary: state.predict.summary,
+    drafts: state.predict.drafts,
+    saved: state.predict.saved,
+    loading: state.predict.loading,
+    error: state.predict.error,
+  });
+}
+
+function predictionMap(signedIn) {
+  if (signedIn) {
+    return new Map((state.predict.server ?? []).map((row) => [row.matchId, row]));
+  }
+  return new Map(
+    Object.entries(loadLocalPredictions()).map(([id, entry]) => [
+      Number(id),
+      { homeGoals: entry.homeGoals, awayGoals: entry.awayGoals, points: null, exact: null },
+    ]),
+  );
+}
+
+async function ensurePredictionsLoaded() {
+  const predict = state.predict;
+  if (predict.server || predict.loading || !predictionsAvailable()) return;
+  predict.loading = true;
+  try {
+    const result = await fetchMyPredictions();
+    predict.server = result.predictions;
+    predict.summary = result.summary;
+    predict.error = null;
+    // One-way bridge for picks made on this device before signing in (see
+    // predictionsApi.js): push the still-open ones up, then re-read so the
+    // panel shows them as saved history rather than dropping them.
+    if (!predict.synced) {
+      predict.synced = true;
+      const serverIds = new Set(result.predictions.map((row) => row.matchId));
+      const openIds = Object.keys(loadLocalPredictions())
+        .map(Number)
+        .filter((id) => canPredict(model.matches.find((match) => match.id === id)));
+      if (openIds.length && (await syncLocalPredictions(openIds, serverIds)) > 0) {
+        const refreshed = await fetchMyPredictions();
+        predict.server = refreshed.predictions;
+        predict.summary = refreshed.summary;
+      }
+    }
+  } catch (error) {
+    trackException(error);
+    predict.error = error?.status === 401 ? "your session expired" : "service unavailable";
+  } finally {
+    predict.loading = false;
+  }
+  if (state.section === "scores" && state.tab === "predict") renderLayout();
+}
+
+// Every open row's current input text, captured before any re-render so a
+// visitor filling in five predictions does not lose four of them the moment
+// the first Save repaints the panel.
+function capturePredictionDrafts() {
+  elements.layout.querySelectorAll("[data-predict-home]").forEach((input) => {
+    const id = Number(input.dataset.predictHome);
+    const away = elements.layout.querySelector(`[data-predict-away="${id}"]`);
+    const draft = { home: input.value, away: away?.value ?? "" };
+    if (draft.home === "" && draft.away === "") state.predict.drafts.delete(id);
+    else state.predict.drafts.set(id, draft);
+  });
+}
+
+async function savePredictionFromRow(matchId, button) {
+  const note = elements.layout.querySelector(`[data-predict-note="${matchId}"]`);
+  const setNote = (text) => {
+    if (note) note.textContent = text;
+  };
+  const input = validatePredictionInput({
+    homeGoals: elements.layout.querySelector(`[data-predict-home="${matchId}"]`)?.value,
+    awayGoals: elements.layout.querySelector(`[data-predict-away="${matchId}"]`)?.value,
+  });
+  if (!input.ok) {
+    setNote(input.error);
+    return;
+  }
+  // The same fail-closed check the Worker applies; checking here just words
+  // the refusal without a round trip when the match kicked off mid-visit.
+  if (!canPredict(model.matches.find((match) => match.id === matchId))) {
+    setNote("Kick-off has passed; this one is locked.");
+    return;
+  }
+  capturePredictionDrafts();
+  button.disabled = true;
+  try {
+    if (isSignedIn() && predictionsAvailable()) {
+      await submitPrediction(matchId, input.homeGoals, input.awayGoals);
+      // Keep the cached history in step without a refetch.
+      const rows = state.predict.server ?? [];
+      const existing = rows.find((row) => row.matchId === matchId);
+      if (existing) Object.assign(existing, { homeGoals: input.homeGoals, awayGoals: input.awayGoals });
+      else
+        rows.push({
+          matchId,
+          competition: state.competition,
+          homeGoals: input.homeGoals,
+          awayGoals: input.awayGoals,
+          points: null,
+          exact: null,
+        });
+      state.predict.server = rows;
+    } else {
+      saveLocalPrediction(matchId, input.homeGoals, input.awayGoals, state.competition);
+    }
+    state.predict.saved.add(matchId);
+    state.predict.drafts.delete(matchId);
+    track("prediction_saved", { competition: state.competition, signed_in: isSignedIn() });
+  } catch (error) {
+    setNote(
+      error?.status === 409
+        ? "Kick-off has passed; this one is locked."
+        : error?.status === 401
+          ? "Your session expired - sign in again to save."
+          : "Couldn't save; try again.",
+    );
+    button.disabled = false;
+    return;
+  }
+  if (state.section === "scores" && state.tab === "predict") renderLayout();
 }
 
 // -- Paper Run section -----------------------------------------------------------
@@ -4045,6 +4214,14 @@ function wireLayoutControls() {
     // object a click belongs to, so one block serves both rather than the
     // duplicated pair every older shared control needed.
     if (handleBoardClick(event)) return;
+
+    // Prediction game saves. Above the demo intercept because the Predict tab
+    // is a scores-section surface and its attribute is unique to it.
+    const predictSave = event.target.closest("[data-predict-save]");
+    if (predictSave && !predictSave.disabled) {
+      savePredictionFromRow(Number(predictSave.dataset.predictSave), predictSave);
+      return;
+    }
 
     // The demo screen reuses several of the real Fantasy section's data
     // attributes (data-fantasy-draft-player, data-fantasy-position-filter) so

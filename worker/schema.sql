@@ -584,3 +584,44 @@ CREATE TABLE IF NOT EXISTS fantasy_live_match_points (
 );
 CREATE INDEX IF NOT EXISTS idx_fantasy_live_match_points_gw
   ON fantasy_live_match_points (gameweek);
+
+-- Prediction game: one row per signed-in user per match. Signed-out play never
+-- reaches this table (it lives in the browser's localStorage and is scored
+-- client-side by the same src/predictions.js the cron uses, so the verdicts
+-- cannot differ).
+--
+-- points IS NULL means "not scored yet", the same nullable-means-unknown
+-- discipline as fantasy_draft_picks.via: the scoring cron only ever touches
+-- rows WHERE points IS NULL, which is both its idempotency gate and what lets
+-- an edit before kickoff stay an ordinary UPDATE. Once scored, a row is
+-- permanent history (the POST route's upsert carries the same points IS NULL
+-- guard, so a scored row can never be rewritten even by a stale client).
+--
+-- gameweek is stamped AT SCORING TIME from the same assignGameweeks calendar
+-- window fantasy scoring uses, and only for PL matches (fantasy is PL-only);
+-- it exists solely for the fantasy bonus join in recomputeLeagueGameweek
+-- (+PREDICTION_FANTASY_BONUS per exact = 1 row per correct scoreline), which
+-- derives the bonus fresh on every recompute rather than storing it anywhere.
+-- Non-PL predictions keep NULL and simply never enter that join.
+--
+-- actual_home/actual_away are denormalised on purpose: the history must keep
+-- rendering after the season's feed has rolled over and the match id no longer
+-- resolves to anything.
+CREATE TABLE IF NOT EXISTS prediction_entries (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  match_id INTEGER NOT NULL,
+  competition TEXT NOT NULL,
+  home_goals INTEGER NOT NULL,
+  away_goals INTEGER NOT NULL,
+  gameweek INTEGER,   -- PL calendar window, stamped when scored; NULL for non-PL
+  points INTEGER,     -- NULL = not scored yet
+  exact INTEGER,      -- NULL until scored; 1 = exact scoreline (earns the fantasy bonus)
+  actual_home INTEGER,
+  actual_away INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  scored_at TEXT,
+  PRIMARY KEY (user_id, match_id)
+);
+CREATE INDEX IF NOT EXISTS prediction_entries_match ON prediction_entries(match_id);
+CREATE INDEX IF NOT EXISTS prediction_entries_gameweek ON prediction_entries(gameweek);
