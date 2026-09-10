@@ -59,13 +59,21 @@ failure/status variants, not a claim of production deployment or end-to-end late
 6. Marked static fallback as delayed using its saved timestamp, with an unknown
    age when absent. Repaint on table or stale-state changes even if scores do
    not change; verified stale banner disappearance on recovery.
+7. Champions League settled tables retain provider ranks. Live projections use
+   the available UEFA criteria in order, including away goals and away wins;
+   collective opponent totals apply only with a complete eight-match league
+   phase. Missing criteria retain the published tied-group order and show a
+   qualification note, rather than silently sorting clubs alphabetically.
+   Primary rules verified against [2026/27 Article 18](https://documents.uefa.com/r/Regulations-of-the-UEFA-Champions-League-2026/27/Article-18-Equality-of-points-league-phase-Online).
+   Disciplinary totals and coefficients are absent from this feed, so final
+   decisions on those criteria remain the provider's responsibility. Browser
+   replay confirmed the note and published tie order (Stuttgart before Sporting).
 
 ## Prioritized remaining work
 
 | Priority | Item | Definition of done |
 | --- | --- | --- |
-| P0 — next | Champions League tie-breaking | Stop applying PL alphabetical tie-breaking to CL. Verify current [UEFA Article 18](https://documents.uefa.com/r/Reglement-de-l-UEFA-Champions-League-2026/27/Article-18-Egalite-de-points-lors-de-la-phase-de-ligue-Online); preserve provider rank when required inputs are unavailable; handle provisional live ordering honestly. Add tied-team scenarios and compare the same feed revision. Current AEK points fix does not establish full rank correctness. |
-| P0 | Open match drawer becomes stale | Keep an open match's score/status/event sections current on polling without resetting scroll or keyboard focus; cancel/ignore responses belonging to a closed or different match. Verify two sequential goal updates in browser. |
+| P0 — next | Open match drawer becomes stale | Keep an open match's score/status/event sections current on polling without resetting scroll or keyboard focus; cancel/ignore responses belonging to a closed or different match. Verify two sequential goal updates in browser. |
 | P0 | Freshness after total outage and aged healthy payloads | Check last-known-good model preservation after both paths fail, including empty fallback. Show loss of updates without resetting age. Define freshness from actual provider timestamps, not just successful requests. Measure live-event lag; do not infer it from a screenshot. |
 | P1 | Scores date navigation and all-supported-competitions entry | Date strip/calendar, Live filter, useful empty day and next-match date. No duplicated Today/Recent rows. Current Next up rows omit the date; fix that. Preserve route/date/filter when opening/closing a match. |
 | P1 | Favourites without sign-in | Device-local follows with clear account sync policy; no new D1 identifiers or renaming canonical team keys. Follow/unfollow and reload tests; keyboard/touch journey. |
@@ -96,6 +104,6 @@ failure/status variants, not a claim of production deployment or end-to-end late
 
 ## Next run
 
-Inspect the existing diff, then implement the P0 CL tie-break work. Keep changes
+Inspect the existing diff, then implement live match drawer updates. Keep changes
 reviewable on this branch. Do not mark the
 overall product goal complete merely because this first slice passes tests.

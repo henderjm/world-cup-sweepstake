@@ -48,7 +48,11 @@ export function buildModel(raw, scorerData = {}) {
   );
   const competition = { ...base, zones: seasonStarted ? base.zones : [] };
   const standingsPayload = seasonStarted
-    ? canonicalizeStandingsOrder(raw.standings)
+    ? base.code === "CL"
+      ? (raw.standings ?? []).map(standing => ({
+        ...standing, table: [...(standing.table ?? [])].sort((a, b) => a.position - b.position),
+      }))
+      : canonicalizeStandingsOrder(raw.standings)
     : alphabetizeStandings(raw.standings);
   const matches = (raw.matches ?? []).map(normalizeMatch);
   const standings = mapStandings({ standings: standingsPayload }, competition.zones);
@@ -81,6 +85,7 @@ export function buildModel(raw, scorerData = {}) {
     tables: baseTables,
     matches: tableMatches,
     zones: competition.zones,
+    competitionCode: competition.code,
   });
 
   return {
@@ -220,6 +225,8 @@ function buildLeagueTables(standings, competition, performance = new Map()) {
           // Carried so the live table can apply the real third tiebreak (points,
           // then goal difference, then goals scored) rather than stopping at GD.
           goalsFor: row.goalsFor ?? 0,
+          awayGoals: row.awayGoals ?? null,
+          awayWins: row.awayWins ?? null,
           form: performance.get(team)?.form ?? [],
           zone: zoneFor(position, competition.zones),
         };

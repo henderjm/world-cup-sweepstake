@@ -346,6 +346,7 @@ export function renderTable(model) {
               ? `<p class="note ltable__livenote">As it stands: includes today's results and matches still in play, so these figures can still change.</p>`
               : ""
           }
+          ${table.rankingIncomplete ? '<p class="note">Some tied positions remain in the published order until all tie-break information is available.</p>' : ""}
           <div class="ltable__row ltable__head">
             <span>#</span><span>Club</span><span class="ltable__num">P</span>
             <span class="ltable__num ltable__wdl">W</span><span class="ltable__num ltable__wdl">D</span><span class="ltable__num ltable__wdl">L</span>

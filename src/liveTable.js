@@ -36,6 +36,7 @@
 import { isFinished, isLive } from "./format.js";
 import { normalizeTeamName } from "./domain.js";
 import { zoneFor } from "./competitions.js";
+import { rankChampionsLeagueRows } from "./championsLeagueOrder.js";
 
 function hasScore(score) {
   return Number.isFinite(score?.home) && Number.isFinite(score?.away);
@@ -111,7 +112,7 @@ function missingFinishedResults(matches, byTeam) {
 //
 // A no-op returns the ORIGINAL rows array by reference, so a caller can cheaply
 // tell nothing happened and the table renders exactly as before.
-export function applyLiveResults({ rows, matches, zones = [] } = {}) {
+export function applyLiveResults({ rows, matches, zones = [], competitionCode } = {}) {
   if (!rows?.length) return { rows: rows ?? [], liveTeams: new Set(), applied: 0 };
 
   const finished = finishedCounts(matches);
@@ -139,6 +140,8 @@ export function applyLiveResults({ rows, matches, zones = [] } = {}) {
     away.lost += a.lost;
     away.goalDifference -= diff;
     away.goalsFor = (away.goalsFor ?? 0) + match.score.away;
+    if (Number.isFinite(away.awayGoals)) away.awayGoals += match.score.away;
+    if (Number.isFinite(away.awayWins)) away.awayWins += a.won;
 
     liveTeams.add(home.team);
     liveTeams.add(away.team);
@@ -171,26 +174,29 @@ export function applyLiveResults({ rows, matches, zones = [] } = {}) {
 
   if (!applied) return { rows, liveTeams, applied: 0 };
 
-  const sorted = [...byTeam.values()].sort(compareRows).map((row, index) => ({
+  const ranking = competitionCode === "CL"
+    ? rankChampionsLeagueRows([...byTeam.values()], matches)
+    : { rows: [...byTeam.values()].sort(compareRows), incomplete: false };
+  const sorted = ranking.rows.map((row, index) => ({
     ...row,
     position: index + 1,
     zone: zoneFor(index + 1, zones),
     live: liveTeams.has(row.team),
   }));
 
-  return { rows: sorted, liveTeams, applied };
+  return { rows: sorted, liveTeams, applied, rankingIncomplete: ranking.incomplete };
 }
 
 // Applies the above to every table in a competition, leaving the shape
 // buildLeagueTables produced untouched. `live` on the result says whether
 // anything was folded in, so the view can label the table rather than silently
 // showing figures that disagree with the provider's own.
-export function withLiveTable({ tables, matches, zones = [] } = {}) {
+export function withLiveTable({ tables, matches, zones = [], competitionCode } = {}) {
   let anyApplied = 0;
   const next = (tables ?? []).map((table) => {
-    const { rows, applied } = applyLiveResults({ rows: table.rows, matches, zones });
+    const { rows, applied, rankingIncomplete } = applyLiveResults({ rows: table.rows, matches, zones, competitionCode });
     anyApplied += applied;
-    return applied ? { ...table, rows, live: true } : table;
+    return applied ? { ...table, rows, live: true, rankingIncomplete } : table;
   });
   return { tables: anyApplied ? next : tables ?? [], live: anyApplied > 0 };
 }

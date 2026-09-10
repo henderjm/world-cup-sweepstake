@@ -167,6 +167,8 @@ export function mapApiFootballStandingsPayload(payload) {
         lost: row.all?.lose ?? 0,
         goalsFor: row.all?.goals?.for ?? 0,
         goalsAgainst: row.all?.goals?.against ?? 0,
+        awayGoals: numberOrNull(row.away?.goals?.for),
+        awayWins: numberOrNull(row.away?.win),
         goalDifference: row.goalsDiff ?? 0,
       })),
     })),
