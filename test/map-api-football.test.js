@@ -35,6 +35,7 @@ test("maps an API-Football fixture into the app match contract", () => {
     id: 123,
     utcDate: "2026-08-15T14:00:00+00:00",
     status: "IN_PLAY",
+    providerStatus: "1H",
     minute: 37,
     stage: "REGULAR_SEASON",
     group: null,

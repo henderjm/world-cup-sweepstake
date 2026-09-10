@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Current product priority (2026-09-10):** the user has made the daily live-score experience the primary goal, benchmarked against LiveScore and FotMob. Follow `docs/live-score-backlog.md` for current priorities and evidence; the older fantasy-first positioning and agreed-phase roadmap below are historical context. Preserve fantasy and Paper Run. Ask before spending, destructive production changes, or public deployment (including pushes that trigger deployment).
+
 ## What this is
 
 **Kickoff Draft**: a head-to-head fantasy draft league for the Premier League, the format American fantasy players know from the NFL (snake draft, waivers, weekly head-to-head), which the official Fantasy Premier League game does not offer well. Alongside the draft league, a Svelte/Vite football tracker (FotMob-style live scores, league table, fixtures, player stats) covers the Premier League and the Champions League with a competition switcher, with the other European cups on the roadmap. Hosted as a static build on GitHub Pages at the custom domain `kickoffdraft.com`. `src/App.svelte` owns the application shell while the existing plain-JavaScript feature modules remain framework-independent.

@@ -1,12 +1,13 @@
 # Kickoff Draft
 
-Kickoff Draft: a head-to-head fantasy draft league for the Premier League. Snake
-draft, waivers and weekly matchups, the format American fantasy players know from
-the NFL, which the official Fantasy Premier League game does not offer. Alongside
-it, a static GitHub Pages tracker for following the Premier League and the
-Champions League: FotMob-style live scores, tables with qualification and
-relegation zones, full fixtures and results, and a Golden Boot scorer board, with
-a competition switcher. The other European cups are on the roadmap.
+Kickoff Draft is a football app covering Premier League and Champions League
+scores, tables, fixtures and match detail, alongside head-to-head fantasy draft
+leagues and Paper Run. The current product priority is a compelling daily
+live-score experience, benchmarked against LiveScore and FotMob. Fantasy's snake
+draft, waivers and weekly matchups remain supported.
+
+The ongoing [live-score backlog](docs/live-score-backlog.md) records acceptance
+criteria, browser evidence, completed improvements and the next work to pick up.
 
 Sections (single page, tabbed): Fantasy (create or join a draft league), Live &
 today, Table, Knockout (cups only), Fixtures, Golden Boot, and the Paper Run daily

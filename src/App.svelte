@@ -29,7 +29,12 @@
   </header>
 
   <div class="ticker" id="ticker" aria-label="Live and recent scores"></div>
-  <main class="main"><div id="layout" class="layout" aria-live="polite"></div></main>
+  <main class="main"><div id="layout" class="layout" aria-live="polite">
+    <div class="pending" role="status">
+      <h1 class="hero__title">Loading scores…</h1>
+      <p class="note">Checking the latest matches and results.</p>
+    </div>
+  </div></main>
   <footer class="footer" id="footer"></footer>
 
   <nav class="bnav" id="bottomNav" aria-label="Sections">

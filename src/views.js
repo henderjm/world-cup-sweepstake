@@ -124,12 +124,15 @@ export function renderCompetitionChips(activeCode) {
 export function renderHero(model) {
   const live = model.matches.filter((match) => isLive(match.status));
   const next = model.matches
-    .filter((match) => !isFinished(match.status) && !isLive(match.status))
+    .filter((match) => ["TIMED", "SCHEDULED"].includes(match.status))
     .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))[0];
   const seasonStarted = model.matches.some(
     (match) => isFinished(match.status) || isLive(match.status),
   );
-  const currentMatchday = next?.matchday ?? latestMatchday(model.matches);
+  const activeMatchdays = [...new Set(live.map((match) => match.matchday).filter(Number.isFinite))];
+  const currentMatchday = live.length
+    ? (activeMatchdays.length === 1 ? activeMatchdays[0] : null)
+    : next?.matchday ?? latestMatchday(model.matches.filter((match) => isFinished(match.status)));
   const leader = model.tables?.[0]?.rows?.[0] ?? null;
 
   const title = !seasonStarted && next
@@ -249,7 +252,9 @@ function renderFeedDelayBanner(model, now) {
 
   const detail = named
     ? `${esc(named)}${esc(extra)} should have kicked off${minutes ? ` about ${minutes} minutes ago` : ""}, but we have had no update since.`
-    : `The scores below may be up to ${minutes ?? "a few"} minutes old.`;
+    : minutes == null
+      ? "We could not confirm when these scores were last updated."
+      : `The last available update is about ${minutes} minutes old.`;
 
   return `
     <section class="card feeddelay" role="status">
@@ -403,8 +408,8 @@ const KNOCKOUT_STAGE_ORDER = [
   "SECOND_QUALIFYING_ROUND",
   "THIRD_QUALIFYING_ROUND",
   "QUALIFYING",
-  "PLAYOFF_ROUND",
   "PLAYOFFS",
+  "PLAYOFF_ROUND",
   "LAST_32",
   "ROUND_OF_32",
   "LAST_16",

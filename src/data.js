@@ -72,10 +72,14 @@ export function buildModel(raw, scorerData = {}) {
   // once, so every table consumer sees the same figures; `tablesLive` lets the
   // view say so rather than showing numbers that quietly disagree with the
   // provider's own. See src/liveTable.js.
-  const baseTables = buildLeagueTables(standingsPayload, competition, buildTeamPerformance(matches));
+  // Qualifying and knockout fixtures cannot reconcile league-phase played counts.
+  const tableMatches = base.standingsStages
+    ? matches.filter((match) => base.standingsStages.includes(match.stage))
+    : matches;
+  const baseTables = buildLeagueTables(standingsPayload, competition, buildTeamPerformance(tableMatches));
   const { tables, live: tablesLive } = withLiveTable({
     tables: baseTables,
-    matches,
+    matches: tableMatches,
     zones: competition.zones,
   });
 
@@ -93,15 +97,18 @@ export function buildModel(raw, scorerData = {}) {
   };
 }
 
-// The Worker marks a response it served from its own last-known-good copy when
-// upstream is failing (src/liveStale.js). Carried onto the model rather than
-// dropped, because the header's "updated" chip is otherwise free to report how
-// long ago WE fetched and say "just now" over a frozen scoreline. Absent on the
-// static fallback and on a healthy response, which is why the age is null rather
-// than 0: nothing is delayed, as opposed to delayed by no time at all.
+// Both delivery paths mark fallback data; an unknown age must stay unknown.
 function staleness(raw) {
   if (!raw?.stale) return { stale: false, staleAgeMs: null };
-  return { stale: true, staleAgeMs: Number.isFinite(raw.staleAgeMs) ? raw.staleAgeMs : 0 };
+  return { stale: true, staleAgeMs: Number.isFinite(raw.staleAgeMs) ? raw.staleAgeMs : null };
+}
+
+export function modelSignature(model) {
+  // Fetch timestamps change on every poll; only visible content should repaint.
+  return JSON.stringify([
+    model.competition, model.hasData, model.source, model.error, model.stale,
+    model.matches, model.tables, model.scorers,
+  ]);
 }
 
 // Goal involvements are baked into a separate static file (data/<comp>/scorers.json)
@@ -111,6 +118,7 @@ async function loadScorers(comp) {
   try {
     const response = await fetch(`./data/${encodeURIComponent(comp)}/scorers.json?cache=${Date.now()}`, {
       cache: "no-store",
+      signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
     return await response.json();
@@ -122,7 +130,9 @@ async function loadScorers(comp) {
 async function loadLiveData(comp) {
   if (DATA_API) {
     try {
-      const response = await fetch(`${DATA_API}/${encodeURIComponent(comp)}/live`, { cache: "no-store" });
+      const response = await fetch(`${DATA_API}/${encodeURIComponent(comp)}/live`, {
+        cache: "no-store", signal: AbortSignal.timeout(8000),
+      });
       if (response.ok) return await response.json();
     } catch {
       // Worker unreachable, fall through to the static baseline.
@@ -131,9 +141,16 @@ async function loadLiveData(comp) {
   try {
     const response = await fetch(`./data/${encodeURIComponent(comp)}/live.json?cache=${Date.now()}`, {
       cache: "no-store",
+      signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-    return await response.json();
+    const raw = await response.json();
+    const updatedAt = Date.parse(raw.lastUpdated);
+    return {
+      ...raw,
+      stale: true,
+      staleAgeMs: Number.isFinite(updatedAt) ? Math.max(0, Date.now() - updatedAt) : null,
+    };
   } catch (error) {
     trackException(error);
     return {
@@ -153,6 +170,7 @@ function normalizeMatch(match) {
     id: match.id ?? null,
     utcDate: match.utcDate,
     status: match.status,
+    providerStatus: match.providerStatus ?? null,
     minute: match.minute ?? null,
     stage: match.stage ?? null,
     group: match.group ?? null,

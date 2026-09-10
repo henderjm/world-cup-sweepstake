@@ -1,4 +1,4 @@
-import { loadModel } from "./data.js";
+import { loadModel, modelSignature } from "./data.js";
 import { trackGameweek } from "./fantasyGameweekTracker.js";
 import { confettiBurst } from "./interactions.js";
 import { track, trackException } from "./telemetry.js";
@@ -496,13 +496,15 @@ let lastFetchAt = 0;
 // Age of the data the feed last handed us, when the Worker reported it was serving
 // a stale copy, else null. Deliberately not read off `model`: see setUpdatedLabel.
 let feedStaleAgeMs = null;
+let feedStale = false;
 
 // One place, because all three of them (boot, poll, competition switch) have to
 // agree: a switch that recorded the fetch time but not the staleness would show
 // the previous competition's delay against the new one's data.
 function recordFeedFreshness(data) {
   lastFetchAt = Date.now();
-  feedStaleAgeMs = data?.stale ? data.staleAgeMs ?? 0 : null;
+  feedStale = Boolean(data?.stale);
+  feedStaleAgeMs = feedStale ? data.staleAgeMs ?? null : null;
 }
 
 const SHELL_IDS = ["ticker", "layout", "footer", "updated", "sectionNav", "bottomNav", "accountBtn"];
@@ -635,38 +637,18 @@ function refreshOnForeground() {
 // exactly the window this is meant to expose. It is refreshed on every successful
 // poll instead, so the chip starts telling the truth on the first stale response.
 function setUpdatedLabel() {
-  const { text, delayed } = updatedLabel({ fetchedAt: lastFetchAt, staleAgeMs: feedStaleAgeMs });
+  const { text, delayed } = updatedLabel({ fetchedAt: lastFetchAt, staleAgeMs: feedStaleAgeMs, stale: feedStale });
   elements.updated.textContent = text;
   elements.updated.classList.toggle("is-delayed", delayed);
   if (delayed) {
-    elements.updated.title = "Live data is delayed: the server could not reach the feed, so this is the last it saw.";
+    elements.updated.title = "Live updates are unavailable. Showing the last available data.";
   } else {
     elements.updated.removeAttribute("title");
   }
 }
 
-// Live refresh without a deploy: re-pull the model on an interval and re-render only
-// when a match signature (id/status/score/minute) actually changed. Polls faster
-// while a game is live, slower when nothing is on.
-function matchSignature(data) {
-  return (data.matches ?? [])
-    .map((item) =>
-      [
-        item.id,
-        item.status,
-        item.homeTeam,
-        item.awayTeam,
-        item.score?.home,
-        item.score?.away,
-        item.winner ?? "",
-        item.minute ?? "",
-      ].join(":"),
-    )
-    .join("|");
-}
-
 function startPolling() {
-  lastSignature = matchSignature(model);
+  lastSignature = modelSignature(model);
   scheduleNextPoll();
 }
 
@@ -687,18 +669,18 @@ async function poll() {
     const fresh = await loadModel(polledCompetition);
     // A switch mid-flight makes this response stale; the switch already re-rendered.
     if (polledCompetition !== state.competition) return scheduleNextPoll();
-    if (fresh.hasData) {
+    if (!fresh.error && (fresh.hasData || !model.hasData)) {
       // Before the signature gate below, and outside it: a frozen feed yields an
       // unchanged signature, so anything recorded inside that branch would never
       // run for precisely the responses this exists to surface.
       recordFeedFreshness(fresh);
-      const signature = matchSignature(fresh);
+      const signature = modelSignature(fresh);
       if (signature !== lastSignature) {
         lastSignature = signature;
         model = fresh;
         setMatchModel(model);
         if (state.section !== "play") renderAll();
-        else elements.ticker.innerHTML = renderTicker(model);
+        else if (model.hasData) elements.ticker.innerHTML = renderTicker(model);
       }
       setUpdatedLabel();
     }
@@ -803,8 +785,9 @@ function renderLayout() {
     elements.layout.innerHTML = `
       <div class="pending">
         <p class="hero__eyebrow">${model.competition?.name ?? "Football"}</p>
-        <h1 class="hero__title">Waiting for the season</h1>
-        <p class="note">${model.error ?? "This competition has no published fixtures yet. It appears here as soon as the feed opens the season."}</p>
+        <h1 class="hero__title">${model.error ? "Scores unavailable" : "No fixtures published"}</h1>
+        <p class="note">${model.error ? "We could not load this competition. Try again or choose another competition." : "This competition has no published fixtures yet. It appears here as soon as the feed opens the season."}</p>
+        ${model.error ? '<button class="seg" type="button" data-scores-retry>Try again</button>' : ""}
         <div class="hero__meta">${renderCompetitionChips(state.competition)}</div>
       </div>`;
     return;
@@ -4076,7 +4059,7 @@ async function switchCompetition(code) {
   setMatchModel(model);
   if (model.hasData) {
     recordFeedFreshness(model);
-    lastSignature = matchSignature(model);
+    lastSignature = modelSignature(model);
   }
   renderAll();
   setUpdatedLabel();
@@ -4535,6 +4518,16 @@ function wireLayoutControls() {
       applyOptimisticFeedReaction(messageId, emoji);
       track("fantasy_feed_reaction_sent", { league_id: state.fantasy.activeLeagueId, emoji });
       postFantasyFeed({ action: "react", messageId, emoji });
+      return;
+    }
+    if (event.target.closest("[data-scores-retry]")) {
+      const button = event.target.closest("[data-scores-retry]");
+      button.disabled = true;
+      button.textContent = "Retrying…";
+      poll().finally(() => {
+        button.disabled = false;
+        button.textContent = "Try again";
+      });
       return;
     }
     if (event.target.closest("[data-feed-retry]")) {

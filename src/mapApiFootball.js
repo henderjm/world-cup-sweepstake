@@ -76,6 +76,7 @@ export function mapApiFootballMatches(payload) {
       id: entry.fixture?.id ?? null,
       utcDate: entry.fixture?.date,
       status: STATUS[entry.fixture?.status?.short] ?? "TIMED",
+      providerStatus: entry.fixture?.status?.short ?? null,
       minute: entry.fixture?.status?.elapsed ?? null,
       stage,
       group,
@@ -279,6 +280,7 @@ function buildMatchDetail(summary, fixture, lineupsPayload, eventsPayload, playe
   return {
     id: summary.id,
     status: summary.status,
+    providerStatus: summary.providerStatus ?? null,
     utcDate: summary.utcDate,
     stage: summary.stage,
     group: summary.group,

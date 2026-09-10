@@ -558,6 +558,14 @@ button { font-family: inherit; cursor: pointer; }
 .lcard__name { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lcard__score { font-size: 18px; font-weight: 900; font-variant-numeric: tabular-nums; }
 
+@media (max-width: 760px) {
+  .livegrid { grid-template-columns: minmax(0, 1fr); gap: 6px; margin-bottom: 14px; }
+  .lcard { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 10px; padding: 10px; }
+  .lcard__top { flex-direction: column; justify-content: center; gap: 6px; margin: 0; }
+  .lcard__grid { gap: 4px 10px; }
+  .lcard__min { max-width: 100%; padding: 2px 5px; overflow-wrap: anywhere; text-align: center; }
+}
+
 /* Match lines (today / next up / recent / fixtures) --------------------------------- */
 
 .scoregrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }

@@ -17,6 +17,7 @@ export const COMPETITIONS = {
     apiFootballLeagueId: 2,
     name: "UEFA Champions League",
     shortName: "Champions League",
+    standingsStages: ["LEAGUE_STAGE", "GROUP_STAGE"],
     zones: [
       { from: 1, to: 8, tone: "safe", label: "Round of 16" },
       { from: 9, to: 24, tone: "edge", label: "Knockout play-offs" },

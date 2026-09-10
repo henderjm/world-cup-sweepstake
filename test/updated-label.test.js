@@ -83,7 +83,10 @@ test("a healthy or static response is not delayed, and its age is null not zero"
 test("a stale marker with no age is still stale", () => {
   const model = buildModel(raw({ stale: true }));
   assert.equal(model.stale, true);
-  assert.equal(model.staleAgeMs, 0);
+  assert.equal(model.staleAgeMs, null);
+  assert.deepEqual(updatedLabel({ fetchedAt: NOW, now: NOW, stale: true }), {
+    text: "unknown (delayed)", delayed: true,
+  });
 });
 
 test("the marker survives the no-data branch too", () => {

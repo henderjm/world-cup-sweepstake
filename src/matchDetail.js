@@ -1,7 +1,7 @@
 import { abbrFor, badgeFor } from "./badges.js";
 import { DATA_API } from "./data.js";
 import { displayTeamName, normalizeTeamName } from "./domain.js";
-import { byPosition, dayLabel, formatStage, isFinished, isLive, timeLabel } from "./format.js";
+import { byPosition, dayLabel, formatStage, isFinished, isLive, statusLabel, timeLabel } from "./format.js";
 import { banterAvailable, mountBanter, unmountBanter } from "./banter.js";
 import { detailSubstanceScore, DETAIL_SECTION_COUNT, fillDetailSections } from "./matchDetailSubstance.js";
 
@@ -129,7 +129,7 @@ function renderShell(match) {
   const pens = Number.isFinite(match.penalties?.home) && Number.isFinite(match.penalties?.away);
 
   const pill = live
-    ? `<span class="dz__pill dz__pill--live">${esc(match.minute ? `${match.minute}'` : "Live")}</span>`
+    ? `<span class="dz__pill dz__pill--live">${esc(statusLabel(match))}</span>`
     : finished
       ? `<span class="dz__pill">${pens ? `FT · pens ${match.penalties.home}–${match.penalties.away}` : "Full time"}</span>`
       : `<span class="dz__pill">${esc(dayLabel(match.utcDate))} ${esc(timeLabel(match.utcDate))}</span>`;

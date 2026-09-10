@@ -64,7 +64,8 @@ export function formatStage(stage) {
     ROUND_OF_32: "Round of 32",
     LAST_16: "Round of 16",
     ROUND_OF_16: "Round of 16",
-    PLAYOFFS: "Knockout play-off",
+    PLAYOFFS: "Qualifying play-offs",
+    PLAYOFF_ROUND: "Knockout play-offs",
     QUARTER_FINALS: "Quarter-final",
     SEMI_FINALS: "Semi-final",
     THIRD_PLACE: "Third place",
@@ -121,6 +122,13 @@ export function isFinished(status) {
 }
 
 export function statusLabel(matchItem) {
+  if (matchItem.status === "PAUSED") {
+    return { HT: "HT", SUSP: "Suspended", INT: "Interrupted" }[matchItem.providerStatus] ?? "Paused";
+  }
+  if (matchItem.status === "BREAK") return "Break";
+  if (matchItem.status === "PENALTY_SHOOTOUT") return "Pens";
+  if (matchItem.status === "POSTPONED") return "Postponed";
+  if (matchItem.status === "CANCELLED") return "Cancelled";
   if (isLive(matchItem.status)) return matchItem.minute ? `${matchItem.minute}'` : "LIVE";
   if (isFinished(matchItem.status)) return "FT";
   return timeLabel(matchItem.utcDate);
@@ -143,8 +151,9 @@ export function scorePart(score, side) {
 // it is named as delayed rather than left to be read as a slow poll. The age is
 // the staleness the Worker measured plus however long ago we fetched it, because
 // both have elapsed since the data was actually current.
-export function updatedLabel({ fetchedAt, now = Date.now(), staleAgeMs = null } = {}) {
+export function updatedLabel({ fetchedAt, now = Date.now(), staleAgeMs = null, stale = false } = {}) {
   if (!fetchedAt) return { text: "loading", delayed: false };
+  if (stale && !Number.isFinite(staleAgeMs)) return { text: "unknown (delayed)", delayed: true };
   const sinceFetch = Math.max(0, now - fetchedAt);
   const delayed = Number.isFinite(staleAgeMs) && staleAgeMs !== null;
   const age = delayed ? staleAgeMs + sinceFetch : sinceFetch;
