@@ -159,6 +159,8 @@ jobs:
           FANTASY_REFRESH_HOURS: ${{ inputs.force_player_refresh && '0' || '' }}
       - name: Configure Pages
         uses: actions/configure-pages@v5
+      - name: Refresh scoreboard fallback from the live Worker
+        run: node scripts/refresh-score-fallback.mjs
       # PostHog stays dormant until both of these exist as repo secrets.
       # src/telemetry.js only calls posthog.init when it has a key AND a host, so
       # an unset secret ships a build that collects nothing rather than one that

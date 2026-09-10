@@ -12,6 +12,7 @@ import { trackException } from "./telemetry.js";
 import { withLiveTable } from "./liveTable.js";
 import { isLive } from "./format.js";
 import { localDateKey } from "./scoreDates.js";
+import { retainNewestScores } from "./scoreSnapshot.js";
 
 // Set this to your deployed Cloudflare Worker origin to serve live data without a
 // deploy, e.g. "https://goon-squad-data.<your-subdomain>.workers.dev". Leave empty to
@@ -35,7 +36,7 @@ function devApiOverride() {
 
 export async function loadModel(comp = DEFAULT_COMPETITION_CODE) {
   const [raw, scorerData] = await Promise.all([loadLiveData(comp), loadScorers(comp)]);
-  return buildModel(raw, scorerData);
+  return buildModel(retainNewestScores(raw, comp), scorerData);
 }
 
 export function buildModel(raw, scorerData = {}) {

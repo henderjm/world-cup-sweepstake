@@ -145,6 +145,7 @@ failure/status variants, not a claim of production deployment or end-to-end late
 
 | Priority | Item | Definition of done |
 | --- | --- | --- |
+| P0 | Diagnose intermittent live request stalls | A production CL request exceeded 20 seconds, while subsequent calls took 21–23ms. The Worker reported a provider-limit cool-off with daily quota remaining. Correlate request timings with upstream/cache waits before assigning the cause; add a bounded upstream recovery path with tests. The frontend eight-second limit exposes the stall but increasing it alone is insufficient. |
 | P1 | Show league tables on wider screens | At desktop widths (initial target: 1200px and above), show the relevant league table alongside Scores without a separate tab change. In All matches, make the table's competition explicit and selectable. Preserve date, Live and Following selections; tables use the same feed and disclose stale/unavailable data. Verify 1200px and 1440px layouts, keyboard access and no horizontal overflow; mobile scores remain usable at 320px and 390px. Requested by the user September 10. |
 | P1 | Restore automatic Worker publishing | GitHub's Worker workflow currently skips deployment because `CLOUDFLARE_API_TOKEN` is unset. Configure an appropriately scoped deployment credential and verify the actual deploy step runs on the next approved release. A green skipped workflow is not deployment evidence. The September 10 release was deployed successfully using the existing local OAuth login. |
 | P1 | Measure actual event latency | Compare timestamped provider events and observed delivery across live matches. Establish p50/p95 delay and update reliability; feed age alone does not prove event latency. |
@@ -251,3 +252,28 @@ slices pass tests.
   in those journeys. Local follows used disposable browser contexts; no account
   writes or notifications. Earlier synthetic loading/error/stale tests remain
   recorded above; this live check does not measure end-to-end event latency.
+
+## September 10 incident repair — scores reverted after reload
+
+The user observed older matches after deployment. Reproduced on production: a
+CL request was aborted by the frontend eight-second deadline and the bundled
+fallback (19:16 UTC) showed two first-half games plus four pre-match fixtures,
+although the live endpoint had final results. The in-memory monotonic guard did
+not survive reload. Pages restored an older cached bake on code pushes.
+
+Repair: preserve the newest dated public snapshot per competition in browser
+storage for up to 24 hours, mark it delayed when used for recovery, and accept
+newer provider corrections even if a score decreases. Blocked storage remains
+non-fatal. Refresh the bundled scoreboard from the public Worker immediately
+before each Pages build, with one bounded retry and a newer-timestamp guard;
+this does not run the expensive full provider bake on code pushes.
+
+Isolated repair: 1,464 tests passed and build passed.
+`scripts/qa/score-reload-recovery.js` passes the exact browser sequence: final
+score, reload with a held request exceeding eight seconds, old static fallback,
+older successful live response, then a newer downward score correction. Final
+scores survive both stale responses and the delayed marker clears on recovery.
+The timing root cause remains under investigation: one longer browser probe
+exceeded 20s, followed by CL responses in 21–23ms; the quota endpoint reported
+5,249 of 7,500 daily requests remaining and a temporary provider-limit flag.
+These are observations, not proof that a particular upstream request was throttled.
