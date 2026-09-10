@@ -225,7 +225,7 @@ knockout changes remain in the working tree; `test/knockout.test.js` currently h
 one failing conservative-aggregate case and must pass along with browser checks
 before that slice is included in a later release.
 
-Inspect the existing diff, then improve Champions League qualifying versus
+After resolving the P0 live-request latency investigation, inspect the existing diff, then improve Champions League qualifying versus
 main knockout presentation. Verify round/leg and aggregate data before grouping
 ties; retain accessible qualifying history and do not invent future draws. The working tree also contains separate native-mobile work; preserve it
 and keep this goal's commits scoped to live scores. Keep changes reviewable on
@@ -257,7 +257,7 @@ slices pass tests.
 
 The user observed older matches after deployment. Reproduced on production: a
 CL request was aborted by the frontend eight-second deadline and the bundled
-fallback (19:16 UTC) showed two first-half games plus four pre-match fixtures,
+fallback (18:16 UTC / 19:16 local time) showed two first-half games plus four pre-match fixtures,
 although the live endpoint had final results. The in-memory monotonic guard did
 not survive reload. Pages restored an older cached bake on code pushes.
 
@@ -277,3 +277,23 @@ The timing root cause remains under investigation: one longer browser probe
 exceeded 20s, followed by CL responses in 21–23ms; the quota endpoint reported
 5,249 of 7,500 daily requests remaining and a temporary provider-limit flag.
 These are observations, not proof that a particular upstream request was throttled.
+
+### Repair deployment and verification
+
+User explicitly approved deploying the repair. Commit `63bad30` is on main.
+[Code deployment](https://github.com/henderjm/world-cup-sweepstake/actions/runs/34530882329)
+succeeded and its published JavaScript passed the synthetic timeout/reload
+regression in a disposable browser context. Its Worker refresh got HTTP 502
+for CL, so the old fallback survived that first build. Triggered the existing
+manual data-refresh workflow for the same approved commit;
+[data deployment](https://github.com/henderjm/world-cup-sweepstake/actions/runs/34531046761)
+succeeded. The public CL fallback now has timestamp `2026-09-10T21:14:50.738Z`
+and all six September 10 fixtures finished with the verified final scores.
+A clean production browser with Worker requests blocked shows those final
+results and a delayed marker; storage contains the dated snapshot.
+
+The Worker executable was unchanged by this repair and was not redeployed.
+Intermittent CL request stalls and GitHub-to-Worker HTTP 502s remain a P0
+investigation; do not claim the snapshot repair fixes upstream latency. The
+first combined browser attempt during propagation timed out; subsequent
+clean-context checks and the public fallback JSON succeeded.
