@@ -85,8 +85,11 @@ async function api(path, options = {}) {
 // Restore the signed-in state on boot. 401 means the stored session expired.
 export async function restoreAccount() {
   if (!accountAvailable() || !session) return null;
+  const restoringSession = session;
   try {
-    account = await api("/me");
+    const restored = await api("/me", { signal: AbortSignal.timeout(8000) });
+    if (session !== restoringSession) return account;
+    account = restored;
     // The Worker's publicUser() never hands the client the internal numeric user
     // id (see worker/worker.js), so email is the stable identity to key on here,
     // and it is also the identity the product wants users assigned by.
@@ -94,8 +97,12 @@ export async function restoreAccount() {
     emit();
     return account;
   } catch (error) {
-    if (error.status === 401) storeSession(null);
-    account = null;
+    if (session !== restoringSession) return account;
+    if (error.status === 401) {
+      storeSession(null);
+      account = null;
+      emit();
+    }
     return null;
   }
 }
@@ -167,10 +174,13 @@ export async function signOut() {
 }
 
 export async function toggleFollow(competition, team) {
+  const owner = account;
   const result = await api("/follows/toggle", {
     method: "POST",
     body: JSON.stringify({ competition, team }),
+    signal: AbortSignal.timeout(8000),
   });
+  if (account !== owner) return result.follows;
   if (account) account.follows = result.follows;
   const nowFollowed = result.follows.some((f) => f.competition === competition && f.team === team);
   track("team_followed", { competition, team, following: nowFollowed });

@@ -17,8 +17,13 @@ let openId = null;
 let request = null;
 let opener = null;
 let bodyOverflow = "";
+let followButton = () => "";
+let followNotice = () => "";
 
-export function setupMatchDetail(activeModel, { drawer }) {
+export function setupMatchDetail(activeModel, options) {
+  const { drawer } = options;
+  followButton = options.followButton ?? (() => "");
+  followNotice = options.followNotice ?? (() => "");
   model = activeModel;
   root = drawer;
   if (!root) return;
@@ -53,6 +58,14 @@ export function setMatchModel(activeModel) {
   if (!match) return close();
   replaceContent(panel.querySelector("#mdScore"), renderScore(match));
   refreshOpenMatch();
+}
+
+export function refreshMatchFollows() {
+  if (!root || root.hidden) return;
+  const match = model.matches?.find(item => item.id === openId);
+  if (!match) return;
+  replaceContent(panel.querySelector("#mdScore"), renderScore(match));
+  replaceContent(panel.querySelector("#mdFollowNotice"), followNotice());
 }
 
 export function openMatch(match) {
@@ -103,8 +116,11 @@ function refreshOpenMatch() {
 function replaceContent(slot, html) {
   if (!slot || slot.innerHTML === html) return;
   const scrollTop = panel.scrollTop;
+  const focused = slot.contains(document.activeElement) ? document.activeElement : null;
+  const team = focused?.dataset.scoreFollow;
   slot.innerHTML = html;
   panel.scrollTop = scrollTop;
+  if (team) slot.querySelector(`[data-score-follow="${CSS.escape(team)}"]`)?.focus({ preventScroll: true });
 }
 
 async function loadDetail(match, signal) {
@@ -199,12 +215,13 @@ function renderScore(match) {
       ? `<span class="dz__pill">${pens ? `FT · pens ${match.penalties.home}–${match.penalties.away}` : "Full time"}</span>`
       : `<span class="dz__pill">${esc(dayLabel(match.utcDate))} ${esc(timeLabel(match.utcDate))}</span>`;
 
-  return `<div class="dz__team">${badgeFor(match.homeTeam, "xl")}<p>${esc(displayTeamName(match.homeTeam))}</p></div>
+  const competition = match.competitionCode ?? model.competition?.code;
+  return `<div class="dz__team">${badgeFor(match.homeTeam, "xl")}<p>${esc(displayTeamName(match.homeTeam))}</p>${followButton(competition, match.homeTeam)}</div>
       <div>
         <p class="dz__num">${decided ? `${match.score.home} – ${match.score.away}` : "v"}</p>
         ${pill}
       </div>
-      <div class="dz__team">${badgeFor(match.awayTeam, "xl")}<p>${esc(displayTeamName(match.awayTeam))}</p></div>`;
+      <div class="dz__team">${badgeFor(match.awayTeam, "xl")}<p>${esc(displayTeamName(match.awayTeam))}</p>${followButton(competition, match.awayTeam)}</div>`;
 }
 
 function renderShell(match) {
@@ -216,6 +233,7 @@ function renderShell(match) {
       </button>
     </div>
     <div class="dz__score" id="mdScore" aria-live="polite">${renderScore(match)}</div>
+    <div id="mdFollowNotice" role="status">${followNotice()}</div>
     ${match.venue ? `<p class="dz__venue">${esc(match.venue)}</p>` : ""}
     <div class="dz__ai" id="mdAnalysis" hidden></div>
     <div id="mdBody"><p class="dz__loading" data-md-loading>Loading match detail…</p></div>

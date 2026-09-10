@@ -113,13 +113,35 @@ failure/status variants, not a claim of production deployment or end-to-end late
     The offline regression verifies Fantasy, Play, Learn, Demo and Account entry
     screens. Date buttons and match-row focus survive polling repaints.
 
+16. Teams can now be followed without signing in, through a searchable team
+    picker or buttons in the match drawer. The Following filter works with date,
+    Live and competition controls, survives reload and shows useful empty states.
+    Device follows synchronize between tabs. A blocked storage write retains the
+    choice for the visit and explicitly says it will not persist. Local follows
+    use the existing exact competition/team pairs, with a 50-team device limit.
+    Follows remain competition-specific: choose a club in each competition you
+    want to follow; no team-name equivalence or new identity mapping is invented.
+17. Device and account follows appear together. Signing in alone does not import
+    local follows or change alert subscriptions. The picker offers an explicit
+    Save to account action, with copy explaining that account alert settings apply.
+    Import preserves existing account follows and notification preferences, and
+    removes each local copy only after confirming its account follow. A fresh
+    account read before a retry prevents a lost success response from toggling a
+    team back off. No real account was used or notification sent during testing.
+18. Follow requests and account verification have eight-second deadlines. A
+    temporary verification outage preserves the known signed-in account. Late
+    restore/toggle responses cannot replace another account's follows. Keyboard
+    focus survives following in the drawer and typing in team search during polls.
+19. Following controls retain the six-match mobile layout: sixth row ends at 766px
+    with navigation starting at 785px at 390 × 844. The team picker is an explicit
+    management view; its opening naturally moves matches below the picker.
+
 ## Prioritized remaining work
 
 | Priority | Item | Definition of done |
 | --- | --- | --- |
 | P1 | Measure actual event latency | Compare timestamped provider events and observed delivery across live matches. Establish p50/p95 delay and update reliability; feed age alone does not prove event latency. |
-| P1 — next | Favourites without sign-in | Device-local follows with clear account sync policy; no new D1 identifiers or renaming canonical team keys. Follow/unfollow and reload tests; keyboard/touch journey. |
-| P1 | Qualifying versus main knockout presentation | Keep qualification history available, but avoid presenting a wall of July fixtures as the main knockout destination in September. Group two-leg ties with correct aggregate and penalty handling; never invent future draws. |
+| P1 — next | Qualifying versus main knockout presentation | Keep qualification history available, but avoid presenting a wall of July fixtures as the main knockout destination in September. Group two-leg ties with correct aggregate and penalty handling; never invent future draws. |
 | P1 | Team identity and labels | The feed says Sabah FA while both benchmarks say Sabah FK. Verify provider team ID, crest and destination before changing display aliases; do not rewrite stored follow keys based on a name alone. |
 | P1 | Match detail navigation/accessibility | Summary, events, lineups and stats affordances; partial-coverage wording. Retain verified focus trap/restoration and retries. Verify scheduled, live, finished and postponed states. |
 | P2 | Product polish and performance | Align metadata/brand subtitle with score-first positioning, align the single-league hero with the selected date, check native calendar interaction through polling, and measure rendering/request budgets. Keep existing features reachable. |
@@ -127,11 +149,12 @@ failure/status variants, not a claim of production deployment or end-to-end late
 ## Verification ledger
 
 - Targeted regressions: `test/champions-league.test.js`, `test/feed-loading.test.js`,
-  `test/score-dates.test.js`, `test/score-feeds.test.js` and `test/updated-label.test.js`; shared mapper/live-table
+  `test/score-dates.test.js`, `test/score-feeds.test.js`, `test/team-follows.test.js`
+  and `test/updated-label.test.js`; shared mapper/live-table
   coverage retained.
-- Isolated export of the staged multi-competition changes: 1,451 JavaScript tests
-  passed, 0 failed; production build passed. The shared working tree also passed
-  1,464 tests including separate native-app coverage. Browser checks are
+- Isolated export including team following: 1,458 JavaScript tests passed,
+  0 failed; production build passed. The shared working tree also passed
+  1,471 tests including separate native-app coverage. Browser checks are
   recorded separately below.
 - Repeatable browser regression: `scripts/qa/live-match-drawer.js`, run with the
   Playwright tool's `browser_run_code_unsafe` filename argument while the local
@@ -153,6 +176,17 @@ failure/status variants, not a claim of production deployment or end-to-end late
   non-score entry screens with unavailable feeds, both league failures, isolated
   retry to a healthy empty feed and absence of browser errors. Passed on desktop;
   the individual entry screens were also inspected on mobile.
+- `scripts/qa/team-follows.js` covers 18 search/filter/persistence/account-save
+  behaviours, including a lost response after the server has saved a follow.
+  Passed at 320 × 844, 390 × 844 and 1440 × 1000. Every account endpoint was
+  intercepted; these checks do not claim real Google sign-in or push delivery.
+- `scripts/qa/follows-storage-and-accounts.js` covers blocked storage and both
+  late account-restore and late follow-toggle responses during account changes.
+  It uses simulated sign-in controls and intercepted endpoints; all three
+  scenarios passed. Both following scripts also passed against the isolated
+  production build on localhost, excluding the native-app edits. Existing
+  drawer, date/freshness, overview and offline-section
+  browser regressions also passed after these changes.
 - Go tests passed with permission for temporary local HTTP test servers.
 - Browser: desktop and mobile; captured-feed table/heading; 320px overflow;
   match drawer open/Escape close; signed-out following journey; held request shows
@@ -167,7 +201,10 @@ failure/status variants, not a claim of production deployment or end-to-end late
   [initial compact cards](live-score-evidence/mobile-after.png), and
   [league date browser](live-score-evidence/mobile-dates.png),
   [mobile overview](live-score-evidence/mobile-overview.png) and
-  [desktop overview](live-score-evidence/desktop-overview.png). After screenshots
+  [desktop overview](live-score-evidence/desktop-overview.png),
+  [follow controls](live-score-evidence/mobile-follow-controls.png),
+  [Following filter](live-score-evidence/mobile-following.png) and
+  [team search](live-score-evidence/mobile-team-search.png). After screenshots
   use an explicit HT variant of the captured CL feed. The overview uses a
   synthetic future PL fixture to exercise the quiet-league state; this is not
   a verified PL schedule. The mobile capture shows six rows above the bottom
@@ -175,9 +212,9 @@ failure/status variants, not a claim of production deployment or end-to-end late
 
 ## Next run
 
-Inspect the existing diff, then implement device-local team following and a
-useful followed-match view. Confirm how local follows coexist with signed-in
-follows and existing notification identity before changing account behaviour. The working tree also contains separate native-mobile work; preserve it
+Inspect the existing diff, then improve Champions League qualifying versus
+main knockout presentation. Verify round/leg and aggregate data before grouping
+ties; retain accessible qualifying history and do not invent future draws. The working tree also contains separate native-mobile work; preserve it
 and keep this goal's commits scoped to live scores. Keep changes reviewable on
 this branch. Do not mark the overall product goal complete because individual
 slices pass tests.

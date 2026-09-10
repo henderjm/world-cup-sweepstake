@@ -24,13 +24,14 @@ export function readScoreRoute(hash) {
   if (!SCORES_TABS.includes(tab)) return null;
   const params = new URLSearchParams(hash.split("?")[1] ?? "");
   const date = params.get("date");
-  return { tab, date: validScoreDate(date) ? date : null, liveOnly: params.get("live") === "1", competition: Object.hasOwn(COMPETITIONS, params.get("competition")) ? params.get("competition") : null };
+  return { tab, followingOnly: params.get("following") === "1", date: validScoreDate(date) ? date : null, liveOnly: params.get("live") === "1", competition: Object.hasOwn(COMPETITIONS, params.get("competition")) ? params.get("competition") : null };
 }
 
-export function scoreRouteHash(date, liveOnly, competition = null, tab = "live") {
+export function scoreRouteHash(date, liveOnly, competition = null, tab = "live", followingOnly = false) {
   const params = new URLSearchParams();
   if (validScoreDate(date)) params.set("date", date);
   if (liveOnly) params.set("live", "1");
+  if (followingOnly) params.set("following", "1");
   if (Object.hasOwn(COMPETITIONS, competition)) params.set("competition", competition);
   return `${SCORES_TABS.includes(tab) ? tab : "live"}${params.size ? `?${params}` : ""}`;
 }

@@ -7,6 +7,7 @@ import { feedDelayNotice, isOverdueFixture } from "./fixtureFreshness.js";
 import { learnPages } from "./learnSeo.js";
 import { TUTORIALS } from "./tutorials.js";
 import { localDateKey, validScoreDate } from "./scoreDates.js";
+import { followsTeam, followedMatches } from "./teamFollows.js";
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -164,7 +165,7 @@ export function renderScoresTabs(model, activeTab) {
 
 // -- Match rows ----------------------------------------------------------------------
 
-function matchLine(match) {
+function matchLine(match, competition = null, follows = []) {
   const live = isLive(match.status);
   // A fixture whose kickoff is well past while the feed still calls it pre-match
   // is one we have lost track of. Showing the bare kickoff time there reads as
@@ -176,9 +177,9 @@ function matchLine(match) {
       <span class="mline__st ${live ? "is-live" : ""}${overdue ? " is-overdue" : ""}"${
         overdue ? ` title="Kick-off has passed but there is no update for this match yet: the live feed is running behind."` : ""
       }>${esc(statusText)}</span>
-      <span class="mline__side mline__side--h"><span class="mline__name">${esc(displayTeamName(match.homeTeam))}</span>${badgeFor(match.homeTeam)}</span>
+      <span class="mline__side mline__side--h"><span class="mline__name">${followsTeam(follows, competition, match.homeTeam) ? '<span class="follow-mark" aria-label="Followed team">★</span> ' : ""}${esc(displayTeamName(match.homeTeam))}</span>${badgeFor(match.homeTeam)}</span>
       <span class="mline__score">${scoreText(match)}${penaltyTag(match)}</span>
-      <span class="mline__side">${badgeFor(match.awayTeam)}<span class="mline__name">${esc(displayTeamName(match.awayTeam))}</span></span>
+      <span class="mline__side">${badgeFor(match.awayTeam)}<span class="mline__name">${followsTeam(follows, competition, match.awayTeam) ? '<span class="follow-mark" aria-label="Followed team">★</span> ' : ""}${esc(displayTeamName(match.awayTeam))}</span></span>
     </div>`;
 }
 
@@ -220,6 +221,51 @@ function renderFeedDelayBanner(model, now) {
 
 // -- Live & today -----------------------------------------------------------------------
 
+export function renderScoreFollowButton(competition, team, follows, { busy = false, compact = false } = {}) {
+  const on = followsTeam(follows, competition, team);
+  return `<button type="button" class="score-follow ${on ? "is-active" : ""}" data-score-follow="${esc(team)}" data-follow-competition="${esc(competition)}"
+    aria-label="${on ? "Unfollow" : "Follow"} ${esc(displayTeamName(team))} in ${esc(COMPETITIONS[competition]?.shortName)}" aria-pressed="${on}" aria-disabled="${Boolean(busy)}">
+    <span aria-hidden="true">${on ? "★" : "☆"}</span> ${compact ? (on ? "Following" : "Follow") : `${badgeFor(team)} ${esc(displayTeamName(team))}`}
+  </button>`;
+}
+
+export function renderFollowNotice({ message = "", persistent = true } = {}) {
+  return `${message ? `<p class="note" role="status">${esc(message)}</p>` : ""}
+    ${!persistent ? '<p class="note" role="status">Saved for this visit only. Device storage is unavailable.</p>' : ""}`;
+}
+
+function renderFollowControls(feeds, options) {
+  const { follows, followingOnly, followOpen, followSearch = "", signedIn, localCount, busy } = options;
+  const search = followSearch.trim().toLocaleLowerCase();
+  const sections = followOpen ? feeds.map(feed => {
+    const code = feed.competition.code;
+    const teams = [...new Set([
+      ...(feed.matches ?? []).flatMap(match => [match.homeTeam, match.awayTeam]),
+      ...(feed.tables ?? []).flatMap(table => table.rows.map(row => row.team)),
+      ...follows.filter(follow => follow.competition === code).map(follow => follow.team),
+    ])].filter(Boolean).filter(team => displayTeamName(team).toLocaleLowerCase().includes(search))
+      .sort((a, b) => displayTeamName(a).localeCompare(displayTeamName(b)));
+    if (search && !teams.length) return "";
+    return `<section><h3 class="card__title">${esc(feed.competition.shortName)}</h3>
+      <div class="follow-picker__teams">${teams.map(team => renderScoreFollowButton(code, team, follows, { busy })).join("")}</div>
+      ${!teams.length ? `<p class="note">${search ? "No matching teams." : feed.loading ? "Loading teams…" : "No teams available yet."}</p>` : ""}
+    </section>`;
+  }).join("") : "";
+  return `<div class="follow-controls">
+    <button type="button" class="seg ${followingOnly ? "is-active" : ""}" data-score-action="following" aria-pressed="${Boolean(followingOnly)}">Following ${follows.length}</button>
+    <button type="button" class="seg" data-follow-manager aria-expanded="${Boolean(followOpen)}" aria-controls="followPicker">${followOpen ? "Close teams" : "Choose teams"}</button>
+  </div>
+  ${renderFollowNotice(options)}
+  <section id="followPicker" class="card follow-picker" ${followOpen ? "" : "hidden"}>
+    <h2 class="card__title">Follow your teams</h2>
+    <p class="note">${signedIn ? "Account follows use your current alert settings." : "Saved on this device. No sign-in needed. Sign in to sync teams and get goal alerts."} Choose teams in each competition.</p>
+    ${signedIn && localCount ? `<p class="note">${localCount} ${localCount === 1 ? "follow is" : "follows are"} saved on this device. Saving to your account uses its alert settings.</p>
+      <button class="seg" type="button" data-save-follows aria-disabled="${Boolean(busy)}">Save to account</button>` : ""}
+    <label class="follow-picker__search">Find a team<input type="search" data-follow-search value="${esc(followSearch)}" autocomplete="off" placeholder="Team name"></label>
+    ${sections || '<p class="note">No matching teams.</p>'}
+  </section>`;
+}
+
 function matchesOnDate(model, date) {
   return (model.matches ?? []).filter(match => localDateKey(match.utcDate) === date)
     .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate));
@@ -235,32 +281,40 @@ function scoreDateControls(selectedDate, liveOnly, liveCount) {
   </div>`;
 }
 
-function scoreDayRows(model, selectedDate, liveOnly) {
+function scoreDayRows(model, selectedDate, liveOnly, follows = [], followingOnly = false) {
   const dayMatches = matchesOnDate(model, selectedDate);
   const matches = liveOnly ? dayMatches.filter(match => isLive(match.status)) : dayMatches;
   const next = (model.matches ?? [])
     .filter(match => ["TIMED", "SCHEDULED"].includes(match.status) && localDateKey(match.utcDate) > selectedDate)
     .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))[0];
-  const empty = liveOnly ? "No live matches on this date." : selectedDate === localDateKey() ? "No kick-offs today." : "No matches on this date.";
-  return `${matches.length ? matches.map(matchLine).join("") : `<p class="note">${empty}</p>`}
+  const empty = followingOnly ? (liveOnly ? "No followed teams are live on this date." : "No followed teams play on this date.") : liveOnly ? "No live matches on this date." : selectedDate === localDateKey() ? "No kick-offs today." : "No matches on this date.";
+  return `${matches.length ? matches.map(match => matchLine(match, model.competition?.code, follows)).join("") : `<p class="note">${empty}</p>`}
     ${!dayMatches.length && next ? `<p class="note">Next: ${esc(displayTeamName(next.homeTeam))} v ${esc(displayTeamName(next.awayTeam))} · ${esc(dayLabel(next.utcDate))}</p>` : ""}`;
 }
 
-export function renderLive(model, { date = null, liveOnly = false } = {}) {
+export function renderLive(model, options = {}) {
+  const { date = null, liveOnly = false, follows = [], followingOnly = false } = options;
+  const original = model;
+  if (followingOnly) model = { ...model, matches: followedMatches(model, follows) };
   const selectedDate = validScoreDate(date) ? date : localDateKey();
   const dayMatches = matchesOnDate(model, selectedDate);
   const liveCount = dayMatches.filter(match => isLive(match.status)).length;
   const count = liveOnly ? liveCount : dayMatches.length;
   const title = selectedDate === localDateKey() ? "Today" : dayLabel(`${selectedDate}T12:00:00`);
   return `${scoreDateControls(selectedDate, liveOnly, liveCount)}
+    ${options.follows ? renderFollowControls([original], options) : ""}
     ${renderFeedDelayBanner(model, Date.now())}
     <section class="card card--list score-day">
       <h2 class="card__title">${esc(title)} · ${count} ${count === 1 ? "match" : "matches"}</h2>
-      ${scoreDayRows(model, selectedDate, liveOnly)}
+      ${followingOnly && !follows.some(follow => follow.competition === model.competition?.code) ? '<p class="note">Choose teams to see their matches here. No sign-in needed.</p>' : scoreDayRows(model, selectedDate, liveOnly, follows, followingOnly)}
     </section>`;
 }
 
-export function renderScoresHome(feeds, { date = null, liveOnly = false } = {}) {
+export function renderScoresHome(feeds, options = {}) {
+  const { date = null, liveOnly = false, follows = [], followingOnly = false } = options;
+  const original = feeds;
+  if (followingOnly) feeds = feeds.filter(feed => follows.some(follow => follow.competition === feed.competition.code))
+    .map(feed => ({ ...feed, matches: followedMatches(feed, follows) }));
   const selectedDate = validScoreDate(date) ? date : localDateKey();
   const liveCount = feeds.flatMap(feed => matchesOnDate(feed, selectedDate)).filter(match => isLive(match.status)).length;
   const priority = feed => {
@@ -279,10 +333,11 @@ export function renderScoresHome(feeds, { date = null, liveOnly = false } = {}) 
       ${feed.loading ? '<p class="note" role="status">Loading matches…</p>'
         : feed.error ? `<p class="note" role="status">Scores unavailable.</p><button class="seg" data-score-feed-retry="${code}">Try again</button>`
         : !feed.hasData ? '<p class="note">No fixtures published.</p>'
-        : `${feed.stale ? `<p class="note" role="status">Live updates delayed. Showing the last available scores. <button class="score-league__table" data-score-feed-retry="${code}">Retry</button></p>` : ""}${scoreDayRows(feed, selectedDate, liveOnly)}`}
+        : `${feed.stale ? `<p class="note" role="status">Live updates delayed. Showing the last available scores. <button class="score-league__table" data-score-feed-retry="${code}">Retry</button></p>` : ""}${scoreDayRows(feed, selectedDate, liveOnly, follows, followingOnly)}`}
     </section>`;
   }).join("");
-  return `${scoreDateControls(selectedDate, liveOnly, liveCount)}${groups}`;
+  return `${scoreDateControls(selectedDate, liveOnly, liveCount)}${options.follows ? renderFollowControls(original, options) : ""}
+    ${groups || '<section class="card"><p class="note">Choose teams to see their matches here. You can follow teams in each competition without signing in.</p></section>'}`;
 }
 
 // -- League table ----------------------------------------------------------------------------
@@ -488,7 +543,7 @@ export function renderFixtures(model, view = "results", team = "All") {
     .map(
       ([day, dayMatches]) => `<section class="fxday">
         <h3>${day}</h3>
-        <div class="fxday__card">${dayMatches.map(matchLine).join("")}</div>
+        <div class="fxday__card">${dayMatches.map(match => matchLine(match)).join("")}</div>
       </section>`,
     )
     .join("");
@@ -618,15 +673,16 @@ export function renderSignedOut({ available, configured }) {
     <div class="you you--signin">
       <span class="brand__mark you__mark">KD</span>
       <h2 class="you__title">Sign in to Kickoff Draft</h2>
-      <p class="note">Follow your clubs, get goal alerts on this device, and run your fantasy squad. One tap with Google.</p>
+      <p class="note">Get goal alerts, save followed teams to your account, and run your fantasy squad. One tap with Google.</p>
       ${cta}
+      <p class="note"><a href="#live?following=1">Follow teams without signing in →</a></p>
       <p class="note--dim">We only use Google to sign you in. No posts, no contacts.</p>
     </div>`;
 }
 
 // Signed-in: profile, followed clubs (the active competition's teams as toggle
 // chips), and notification preferences (stored now, delivered by push in Phase 3).
-export function renderSignedIn(model, account, isFollowed) {
+export function renderSignedIn(model, account, isFollowed, { busy = false } = {}) {
   const user = account.user;
   const initial = (user.name ?? user.email ?? "?").trim()[0]?.toUpperCase() ?? "?";
   const teams = (model.tables?.[0]?.rows ?? []).map((row) => row.team);
@@ -637,7 +693,7 @@ export function renderSignedIn(model, account, isFollowed) {
       const on = isFollowed(comp, team);
       // data-follow-team stays the canonical join key: it is what POST
       // /follows/toggle stores and what push targeting matches against.
-      return `<button class="compchip ${on ? "is-active" : ""}" type="button" data-follow-team="${esc(team)}">${badgeFor(team)} ${esc(displayTeamName(team))}</button>`;
+      return `<button class="compchip ${on ? "is-active" : ""}" type="button" data-follow-team="${esc(team)}" aria-pressed="${on}" aria-disabled="${busy}">${badgeFor(team)} ${esc(displayTeamName(team))}</button>`;
     })
     .join("");
 

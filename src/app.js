@@ -1,5 +1,6 @@
 import { loadModel, modelSignature } from "./data.js";
 import { createScoreFeeds, combinedScoreModel } from "./scoreFeeds.js";
+import { createLocalFollows, uniqueFollows, followsTeam, LOCAL_FOLLOWS_KEY } from "./teamFollows.js";
 import { SCORES_TABS, localDateKey, readScoreRoute, scoreRouteHash, shiftScoreDate, validScoreDate } from "./scoreDates.js";
 import { trackGameweek } from "./fantasyGameweekTracker.js";
 import { confettiBurst } from "./interactions.js";
@@ -31,6 +32,8 @@ import {
   renderKnockout,
   renderLive,
   renderScoresHome,
+  renderScoreFollowButton,
+  renderFollowNotice,
   renderMiniTable,
   renderScoresTabs,
   renderStats,
@@ -52,7 +55,7 @@ import {
   toggleFollow,
 } from "./account.js";
 import { disablePush, enablePush, pushState, sendTestPush } from "./push.js";
-import { setMatchModel, setupMatchDetail, openMatch } from "./matchDetail.js";
+import { setMatchModel, setupMatchDetail, openMatch, refreshMatchFollows } from "./matchDetail.js";
 import { isFinished, isLive, updatedLabel } from "./format.js";
 import { renderPredictPanel } from "./predictionsView.js";
 import { canPredict, validatePredictionInput } from "./predictions.js";
@@ -295,6 +298,11 @@ const state = {
   competition: initialScores?.competition ?? storedCompetition(),
   scoreCompetition: initialScores?.competition ?? null,
   scoreDate: initialScores?.date ?? null,
+  followingOnly: initialScores?.followingOnly ?? false,
+  followOpen: false,
+  followSearch: "",
+  followBusy: false,
+  followMessage: "",
   scoresLiveOnly: initialScores?.liveOnly ?? false,
   // null = data-driven default: Results once any match has finished, Upcoming
   // before then (a pre-season visitor should not land on an empty Results
@@ -481,6 +489,7 @@ function storedCompetition() {
   return DEFAULT_COMPETITION_CODE;
 }
 
+const localFollows = createLocalFollows();
 const scoreFeeds = createScoreFeeds(loadModel);
 let model = scoreFeeds.get(state.competition);
 let appLoadMetricSent = false;
@@ -506,6 +515,93 @@ function allScores() {
 
 function matchModel() {
   return combinedScoreModel(scoreFeeds.values());
+}
+
+function scoreFollowOptions() {
+  const local = localFollows.all();
+  return {
+    date: state.scoreDate, liveOnly: state.scoresLiveOnly, followingOnly: state.followingOnly,
+    follows: uniqueFollows([...local, ...(currentAccount()?.follows ?? [])]),
+    followOpen: state.followOpen, followSearch: state.followSearch, busy: state.followBusy,
+    signedIn: isSignedIn(), localCount: local.length,
+    persistent: !local.length || localFollows.persistent, message: state.followMessage,
+  };
+}
+
+function refreshFollowSurfaces() {
+  if (state.section === "you" || (state.section === "scores" && state.tab === "live")) renderLayout();
+  refreshMatchFollows();
+}
+
+async function changeFollows(action) {
+  if (state.followBusy) return;
+  state.followBusy = true;
+  state.followMessage = "";
+  refreshFollowSurfaces();
+  try {
+    await action();
+  } catch (error) {
+    state.followMessage = error.message.startsWith("You can follow") ? error.message
+      : "Could not save your follows. Check your connection and try again.";
+  } finally {
+    state.followBusy = false;
+    refreshFollowSurfaces();
+  }
+}
+
+async function verifiedFollowAccount(email) {
+  const account = await restoreAccount();
+  if (!account || account.user.email !== email) throw Error("Account changed or unavailable");
+  return account;
+}
+
+function toggleScoreFollow(competition, team) {
+  const following = !followsTeam(scoreFollowOptions().follows, competition, team);
+  const owner = currentAccount()?.user.email;
+  const accountFollow = isFollowed(competition, team);
+  return changeFollows(async () => {
+    if (owner && (following || accountFollow)) {
+      // Re-read before a toggle: a previous request may have succeeded even if
+      // its response was lost. Retrying must apply the intended state, not undo it.
+      await verifiedFollowAccount(owner);
+      if (isFollowed(competition, team) !== following) await toggleFollow(competition, team);
+      if (currentAccount()?.user.email !== owner) throw Error("Account changed");
+      if (followsTeam(localFollows.all(), competition, team)) localFollows.set(competition, team, false);
+    } else {
+      localFollows.set(competition, team, following);
+    }
+  });
+}
+
+function saveLocalFollows() {
+  const owner = currentAccount()?.user.email;
+  if (!owner) return;
+  return changeFollows(async () => {
+    await verifiedFollowAccount(owner);
+    for (const follow of localFollows.all()) {
+      if (currentAccount()?.user.email !== owner) throw Error("Account changed");
+      if (!isFollowed(follow.competition, follow.team)) await toggleFollow(follow.competition, follow.team);
+      if (currentAccount()?.user.email !== owner) throw Error("Account changed");
+      localFollows.set(follow.competition, follow.team, false);
+    }
+    state.followMessage = "Your followed teams are saved to your account.";
+  });
+}
+
+function wireFollowControls() {
+  document.addEventListener("click", event => {
+    const follow = event.target.closest("[data-score-follow]");
+    if (follow) {
+      toggleScoreFollow(follow.dataset.followCompetition, follow.dataset.scoreFollow);
+    } else if (event.target.closest("[data-save-follows]")) {
+      saveLocalFollows();
+    }
+  });
+  window.addEventListener("storage", event => {
+    if (event.key !== LOCAL_FOLLOWS_KEY && event.key !== null) return;
+    localFollows.reload();
+    refreshFollowSurfaces();
+  });
 }
 
 function scoresSignature() {
@@ -564,10 +660,15 @@ async function start() {
   wireHashRouting();
   wireLayoutControls();
   wireViewportChange();
-  setupMatchDetail(matchModel(), { drawer: elements.matchDrawer });
+  wireFollowControls();
+  setupMatchDetail(matchModel(), { drawer: elements.matchDrawer,
+    followButton: (competition, team) => renderScoreFollowButton(competition, team, scoreFollowOptions().follows, { busy: state.followBusy, compact: true }),
+    followNotice: () => renderFollowNotice(scoreFollowOptions()),
+  });
   onAccountChange(() => {
     syncAccountButton();
-    if (state.section === "you") renderLayout();
+    if (state.section === "you" || (state.section === "scores" && state.tab === "live")) renderLayout();
+    refreshMatchFollows();
     // Signing in or out changes whose predictions the Predict tab shows (and
     // the sign-in also triggers the one-time local -> server bridge on the
     // next load), so the cached server copy must not survive the switch.
@@ -652,7 +753,8 @@ function feedLabel(feed) {
 }
 
 function setUpdatedLabel() {
-  const feeds = allScores() ? scoreFeeds.values() : [model];
+  const feeds = allScores() ? scoreFeeds.values().filter(feed => !state.followingOnly
+    || scoreFollowOptions().follows.some(follow => follow.competition === feed.competition.code)) : [model];
   const labels = feeds.map(feedLabel);
   const delayed = labels.some(label => label.delayed);
   const loading = feeds.some(feed => feed.loading);
@@ -731,12 +833,21 @@ function renderAll() {
 
 function renderLayout() {
   const focused = document.activeElement;
-  const selector = focused?.hasAttribute("data-score-date") ? "[data-score-date]"
+  const caret = focused?.hasAttribute("data-follow-search") ? focused.selectionStart : null;
+  const selector = focused?.hasAttribute("data-follow-search") ? "[data-follow-search]"
+    : focused?.hasAttribute("data-follow-manager") ? "[data-follow-manager]"
+    : focused?.hasAttribute("data-save-follows") ? "[data-save-follows]"
+    : focused?.hasAttribute("data-score-follow") ? `[data-score-follow="${CSS.escape(focused.dataset.scoreFollow)}"][data-follow-competition="${CSS.escape(focused.dataset.followCompetition)}"]`
+    : focused?.hasAttribute("data-score-date") ? "[data-score-date]"
     : focused?.dataset.scoreAction ? `[data-score-action="${focused.dataset.scoreAction}"]`
     : focused?.dataset.scoreTable ? `[data-score-table="${focused.dataset.scoreTable}"]`
     : focused?.dataset.matchId ? `[data-match-id="${CSS.escape(focused.dataset.matchId)}"]` : null;
   renderLayoutContent();
-  if (selector && !focused.isConnected) elements.layout.querySelector(selector)?.focus({ preventScroll: true });
+  if (selector && !focused.isConnected) {
+    const replacement = elements.layout.querySelector(selector);
+    replacement?.focus({ preventScroll: true });
+    if (caret != null) replacement?.setSelectionRange(caret, caret);
+  }
 }
 
 function renderLayoutContent() {
@@ -777,7 +888,7 @@ function renderLayoutContent() {
     elements.layout.className = "layout";
     const account = currentAccount();
     elements.layout.innerHTML = account
-      ? renderSignedIn(model, account, isFollowed)
+      ? `${renderFollowNotice(scoreFollowOptions())}${renderSignedIn(model, account, isFollowed, { busy: state.followBusy })}`
       : renderSignedOut({ available: accountAvailable(), configured: Boolean(GOOGLE_CLIENT_ID) });
     if (account) updatePushControls();
     if (!account && accountAvailable() && GOOGLE_CLIENT_ID) {
@@ -795,7 +906,7 @@ function renderLayoutContent() {
     const panel = `<div class="panelcol">
       ${state.isMobile ? renderCompetitionChips(null, true) : ""}
       <div class="scores-home-heading"><h1 class="hero__title">Football scores</h1></div>
-      ${renderScoresHome(scoreFeeds.values(), { date: state.scoreDate, liveOnly: state.scoresLiveOnly })}
+      ${renderScoresHome(scoreFeeds.values(), scoreFollowOptions())}
     </div>`;
     elements.layout.className = state.isMobile ? "layout" : "layout layout--scores-overview";
     elements.layout.innerHTML = `${state.isMobile ? "" : renderCompetitionSidebar(null, true)}${panel}`;
@@ -849,7 +960,7 @@ function renderPanel() {
     case "stats":
       return renderStats(model, state.statsSort);
     default:
-      return renderLive(model, { date: state.scoreDate, liveOnly: state.scoresLiveOnly });
+      return renderLive(model, scoreFollowOptions());
   }
 }
 
@@ -3958,7 +4069,7 @@ function syncAccountButton() {
 }
 
 function scoresHash() {
-  return scoreRouteHash(state.scoreDate, state.scoresLiveOnly, state.tab === "live" ? state.scoreCompetition : state.competition, state.tab);
+  return scoreRouteHash(state.scoreDate, state.scoresLiveOnly, state.tab === "live" ? state.scoreCompetition : state.competition, state.tab, state.followingOnly);
 }
 
 function setTab(tab) {
@@ -3986,6 +4097,7 @@ function wireHashRouting() {
     if (scores) {
       state.scoreDate = scores.date;
       state.scoresLiveOnly = scores.liveOnly;
+      state.followingOnly = scores.followingOnly;
       state.scoreCompetition = scores.competition;
       if (scores.competition) {
         state.competition = scores.competition;
@@ -4231,6 +4343,13 @@ function applyBoardImport() {
 
 function wireLayoutControls() {
   elements.layout.addEventListener("click", (event) => {
+    const manager = event.target.closest("[data-follow-manager]");
+    if (manager) {
+      state.followOpen = !state.followOpen;
+      renderLayout();
+      elements.layout.querySelector(state.followOpen ? "[data-follow-search]" : "[data-follow-manager]")?.focus({ preventScroll: true });
+      return;
+    }
     const all = event.target.closest("[data-all-scores]");
     if (all) {
       state.scoreCompetition = null;
@@ -4256,7 +4375,8 @@ function wireLayoutControls() {
     const scoreControl = event.target.closest("[data-score-action]");
     if (scoreControl) {
       const action = scoreControl.dataset.scoreAction;
-      if (action === "today") state.scoreDate = null;
+      if (action === "following") state.followingOnly = !state.followingOnly;
+      else if (action === "today") state.scoreDate = null;
       else if (action === "live") state.scoresLiveOnly = !state.scoresLiveOnly;
       else state.scoreDate = shiftScoreDate(state.scoreDate ?? localDateKey(), action === "previous" ? -1 : 1);
       window.history.pushState(null, "", `#${scoresHash()}`);
@@ -4491,9 +4611,13 @@ function wireLayoutControls() {
     }
     const followButton = event.target.closest("[data-follow-team]");
     if (followButton) {
-      followButton.disabled = true;
-      toggleFollow(model.competition.code, followButton.dataset.followTeam).catch(() => {
-        followButton.disabled = false;
+      const competition = model.competition.code;
+      const team = followButton.dataset.followTeam;
+      const following = !isFollowed(competition, team);
+      const owner = currentAccount()?.user.email;
+      changeFollows(async () => {
+        await verifiedFollowAccount(owner);
+        if (isFollowed(competition, team) !== following) await toggleFollow(competition, team);
       });
       return;
     }
@@ -5025,6 +5149,11 @@ function wireLayoutControls() {
     postFantasyFeed({ action: "message", text });
   });
   elements.layout.addEventListener("input", (event) => {
+    if (event.target.matches("[data-follow-search]")) {
+      state.followSearch = event.target.value;
+      renderLayout();
+      return;
+    }
     // Above the demo branch for the same reason the board's click block is:
     // one control, two surfaces, boardSurface() picks the state object.
     const boardSearch = event.target.closest("[data-board-search]");

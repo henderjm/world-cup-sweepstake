@@ -69,7 +69,7 @@ test("overview puts matches before quiet leagues and retains per-league loading 
 });
 
 test("league-scoped dates survive reload routes and unknown competition codes fall back to all", () => {
-  assert.deepEqual(readScoreRoute(scoreRouteHash("2026-09-10", true, "CL")), { tab: "live", date: "2026-09-10", liveOnly: true, competition: "CL" });
+  assert.deepEqual(readScoreRoute(scoreRouteHash("2026-09-10", true, "CL")), { tab: "live", followingOnly: false, date: "2026-09-10", liveOnly: true, competition: "CL" });
   for (const code of ["unsupported", "toString", "__proto__"]) assert.equal(readScoreRoute(`live?competition=${code}`).competition, null);
   assert.equal(readScoreRoute(scoreRouteHash(null, false, "CL", "tables")).tab, "tables");
 });

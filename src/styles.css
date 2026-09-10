@@ -3707,3 +3707,16 @@ button { font-family: inherit; cursor: pointer; }
 .score-league__table { min-height: 44px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 12px; padding: 8px 0 8px 8px; }
 .score-league__freshness { color: var(--muted); font-size: 11px; margin: 0 0 6px; }
 .score-league__freshness.is-delayed { color: var(--accent); }
+
+.follow-controls { display: flex; align-items: center; gap: 8px; margin: -4px 0 12px; }
+.follow-controls .seg { min-height: 44px; }
+.follow-picker { margin-bottom: 16px; }
+.follow-picker > .note { margin-bottom: 12px; }
+.follow-picker__search { display: grid; gap: 6px; font-size: 13px; margin: 14px 0; }
+.follow-picker__search input { min-height: 44px; width: 100%; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 16px; }
+.follow-picker__teams { display: flex; flex-wrap: wrap; gap: 6px; max-height: 240px; overflow-y: auto; margin-bottom: 18px; }
+.score-follow { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 6px 10px; border: 1px solid var(--line-2); border-radius: 8px; color: var(--text); background: var(--surface); font: inherit; font-size: 13px; }
+.score-follow.is-active { border-color: var(--accent); }
+.score-follow.is-active > span:first-child, .follow-mark { color: var(--accent); }
+.score-follow[aria-disabled="true"], [data-save-follows][aria-disabled="true"] { opacity: .6; cursor: wait; }
+.dz__team .score-follow { margin-top: 10px; font-size: 12px; }
