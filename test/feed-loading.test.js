@@ -1,12 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { loadModel, modelSignature } from "../src/data.js";
+import { buildModel, loadModel, modelSignature } from "../src/data.js";
+import { updatedLabel } from "../src/format.js";
 
 const feed = {
   competition: "CL", source: "API-Football", lastUpdated: "2026-09-10T19:00:00Z",
   matches: [{ id: 1, status: "IN_PLAY", stage: "LEAGUE_STAGE", homeTeam: "Home", awayTeam: "Away", score: { home: 1, away: 0 } }],
   standings: [],
 };
+
+test("an old live payload is delayed even when the server responds successfully", t => {
+  const now = Date.parse("2026-09-10T19:15:00Z");
+  t.mock.method(Date, "now", () => now);
+  const model = buildModel(feed);
+  assert.equal(model.stale, true);
+  assert.equal(model.staleAgeMs, 900000);
+  assert.match(updatedLabel({ fetchedAt: now, now, updatedAt: Date.parse(feed.lastUpdated), stale: model.stale }).text, /15m ago.*delayed/);
+});
+
+test("healthy feed age is based on its timestamp rather than its latest download", () => {
+  const now = Date.parse("2026-09-10T19:01:00Z");
+  assert.equal(updatedLabel({ fetchedAt: now, now, updatedAt: now - 30000 }).text, "30s ago");
+});
 
 test("a static fallback reports the saved data's age instead of the successful download time", async t => {
   t.mock.method(Date, "now", () => Date.parse("2026-09-10T19:15:00Z"));

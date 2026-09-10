@@ -1,6 +1,7 @@
 // Run with the Playwright browser_run_code_unsafe tool's filename argument.
 async (browserPage) => {
-  const page = await browserPage.context().newPage();
+  const context = await browserPage.context().browser().newContext();
+  const page = await context.newPage();
   const assert = (condition, message) => { if (!condition) throw new Error(message); };
   let goals = 1;
   let eventOnly = false;
@@ -44,7 +45,7 @@ async (browserPage) => {
     });
     await page.setViewportSize(browserPage.viewportSize() ?? { width: 390, height: 844 });
     await page.goto("http://127.0.0.1:8731/#live");
-    await page.locator(".lcard").click();
+    await page.locator(".score-day [data-match-id]").click();
     await page.getByText("Scorer 1", { exact: false }).waitFor();
     assert(await page.locator(".shell").evaluate(e => e.inert), "Background should be inert");
     const close = page.getByRole("button", { name: "Close", exact: true });
@@ -75,16 +76,16 @@ async (browserPage) => {
     await page.locator("#mdUpdate").waitFor({ state: "hidden" });
     await page.keyboard.press("Escape");
     assert(!(await page.locator(".shell").evaluate(e => e.inert)), "Background stayed inert after close");
-    assert(await page.locator(".lcard").evaluate(e => e === document.activeElement), "Focus did not return to the match after a scoreboard repaint");
+    assert(await page.locator(".score-day [data-match-id]").evaluate(e => e === document.activeElement), "Focus did not return to the match after a scoreboard repaint");
 
     holdNext = true;
     goals = 1;
     const started = page.waitForRequest(request => request.url().endsWith("/match/900001"));
-    await page.locator(".lcard").click();
+    await page.locator(".score-day [data-match-id]").click();
     await started;
     await page.keyboard.press("Escape");
     goals = 3;
-    await page.locator(".lcard").click();
+    await page.locator(".score-day [data-match-id]").click();
     await page.getByText("Scorer 3", { exact: false }).waitFor();
     releaseOld();
     await page.clock.runFor(1000);
@@ -93,6 +94,6 @@ async (browserPage) => {
     return { passed: ["two goal updates", "event-only refresh", "scroll preservation", "focus preservation", "focus trap", "focus restoration", "last-good detail on failure", "retry", "same-match reopen race"] };
   } finally {
     releaseOld();
-    await page.close();
+    await context.close();
   }
 }

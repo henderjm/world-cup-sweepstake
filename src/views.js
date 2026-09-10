@@ -6,6 +6,7 @@ import { dateLabel, dayLabel, formatStage, isFinished, isLive, statusLabel } fro
 import { feedDelayNotice, isOverdueFixture } from "./fixtureFreshness.js";
 import { learnPages } from "./learnSeo.js";
 import { TUTORIALS } from "./tutorials.js";
+import { localDateKey, validScoreDate } from "./scoreDates.js";
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -15,14 +16,6 @@ function esc(value) {
     '"': "&quot;",
     "'": "&#39;",
   })[char]);
-}
-
-// Small context tag for a match row: the group when there is one (cups), otherwise
-// the matchday (leagues), otherwise the stage.
-function matchTag(match) {
-  if (match.group) return esc(match.group.replace("GROUP_", "Grp "));
-  if (Number.isFinite(match.matchday)) return `MD ${match.matchday}`;
-  return esc(formatStage(match.stage));
 }
 
 function hasScore(score) {
@@ -212,21 +205,6 @@ function matchLine(match) {
     </div>`;
 }
 
-function liveCard(match) {
-  return `<div class="lcard" data-match-id="${match.id ?? ""}" role="button" tabindex="0">
-      <div class="lcard__top">
-        <span class="lcard__min">${esc(statusLabel(match))}</span>
-        <span class="lcard__tag">${matchTag(match)}</span>
-      </div>
-      <div class="lcard__grid">
-        <span class="lcard__team">${badgeFor(match.homeTeam, "lg")}<span class="lcard__name">${esc(displayTeamName(match.homeTeam))}</span></span>
-        <span class="lcard__score">${Number.isFinite(match.score?.home) ? match.score.home : "–"}</span>
-        <span class="lcard__team">${badgeFor(match.awayTeam, "lg")}<span class="lcard__name">${esc(displayTeamName(match.awayTeam))}</span></span>
-        <span class="lcard__score">${Number.isFinite(match.score?.away) ? match.score.away : "–"}</span>
-      </div>
-    </div>`;
-}
-
 // Says out loud that the live feed is behind, instead of leaving a played match
 // sitting there with a kickoff time as though it had not started. Named fixtures
 // rather than a generic warning, because "Hull City v Man United kicked off 47
@@ -252,9 +230,9 @@ function renderFeedDelayBanner(model, now) {
 
   const detail = named
     ? `${esc(named)}${esc(extra)} should have kicked off${minutes ? ` about ${minutes} minutes ago` : ""}, but we have had no update since.`
-    : minutes == null
-      ? "We could not confirm when these scores were last updated."
-      : `The last available update is about ${minutes} minutes old.`;
+    : model.lastUpdated
+      ? `Last available update: ${esc(dateLabel(model.lastUpdated))}.`
+      : "We could not confirm when these scores were last updated.";
 
   return `
     <section class="card feeddelay" role="status">
@@ -265,49 +243,34 @@ function renderFeedDelayBanner(model, now) {
 
 // -- Live & today -----------------------------------------------------------------------
 
-export function renderLive(model) {
-  const now = Date.now();
-  const startOfDay = new Date(now);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = startOfDay.getTime() + 24 * 60 * 60 * 1000;
-
-  const live = model.matches.filter((match) => isLive(match.status));
-  const today = model.matches.filter((match) => {
-    const time = new Date(match.utcDate).getTime();
-    return !isLive(match.status) && time >= startOfDay.getTime() && time < endOfDay;
-  });
-  const upcoming = model.matches
-    .filter((match) => !isFinished(match.status) && !isLive(match.status) && new Date(match.utcDate).getTime() >= endOfDay)
-    .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))
-    .slice(0, 6);
-  const recent = model.matches
-    .filter((match) => isFinished(match.status))
-    .sort((a, b) => new Date(b.utcDate) - new Date(a.utcDate))
-    .slice(0, 6);
-
-  const listCard = (title, matches, empty) => `
-    <section class="card card--list">
-      <h3 class="card__title">${title}</h3>
-      ${matches.length ? matches.map(matchLine).join("") : `<p class="note" style="margin:6px 0 10px;">${empty}</p>`}
-    </section>`;
+export function renderLive(model, { date = null, liveOnly = false } = {}) {
+  const selectedDate = validScoreDate(date) ? date : localDateKey();
+  const isToday = selectedDate === localDateKey();
+  const dayMatches = model.matches
+    .filter(match => localDateKey(match.utcDate) === selectedDate)
+    .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate));
+  const matches = liveOnly ? dayMatches.filter(match => isLive(match.status)) : dayMatches;
+  const liveCount = dayMatches.filter(match => isLive(match.status)).length;
+  const next = model.matches
+    .filter(match => ["TIMED", "SCHEDULED"].includes(match.status) && localDateKey(match.utcDate) > selectedDate)
+    .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))[0];
+  const title = isToday ? "Today" : dayLabel(`${selectedDate}T12:00:00`);
+  const empty = liveOnly ? "No live matches on this date." : isToday ? "No kick-offs today." : "No matches on this date.";
 
   return `
-    ${renderFeedDelayBanner(model, now)}
-    ${
-      live.length
-        ? `<div class="livehead"><span class="livehead__dot"></span><h3>Live now</h3></div>
-           <div class="livegrid">${live.map(liveCard).join("")}</div>`
-        : ""
-    }
-    <div class="scoregrid">
-      <div class="scorecol">
-        ${listCard("Today", today, "No kick-offs today.")}
-        ${listCard("Next up", upcoming, "Nothing on the horizon.")}
-      </div>
-      <div class="scorecol">
-        ${listCard("Recent results", recent, "No results yet.")}
-      </div>
-    </div>`;
+    <div class="score-controls" aria-label="Match dates and filters">
+      <button class="seg" type="button" data-score-action="previous" aria-label="Previous day">‹</button>
+      <label class="score-controls__date"><input type="date" data-score-date aria-label="Match date" value="${selectedDate}"></label>
+      <button class="seg" type="button" data-score-action="next" aria-label="Next day">›</button>
+      <button class="seg ${isToday ? "is-active" : ""}" type="button" data-score-action="today">Today</button>
+      <button class="seg ${liveOnly ? "is-active" : ""}" type="button" data-score-action="live" aria-pressed="${liveOnly}">Live <span class="seg__count">${liveCount}</span></button>
+    </div>
+    ${renderFeedDelayBanner(model, Date.now())}
+    <section class="card card--list score-day">
+      <h2 class="card__title">${esc(title)} · ${matches.length} ${matches.length === 1 ? "match" : "matches"}</h2>
+      ${matches.length ? matches.map(matchLine).join("") : `<p class="note">${empty}</p>`}
+      ${!dayMatches.length && next ? `<p class="note">Next: ${esc(displayTeamName(next.homeTeam))} v ${esc(displayTeamName(next.awayTeam))} · ${esc(dayLabel(next.utcDate))}</p>` : ""}
+    </section>`;
 }
 
 // -- League table ----------------------------------------------------------------------------
@@ -726,5 +689,6 @@ function footerLearnLinks() {
 export function renderFooter(model) {
   return `
     <p>Data: ${esc(model.source)}${model.lastUpdated ? ` · updated ${dateLabel(model.lastUpdated)}` : ""} · Kickoff Draft is a Goon Squad production · Not affiliated with the Premier League or UEFA.</p>
-    ${footerLearnLinks()}`;
+    ${footerLearnLinks()}
+    <p class="footer__support"><a href="https://www.buymeacoffee.com/henderjm" target="_blank" rel="noopener noreferrer">Support Kickoff Draft</a></p>`;
 }

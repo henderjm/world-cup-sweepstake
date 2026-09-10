@@ -28,7 +28,7 @@ This was a targeted journey inspection, not an exhaustive parity or latency audi
 | --- | --- | --- |
 | Find matches | Competitors start with today's multi-league list, date navigation and live filters. Our default PL screen was empty on a CL match night; there is no date selector on Scores. | Today's supported matches accessible immediately; previous/next date, Today and Live filters take one action each; selected date survives detail navigation. |
 | Freshness and status | All three showed the same sampled CL scores. Competitors said HT; we said 45'. Our header measured downloads, including fallback downloads. | Distinguish HT, interruptions and unavailable updates. Never describe a fallback download as fresh live data. Recover after errors without reload; quantify event delay separately before making latency claims. |
-| Champions League | AEK showed 6 points from 2 games despite the feed saying 3 from 1. Heading showed MD2 above MD1 live games. August qualifiers were labelled knockout play-offs. | Qualifiers/knockouts never affect league-phase points or form; live heading matches visible rounds; stages use correct labels; full UEFA ordering still needs separate work. |
+| Champions League | AEK showed 6 points from 2 games despite the feed saying 3 from 1. Heading showed MD2 above MD1 live games. August qualifiers were labelled knockout play-offs. | Qualifiers/knockouts never affect league-phase points or form; live heading matches visible rounds; stages use correct labels; apply available UEFA ordering and explicitly disclose unavailable criteria. |
 | Match detail | LiveScore exposes summary, stats, lineups, table and H2H navigation. Our drawer has a scroll of sections and fetches on open. | Open in one action, visible loading/error states, keyboard close and focus restoration; scores and events update while open; section navigation on long details. |
 | Following teams | LiveScore exposes favourites on match rows. Our observed signed-out journey routes following through Google sign-in. | Follow a club locally without account creation, persist across reload, expose a useful followed-match view; keep authenticated follows and notification identity intact. |
 | Visual hierarchy | FotMob fit six CL games on the mobile viewport; our fourth live card was clipped by bottom navigation. Several league controls advertise unavailable competitions. | Six sampled matches visible above bottom navigation at 390 × 844; no page overflow at 320, 390 or 1440; controls remain readable and keyboard accessible. |
@@ -50,9 +50,9 @@ failure/status variants, not a claim of production deployment or end-to-end late
    can show HT, Suspended or Interrupted. Older feeds without the new field show
    Paused rather than guessing HT. This requires the Worker/bake update as well
    as the frontend; nothing has been deployed.
-4. Compacted mobile live cards. All six replayed matches fit before the bottom
-   navigation at 390 × 844 (sixth row bottom: 783px). No page overflow at 320,
-   390 or 1440. Desktop retains its existing card layout.
+4. Compacted the mobile scores list. All six replayed matches fit before the
+   bottom navigation at 390 × 844 (sixth row bottom: 783px). No page overflow at
+   320, 390 or 1440. The date browser in item 10 supersedes the initial live cards.
 5. Added initial loading UI and bounded feed requests (8 seconds per request;
    Worker plus static fallback may total 16 seconds). Distinguish an unavailable
    feed from a successfully loaded empty competition. Retry recovers in place.
@@ -77,32 +77,53 @@ failure/status variants, not a claim of production deployment or end-to-end late
    The browser regression below verified consecutive goals, event-only changes,
    preserved scroll/focus, failure/retry and same-match reopen races.
 
+9. Freshness now uses the saved feed timestamp. Live payloads older than two
+   minutes are marked delayed even after an HTTP success. Total outages, empty
+   fallbacks and older snapshots retain the last known scores; repeated failures
+   do not reset their age. A newer healthy response clears the delay. These are
+   feed-age checks, not a measurement of provider event latency.
+10. Scores now has previous/next day, a calendar, Today and Live controls. Dates
+    follow the viewer's timezone, including DST boundaries. Date/filter state
+    survives reload, browser Back and opening/closing details. Each fixture
+    appears once; empty days identify the next fixture with its date. Mobile
+    rows show full team names. Deleted the superseded live-card rendering/CSS.
+11. Moved the donation button to a footer link because the floating widget covered
+    matches and navigation. Support remains available on the website and hidden
+    in the existing native-app presentation. Other product areas remain intact.
+
 ## Prioritized remaining work
 
 | Priority | Item | Definition of done |
 | --- | --- | --- |
-| P0 — next | Freshness after total outage and aged healthy payloads | Check last-known-good model preservation after both paths fail, including empty fallback. Show loss of updates without resetting age. Define freshness from actual provider timestamps, not just successful requests. Measure live-event lag; do not infer it from a screenshot. |
-| P1 | Scores date navigation and all-supported-competitions entry | Date strip/calendar, Live filter, useful empty day and next-match date. No duplicated Today/Recent rows. Current Next up rows omit the date; fix that. Preserve route/date/filter when opening/closing a match. |
+| P1 | Measure actual event latency | Compare timestamped provider events and observed delivery across live matches. Establish p50/p95 delay and update reliability; feed age alone does not prove event latency. |
+| P1 — next | All-supported-competitions entry | Show today's supported matches immediately, grouped by competition. A quiet PL day must not hide CL matches. Keep per-competition tables and historical fixtures accessible; handle partial feed failures independently. |
 | P1 | Favourites without sign-in | Device-local follows with clear account sync policy; no new D1 identifiers or renaming canonical team keys. Follow/unfollow and reload tests; keyboard/touch journey. |
 | P1 | Qualifying versus main knockout presentation | Keep qualification history available, but avoid presenting a wall of July fixtures as the main knockout destination in September. Group two-leg ties with correct aggregate and penalty handling; never invent future draws. |
 | P1 | Team identity and labels | The feed says Sabah FA while both benchmarks say Sabah FK. Verify provider team ID, crest and destination before changing display aliases; do not rewrite stored follow keys based on a name alone. |
-| P1 | Match detail navigation/accessibility | Summary, events, lineups and stats affordances; focus trap/restoration, retries and partial-coverage wording. Verify scheduled, live, finished and postponed states. |
-| P2 | Product polish and performance | Align metadata/brand subtitle with score-first positioning, reduce distracting unavailable controls and floating coffee overlay, measure rendering and request budgets, keep existing features reachable. |
+| P1 | Match detail navigation/accessibility | Summary, events, lineups and stats affordances; partial-coverage wording. Retain verified focus trap/restoration and retries. Verify scheduled, live, finished and postponed states. |
+| P2 | Product polish and performance | Align metadata/brand subtitle with score-first positioning, reduce distracting unavailable controls, align the hero with the selected date, preserve date-control focus through poll repaints, and measure rendering/request budgets. Keep existing features reachable. |
 
 ## Verification ledger
 
 - Targeted regressions: `test/champions-league.test.js`, `test/feed-loading.test.js`,
-  and `test/updated-label.test.js`; shared mapper/live-table coverage retained.
-- Full JavaScript suite after ranking and drawer changes: 1,438 passed, 0 failed.
-  Production build passed. Drawer checks are recorded separately below.
+  `test/score-dates.test.js` and `test/updated-label.test.js`; shared mapper/live-table
+  coverage retained.
+- Full JavaScript suite after date/freshness changes: 1,445 passed, 0 failed.
+  Production build passed. Both also passed on an isolated export of the staged
+  live-score changes, excluding unrelated native-app edits. Browser checks are
+  recorded separately below.
 - Repeatable browser regression: `scripts/qa/live-match-drawer.js`, run with the
   Playwright tool's `browser_run_code_unsafe` filename argument while the local
   preview is running. It inherits the current browser viewport and creates and
-  closes its own page with synthetic fixtures,
+  closes its own isolated browser context with synthetic fixtures,
   runs the actual 20-second app poll using the browser clock, and checks nine
   refresh/accessibility/race behaviours. Passed on 2026-09-10 at 390 × 844 and
   1440 × 1000. The desktop assertion uses the actual initial scroll offset,
   since a taller viewport can clamp the requested 180px offset.
+- Repeatable date/freshness regression: `scripts/qa/score-dates-freshness.js`,
+  invoked the same way, checks 14 navigation/outage/recovery behaviours. Passed
+  at 320 × 844, 390 × 844 and 1440 × 1000. Browser contexts isolate test clocks
+  so one regression cannot advance another tab's time.
 - Go tests passed with permission for temporary local HTTP test servers.
 - Browser: desktop and mobile; captured-feed table/heading; 320px overflow;
   match drawer open/Escape close; signed-out following journey; held request shows
@@ -113,14 +134,16 @@ failure/status variants, not a claim of production deployment or end-to-end late
 - Browser limitations: feed replay as described above; fonts/analytics and
   third-party donation assets sometimes failed locally. No account was created,
   no push was sent and no deployment was performed.
-- Local screenshots: [mobile before](live-score-evidence/mobile-before.png) and
-  [mobile after](live-score-evidence/mobile-after.png). The after screenshot uses
-  an explicit HT variant of the captured feed. The donation overlay still needs
-  repositioning and Today rows still truncate long team names.
+- Local screenshots: [mobile before](live-score-evidence/mobile-before.png),
+  [initial compact cards](live-score-evidence/mobile-after.png), and
+  [current date browser](live-score-evidence/mobile-dates.png). After screenshots
+  use an explicit HT variant of the captured feed. The latest capture shows six
+  rows above the bottom nav, full team names and no floating donation widget.
 
 ## Next run
 
-Inspect the existing diff, then implement the remaining freshness work and date
-navigation. Keep changes
-reviewable on this branch. Do not mark the
-overall product goal complete merely because this first slice passes tests.
+Inspect the existing diff, then implement the all-supported-competitions Scores
+entry. The working tree also contains separate native-mobile work; preserve it
+and keep this goal's commits scoped to live scores. Keep changes reviewable on
+this branch. Do not mark the overall product goal complete because individual
+slices pass tests.

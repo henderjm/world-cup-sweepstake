@@ -58,7 +58,7 @@ test("a zero staleness still counts as delayed", () => {
 
 const raw = (extra = {}) => ({
   source: "API-Football",
-  lastUpdated: "2026-08-21T18:00:00.000Z",
+  lastUpdated: new Date().toISOString(),
   competition: "PL",
   matches: [{ id: 1, utcDate: "2026-08-21T19:00:00.000Z", status: "IN_PLAY", score: {} }],
   standings: [],

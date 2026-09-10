@@ -151,25 +151,28 @@ export function scorePart(score, side) {
 // it is named as delayed rather than left to be read as a slow poll. The age is
 // the staleness the Worker measured plus however long ago we fetched it, because
 // both have elapsed since the data was actually current.
-export function updatedLabel({ fetchedAt, now = Date.now(), staleAgeMs = null, stale = false } = {}) {
+export function updatedLabel({ fetchedAt, now = Date.now(), staleAgeMs = null, stale = false, updatedAt = null } = {}) {
   if (!fetchedAt) return { text: "loading", delayed: false };
-  if (stale && !Number.isFinite(staleAgeMs)) return { text: "unknown (delayed)", delayed: true };
+  if (stale && !Number.isFinite(staleAgeMs) && !Number.isFinite(updatedAt)) return { text: "unknown (delayed)", delayed: true };
   const sinceFetch = Math.max(0, now - fetchedAt);
-  const delayed = Number.isFinite(staleAgeMs) && staleAgeMs !== null;
-  const age = delayed ? staleAgeMs + sinceFetch : sinceFetch;
+  const delayed = stale || Number.isFinite(staleAgeMs);
+  const age = Math.max(
+    Number.isFinite(updatedAt) ? Math.max(0, now - updatedAt) : sinceFetch,
+    Number.isFinite(staleAgeMs) ? staleAgeMs + sinceFetch : 0,
+  );
   // Phrased to read correctly after the static "Updated" label in App.svelte:
   // "Updated 14m ago (delayed)", not "Updated delayed 14m ago".
-  return { text: delayed ? `${relativeAge(age)} (delayed)` : relativeAge(age), delayed };
+  return { text: delayed ? `${relativeAge(age, now)} (delayed)` : relativeAge(age, now), delayed };
 }
 
 // Seconds up to a minute, minutes up to an hour, then the wall-clock time, which
 // past an hour is more use than a growing minute count.
-function relativeAge(ms) {
+function relativeAge(ms, now) {
   const secs = Math.round(ms / 1000);
   if (secs < 5) return "just now";
   if (secs < 60) return `${secs}s ago`;
   if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
   return new Intl.DateTimeFormat("en-IE", { hour: "2-digit", minute: "2-digit" }).format(
-    new Date(Date.now() - ms),
+    new Date(now - ms),
   );
 }

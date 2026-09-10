@@ -1,4 +1,5 @@
 import { loadModel, modelSignature } from "./data.js";
+import { localDateKey, readScoreRoute, scoreRouteHash, shiftScoreDate, validScoreDate } from "./scoreDates.js";
 import { trackGameweek } from "./fantasyGameweekTracker.js";
 import { confettiBurst } from "./interactions.js";
 import { track, trackException } from "./telemetry.js";
@@ -290,6 +291,8 @@ const state = {
   section: NON_SCORES_SECTIONS.includes(initialHash) ? initialHash : "scores",
   tab: SCORES_TABS.includes(initialHash) ? initialHash : "live",
   competition: storedCompetition(),
+  scoreDate: readScoreRoute(rawInitialHash)?.date ?? null,
+  scoresLiveOnly: readScoreRoute(rawInitialHash)?.liveOnly ?? false,
   // null = data-driven default: Results once any match has finished, Upcoming
   // before then (a pre-season visitor should not land on an empty Results
   // panel with 380 fixtures hidden behind the other pill). A click on either
@@ -497,12 +500,15 @@ let lastFetchAt = 0;
 // a stale copy, else null. Deliberately not read off `model`: see setUpdatedLabel.
 let feedStaleAgeMs = null;
 let feedStale = false;
+let feedUpdatedAt = null;
 
 // One place, because all three of them (boot, poll, competition switch) have to
 // agree: a switch that recorded the fetch time but not the staleness would show
 // the previous competition's delay against the new one's data.
 function recordFeedFreshness(data) {
   lastFetchAt = Date.now();
+  const updatedAt = Date.parse(data.lastUpdated);
+  feedUpdatedAt = Number.isFinite(updatedAt) ? updatedAt : null;
   feedStale = Boolean(data?.stale);
   feedStaleAgeMs = feedStale ? data.staleAgeMs ?? null : null;
 }
@@ -637,7 +643,7 @@ function refreshOnForeground() {
 // exactly the window this is meant to expose. It is refreshed on every successful
 // poll instead, so the chip starts telling the truth on the first stale response.
 function setUpdatedLabel() {
-  const { text, delayed } = updatedLabel({ fetchedAt: lastFetchAt, staleAgeMs: feedStaleAgeMs, stale: feedStale });
+  const { text, delayed } = updatedLabel({ fetchedAt: lastFetchAt, staleAgeMs: feedStaleAgeMs, stale: feedStale, updatedAt: feedUpdatedAt });
   elements.updated.textContent = text;
   elements.updated.classList.toggle("is-delayed", delayed);
   if (delayed) {
@@ -669,19 +675,22 @@ async function poll() {
     const fresh = await loadModel(polledCompetition);
     // A switch mid-flight makes this response stale; the switch already re-rendered.
     if (polledCompetition !== state.competition) return scheduleNextPoll();
-    if (!fresh.error && (fresh.hasData || !model.hasData)) {
+    const lostFeed = fresh.error || (model.hasData && (!fresh.hasData || Date.parse(fresh.lastUpdated) < Date.parse(model.lastUpdated)));
+    const next = lostFeed && model.hasData ? { ...model, stale: true } : fresh;
+    if (next.hasData || !lostFeed) {
       // Before the signature gate below, and outside it: a frozen feed yields an
       // unchanged signature, so anything recorded inside that branch would never
       // run for precisely the responses this exists to surface.
-      recordFeedFreshness(fresh);
-      const signature = modelSignature(fresh);
+      if (lostFeed) feedStale = true;
+      else recordFeedFreshness(next);
+      const signature = modelSignature(next);
+      model = next;
       if (signature !== lastSignature) {
         lastSignature = signature;
-        model = fresh;
         if (state.section !== "play") renderAll();
         else if (model.hasData) elements.ticker.innerHTML = renderTicker(model);
       }
-      setMatchModel(fresh);
+      setMatchModel(model);
       setUpdatedLabel();
     }
     refreshLiveMatchup(fresh);
@@ -826,7 +835,7 @@ function renderPanel() {
     case "stats":
       return renderStats(model, state.statsSort);
     default:
-      return renderLive(model);
+      return renderLive(model, { date: state.scoreDate, liveOnly: state.scoresLiveOnly });
   }
 }
 
@@ -3902,7 +3911,7 @@ function setSection(section) {
   // section (scores tabs, fantasy sub-tabs) stays replaceState so tabs never
   // stack up entries; wireHashRouting turns the resulting Back/Forward hash
   // changes into renders.
-  window.history.pushState(null, "", `#${section === "scores" ? state.tab : section}`);
+  window.history.pushState(null, "", `#${section === "scores" ? scoresHash() : section}`);
   metric("count", "section_view", 1, { tags: { section } });
   track("section_viewed", { section });
   // The sandbox is the top of the acquisition funnel and has no nav button of
@@ -3932,10 +3941,14 @@ function syncAccountButton() {
   }
 }
 
+function scoresHash() {
+  return state.tab === "live" ? scoreRouteHash(state.scoreDate, state.scoresLiveOnly) : state.tab;
+}
+
 function setTab(tab) {
   state.section = "scores";
   state.tab = tab;
-  window.history.replaceState(null, "", `#${tab}`);
+  window.history.replaceState(null, "", `#${scoresHash()}`);
   metric("count", "tab_view", 1, { tags: { tab } });
   track("tab_viewed", { tab });
   renderAll();
@@ -3951,6 +3964,11 @@ function setTab(tab) {
 function wireHashRouting() {
   window.addEventListener("hashchange", () => {
     const raw = window.location.hash.replace("#", "");
+    const scores = readScoreRoute(raw);
+    if (scores) {
+      state.scoreDate = scores.date;
+      state.scoresLiveOnly = scores.liveOnly;
+    }
     const fantasy = resolveInitialFantasyHash(raw);
     const learn = resolveInitialLearnHash(raw);
     const joinCode = resolveInitialJoinHash(raw);
@@ -3960,7 +3978,7 @@ function wireHashRouting() {
         ? "learn"
         : fantasy.section === "fantasy"
           ? "fantasy"
-          : (HASH_ALIASES[raw] ?? raw);
+          : (scores ? "live" : HASH_ALIASES[raw] ?? raw);
 
     if (target === "join") {
       state.invite = initialInviteState(joinCode);
@@ -4191,6 +4209,17 @@ function applyBoardImport() {
 
 function wireLayoutControls() {
   elements.layout.addEventListener("click", (event) => {
+    const scoreControl = event.target.closest("[data-score-action]");
+    if (scoreControl) {
+      const action = scoreControl.dataset.scoreAction;
+      if (action === "today") state.scoreDate = null;
+      else if (action === "live") state.scoresLiveOnly = !state.scoresLiveOnly;
+      else state.scoreDate = shiftScoreDate(state.scoreDate ?? localDateKey(), action === "previous" ? -1 : 1);
+      window.history.pushState(null, "", `#${scoresHash()}`);
+      renderLayout();
+      elements.layout.querySelector(`[data-score-action="${action}"]`)?.focus({ preventScroll: true });
+      return;
+    }
     // Draft board controls sit ABOVE the demo intercept, not inside it: the
     // sandbox and a real league render the same card through the same
     // data-board-* attributes, and boardSurface() already knows which state
@@ -4990,6 +5019,14 @@ function wireLayoutControls() {
     }
   });
   elements.layout.addEventListener("change", (event) => {
+    const scoreDate = event.target.closest("[data-score-date]");
+    if (scoreDate && validScoreDate(scoreDate.value)) {
+      state.scoreDate = scoreDate.value;
+      window.history.pushState(null, "", `#${scoresHash()}`);
+      renderLayout();
+      elements.layout.querySelector("[data-score-date]")?.focus({ preventScroll: true });
+      return;
+    }
     // Outside the demo/fantasy branches below: the Fixtures club filter lives
     // in the Scores section, so it must be checked before the demo early return.
     const fixtureTeam = event.target.closest("[data-fixture-team]");

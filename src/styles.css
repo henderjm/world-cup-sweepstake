@@ -522,54 +522,22 @@ button { font-family: inherit; cursor: pointer; }
 .note { font-size: 13px; color: var(--muted); }
 .note--dim { font-size: 12px; color: var(--faint); }
 
-/* Live cards ---------------------------------------------------------------------- */
-
-.livehead { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.livehead__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: sgPulse 1.4s infinite; }
-.livehead h3 { font-size: 12px; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; }
-
-.livegrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 22px; }
-
-.lcard {
-  background: var(--surface);
-  border: 1px solid rgb(200 245 66 / 0.22);
-  border-radius: var(--radius);
-  padding: 14px 16px;
-  cursor: pointer;
-}
-.lcard:hover, .lcard:focus-visible { border-color: rgb(200 245 66 / 0.55); }
-
-.lcard__top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-
-.lcard__min {
-  font-size: 11px;
-  font-weight: 900;
-  color: var(--accent-ink);
-  background: var(--accent);
-  border-radius: 999px;
-  padding: 2px 9px;
-  font-variant-numeric: tabular-nums;
-}
-
-.lcard__tag { font-size: 11px; color: var(--muted); font-weight: 600; }
-
-.lcard__grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; align-items: center; }
-.lcard__team { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.lcard__name { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lcard__score { font-size: 18px; font-weight: 900; font-variant-numeric: tabular-nums; }
-
+/* Scores date navigation and match rows */
+.score-controls { display: flex; align-items: center; gap: 6px; margin: 0 0 14px; flex-wrap: wrap; }
+.score-controls .seg { min-height: 44px; min-width: 40px; }
+.score-controls__date { flex: 1; min-width: 130px; }
+.score-controls input { width: 100%; min-height: 40px; padding: 8px; background: var(--surface); color: var(--text); border: 1px solid var(--line-2); border-radius: 8px; color-scheme: dark; font: inherit; }
+.score-day { margin-bottom: 16px; }
 @media (max-width: 760px) {
-  .livegrid { grid-template-columns: minmax(0, 1fr); gap: 6px; margin-bottom: 14px; }
-  .lcard { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 10px; padding: 10px; }
-  .lcard__top { flex-direction: column; justify-content: center; gap: 6px; margin: 0; }
-  .lcard__grid { gap: 4px 10px; }
-  .lcard__min { max-width: 100%; padding: 2px 5px; overflow-wrap: anywhere; text-align: center; }
+  .score-controls { gap: 4px; }
+  .score-controls .seg { padding: 6px 8px; }
+  .score-day .mline { grid-template-columns: 54px minmax(0, 1fr) auto; grid-template-areas: "status home score" "status away score"; gap: 3px 8px; padding: 8px 0; min-height: 62px; }
+  .score-day .mline__st { grid-area: status; overflow-wrap: anywhere; }
+  .score-day .mline__side--h { grid-area: home; flex-direction: row-reverse; justify-content: flex-end; }
+  .score-day .mline__side:not(.mline__side--h) { grid-area: away; }
+  .score-day .mline__score { grid-area: score; }
+  .score-day .mline__name { white-space: normal; overflow: visible; }
 }
-
-/* Match lines (today / next up / recent / fixtures) --------------------------------- */
-
-.scoregrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
-.scorecol { display: flex; flex-direction: column; gap: 14px; }
 
 .mline {
   display: grid;
@@ -789,6 +757,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 /* Second footer line: links out to the pre-rendered /learn/ guides. It sits
    directly under the credits line, so it drops the rule the first line draws. */
+.native-app .footer__support { display: none; }
 .footer__learn { border-top: none; padding-top: 6px; }
 .footer__learn a { color: var(--muted); font-weight: 700; }
 .footer__learn a:hover { color: var(--accent); }
@@ -830,20 +799,6 @@ button { font-family: inherit; cursor: pointer; }
   .topnav__sections { display: none; }
   .brand__sub { display: none; }
   .main { padding-bottom: 90px; }
-}
-
-/* Buy Me a Coffee floating button -------------------------------------------------------------------- */
-/* The widget hardcodes its own bottom offset inline, so it lands on top of the
-   mobile bottom nav and covers the You button. Lift it clear of the nav on
-   small screens. The selectors are the widget's own ids, which means they are
-   outside our control: if the button ever reappears over the nav after a
-   widget update, this block is what needs revisiting. !important is required
-   because the widget sets bottom inline. */
-@media (max-width: 760px) {
-  #bmc-wbtn,
-  #bmc-wbtn + div {
-    bottom: 84px !important;
-  }
 }
 
 /* Match drawer -------------------------------------------------------------------------------------- */

@@ -10,6 +10,8 @@ import { registerTeams } from "./badges.js";
 import { locationForMatch } from "./locations.js";
 import { trackException } from "./telemetry.js";
 import { withLiveTable } from "./liveTable.js";
+import { isLive } from "./format.js";
+import { localDateKey } from "./scoreDates.js";
 
 // Set this to your deployed Cloudflare Worker origin to serve live data without a
 // deploy, e.g. "https://goon-squad-data.<your-subdomain>.workers.dev". Leave empty to
@@ -104,7 +106,13 @@ export function buildModel(raw, scorerData = {}) {
 
 // Both delivery paths mark fallback data; an unknown age must stay unknown.
 function staleness(raw) {
-  if (!raw?.stale) return { stale: false, staleAgeMs: null };
+  if (!raw?.stale) {
+    const age = Date.now() - Date.parse(raw.lastUpdated);
+    if ((raw.matches ?? []).some(match => isLive(match.status)) && age > 120000) {
+      return { stale: true, staleAgeMs: age };
+    }
+    return { stale: false, staleAgeMs: null };
+  }
   return { stale: true, staleAgeMs: Number.isFinite(raw.staleAgeMs) ? raw.staleAgeMs : null };
 }
 
@@ -112,7 +120,7 @@ export function modelSignature(model) {
   // Fetch timestamps change on every poll; only visible content should repaint.
   return JSON.stringify([
     model.competition, model.hasData, model.source, model.error, model.stale,
-    model.matches, model.tables, model.scorers,
+    model.matches, model.tables, model.scorers, localDateKey(),
   ]);
 }
 
