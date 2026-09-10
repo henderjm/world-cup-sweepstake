@@ -11,6 +11,11 @@ routine product and engineering decisions autonomously. Ask before spending,
 destructive production changes or public deployment. Pushing to main can deploy
 both the site and Worker, so local verification is not authorization to push.
 
+Release authorization, September 10: the user approved deploying the completed
+live-score improvements through `ff9b411`. This release excludes unfinished
+knockout presentation and separate native-app changes. Future public deployments
+still require approval.
+
 An active hourly task automation, `improve-live-scores`, resumes this backlog.
 Notify only for substantial completed improvements, meaningful blockers, or a
 decision requiring user input. Read the working diff first and preserve it. Do
@@ -140,6 +145,7 @@ failure/status variants, not a claim of production deployment or end-to-end late
 
 | Priority | Item | Definition of done |
 | --- | --- | --- |
+| P1 | Show league tables on wider screens | At desktop widths (initial target: 1200px and above), show the relevant league table alongside Scores without a separate tab change. In All matches, make the table's competition explicit and selectable. Preserve date, Live and Following selections; tables use the same feed and disclose stale/unavailable data. Verify 1200px and 1440px layouts, keyboard access and no horizontal overflow; mobile scores remain usable at 320px and 390px. Requested by the user September 10. |
 | P1 | Measure actual event latency | Compare timestamped provider events and observed delivery across live matches. Establish p50/p95 delay and update reliability; feed age alone does not prove event latency. |
 | P1 — next | Qualifying versus main knockout presentation | Keep qualification history available, but avoid presenting a wall of July fixtures as the main knockout destination in September. Group two-leg ties with correct aggregate and penalty handling; never invent future draws. |
 | P1 | Team identity and labels | The feed says Sabah FA while both benchmarks say Sabah FK. Verify provider team ID, crest and destination before changing display aliases; do not rewrite stored follow keys based on a name alone. |
@@ -211,6 +217,11 @@ failure/status variants, not a claim of production deployment or end-to-end late
   nav, full team names and no floating donation widget.
 
 ## Next run
+
+Deployment takes precedence for the approved completed commits. The unfinished
+knockout changes remain in the working tree; `test/knockout.test.js` currently has
+one failing conservative-aggregate case and must pass along with browser checks
+before that slice is included in a later release.
 
 Inspect the existing diff, then improve Champions League qualifying versus
 main knockout presentation. Verify round/leg and aggregate data before grouping
