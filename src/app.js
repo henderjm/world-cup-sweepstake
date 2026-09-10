@@ -678,10 +678,10 @@ async function poll() {
       if (signature !== lastSignature) {
         lastSignature = signature;
         model = fresh;
-        setMatchModel(model);
         if (state.section !== "play") renderAll();
         else if (model.hasData) elements.ticker.innerHTML = renderTicker(model);
       }
+      setMatchModel(fresh);
       setUpdatedLabel();
     }
     refreshLiveMatchup(fresh);

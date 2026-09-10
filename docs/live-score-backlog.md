@@ -68,13 +68,20 @@ failure/status variants, not a claim of production deployment or end-to-end late
    Disciplinary totals and coefficients are absent from this feed, so final
    decisions on those criteria remain the provider's responsibility. Browser
    replay confirmed the note and published tie order (Stuttgart before Sporting).
+8. Open match drawers now refresh on every successful scoreboard poll, including
+   polls with unchanged scores. Header, details and analysis update independently;
+   the banter composer remains mounted. Failed detail refreshes preserve the last
+   detail and offer retry. Requests are aborted on close/reopen so a response for
+   an earlier opening cannot overwrite the current one. Keyboard focus stays in
+   the dialog and returns to the match on close, including after a page repaint.
+   The browser regression below verified consecutive goals, event-only changes,
+   preserved scroll/focus, failure/retry and same-match reopen races.
 
 ## Prioritized remaining work
 
 | Priority | Item | Definition of done |
 | --- | --- | --- |
-| P0 — next | Open match drawer becomes stale | Keep an open match's score/status/event sections current on polling without resetting scroll or keyboard focus; cancel/ignore responses belonging to a closed or different match. Verify two sequential goal updates in browser. |
-| P0 | Freshness after total outage and aged healthy payloads | Check last-known-good model preservation after both paths fail, including empty fallback. Show loss of updates without resetting age. Define freshness from actual provider timestamps, not just successful requests. Measure live-event lag; do not infer it from a screenshot. |
+| P0 — next | Freshness after total outage and aged healthy payloads | Check last-known-good model preservation after both paths fail, including empty fallback. Show loss of updates without resetting age. Define freshness from actual provider timestamps, not just successful requests. Measure live-event lag; do not infer it from a screenshot. |
 | P1 | Scores date navigation and all-supported-competitions entry | Date strip/calendar, Live filter, useful empty day and next-match date. No duplicated Today/Recent rows. Current Next up rows omit the date; fix that. Preserve route/date/filter when opening/closing a match. |
 | P1 | Favourites without sign-in | Device-local follows with clear account sync policy; no new D1 identifiers or renaming canonical team keys. Follow/unfollow and reload tests; keyboard/touch journey. |
 | P1 | Qualifying versus main knockout presentation | Keep qualification history available, but avoid presenting a wall of July fixtures as the main knockout destination in September. Group two-leg ties with correct aggregate and penalty handling; never invent future draws. |
@@ -86,7 +93,16 @@ failure/status variants, not a claim of production deployment or end-to-end late
 
 - Targeted regressions: `test/champions-league.test.js`, `test/feed-loading.test.js`,
   and `test/updated-label.test.js`; shared mapper/live-table coverage retained.
-- Full JavaScript suite: 1,431 passed, 0 failed. Production build passed.
+- Full JavaScript suite after ranking and drawer changes: 1,438 passed, 0 failed.
+  Production build passed. Drawer checks are recorded separately below.
+- Repeatable browser regression: `scripts/qa/live-match-drawer.js`, run with the
+  Playwright tool's `browser_run_code_unsafe` filename argument while the local
+  preview is running. It inherits the current browser viewport and creates and
+  closes its own page with synthetic fixtures,
+  runs the actual 20-second app poll using the browser clock, and checks nine
+  refresh/accessibility/race behaviours. Passed on 2026-09-10 at 390 × 844 and
+  1440 × 1000. The desktop assertion uses the actual initial scroll offset,
+  since a taller viewport can clamp the requested 180px offset.
 - Go tests passed with permission for temporary local HTTP test servers.
 - Browser: desktop and mobile; captured-feed table/heading; 320px overflow;
   match drawer open/Escape close; signed-out following journey; held request shows
@@ -104,6 +120,7 @@ failure/status variants, not a claim of production deployment or end-to-end late
 
 ## Next run
 
-Inspect the existing diff, then implement live match drawer updates. Keep changes
+Inspect the existing diff, then implement the remaining freshness work and date
+navigation. Keep changes
 reviewable on this branch. Do not mark the
 overall product goal complete merely because this first slice passes tests.

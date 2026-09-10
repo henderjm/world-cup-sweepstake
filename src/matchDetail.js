@@ -14,6 +14,9 @@ let model = null;
 let root = null;
 let panel = null;
 let openId = null;
+let request = null;
+let opener = null;
+let bodyOverflow = "";
 
 export function setupMatchDetail(activeModel, { drawer }) {
   model = activeModel;
@@ -22,36 +25,89 @@ export function setupMatchDetail(activeModel, { drawer }) {
   panel = root.querySelector(".dz__panel");
   root.addEventListener("click", (event) => {
     if (event.target.closest("[data-md-close]")) close();
+    if (event.target.closest("[data-md-retry]")) refreshOpenMatch();
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !root.hidden) close();
+    if (root.hidden) return;
+    if (event.key === "Escape") close();
+    if (event.key === "Tab") {
+      const controls = [...panel.querySelectorAll('button:not(:disabled), a[href], input, textarea, select, [tabindex="0"]')]
+        .filter(element => element.getClientRects().length > 0);
+      const first = controls[0];
+      const last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    }
   });
 }
 
 export function setMatchModel(activeModel) {
   model = activeModel;
+  if (!root || root.hidden) return;
+  const match = model.matches?.find(item => item.id === openId);
+  if (!match) return close();
+  replaceContent(panel.querySelector("#mdScore"), renderScore(match));
+  refreshOpenMatch();
 }
 
 export function openMatch(match) {
   if (!root || !panel || !match) return;
+  if (root.hidden) {
+    opener = document.activeElement;
+    bodyOverflow = document.body.style.overflow;
+  }
   unmountBanter(); // tear down any banter from a previously opened match
   openId = match.id;
   root.hidden = false;
+  document.querySelector(".shell").inert = true;
+  document.body.style.overflow = "hidden";
   panel.scrollTop = 0;
   panel.innerHTML = renderShell(match);
   if (banterAvailable()) mountBanter(panel.querySelector("[data-banter]"), openId);
-  loadDetail(match);
-  loadAnalysis(match);
+  panel.querySelector("[data-md-close]").focus({ preventScroll: true });
+  refreshOpenMatch();
 }
 
 function close() {
   if (!root) return;
   unmountBanter();
+  request?.abort();
+  request = null;
+  const matchId = openId;
   openId = null;
   root.hidden = true;
+  document.querySelector(".shell").inert = false;
+  document.body.style.overflow = bodyOverflow;
+  const target = opener?.isConnected ? opener
+    : document.querySelector(`[data-match-id="${CSS.escape(String(matchId))}"]`) ?? document.querySelector(".brand");
+  target?.focus({ preventScroll: true });
 }
 
-async function loadDetail(match) {
+function refreshOpenMatch() {
+  const match = model.matches?.find(item => item.id === openId);
+  if (!match || root.hidden) return;
+  request?.abort();
+  request = new AbortController();
+  const signal = request.signal;
+  const retry = panel.querySelector("[data-md-retry]");
+  if (retry) retry.disabled = true;
+  loadDetail(match, signal);
+  loadAnalysis(match, signal);
+}
+
+function replaceContent(slot, html) {
+  if (!slot || slot.innerHTML === html) return;
+  const scrollTop = panel.scrollTop;
+  slot.innerHTML = html;
+  panel.scrollTop = scrollTop;
+}
+
+async function loadDetail(match, signal) {
   const slot = panel.querySelector("#mdBody");
   if (!slot || match.id == null) {
     if (slot) slot.innerHTML = scheduledNote(match);
@@ -69,22 +125,29 @@ async function loadDetail(match) {
   // So: for a started match whose Worker read is missing any section, fetch
   // the baked copy too and fill the gaps section by section
   // (fillDetailSections; the fresher Worker read always wins a section it has).
-  let detail = DATA_API ? await fetchDetailJson(`${DATA_API}/match/${match.id}`) : null;
+  let detail = DATA_API ? await fetchDetailJson(`${DATA_API}/match/${match.id}`, signal) : null;
   const started = isLive(match.status) || isFinished(match.status);
   if (!detail || (started && detailSubstanceScore(detail) < DETAIL_SECTION_COUNT)) {
-    const baked = await fetchDetailJson(staticSrc);
+    if (signal.aborted) return;
+    const baked = await fetchDetailJson(staticSrc, signal);
     if (baked) detail = fillDetailSections(detail, baked);
   }
 
-  if (openId !== match.id) return; // a different match was opened meanwhile
+  if (signal.aborted || openId !== match.id) return;
   const body = panel.querySelector("#mdBody");
   if (!body) return;
-  body.innerHTML = detail ? renderDetail(match, detail) : scheduledNote(match);
+  const update = panel.querySelector("#mdUpdate");
+  const retryFocused = update.contains(document.activeElement);
+  update.hidden = Boolean(detail);
+  update.querySelector("[data-md-retry]").disabled = false;
+  if (detail) replaceContent(body, renderDetail(match, detail));
+  else if (body.querySelector("[data-md-loading]")) replaceContent(body, scheduledNote(match));
+  if (detail && retryFocused) panel.querySelector("[data-md-close]").focus({ preventScroll: true });
 }
 
-async function fetchDetailJson(src) {
+async function fetchDetailJson(src, signal) {
   try {
-    const response = await fetch(src, { cache: "no-store" });
+    const response = await fetch(src, { cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]) });
     if (!response.ok) return null;
     return await response.json();
   } catch {
@@ -95,25 +158,27 @@ async function fetchDetailJson(src) {
 // AI analysis card (Worker /analysis/:id). Purely additive: any failure, missing
 // config, or a match the Worker cron has not analysed yet just leaves the section
 // hidden. This fetch only ever reads the stored copy, never triggers a generation.
-async function loadAnalysis(match) {
+async function loadAnalysis(match, signal) {
   if (!DATA_API || match.id == null) return;
   if (!isLive(match.status) && !isFinished(match.status)) return;
   try {
-    const response = await fetch(`${DATA_API}/analysis/${match.id}`, { cache: "no-store" });
+    const response = await fetch(`${DATA_API}/analysis/${match.id}`, {
+      cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]),
+    });
     if (!response.ok) return;
     const analysis = await response.json();
-    if (openId !== match.id) return; // a different match was opened meanwhile
+    if (signal.aborted || openId !== match.id) return;
     const slot = panel.querySelector("#mdAnalysis");
     if (!slot || !analysis?.match || !analysis?.context) return;
     const live = isLive(analysis.status);
     const stamp = live
       ? `as of ${analysis.minute ? `${analysis.minute}'` : "now"}`
       : "full-time read";
-    slot.innerHTML = `
+    replaceContent(slot, `
       <p>Match analysis${live ? " · live" : ""}</p>
       ${analysis.headline ? `<p class="dz__aihead">${esc(analysis.headline)}</p>` : ""}
       <p>${esc(analysis.match)} ${esc(analysis.context)}</p>
-      <p class="dz__aimeta">${esc(stamp)} · written by Claude, it can slip up</p>`;
+      <p class="dz__aimeta">${esc(stamp)} · written by Claude, it can slip up</p>`);
     slot.hidden = false;
   } catch {
     // analysis is a bonus; the drawer works without it
@@ -122,7 +187,7 @@ async function loadAnalysis(match) {
 
 // -- shell (instant, no fetch) --------------------------------------------------
 
-function renderShell(match) {
+function renderScore(match) {
   const live = isLive(match.status);
   const finished = isFinished(match.status);
   const decided = Number.isFinite(match.score?.home) && Number.isFinite(match.score?.away);
@@ -134,6 +199,15 @@ function renderShell(match) {
       ? `<span class="dz__pill">${pens ? `FT · pens ${match.penalties.home}–${match.penalties.away}` : "Full time"}</span>`
       : `<span class="dz__pill">${esc(dayLabel(match.utcDate))} ${esc(timeLabel(match.utcDate))}</span>`;
 
+  return `<div class="dz__team">${badgeFor(match.homeTeam, "xl")}<p>${esc(displayTeamName(match.homeTeam))}</p></div>
+      <div>
+        <p class="dz__num">${decided ? `${match.score.home} – ${match.score.away}` : "v"}</p>
+        ${pill}
+      </div>
+      <div class="dz__team">${badgeFor(match.awayTeam, "xl")}<p>${esc(displayTeamName(match.awayTeam))}</p></div>`;
+}
+
+function renderShell(match) {
   return `
     <div class="dz__bar">
       <span class="dz__tag">${contextLabel(match)}${match.utcDate ? ` · ${esc(dayLabel(match.utcDate))}` : ""}</span>
@@ -141,17 +215,14 @@ function renderShell(match) {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
       </button>
     </div>
-    <div class="dz__score">
-      <div class="dz__team">${badgeFor(match.homeTeam, "xl")}<p>${esc(displayTeamName(match.homeTeam))}</p></div>
-      <div>
-        <p class="dz__num">${decided ? `${match.score.home} – ${match.score.away}` : "v"}</p>
-        ${pill}
-      </div>
-      <div class="dz__team">${badgeFor(match.awayTeam, "xl")}<p>${esc(displayTeamName(match.awayTeam))}</p></div>
-    </div>
+    <div class="dz__score" id="mdScore" aria-live="polite">${renderScore(match)}</div>
     ${match.venue ? `<p class="dz__venue">${esc(match.venue)}</p>` : ""}
     <div class="dz__ai" id="mdAnalysis" hidden></div>
-    <div id="mdBody"><p class="dz__loading">Loading match detail…</p></div>
+    <div id="mdBody"><p class="dz__loading" data-md-loading>Loading match detail…</p></div>
+    <div id="mdUpdate" role="status" hidden>
+      <p class="note">Match details could not be refreshed. Any details shown are from the last available update.</p>
+      <button class="seg" type="button" data-md-retry>Try again</button>
+    </div>
     ${banterAvailable() ? `<h4>Banter</h4><div data-banter></div>` : ""}
   `;
 }
