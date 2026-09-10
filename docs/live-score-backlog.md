@@ -44,7 +44,7 @@ production page and a separate read of the public endpoint worked. Local browser
 regressions therefore replay the captured public feed or explicit synthetic
 failure/status variants, not a claim of production deployment or end-to-end latency.
 
-## Completed locally — awaiting deployment approval
+## Completed and deployed September 10
 
 1. Restricted CL table reconciliation and form to league/group-stage fixtures.
    Replayed the public CL feed captured at `2026-09-10T19:55:43.564Z`: AEK is
@@ -54,7 +54,7 @@ failure/status variants, not a claim of production deployment or end-to-end late
 3. Preserved provider status in mapping and detail data. Cards, ticker and drawer
    can show HT, Suspended or Interrupted. Older feeds without the new field show
    Paused rather than guessing HT. This requires the Worker/bake update as well
-   as the frontend; nothing has been deployed.
+   as the frontend; both are included in the September 10 release below.
 4. Compacted the mobile scores list. All six replayed matches fit before the
    bottom navigation at 390 × 844 (sixth row bottom: 783px). No page overflow at
    320, 390 or 1440. The date browser in item 10 supersedes the initial live cards.
@@ -146,6 +146,7 @@ failure/status variants, not a claim of production deployment or end-to-end late
 | Priority | Item | Definition of done |
 | --- | --- | --- |
 | P1 | Show league tables on wider screens | At desktop widths (initial target: 1200px and above), show the relevant league table alongside Scores without a separate tab change. In All matches, make the table's competition explicit and selectable. Preserve date, Live and Following selections; tables use the same feed and disclose stale/unavailable data. Verify 1200px and 1440px layouts, keyboard access and no horizontal overflow; mobile scores remain usable at 320px and 390px. Requested by the user September 10. |
+| P1 | Restore automatic Worker publishing | GitHub's Worker workflow currently skips deployment because `CLOUDFLARE_API_TOKEN` is unset. Configure an appropriately scoped deployment credential and verify the actual deploy step runs on the next approved release. A green skipped workflow is not deployment evidence. The September 10 release was deployed successfully using the existing local OAuth login. |
 | P1 | Measure actual event latency | Compare timestamped provider events and observed delivery across live matches. Establish p50/p95 delay and update reliability; feed age alone does not prove event latency. |
 | P1 — next | Qualifying versus main knockout presentation | Keep qualification history available, but avoid presenting a wall of July fixtures as the main knockout destination in September. Group two-leg ties with correct aggregate and penalty handling; never invent future draws. |
 | P1 | Team identity and labels | The feed says Sabah FA while both benchmarks say Sabah FK. Verify provider team ID, crest and destination before changing display aliases; do not rewrite stored follow keys based on a name alone. |
@@ -218,7 +219,7 @@ failure/status variants, not a claim of production deployment or end-to-end late
 
 ## Next run
 
-Deployment takes precedence for the approved completed commits. The unfinished
+The approved release is deployed; see the release record below. The unfinished
 knockout changes remain in the working tree; `test/knockout.test.js` currently has
 one failing conservative-aggregate case and must pass along with browser checks
 before that slice is included in a later release.
@@ -229,3 +230,24 @@ ties; retain accessible qualifying history and do not invent future draws. The w
 and keep this goal's commits scoped to live scores. Keep changes reviewable on
 this branch. Do not mark the overall product goal complete because individual
 slices pass tests.
+
+## Release record — September 10
+
+- Approved release: `b97448278456de39560e5dc1d31fd5dd0de4ce54`, including all six
+  live-score improvement commits through `ff9b411` and the desktop-table backlog
+  item. Pushed normally to main; unfinished knockout and native work excluded.
+- Isolated release export: 1,458 tests passed, zero failures; build passed.
+- [Pages deployment](https://github.com/henderjm/world-cup-sweepstake/actions/runs/34529646806)
+  succeeded. The public page serves the expected `index-ClrKPMjB.js` asset.
+- [Worker workflow](https://github.com/henderjm/world-cup-sweepstake/actions/runs/34529646834)
+  skipped its deploy step because its token was absent. Deployed the same isolated
+  revision with the existing local Cloudflare OAuth session instead: Worker
+  `goon-squad-data`, version `0770b7a1-fe38-4b33-9cc0-932e042fce3b`.
+  Verified the public CL endpoint returns `providerStatus` and 234 fixtures.
+- Real production browser checks, without feed interception, passed at 390px and
+  1440px: six CL matches, match detail opening/closing, local follow from the
+  drawer, Following after reload, next-day/Today navigation and CL table. AEK
+  shows one played and three points. No JavaScript errors or horizontal overflow
+  in those journeys. Local follows used disposable browser contexts; no account
+  writes or notifications. Earlier synthetic loading/error/stale tests remain
+  recorded above; this live check does not measure end-to-end event latency.
