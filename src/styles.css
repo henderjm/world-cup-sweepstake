@@ -342,7 +342,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 .comprow.is-active .comprow__mark { background: var(--accent); color: var(--accent-ink); }
 
-.comprow__label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.comprow__label { flex: 1; min-width: 0; white-space: normal; }
 
 .compchips { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 14px; padding-bottom: 2px; }
 
@@ -525,7 +525,7 @@ button { font-family: inherit; cursor: pointer; }
 /* Scores date navigation and match rows */
 .score-controls { display: flex; align-items: center; gap: 6px; margin: 0 0 14px; flex-wrap: wrap; }
 .score-controls .seg { min-height: 44px; min-width: 40px; }
-.score-controls__date { flex: 1; min-width: 130px; }
+.score-controls__date { flex: 1; min-width: 130px; max-width: 240px; }
 .score-controls input { width: 100%; min-height: 40px; padding: 8px; background: var(--surface); color: var(--text); border: 1px solid var(--line-2); border-radius: 8px; color-scheme: dark; font: inherit; }
 .score-day { margin-bottom: 16px; }
 @media (max-width: 760px) {
@@ -3698,3 +3698,12 @@ button { font-family: inherit; cursor: pointer; }
   text-overflow: ellipsis;
   max-width: 100%;
 }
+
+/* The daily overview has no single league table to put in the right column. */
+.layout--scores-overview { grid-template-columns: 190px minmax(0, 1fr); }
+.scores-home-heading { margin-bottom: 18px; }
+.score-league__heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.score-league__heading .card__title { margin: 0; }
+.score-league__table { min-height: 44px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 12px; padding: 8px 0 8px 8px; }
+.score-league__freshness { color: var(--muted); font-size: 11px; margin: 0 0 6px; }
+.score-league__freshness.is-delayed { color: var(--accent); }

@@ -70,46 +70,23 @@ export function renderTicker(model) {
 
 // -- Competitions: desktop sidebar and mobile chip row -------------------------
 
-// Locked entries are the roadmap: visible so the destination is legible, inert
-// until their data tier is switched on (same pattern as the design's SOON rows).
-const LOCKED_COMPETITIONS = [
-  { label: "Europa League", abbr: "UEL" },
-  { label: "Conference League", abbr: "UECL" },
-];
-
-export function renderCompetitionSidebar(activeCode) {
-  const rows = Object.values(COMPETITIONS)
-    .map(
-      (comp) => `<button class="comprow ${comp.code === activeCode ? "is-active" : ""}" type="button" data-competition="${comp.code}">
-        <span class="comprow__mark">${esc(comp.code === "PL" ? "PL" : "UCL")}</span>
-        <span class="comprow__label">${esc(comp.shortName)}</span>
-      </button>`,
-    )
-    .join("");
-  const locked = LOCKED_COMPETITIONS.map(
-    (comp) => `<button class="comprow is-locked" type="button" disabled>
-        <span class="comprow__mark">${esc(comp.abbr)}</span>
-        <span class="comprow__label">${esc(comp.label)}</span>
-        <span class="soon">Soon</span>
-      </button>`,
-  ).join("");
-  return `<aside class="side">
-      <h3 class="side__title">Competitions</h3>
-      ${rows}${locked}
-    </aside>`;
+export function renderCompetitionSidebar(activeCode, includeAll = false) {
+  const rows = Object.values(COMPETITIONS).map(comp => `
+    <button class="comprow ${comp.code === activeCode ? "is-active" : ""}" type="button" data-competition="${comp.code}">
+      <span class="comprow__mark">${esc(comp.code === "PL" ? "PL" : "UCL")}</span>
+      <span class="comprow__label">${esc(comp.shortName)}</span>
+    </button>`).join("");
+  return `<aside class="side"><h3 class="side__title">Competitions</h3>
+    ${includeAll ? `<button class="comprow ${activeCode == null ? "is-active" : ""}" type="button" data-all-scores>All matches</button>` : ""}
+    ${rows}</aside>`;
 }
 
-export function renderCompetitionChips(activeCode) {
-  const chips = Object.values(COMPETITIONS)
-    .map(
-      (comp) =>
-        `<button class="compchip ${comp.code === activeCode ? "is-active" : ""}" type="button" data-competition="${comp.code}">${esc(comp.shortName)}</button>`,
-    )
-    .join("");
-  const locked = LOCKED_COMPETITIONS.map(
-    (comp) => `<button class="compchip is-locked" type="button" disabled>${esc(comp.label)} <span class="soon">Soon</span></button>`,
-  ).join("");
-  return `<div class="compchips">${chips}${locked}</div>`;
+export function renderCompetitionChips(activeCode, includeAll = false) {
+  const chips = Object.values(COMPETITIONS).map(comp => `
+    <button class="compchip ${comp.code === activeCode ? "is-active" : ""}" type="button" data-competition="${comp.code}">${esc(comp.shortName)}</button>`).join("");
+  return `<div class="compchips">
+    ${includeAll ? `<button class="compchip ${activeCode == null ? "is-active" : ""}" type="button" data-all-scores>All matches</button>` : ""}
+    ${chips}</div>`;
 }
 
 // -- Hero -----------------------------------------------------------------------
@@ -243,34 +220,69 @@ function renderFeedDelayBanner(model, now) {
 
 // -- Live & today -----------------------------------------------------------------------
 
-export function renderLive(model, { date = null, liveOnly = false } = {}) {
-  const selectedDate = validScoreDate(date) ? date : localDateKey();
-  const isToday = selectedDate === localDateKey();
-  const dayMatches = model.matches
-    .filter(match => localDateKey(match.utcDate) === selectedDate)
+function matchesOnDate(model, date) {
+  return (model.matches ?? []).filter(match => localDateKey(match.utcDate) === date)
     .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate));
+}
+
+function scoreDateControls(selectedDate, liveOnly, liveCount) {
+  return `<div class="score-controls" aria-label="Match dates and filters">
+    <button class="seg" type="button" data-score-action="previous" aria-label="Previous day">‹</button>
+    <label class="score-controls__date"><input type="date" data-score-date aria-label="Match date" value="${selectedDate}"></label>
+    <button class="seg" type="button" data-score-action="next" aria-label="Next day">›</button>
+    <button class="seg ${selectedDate === localDateKey() ? "is-active" : ""}" type="button" data-score-action="today">Today</button>
+    <button class="seg ${liveOnly ? "is-active" : ""}" type="button" data-score-action="live" aria-pressed="${liveOnly}">Live <span class="seg__count">${liveCount}</span></button>
+  </div>`;
+}
+
+function scoreDayRows(model, selectedDate, liveOnly) {
+  const dayMatches = matchesOnDate(model, selectedDate);
   const matches = liveOnly ? dayMatches.filter(match => isLive(match.status)) : dayMatches;
-  const liveCount = dayMatches.filter(match => isLive(match.status)).length;
-  const next = model.matches
+  const next = (model.matches ?? [])
     .filter(match => ["TIMED", "SCHEDULED"].includes(match.status) && localDateKey(match.utcDate) > selectedDate)
     .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))[0];
-  const title = isToday ? "Today" : dayLabel(`${selectedDate}T12:00:00`);
-  const empty = liveOnly ? "No live matches on this date." : isToday ? "No kick-offs today." : "No matches on this date.";
+  const empty = liveOnly ? "No live matches on this date." : selectedDate === localDateKey() ? "No kick-offs today." : "No matches on this date.";
+  return `${matches.length ? matches.map(matchLine).join("") : `<p class="note">${empty}</p>`}
+    ${!dayMatches.length && next ? `<p class="note">Next: ${esc(displayTeamName(next.homeTeam))} v ${esc(displayTeamName(next.awayTeam))} · ${esc(dayLabel(next.utcDate))}</p>` : ""}`;
+}
 
-  return `
-    <div class="score-controls" aria-label="Match dates and filters">
-      <button class="seg" type="button" data-score-action="previous" aria-label="Previous day">‹</button>
-      <label class="score-controls__date"><input type="date" data-score-date aria-label="Match date" value="${selectedDate}"></label>
-      <button class="seg" type="button" data-score-action="next" aria-label="Next day">›</button>
-      <button class="seg ${isToday ? "is-active" : ""}" type="button" data-score-action="today">Today</button>
-      <button class="seg ${liveOnly ? "is-active" : ""}" type="button" data-score-action="live" aria-pressed="${liveOnly}">Live <span class="seg__count">${liveCount}</span></button>
-    </div>
+export function renderLive(model, { date = null, liveOnly = false } = {}) {
+  const selectedDate = validScoreDate(date) ? date : localDateKey();
+  const dayMatches = matchesOnDate(model, selectedDate);
+  const liveCount = dayMatches.filter(match => isLive(match.status)).length;
+  const count = liveOnly ? liveCount : dayMatches.length;
+  const title = selectedDate === localDateKey() ? "Today" : dayLabel(`${selectedDate}T12:00:00`);
+  return `${scoreDateControls(selectedDate, liveOnly, liveCount)}
     ${renderFeedDelayBanner(model, Date.now())}
     <section class="card card--list score-day">
-      <h2 class="card__title">${esc(title)} · ${matches.length} ${matches.length === 1 ? "match" : "matches"}</h2>
-      ${matches.length ? matches.map(matchLine).join("") : `<p class="note">${empty}</p>`}
-      ${!dayMatches.length && next ? `<p class="note">Next: ${esc(displayTeamName(next.homeTeam))} v ${esc(displayTeamName(next.awayTeam))} · ${esc(dayLabel(next.utcDate))}</p>` : ""}
+      <h2 class="card__title">${esc(title)} · ${count} ${count === 1 ? "match" : "matches"}</h2>
+      ${scoreDayRows(model, selectedDate, liveOnly)}
     </section>`;
+}
+
+export function renderScoresHome(feeds, { date = null, liveOnly = false } = {}) {
+  const selectedDate = validScoreDate(date) ? date : localDateKey();
+  const liveCount = feeds.flatMap(feed => matchesOnDate(feed, selectedDate)).filter(match => isLive(match.status)).length;
+  const priority = feed => {
+    const matches = matchesOnDate(feed, selectedDate);
+    return matches.some(match => isLive(match.status)) ? 2 : !liveOnly && matches.length ? 1 : 0;
+  };
+  const ordered = [...feeds].sort((a, b) => priority(b) - priority(a));
+  const groups = ordered.map(feed => {
+    const code = feed.competition.code;
+    return `<section class="card card--list score-day score-league" data-score-league="${code}" aria-label="${esc(feed.competition.shortName)}">
+      <div class="score-league__heading">
+        <h2 class="card__title">${esc(feed.competition.shortName)}</h2>
+        <button type="button" class="score-league__table" data-score-table="${code}" aria-label="${esc(feed.competition.shortName)} table">Table ›</button>
+      </div>
+      <p class="score-league__freshness ${feed.stale || feed.error ? "is-delayed" : ""}">Updated <span data-feed-age="${code}"></span></p>
+      ${feed.loading ? '<p class="note" role="status">Loading matches…</p>'
+        : feed.error ? `<p class="note" role="status">Scores unavailable.</p><button class="seg" data-score-feed-retry="${code}">Try again</button>`
+        : !feed.hasData ? '<p class="note">No fixtures published.</p>'
+        : `${feed.stale ? `<p class="note" role="status">Live updates delayed. Showing the last available scores. <button class="score-league__table" data-score-feed-retry="${code}">Retry</button></p>` : ""}${scoreDayRows(feed, selectedDate, liveOnly)}`}
+    </section>`;
+  }).join("");
+  return `${scoreDateControls(selectedDate, liveOnly, liveCount)}${groups}`;
 }
 
 // -- League table ----------------------------------------------------------------------------

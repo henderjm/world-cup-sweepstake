@@ -44,7 +44,7 @@ async (browserPage) => {
       return route.fulfill({ status: 404, body: "Not configured for this regression" });
     });
     await page.setViewportSize(browserPage.viewportSize() ?? { width: 390, height: 844 });
-    await page.goto("http://127.0.0.1:8731/#live");
+    await page.goto("http://127.0.0.1:8731/#live?competition=CL");
     await page.locator(".score-day [data-match-id]").click();
     await page.getByText("Scorer 1", { exact: false }).waitFor();
     assert(await page.locator(".shell").evaluate(e => e.inert), "Background should be inert");

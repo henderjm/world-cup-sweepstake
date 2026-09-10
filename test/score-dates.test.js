@@ -19,11 +19,11 @@ test("date navigation crosses DST and month boundaries by calendar day", () => {
 test("invalid route dates cannot silently roll into another month", () => {
   for (const date of ["2026-02-29", "2026-04-31", "tomorrow", "2026-13-01", ""]) assert.equal(validScoreDate(date), false);
   assert.equal(validScoreDate("2028-02-29"), true);
-  assert.deepEqual(readScoreRoute("live?date=2026-02-30&live=1"), { date: null, liveOnly: true });
+  assert.deepEqual(readScoreRoute("live?date=2026-02-30&live=1"), { tab: "live", date: null, liveOnly: true, competition: null });
 });
 
 test("date and live filter round-trip through shareable browser routes", () => {
-  assert.deepEqual(readScoreRoute(scoreRouteHash("2026-09-10", true)), { date: "2026-09-10", liveOnly: true });
+  assert.deepEqual(readScoreRoute(scoreRouteHash("2026-09-10", true)), { tab: "live", date: "2026-09-10", liveOnly: true, competition: null });
   assert.equal(scoreRouteHash(null, false), "live");
   assert.equal(readScoreRoute("fantasy/12/feed"), null);
 });
@@ -37,7 +37,7 @@ test("selected date and live filter show only matching fixtures, without duplica
   const day = renderLive(model, { date: "2026-09-10" });
   assert.equal((day.match(/data-match-id="2"/g) ?? []).length, 1);
   assert.doesNotMatch(day, /data-match-id="3"/);
-  const live = renderLive(model, { date: "2026-09-10", liveOnly: true });
+  const live = renderLive(model, { tab: "live", date: "2026-09-10", liveOnly: true, competition: null });
   assert.match(live, /data-match-id="1"/);
   assert.doesNotMatch(live, /data-match-id="2"/);
 });

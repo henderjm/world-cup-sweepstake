@@ -1,5 +1,6 @@
 import { loadModel, modelSignature } from "./data.js";
-import { localDateKey, readScoreRoute, scoreRouteHash, shiftScoreDate, validScoreDate } from "./scoreDates.js";
+import { createScoreFeeds, combinedScoreModel } from "./scoreFeeds.js";
+import { SCORES_TABS, localDateKey, readScoreRoute, scoreRouteHash, shiftScoreDate, validScoreDate } from "./scoreDates.js";
 import { trackGameweek } from "./fantasyGameweekTracker.js";
 import { confettiBurst } from "./interactions.js";
 import { track, trackException } from "./telemetry.js";
@@ -19,7 +20,7 @@ import {
   leagueProperties,
   realDraftPickProperties,
 } from "./funnelEvents.js";
-import { COMPETITIONS, DEFAULT_COMPETITION_CODE } from "./competitions.js";
+import { COMPETITIONS, COMPETITION_CODES, DEFAULT_COMPETITION_CODE } from "./competitions.js";
 import {
   knockoutMatches,
   renderCompetitionChips,
@@ -29,6 +30,7 @@ import {
   renderHero,
   renderKnockout,
   renderLive,
+  renderScoresHome,
   renderMiniTable,
   renderScoresTabs,
   renderStats,
@@ -216,7 +218,6 @@ const elements = {
   updated: document.querySelector("#updated"),
 };
 
-const SCORES_TABS = ["live", "tables", "knockout", "fixtures", "predict", "stats"];
 const HASH_ALIASES = { goldenboot: "stats", paperrun: "play" };
 const COMPETITION_STORAGE_KEY = "gs-competition";
 
@@ -277,6 +278,7 @@ function resolveInitialFantasyHash(rawHash) {
 }
 
 const rawInitialHash = window.location.hash.replace("#", "");
+const initialScores = readScoreRoute(rawInitialHash);
 const initialFantasy = resolveInitialFantasyHash(rawInitialHash);
 const initialLearn = resolveInitialLearnHash(rawInitialHash);
 const initialJoinCode = resolveInitialJoinHash(rawInitialHash);
@@ -286,13 +288,14 @@ const initialHash = initialJoinCode
     ? "learn"
     : initialFantasy.section === "fantasy"
       ? "fantasy"
-      : (HASH_ALIASES[rawInitialHash] ?? rawInitialHash);
+      : (initialScores?.tab ?? HASH_ALIASES[rawInitialHash] ?? rawInitialHash);
 const state = {
   section: NON_SCORES_SECTIONS.includes(initialHash) ? initialHash : "scores",
   tab: SCORES_TABS.includes(initialHash) ? initialHash : "live",
-  competition: storedCompetition(),
-  scoreDate: readScoreRoute(rawInitialHash)?.date ?? null,
-  scoresLiveOnly: readScoreRoute(rawInitialHash)?.liveOnly ?? false,
+  competition: initialScores?.competition ?? storedCompetition(),
+  scoreCompetition: initialScores?.competition ?? null,
+  scoreDate: initialScores?.date ?? null,
+  scoresLiveOnly: initialScores?.liveOnly ?? false,
   // null = data-driven default: Results once any match has finished, Upcoming
   // before then (a pre-season visitor should not land on an empty Results
   // panel with 380 fixtures hidden behind the other pill). A click on either
@@ -471,14 +474,15 @@ function initialFantasyState() {
 function storedCompetition() {
   try {
     const stored = window.localStorage.getItem(COMPETITION_STORAGE_KEY);
-    if (stored && COMPETITIONS[stored]) return stored;
+    if (stored && Object.hasOwn(COMPETITIONS, stored)) return stored;
   } catch {
     // storage may be blocked; the default competition still works
   }
   return DEFAULT_COMPETITION_CODE;
 }
 
-let model = null;
+const scoreFeeds = createScoreFeeds(loadModel);
+let model = scoreFeeds.get(state.competition);
 let appLoadMetricSent = false;
 // Whether this visitor actually played the sandbox in this browsing session.
 // It is the join between the two halves of the funnel: a real league created
@@ -494,29 +498,39 @@ function demoWasPlayed() {
   return demoPlayedThisSession;
 }
 let pollTimer = null;
+let nextPollAt = 0;
 let lastSignature = "";
-let lastFetchAt = 0;
-// Age of the data the feed last handed us, when the Worker reported it was serving
-// a stale copy, else null. Deliberately not read off `model`: see setUpdatedLabel.
-let feedStaleAgeMs = null;
-let feedStale = false;
-let feedUpdatedAt = null;
+function allScores() {
+  return state.section === "scores" && state.tab === "live" && !state.scoreCompetition;
+}
 
-// One place, because all three of them (boot, poll, competition switch) have to
-// agree: a switch that recorded the fetch time but not the staleness would show
-// the previous competition's delay against the new one's data.
-function recordFeedFreshness(data) {
-  lastFetchAt = Date.now();
-  const updatedAt = Date.parse(data.lastUpdated);
-  feedUpdatedAt = Number.isFinite(updatedAt) ? updatedAt : null;
-  feedStale = Boolean(data?.stale);
-  feedStaleAgeMs = feedStale ? data.staleAgeMs ?? null : null;
+function matchModel() {
+  return combinedScoreModel(scoreFeeds.values());
+}
+
+function scoresSignature() {
+  return (allScores() ? scoreFeeds.values() : [model]).map(modelSignature).join("|");
+}
+
+async function refreshScores(codes = allScores() ? COMPETITION_CODES : [state.competition]) {
+  await Promise.all(codes.map(async code => {
+    await scoreFeeds.refresh(code);
+    model = scoreFeeds.get(state.competition);
+    const signature = scoresSignature();
+    if (signature !== lastSignature) {
+      lastSignature = signature;
+      if (state.section !== "play") renderAll();
+      else if (model.hasData) elements.ticker.innerHTML = renderTicker(model);
+    }
+    setMatchModel(matchModel());
+    setUpdatedLabel();
+    if (hasLiveScores() && nextPollAt > Date.now() + 20000) scheduleNextPoll();
+  }));
 }
 
 const SHELL_IDS = ["ticker", "layout", "footer", "updated", "sectionNav", "bottomNav", "accountBtn"];
 const RELOAD_FLAG = "gs-shell-reloaded";
 
-start();
 
 async function start() {
   // A freshly deployed app.js can briefly load against a stale, cached index.html
@@ -540,8 +554,6 @@ async function start() {
   }
 
   const buildStart = performance.now();
-  model = await loadModel(state.competition);
-  trackAppLoad(model, Math.round(performance.now() - buildStart));
 
   // Everything is wired regardless of whether the first load has data: a stored
   // competition whose season has not opened yet must still let the visitor switch
@@ -552,7 +564,7 @@ async function start() {
   wireHashRouting();
   wireLayoutControls();
   wireViewportChange();
-  setupMatchDetail(model, { drawer: elements.matchDrawer });
+  setupMatchDetail(matchModel(), { drawer: elements.matchDrawer });
   onAccountChange(() => {
     syncAccountButton();
     if (state.section === "you") renderLayout();
@@ -579,19 +591,16 @@ async function start() {
   });
   restoreAccount().then(syncAccountButton);
 
-  if (model.hasData) {
-    recordFeedFreshness(model);
-    renderAll();
-    const matchParam = new URLSearchParams(window.location.search).get("match");
-    if (matchParam) {
-      const match = model.matches.find((item) => String(item.id) === matchParam);
-      if (match) openMatch(match);
-    }
-  } else {
-    renderAll();
+  renderAll();
+  startPolling();
+  await refreshScores();
+  trackAppLoad(model, Math.round(performance.now() - buildStart));
+  const matchParam = new URLSearchParams(window.location.search).get("match");
+  if (matchParam) {
+    const match = matchModel().matches.find(item => String(item.id) === matchParam);
+    if (match) openMatch(match);
   }
 
-  startPolling();
   watchForeground();
 }
 
@@ -634,70 +643,52 @@ function refreshOnForeground() {
   refreshFantasySquadState();
 }
 
-// Relative "updated Xs ago" that ticks every second, so it is always visibly live.
-//
-// feedStaleAgeMs is tracked separately from `model` on purpose. poll() only
-// reassigns the model when the match signature actually moved, and a feed that has
-// frozen produces the same signature every time, so staleness read off the model
-// would be pinned at whatever it was when the scoreline last changed - which is
-// exactly the window this is meant to expose. It is refreshed on every successful
-// poll instead, so the chip starts telling the truth on the first stale response.
+function feedLabel(feed) {
+  if (feed.loading) return { text: "loading", delayed: false };
+  if (feed.error) return { text: "unavailable", delayed: true };
+  const updatedAt = Date.parse(feed.lastUpdated);
+  return updatedLabel({ fetchedAt: feed.fetchedAt, staleAgeMs: feed.staleAgeMs,
+    stale: feed.stale, updatedAt: Number.isFinite(updatedAt) ? updatedAt : null });
+}
+
 function setUpdatedLabel() {
-  const { text, delayed } = updatedLabel({ fetchedAt: lastFetchAt, staleAgeMs: feedStaleAgeMs, stale: feedStale, updatedAt: feedUpdatedAt });
-  elements.updated.textContent = text;
+  const feeds = allScores() ? scoreFeeds.values() : [model];
+  const labels = feeds.map(feedLabel);
+  const delayed = labels.some(label => label.delayed);
+  const loading = feeds.some(feed => feed.loading);
+  elements.updated.textContent = allScores()
+    ? (delayed ? "Some feeds delayed" : loading ? "loading" : "per league")
+    : labels[0].text;
   elements.updated.classList.toggle("is-delayed", delayed);
-  if (delayed) {
-    elements.updated.title = "Live updates are unavailable. Showing the last available data.";
-  } else {
-    elements.updated.removeAttribute("title");
+  if (delayed) elements.updated.title = "Some live updates are unavailable. Check each competition's status.";
+  else elements.updated.removeAttribute("title");
+  for (const element of elements.layout.querySelectorAll("[data-feed-age]")) {
+    element.textContent = feedLabel(scoreFeeds.get(element.dataset.feedAge)).text;
   }
 }
 
 function startPolling() {
-  lastSignature = modelSignature(model);
+  lastSignature = scoresSignature();
   scheduleNextPoll();
 }
 
-// Clears any pending timer before arming the next one, so there is only ever
-// one poll loop. Nothing but poll() used to reach here, which made that true by
-// accident; a second entry point (refreshOnForeground) turns "two overlapping
-// polls" into "two timers, forever", each of which arms its own successor, so
-// the poll rate would double on every foreground rather than once.
+function hasLiveScores() {
+  return (allScores() ? matchModel().matches : model.matches ?? []).some(item => isLive(item.status));
+}
+
 function scheduleNextPoll() {
   if (pollTimer) window.clearTimeout(pollTimer);
-  const hasLive = (model.matches ?? []).some((item) => isLive(item.status));
-  pollTimer = window.setTimeout(poll, hasLive ? 20000 : 60000);
+  const delay = hasLiveScores() ? 20000 : 60000;
+  nextPollAt = Date.now() + delay;
+  pollTimer = window.setTimeout(poll, delay);
 }
 
 async function poll() {
-  const polledCompetition = state.competition;
-  try {
-    const fresh = await loadModel(polledCompetition);
-    // A switch mid-flight makes this response stale; the switch already re-rendered.
-    if (polledCompetition !== state.competition) return scheduleNextPoll();
-    const lostFeed = fresh.error || (model.hasData && (!fresh.hasData || Date.parse(fresh.lastUpdated) < Date.parse(model.lastUpdated)));
-    const next = lostFeed && model.hasData ? { ...model, stale: true } : fresh;
-    if (next.hasData || !lostFeed) {
-      // Before the signature gate below, and outside it: a frozen feed yields an
-      // unchanged signature, so anything recorded inside that branch would never
-      // run for precisely the responses this exists to surface.
-      if (lostFeed) feedStale = true;
-      else recordFeedFreshness(next);
-      const signature = modelSignature(next);
-      model = next;
-      if (signature !== lastSignature) {
-        lastSignature = signature;
-        if (state.section !== "play") renderAll();
-        else if (model.hasData) elements.ticker.innerHTML = renderTicker(model);
-      }
-      setMatchModel(model);
-      setUpdatedLabel();
-    }
-    refreshLiveMatchup(fresh);
-  } catch {
-    // keep the last good model and try again next cycle
-  }
+  // Schedule from dispatch, so a slow league cannot extend the other's cadence.
+  // scoreFeeds coalesces any request still in flight for the same competition.
   scheduleNextPoll();
+  await refreshScores();
+  refreshLiveMatchup(model);
 }
 
 // A matchup score frozen at whenever its tab first loaded is exactly the
@@ -728,16 +719,27 @@ function refreshLiveMatchup(fresh) {
 
 function renderAll() {
   syncNav();
-  elements.ticker.innerHTML = model.hasData
-    ? renderTicker(model)
+  const scores = allScores() ? matchModel() : model;
+  elements.ticker.innerHTML = scores.hasData
+    ? renderTicker(scores)
     : `<div class="ticker__track" style="animation:none;"><span class="ticker__item ticker__item--idle">Live feed not available yet.</span></div>`;
-  elements.footer.innerHTML = model.hasData
-    ? renderFooter(model)
+  elements.footer.innerHTML = scores.hasData
+    ? renderFooter(scores)
     : `<p>Data source: ${model.source ?? "pending"} · Kickoff Draft is a Goon Squad production.</p>`;
   renderLayout();
 }
 
 function renderLayout() {
+  const focused = document.activeElement;
+  const selector = focused?.hasAttribute("data-score-date") ? "[data-score-date]"
+    : focused?.dataset.scoreAction ? `[data-score-action="${focused.dataset.scoreAction}"]`
+    : focused?.dataset.scoreTable ? `[data-score-table="${focused.dataset.scoreTable}"]`
+    : focused?.dataset.matchId ? `[data-match-id="${CSS.escape(focused.dataset.matchId)}"]` : null;
+  renderLayoutContent();
+  if (selector && !focused.isConnected) elements.layout.querySelector(selector)?.focus({ preventScroll: true });
+}
+
+function renderLayoutContent() {
   if (state.section === "play") {
     elements.layout.className = "layout";
     renderPaperRun();
@@ -789,15 +791,27 @@ function renderLayout() {
     return;
   }
 
+  if (allScores()) {
+    const panel = `<div class="panelcol">
+      ${state.isMobile ? renderCompetitionChips(null, true) : ""}
+      <div class="scores-home-heading"><h1 class="hero__title">Football scores</h1></div>
+      ${renderScoresHome(scoreFeeds.values(), { date: state.scoreDate, liveOnly: state.scoresLiveOnly })}
+    </div>`;
+    elements.layout.className = state.isMobile ? "layout" : "layout layout--scores-overview";
+    elements.layout.innerHTML = `${state.isMobile ? "" : renderCompetitionSidebar(null, true)}${panel}`;
+    setUpdatedLabel();
+    return;
+  }
+
   if (!model.hasData) {
     elements.layout.className = "layout";
     elements.layout.innerHTML = `
       <div class="pending">
         <p class="hero__eyebrow">${model.competition?.name ?? "Football"}</p>
-        <h1 class="hero__title">${model.error ? "Scores unavailable" : "No fixtures published"}</h1>
-        <p class="note">${model.error ? "We could not load this competition. Try again or choose another competition." : "This competition has no published fixtures yet. It appears here as soon as the feed opens the season."}</p>
+        <h1 class="hero__title">${model.loading ? "Loading scores…" : model.error ? "Scores unavailable" : "No fixtures published"}</h1>
+        <p class="note">${model.loading ? "Fetching matches and standings." : model.error ? "We could not load this competition. Try again or choose another competition." : "This competition has no published fixtures yet. It appears here as soon as the feed opens the season."}</p>
         ${model.error ? '<button class="seg" type="button" data-scores-retry>Try again</button>' : ""}
-        <div class="hero__meta">${renderCompetitionChips(state.competition)}</div>
+        <div class="hero__meta">${renderCompetitionChips(state.competition, true)}</div>
       </div>`;
     return;
   }
@@ -807,7 +821,7 @@ function renderLayout() {
 
   const panel = `
     <div class="panelcol">
-      ${state.isMobile ? renderCompetitionChips(state.competition) : ""}
+      ${state.isMobile ? renderCompetitionChips(state.competition, true) : ""}
       ${renderHero(model)}
       ${renderScoresTabs(model, state.tab)}
       ${renderPanel()}
@@ -818,7 +832,7 @@ function renderLayout() {
     elements.layout.innerHTML = panel;
   } else {
     elements.layout.className = "layout layout--scores";
-    elements.layout.innerHTML = `${renderCompetitionSidebar(state.competition)}${panel}${renderMiniTable(model)}`;
+    elements.layout.innerHTML = `${renderCompetitionSidebar(state.competition, true)}${panel}${renderMiniTable(model)}`;
   }
 }
 
@@ -3920,6 +3934,8 @@ function setSection(section) {
   // off the Fantasy gate from one entered off a Learn page.
   if (section === "demo") track(FUNNEL_EVENTS.DEMO_ENTERED, { from_section: previous ?? null });
   renderAll();
+  if (section === "scores") poll();
+  else setUpdatedLabel();
 }
 
 // Header auth control: "Sign in" pill signed out, avatar chip signed in.
@@ -3942,7 +3958,7 @@ function syncAccountButton() {
 }
 
 function scoresHash() {
-  return state.tab === "live" ? scoreRouteHash(state.scoreDate, state.scoresLiveOnly) : state.tab;
+  return scoreRouteHash(state.scoreDate, state.scoresLiveOnly, state.tab === "live" ? state.scoreCompetition : state.competition, state.tab);
 }
 
 function setTab(tab) {
@@ -3952,6 +3968,8 @@ function setTab(tab) {
   metric("count", "tab_view", 1, { tags: { tab } });
   track("tab_viewed", { tab });
   renderAll();
+  setUpdatedLabel();
+  poll();
 }
 
 // Browser-driven hash changes: Back/Forward between the entries setSection and
@@ -3968,6 +3986,11 @@ function wireHashRouting() {
     if (scores) {
       state.scoreDate = scores.date;
       state.scoresLiveOnly = scores.liveOnly;
+      state.scoreCompetition = scores.competition;
+      if (scores.competition) {
+        state.competition = scores.competition;
+        model = scoreFeeds.get(state.competition);
+      }
     }
     const fantasy = resolveInitialFantasyHash(raw);
     const learn = resolveInitialLearnHash(raw);
@@ -3978,7 +4001,7 @@ function wireHashRouting() {
         ? "learn"
         : fantasy.section === "fantasy"
           ? "fantasy"
-          : (scores ? "live" : HASH_ALIASES[raw] ?? raw);
+          : (scores ? scores.tab : HASH_ALIASES[raw] ?? raw);
 
     if (target === "join") {
       state.invite = initialInviteState(joinCode);
@@ -4020,6 +4043,8 @@ function wireHashRouting() {
       if (SCORES_TABS.includes(target)) state.tab = target;
     }
     renderAll();
+    setUpdatedLabel();
+    if (state.section === "scores") poll();
   });
 }
 
@@ -4053,7 +4078,7 @@ function resolvedFixtureView() {
 }
 
 async function switchCompetition(code) {
-  if (!COMPETITIONS[code] || code === state.competition) return;
+  if (!Object.hasOwn(COMPETITIONS, code)) return;
   state.competition = code;
   // A club filter is meaningless across competitions: keeping "Arsenal"
   // selected on a switch to the Champions League would silently show an empty
@@ -4071,16 +4096,13 @@ async function switchCompetition(code) {
   metric("count", "competition_switch", 1, { tags: { competition: code } });
   track("competition_switched", { competition: code });
 
-  const fresh = await loadModel(code);
-  if (state.competition !== code) return; // switched again while loading
-  model = fresh;
-  setMatchModel(model);
-  if (model.hasData) {
-    recordFeedFreshness(model);
-    lastSignature = modelSignature(model);
-  }
+  state.scoreCompetition = code;
+  model = scoreFeeds.get(code);
+  window.history.pushState(null, "", `#${scoresHash()}`);
   renderAll();
   setUpdatedLabel();
+  await refreshScores([code]);
+  scheduleNextPoll();
 }
 
 // Every data-board-* control, for both the sandbox and a real league. Returns
@@ -4209,6 +4231,28 @@ function applyBoardImport() {
 
 function wireLayoutControls() {
   elements.layout.addEventListener("click", (event) => {
+    const all = event.target.closest("[data-all-scores]");
+    if (all) {
+      state.scoreCompetition = null;
+      state.tab = "live";
+      state.section = "scores";
+      window.history.pushState(null, "", `#${scoresHash()}`);
+      renderAll();
+      poll();
+      return;
+    }
+    const retryFeed = event.target.closest("[data-score-feed-retry]");
+    if (retryFeed) {
+      retryFeed.disabled = true;
+      refreshScores([retryFeed.dataset.scoreFeedRetry]).finally(() => { retryFeed.disabled = false; });
+      return;
+    }
+    const leagueTable = event.target.closest("[data-score-table]");
+    if (leagueTable) {
+      state.tab = "tables";
+      switchCompetition(leagueTable.dataset.scoreTable);
+      return;
+    }
     const scoreControl = event.target.closest("[data-score-action]");
     if (scoreControl) {
       const action = scoreControl.dataset.scoreAction;
@@ -5066,14 +5110,14 @@ function wireLayoutControls() {
 function openMatchRow(row) {
   const id = row.getAttribute("data-match-id");
   if (!id) return;
-  const match = model.matches.find((item) => String(item.id) === id);
+  const match = matchModel().matches.find((item) => String(item.id) === id);
   if (match) {
     track("match_opened", {
       match_id: match.id,
       home_team: match.homeTeam,
       away_team: match.awayTeam,
       status: match.status,
-      competition: model.competition?.code,
+      competition: match.competitionCode,
     });
     openMatch(match);
   }
@@ -5118,3 +5162,5 @@ function trackAppLoad(data, buildMs) {
   }
   log("info", "app loaded", { source, has_data: hasData, build_ms: buildMs });
 }
+
+start();

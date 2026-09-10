@@ -119,7 +119,7 @@ function staleness(raw) {
 export function modelSignature(model) {
   // Fetch timestamps change on every poll; only visible content should repaint.
   return JSON.stringify([
-    model.competition, model.hasData, model.source, model.error, model.stale,
+    model.competition, model.hasData, model.source, model.error, model.stale, model.loading,
     model.matches, model.tables, model.scorers, localDateKey(),
   ]);
 }

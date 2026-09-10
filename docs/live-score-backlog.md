@@ -91,26 +91,47 @@ failure/status variants, not a claim of production deployment or end-to-end late
     matches and navigation. Support remains available on the website and hidden
     in the existing native-app presentation. Other product areas remain intact.
 
+12. The default Scores destination now shows PL and CL together, grouped by
+    competition. Leagues with live games come first, followed by other matches
+    on the chosen date, then quiet leagues.
+    The stored league preference no longer hides other leagues on the home view;
+    explicit league routes still open that league. Shared date and Live controls
+    apply across both feeds. League tables, predictions and historical fixtures
+    remain separate and reachable; their URLs now retain the competition.
+13. Each feed loads, retries and retains its last good snapshot independently.
+    Holding PL does not block CL's first paint or its next 20-second live poll.
+    Each league shows its own age/loading/error state; refreshing one cannot
+    erase another. Match drawer fallback paths use the match's competition.
+    Removed the single-feed freshness globals in favour of the per-league store.
+14. The overview has a simpler heading and six CL rows fit above mobile navigation
+    (sixth row bottom: 714px; nav starts at 785px). Table links have 44px targets.
+    Desktop league labels wrap instead of truncating. Removed disabled Europa
+    and Conference League buttons because neither has a supported feed and they
+    distracted from available matches; no working competition was removed.
+15. Browser checks caught and fixed a Fantasy startup regression introduced by
+    progressive loading: startup now runs after all module state is initialized.
+    The offline regression verifies Fantasy, Play, Learn, Demo and Account entry
+    screens. Date buttons and match-row focus survive polling repaints.
+
 ## Prioritized remaining work
 
 | Priority | Item | Definition of done |
 | --- | --- | --- |
 | P1 | Measure actual event latency | Compare timestamped provider events and observed delivery across live matches. Establish p50/p95 delay and update reliability; feed age alone does not prove event latency. |
-| P1 — next | All-supported-competitions entry | Show today's supported matches immediately, grouped by competition. A quiet PL day must not hide CL matches. Keep per-competition tables and historical fixtures accessible; handle partial feed failures independently. |
-| P1 | Favourites without sign-in | Device-local follows with clear account sync policy; no new D1 identifiers or renaming canonical team keys. Follow/unfollow and reload tests; keyboard/touch journey. |
+| P1 — next | Favourites without sign-in | Device-local follows with clear account sync policy; no new D1 identifiers or renaming canonical team keys. Follow/unfollow and reload tests; keyboard/touch journey. |
 | P1 | Qualifying versus main knockout presentation | Keep qualification history available, but avoid presenting a wall of July fixtures as the main knockout destination in September. Group two-leg ties with correct aggregate and penalty handling; never invent future draws. |
 | P1 | Team identity and labels | The feed says Sabah FA while both benchmarks say Sabah FK. Verify provider team ID, crest and destination before changing display aliases; do not rewrite stored follow keys based on a name alone. |
 | P1 | Match detail navigation/accessibility | Summary, events, lineups and stats affordances; partial-coverage wording. Retain verified focus trap/restoration and retries. Verify scheduled, live, finished and postponed states. |
-| P2 | Product polish and performance | Align metadata/brand subtitle with score-first positioning, reduce distracting unavailable controls, align the hero with the selected date, preserve date-control focus through poll repaints, and measure rendering/request budgets. Keep existing features reachable. |
+| P2 | Product polish and performance | Align metadata/brand subtitle with score-first positioning, align the single-league hero with the selected date, check native calendar interaction through polling, and measure rendering/request budgets. Keep existing features reachable. |
 
 ## Verification ledger
 
 - Targeted regressions: `test/champions-league.test.js`, `test/feed-loading.test.js`,
-  `test/score-dates.test.js` and `test/updated-label.test.js`; shared mapper/live-table
+  `test/score-dates.test.js`, `test/score-feeds.test.js` and `test/updated-label.test.js`; shared mapper/live-table
   coverage retained.
-- Full JavaScript suite after date/freshness changes: 1,445 passed, 0 failed.
-  Production build passed. Both also passed on an isolated export of the staged
-  live-score changes, excluding unrelated native-app edits. Browser checks are
+- Isolated export of the staged multi-competition changes: 1,451 JavaScript tests
+  passed, 0 failed; production build passed. The shared working tree also passed
+  1,464 tests including separate native-app coverage. Browser checks are
   recorded separately below.
 - Repeatable browser regression: `scripts/qa/live-match-drawer.js`, run with the
   Playwright tool's `browser_run_code_unsafe` filename argument while the local
@@ -124,6 +145,14 @@ failure/status variants, not a claim of production deployment or end-to-end late
   invoked the same way, checks 14 navigation/outage/recovery behaviours. Passed
   at 320 × 844, 390 × 844 and 1440 × 1000. Browser contexts isolate test clocks
   so one regression cannot advance another tab's time.
+- Repeatable overview regression: `scripts/qa/scores-overview.js` checks 17
+  behaviours, including independent live polling while another request is held,
+  partial outages, league-correct match fallback, table reload, browser Back,
+  shared date controls and focus. Passed at 320 × 844, 390 × 844 and 1440 × 1000.
+- `scripts/qa/scores-offline-sections.js` checks nine behaviours: all five existing
+  non-score entry screens with unavailable feeds, both league failures, isolated
+  retry to a healthy empty feed and absence of browser errors. Passed on desktop;
+  the individual entry screens were also inspected on mobile.
 - Go tests passed with permission for temporary local HTTP test servers.
 - Browser: desktop and mobile; captured-feed table/heading; 320px overflow;
   match drawer open/Escape close; signed-out following journey; held request shows
@@ -136,14 +165,19 @@ failure/status variants, not a claim of production deployment or end-to-end late
   no push was sent and no deployment was performed.
 - Local screenshots: [mobile before](live-score-evidence/mobile-before.png),
   [initial compact cards](live-score-evidence/mobile-after.png), and
-  [current date browser](live-score-evidence/mobile-dates.png). After screenshots
-  use an explicit HT variant of the captured feed. The latest capture shows six
-  rows above the bottom nav, full team names and no floating donation widget.
+  [league date browser](live-score-evidence/mobile-dates.png),
+  [mobile overview](live-score-evidence/mobile-overview.png) and
+  [desktop overview](live-score-evidence/desktop-overview.png). After screenshots
+  use an explicit HT variant of the captured CL feed. The overview uses a
+  synthetic future PL fixture to exercise the quiet-league state; this is not
+  a verified PL schedule. The mobile capture shows six rows above the bottom
+  nav, full team names and no floating donation widget.
 
 ## Next run
 
-Inspect the existing diff, then implement the all-supported-competitions Scores
-entry. The working tree also contains separate native-mobile work; preserve it
+Inspect the existing diff, then implement device-local team following and a
+useful followed-match view. Confirm how local follows coexist with signed-in
+follows and existing notification identity before changing account behaviour. The working tree also contains separate native-mobile work; preserve it
 and keep this goal's commits scoped to live scores. Keep changes reviewable on
 this branch. Do not mark the overall product goal complete because individual
 slices pass tests.

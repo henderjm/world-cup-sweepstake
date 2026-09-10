@@ -113,7 +113,7 @@ async function loadDetail(match, signal) {
     if (slot) slot.innerHTML = scheduledNote(match);
     return;
   }
-  const staticSrc = `./data/${encodeURIComponent(model.competition.code)}/matches/${match.id}.json?cache=${Date.now()}`;
+  const staticSrc = `./data/${encodeURIComponent(match.competitionCode ?? model.competition?.code)}/matches/${match.id}.json?cache=${Date.now()}`;
 
   // The Worker answers first, but a Worker 200 with empty sections must not
   // suppress the static bake: upstream soft-throttles the Worker's egress

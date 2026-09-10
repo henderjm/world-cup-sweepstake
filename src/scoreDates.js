@@ -1,3 +1,5 @@
+import { COMPETITIONS } from "./competitions.js";
+
 export function localDateKey(value = Date.now()) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "";
@@ -15,16 +17,20 @@ export function shiftScoreDate(value, days) {
   return localDateKey(date);
 }
 
+export const SCORES_TABS = ["live", "tables", "knockout", "fixtures", "predict", "stats"];
+
 export function readScoreRoute(hash) {
-  if (!/^live(?:\?|$)/.test(hash)) return null;
+  const tab = hash.split("?")[0];
+  if (!SCORES_TABS.includes(tab)) return null;
   const params = new URLSearchParams(hash.split("?")[1] ?? "");
   const date = params.get("date");
-  return { date: validScoreDate(date) ? date : null, liveOnly: params.get("live") === "1" };
+  return { tab, date: validScoreDate(date) ? date : null, liveOnly: params.get("live") === "1", competition: Object.hasOwn(COMPETITIONS, params.get("competition")) ? params.get("competition") : null };
 }
 
-export function scoreRouteHash(date, liveOnly) {
+export function scoreRouteHash(date, liveOnly, competition = null, tab = "live") {
   const params = new URLSearchParams();
   if (validScoreDate(date)) params.set("date", date);
   if (liveOnly) params.set("live", "1");
-  return `live${params.size ? `?${params}` : ""}`;
+  if (Object.hasOwn(COMPETITIONS, competition)) params.set("competition", competition);
+  return `${SCORES_TABS.includes(tab) ? tab : "live"}${params.size ? `?${params}` : ""}`;
 }

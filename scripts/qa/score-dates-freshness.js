@@ -24,7 +24,7 @@ async (browserPage) => {
       if (older) { body.lastUpdated = "2026-09-10T18:00Z"; body.matches[0].score.home = 0; }
       return route.fulfill({ json: body });
     });
-    await page.goto("http://127.0.0.1:8731/#live");
+    await page.goto("http://127.0.0.1:8731/#live?competition=CL");
     await page.locator('.score-day [data-match-id="900001"]').waitFor();
     assert(await page.locator('.score-day [data-match-id]').count() === 2, "Today should contain two fixtures exactly once");
     await page.getByRole("button", { name: "Next day", exact: true }).click();
