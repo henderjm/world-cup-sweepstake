@@ -5,16 +5,12 @@ import { byPosition, dayLabel, formatStage, isFinished, isLive, statusLabel, tim
 import { banterAvailable, mountBanter, unmountBanter } from "./banter.js";
 import { detailSubstanceScore, DETAIL_SECTION_COUNT, fillDetailSections } from "./matchDetailSubstance.js";
 
-// Match drawer, Squad Goals style: a right slide-in with the score up top, then a
-// single scroll of AI analysis, timeline (goals, cards, subs merged in match order),
-// line-ups, and the shared banter feed. Detail (events, lineups) loads on open from
-// the Worker with a static fallback; everything degrades to a note, never an error.
-
 let model = null;
 let root = null;
 let panel = null;
 let openId = null;
 let request = null;
+let lastDetail = null;
 let opener = null;
 let bodyOverflow = "";
 let followButton = () => "";
@@ -31,6 +27,12 @@ export function setupMatchDetail(activeModel, options) {
   root.addEventListener("click", (event) => {
     if (event.target.closest("[data-md-close]")) close();
     if (event.target.closest("[data-md-retry]")) refreshOpenMatch();
+    const section = event.target.closest("[data-md-section]");
+    if (section) {
+      const target = document.getElementById(section.getAttribute("aria-controls"));
+      target?.focus({ preventScroll: true });
+      if (target) panel.scrollTop += target.getBoundingClientRect().top - panel.querySelector(".dz__tools").getBoundingClientRect().bottom - 12;
+    }
   });
   document.addEventListener("keydown", (event) => {
     if (root.hidden) return;
@@ -76,6 +78,7 @@ export function openMatch(match) {
   }
   unmountBanter(); // tear down any banter from a previously opened match
   openId = match.id;
+  lastDetail = null;
   root.hidden = false;
   document.querySelector(".shell").inert = true;
   document.body.style.overflow = "hidden";
@@ -93,6 +96,7 @@ function close() {
   request = null;
   const matchId = openId;
   openId = null;
+  lastDetail = null;
   root.hidden = true;
   document.querySelector(".shell").inert = false;
   document.body.style.overflow = bodyOverflow;
@@ -113,20 +117,35 @@ function refreshOpenMatch() {
   loadAnalysis(match, signal);
 }
 
-function replaceContent(slot, html) {
-  if (!slot || slot.innerHTML === html) return;
+function replaceContent(slot, html, hidden = slot?.hidden) {
+  if (!slot || (slot.innerHTML === html && slot.hidden === hidden)) return;
   const scrollTop = panel.scrollTop;
   const focused = slot.contains(document.activeElement) ? document.activeElement : null;
   const team = focused?.dataset.scoreFollow;
-  slot.innerHTML = html;
+  const focusId = focused?.closest("[data-md-section-panel]")?.id;
+  const edge = panel.querySelector(".dz__tools").getBoundingClientRect().bottom + 12;
+  const focusedSection = document.activeElement.closest("[data-md-section-panel]");
+  const focusedRect = focusedSection?.getBoundingClientRect();
+  const visibleFocus = focusedRect && focusedRect.bottom > edge && focusedRect.top < panel.getBoundingClientRect().bottom;
+  const anchor = (visibleFocus ? focusedSection : null) ?? [...panel.querySelectorAll("[data-md-section-panel]")].find(section => {
+    const rect = section.getBoundingClientRect();
+    return rect.top <= edge + 1 && rect.bottom > edge;
+  });
+  const anchorTop = anchor?.getBoundingClientRect().top;
+  if (slot.innerHTML !== html) slot.innerHTML = html;
+  slot.hidden = hidden;
   panel.scrollTop = scrollTop;
   if (team) slot.querySelector(`[data-score-follow="${CSS.escape(team)}"]`)?.focus({ preventScroll: true });
+  else if (focusId) document.getElementById(focusId)?.focus({ preventScroll: true });
+  // Keep the section being read in place when events or analysis grow above it.
+  const restored = anchor && document.getElementById(anchor.id);
+  if (restored) panel.scrollTop += restored.getBoundingClientRect().top - anchorTop;
 }
 
 async function loadDetail(match, signal) {
   const slot = panel.querySelector("#mdBody");
   if (!slot || match.id == null) {
-    if (slot) slot.innerHTML = scheduledNote(match);
+    if (slot) replaceContent(slot, renderDetail(match));
     return;
   }
   const staticSrc = `./data/${encodeURIComponent(match.competitionCode ?? model.competition?.code)}/matches/${match.id}.json?cache=${Date.now()}`;
@@ -154,10 +173,10 @@ async function loadDetail(match, signal) {
   if (!body) return;
   const update = panel.querySelector("#mdUpdate");
   const retryFocused = update.contains(document.activeElement);
-  update.hidden = Boolean(detail);
+  replaceContent(update, update.innerHTML, Boolean(detail));
   update.querySelector("[data-md-retry]").disabled = false;
-  if (detail) replaceContent(body, renderDetail(match, detail));
-  else if (body.querySelector("[data-md-loading]")) replaceContent(body, scheduledNote(match));
+  if (detail) lastDetail = detail;
+  replaceContent(body, renderDetail(match, lastDetail ?? {}));
   if (detail && retryFocused) panel.querySelector("[data-md-close]").focus({ preventScroll: true });
 }
 
@@ -194,8 +213,7 @@ async function loadAnalysis(match, signal) {
       <p>Match analysis${live ? " · live" : ""}</p>
       ${analysis.headline ? `<p class="dz__aihead">${esc(analysis.headline)}</p>` : ""}
       <p>${esc(analysis.match)} ${esc(analysis.context)}</p>
-      <p class="dz__aimeta">${esc(stamp)} · written by Claude, it can slip up</p>`);
-    slot.hidden = false;
+      <p class="dz__aimeta">${esc(stamp)} · written by Claude, it can slip up</p>`, false);
   } catch {
     // analysis is a bonus; the drawer works without it
   }
@@ -213,7 +231,7 @@ function renderScore(match) {
     ? `<span class="dz__pill dz__pill--live">${esc(statusLabel(match))}</span>`
     : finished
       ? `<span class="dz__pill">${pens ? `FT · pens ${match.penalties.home}–${match.penalties.away}` : "Full time"}</span>`
-      : `<span class="dz__pill">${esc(dayLabel(match.utcDate))} ${esc(timeLabel(match.utcDate))}</span>`;
+      : `<span class="dz__pill">${esc(["SCHEDULED", "TIMED"].includes(match.status) ? `${dayLabel(match.utcDate)} ${timeLabel(match.utcDate)}` : statusLabel(match))}</span>`;
 
   const competition = match.competitionCode ?? model.competition?.code;
   return `<div class="dz__team">${badgeFor(match.homeTeam, "xl")}<p>${esc(displayTeamName(match.homeTeam))}</p>${followButton(competition, match.homeTeam)}</div>
@@ -226,28 +244,35 @@ function renderScore(match) {
 
 function renderShell(match) {
   return `
+    <div class="dz__tools">
     <div class="dz__bar">
       <span class="dz__tag">${contextLabel(match)}${match.utcDate ? ` · ${esc(dayLabel(match.utcDate))}` : ""}</span>
       <button class="dz__close" type="button" data-md-close aria-label="Close">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
       </button>
     </div>
+    <nav class="dz__sections" aria-label="Match sections">
+      ${[["mdOverview", "Overview"], ["mdTimeline", "Timeline"], ["mdLineups", "Line-ups"], ...(banterAvailable() ? [["mdBanter", "Banter"]] : [])].map(([id, label]) => `<button type="button" data-md-section aria-controls="${id}">${label}</button>`).join("")}
+    </nav>
+    </div>
+    <section id="mdOverview" data-md-section-panel tabindex="-1" aria-label="Overview">
     <div class="dz__score" id="mdScore" aria-live="polite">${renderScore(match)}</div>
     <div id="mdFollowNotice" role="status">${followNotice()}</div>
     ${match.venue ? `<p class="dz__venue">${esc(match.venue)}</p>` : ""}
     <div class="dz__ai" id="mdAnalysis" hidden></div>
-    <div id="mdBody"><p class="dz__loading" data-md-loading>Loading match detail…</p></div>
+    </section>
+    <div id="mdBody">${detailSection("mdTimeline", "Timeline", '<p class="dz__loading" data-md-loading>Loading timeline…</p>')}${detailSection("mdLineups", "Line-ups", '<p class="dz__loading">Loading line-ups…</p>')}</div>
     <div id="mdUpdate" role="status" hidden>
       <p class="note">Match details could not be refreshed. Any details shown are from the last available update.</p>
       <button class="seg" type="button" data-md-retry>Try again</button>
     </div>
-    ${banterAvailable() ? `<h4>Banter</h4><div data-banter></div>` : ""}
+    ${banterAvailable() ? detailSection("mdBanter", "Banter", '<div data-banter></div>') : ""}
   `;
 }
 
 // -- detail (after fetch) ---------------------------------------------------------
 
-function renderDetail(match, detail) {
+export function renderDetail(match, detail = {}) {
   const sideAbbr = (teamName) =>
     abbrFor(normalizeTeamName(teamName) === match.homeTeam ? match.homeTeam : match.awayTeam);
 
@@ -276,7 +301,7 @@ function renderDetail(match, detail) {
   ].sort((a, b) => (a.minute ?? 0) - (b.minute ?? 0));
 
   const timeline = events.length
-    ? `<h4>Timeline</h4>${events
+    ? `${events
         .map(
           (e) => `<div class="ev">
             <span class="ev__mn">${Number.isFinite(e.minute) ? `${e.minute}'` : ""}</span>
@@ -288,9 +313,8 @@ function renderDetail(match, detail) {
         .join("")}`
     : "";
 
-  const lineups = detail.home?.lineup?.length || detail.away?.lineup?.length
-    ? `<h4>Line-ups</h4>${renderLineup(detail.home)}${renderLineup(detail.away)}`
-    : "";
+  const lineups = [[detail.home, match.homeTeam], [detail.away, match.awayTeam]]
+    .map(([team, name]) => renderLineup(team) || `<p class="note">${esc(displayTeamName(name))}: ${coverageNote(match, "Line-up")}</p>`).join("");
 
   const meta = [
     detail.venue ? `<span><b>Stadium</b>${esc(detail.venue)}</span>` : "",
@@ -298,22 +322,16 @@ function renderDetail(match, detail) {
     detail.referee ? `<span><b>Referee</b>${esc(detail.referee)}</span>` : "",
   ].filter(Boolean);
 
-  if (!timeline && !lineups) return scheduledNote(match);
-
-  // The Worker names which supplementary payloads it had to skip on
-  // detail.degraded (allowance shedding or an upstream blip). Whatever DID
-  // arrive still renders above; this line stops the gaps reading as "nothing
-  // happened in this match".
   const degraded = Array.isArray(detail.degraded) && detail.degraded.length > 0;
 
   return `
-    ${timeline}
-    ${lineups}
+    ${detailSection("mdTimeline", "Timeline", timeline || `<p class="note">${coverageNote(match, "Timeline")}</p>`)}
+    ${detailSection("mdLineups", "Line-ups", lineups)}
     ${meta.length ? `<div class="dz__meta">${meta.join("")}</div>` : ""}
     <p class="note--dim" style="margin-top:14px;">${
       degraded
-        ? "Some match detail is temporarily unavailable and comes back automatically."
-        : "Lineups, scorers, substitutions and cards update throughout the match."
+        ? "Some match details are missing from the feed. Available details are shown above."
+        : "Match detail depends on the coverage provided by the feed."
     }</p>`;
 }
 
@@ -360,15 +378,14 @@ export function renderLineup(team) {
     </div>`;
 }
 
-function scheduledNote(match) {
-  // A live match with nothing to show has DEGRADED, not "not started": the
-  // pre-kickoff copy on a match at 45' claims the game has not begun, which is
-  // worse than admitting the feed is busy (seen shedding supplementary detail
-  // through the GW1 per-minute refusals).
-  if (isLive(match.status))
-    return `<p class="dz__loading">Live match detail is temporarily unavailable while the data feed catches up. The score stays live and the timeline comes back automatically.</p>`;
-  if (isFinished(match.status)) return `<p class="dz__loading">Match detail is loading on the next data refresh.</p>`;
-  return `<p class="dz__loading">Line-ups and events appear once the feed publishes them, usually about an hour before kick-off.</p>`;
+function detailSection(id, title, content) {
+  return `<section id="${id}" data-md-section-panel tabindex="-1" aria-labelledby="${id}Title"><h4 id="${id}Title">${title}</h4>${content}</section>`;
+}
+
+function coverageNote(match, section) {
+  if (["SCHEDULED", "TIMED"].includes(match.status))
+    return section === "Timeline" ? "The match has not started. Events appear when published by the feed." : "Not published yet.";
+  return `${section} unavailable from the feed${isLive(match.status) ? " at the moment" : ""}.`;
 }
 
 // -- small helpers ------------------------------------------------------------------

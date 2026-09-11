@@ -818,13 +818,20 @@ button { font-family: inherit; cursor: pointer; }
   border-left: 1px solid rgb(255 255 255 / 0.1);
   animation: sgDrawer 0.22s ease;
   overflow-y: auto;
+  overflow-anchor: none;
   padding: 18px 20px 30px;
 }
 
-.dz__bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.dz__tools { position: sticky; top: -18px; z-index: 2; margin: -18px -20px 18px; padding: 6px 20px 0; background: var(--drawer); border-bottom: 1px solid var(--line); }
+.dz__bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .dz__tag { font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
-.dz__close { background: none; border: none; color: var(--muted); padding: 4px; }
+.dz__close { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; background: none; border: none; color: var(--muted); padding: 4px; }
 .dz__close:hover { color: var(--text); }
+.dz__sections { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; }
+.dz__sections button { min-height: 44px; padding: 4px 2px; border: 0; background: transparent; color: var(--muted); font-size: 11px; font-weight: 800; }
+.dz__sections button:hover, .dz__sections button:focus-visible { color: var(--accent); background: rgb(200 245 66 / 0.06); }
+[data-md-section-panel] { display: flow-root; }
+[data-md-section-panel]:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 
 .dz__score { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center; text-align: center; }
 .dz__team p { margin: 7px 0 0; font-size: 12.5px; font-weight: 700; }

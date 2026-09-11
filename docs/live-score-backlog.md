@@ -151,7 +151,8 @@ failure/status variants, not a claim of production deployment or end-to-end late
 | P1 | Measure actual event latency | Compare timestamped provider events and observed delivery across live matches. Establish p50/p95 delay and update reliability; feed age alone does not prove event latency. |
 | Ready for review | Qualifying versus main knockout presentation | Keep qualification history available, but avoid presenting a wall of July fixtures as the main knockout destination in September. Group two-leg ties with correct aggregate and penalty handling; never invent future draws. |
 | P1 | Team identity and labels | The feed says Sabah FA while both benchmarks say Sabah FK. Verify provider team ID, crest and destination before changing display aliases; do not rewrite stored follow keys based on a name alone. |
-| P1 | Match detail navigation/accessibility | Summary, events, lineups and stats affordances; partial-coverage wording. Retain verified focus trap/restoration and retries. Verify scheduled, live, finished and postponed states. |
+| Ready for review | Match detail navigation/accessibility | Persistent Overview, Timeline, Line-ups and Banter shortcuts with 44px targets. Retain focus, reading position, score route and drafts through refreshes; distinguish loading, absent coverage, initial failure and delayed detail. Verify scheduled, live, finished, postponed and cancelled states at 320, 390 and 1440px. |
+| P1 | Match statistics coverage | Audit the mapped provider and baked payloads for available team statistics before exposing a Stats destination. Show supported metrics with source/coverage states; preserve per-player and fantasy contracts. Do not imply zero when a metric is absent. |
 | P2 | Product polish and performance | Align metadata/brand subtitle with score-first positioning, align the single-league hero with the selected date, check native calendar interaction through polling, and measure rendering/request budgets. Keep existing features reachable. |
 
 ## Verification ledger
@@ -407,3 +408,55 @@ Validation on an isolated export excluding native work:
 
 Not deployed. P0 latency correlation remains open; next product work is match
 detail section navigation and coverage states. Preserve separate native edits.
+
+
+## September 11 — release approval gate
+
+The user requested deployment. Release `2932bfa` was prepared from an isolated
+committed export, with 1,483 tests, production build and Worker dry run passing.
+Automatic approval review rejected publishing the Worker because it did not
+accept the generic deployment instruction as approval for this exact release.
+The user was asked to approve `2932bfa` explicitly for website and Worker.
+Neither the Worker nor Pages was published, and main was not pushed. Do not
+retry through a different deployment path while that gate remains unresolved.
+The last verified published code remains `63bad30` (September 10).
+
+## September 11 — match-detail sections, ready for review
+
+Added persistent Overview, Timeline, Line-ups and Banter shortcuts with labelled
+section targets, keyboard focus and 44px touch targets. The close button remains
+visible while scrolling. Section navigation preserves the scoreboard route.
+Banter stays mounted so polling does not discard an unfinished message.
+
+Timeline and both teams' line-ups now have explicit loading and coverage states.
+Postponed/cancelled fixtures show their status in the score header. Removed
+unsupported promises that missing detail would return on the next refresh or
+that a score necessarily remains live during a detail outage. Available venue
+and referee information survives an otherwise empty response; one missing
+line-up does not hide the other team's players. Known detail survives failed
+refreshes, while coverage wording follows a match changing from scheduled to live.
+
+Browser testing initially found a 145px line-up jump when five events arrived
+above it. Refresh now preserves the visible/focused section's viewport position,
+including when analysis or the detail error notice appears. It restores section
+focus after replacing detail content and retains the banter input node and draft.
+
+Validation on an isolated export excluding separate native-app changes:
+- 1,491 JavaScript tests and production build passed.
+- `scripts/qa/match-detail-sections.js` passes nine scenario groups: 320/390/1440px
+  navigation through loading, stable line-ups and draft during event growth,
+  failure-notice stability, retained detail/retry, focus restoration, unchanged
+  route, touch-target size and no overflow; plus scheduled, live, finished,
+  postponed, cancelled and initial-error coverage. The scheduled scenario also
+  checks kickoff during an outage retains known metadata and updates the copy.
+- Existing `live-match-drawer.js` regression passes all nine groups, including
+  exact scroll retention with close focused, event-only updates, focus trapping,
+  failed-refresh retention and closing/reopening during a held request.
+- Inspected [mobile](live-score-evidence/mobile-match-sections.png) and
+  [desktop](live-score-evidence/desktop-match-sections.png) screenshots. These use
+  synthetic events to stress a long drawer, not current match results.
+
+Not deployed. Next bounded product work: audit match statistics coverage before
+adding metrics, or resolve the provider team identity mismatch. P0 production
+latency correlation remains open; the provider timeout protection is still local.
+Preserve the separate native work and the pending release approval boundary.
