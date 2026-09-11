@@ -35,6 +35,7 @@ import {
   renderScoreFollowButton,
   renderFollowNotice,
   renderMiniTable,
+  renderScoresTable,
   renderScoresTabs,
   renderStats,
   renderTable,
@@ -298,6 +299,7 @@ const state = {
   competition: initialScores?.competition ?? storedCompetition(),
   scoreCompetition: initialScores?.competition ?? null,
   scoreDate: initialScores?.date ?? null,
+  tableCompetition: null,
   followingOnly: initialScores?.followingOnly ?? false,
   followOpen: false,
   followSearch: "",
@@ -834,7 +836,8 @@ function renderAll() {
 function renderLayout() {
   const focused = document.activeElement;
   const caret = focused?.hasAttribute("data-follow-search") ? focused.selectionStart : null;
-  const selector = focused?.hasAttribute("data-follow-search") ? "[data-follow-search]"
+  const selector = focused?.hasAttribute("data-standings-selector") ? "[data-standings-selector]"
+    : focused?.hasAttribute("data-follow-search") ? "[data-follow-search]"
     : focused?.hasAttribute("data-follow-manager") ? "[data-follow-manager]"
     : focused?.hasAttribute("data-save-follows") ? "[data-save-follows]"
     : focused?.hasAttribute("data-score-follow") ? `[data-score-follow="${CSS.escape(focused.dataset.scoreFollow)}"][data-follow-competition="${CSS.escape(focused.dataset.followCompetition)}"]`
@@ -909,7 +912,7 @@ function renderLayoutContent() {
       ${renderScoresHome(scoreFeeds.values(), scoreFollowOptions())}
     </div>`;
     elements.layout.className = state.isMobile ? "layout" : "layout layout--scores-overview";
-    elements.layout.innerHTML = `${state.isMobile ? "" : renderCompetitionSidebar(null, true)}${panel}`;
+    elements.layout.innerHTML = `${state.isMobile ? "" : renderCompetitionSidebar(null, true)}${panel}${state.isMobile ? "" : renderScoresTable(scoreFeeds.values(), { ...scoreFollowOptions(), tableCompetition: state.tableCompetition })}`;
     setUpdatedLabel();
     return;
   }
@@ -5192,6 +5195,11 @@ function wireLayoutControls() {
     }
   });
   elements.layout.addEventListener("change", (event) => {
+    if (event.target.matches("[data-standings-selector]") && COMPETITION_CODES.includes(event.target.value)) {
+      state.tableCompetition = event.target.value;
+      renderLayout();
+      return;
+    }
     const scoreDate = event.target.closest("[data-score-date]");
     if (scoreDate && validScoreDate(scoreDate.value)) {
       state.scoreDate = scoreDate.value;

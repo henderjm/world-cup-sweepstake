@@ -403,17 +403,28 @@ function renderLegend(competition, className) {
 
 // -- Mini table (desktop aside) -----------------------------------------------------------------
 
-export function renderMiniTable(model) {
+export function renderScoresTable(feeds, options = {}) {
+  const date = options.date ?? localDateKey();
+  const priority = feed => {
+    const matches = matchesOnDate(options.followingOnly ? { ...feed, matches: followedMatches(feed, options.follows ?? []) } : feed, date);
+    return matches.some(match => isLive(match.status)) ? 2 : !options.liveOnly && matches.length ? 1 : 0;
+  };
+  const selected = feeds.find(feed => feed.competition.code === options.tableCompetition)
+    ?? [...feeds].sort((a, b) => priority(b) - priority(a))[0];
+  return selected ? renderMiniTable(selected, { competitions: feeds.map(feed => feed.competition) }) : "";
+}
+
+export function renderMiniTable(model, { competitions = [] } = {}) {
   const table = model.tables?.[0];
-  if (!table) return "";
-  const rows = table.rows
+  const code = model.competition.code;
+  const rows = (table?.rows ?? [])
     .map(
-      (row) => `<div class="minirow">
-        <span class="zbar ${row.zone ? `zbar--${row.zone.tone}` : ""}"></span>
-        <span class="minirow__pos">${row.position}</span>
-        <span class="minirow__club">${badgeFor(row.team)}<span class="minirow__team">${esc(displayTeamName(row.team))}</span></span>
-        <span class="minirow__pts">${row.points}</span>
-      </div>`,
+      (row) => `<tr>
+        <td class="minirow__pos"><span class="zbar ${row.zone ? `zbar--${row.zone.tone}` : ""}"></span>${row.position}</td>
+        <th scope="row"><span class="minirow__club">${badgeFor(row.team)}<span class="minirow__team">${esc(displayTeamName(row.team))}</span></span></th>
+        <td class="minirow__played">${row.played}</td>
+        <td class="minirow__pts">${row.points}</td>
+      </tr>`,
     )
     .join("");
   const legend = (model.competition.zones ?? [])
@@ -422,13 +433,19 @@ export function renderMiniTable(model) {
         `<span class="legend__item"><span class="legend__swatch legend__swatch--${zone.tone}"></span>${esc(zone.label)}</span>`,
     )
     .join("");
-  return `<aside class="aside">
+  return `<aside class="aside${competitions.length ? " aside--overview" : ""}" aria-label="League standings" data-standings-competition="${code}">
       <div class="aside__head">
-        <h3 class="aside__title">${esc(model.competition.code === "CL" ? "League phase" : "League table")}</h3>
-        <button class="aside__more" type="button" data-tab="tables">Full →</button>
+        <h2 class="aside__title">${code === "CL" ? "League phase" : "League table"}</h2>
+        <button class="aside__more" type="button" data-score-table="${code}" aria-label="Full ${esc(model.competition.shortName)} table">Full table →</button>
       </div>
-      ${rows}
-      ${legend ? `<div class="aside__legend">${legend}</div>` : ""}
+      ${competitions.length ? `<label class="aside__competition">Competition<select data-standings-selector>${competitions.map(comp => `<option value="${comp.code}"${comp.code === code ? " selected" : ""}>${esc(comp.shortName)}</option>`).join("")}</select></label>` : `<p class="aside__competition-name">${esc(model.competition.shortName)}</p>`}
+      ${model.loading ? '<p class="note" role="status">Loading standings…</p>'
+        : model.error ? `<p class="note" role="status">Standings unavailable.</p><button class="seg" data-score-feed-retry="${code}">Retry standings</button>`
+        : `${model.stale ? `<p class="note" role="status">Standings updates delayed. <button class="score-league__table" data-score-feed-retry="${code}">Retry</button></p>` : ""}
+          <p class="score-league__freshness">Updated <span data-feed-age="${code}"></span></p>
+          ${rows ? `<table class="mini-table" aria-label="${esc(model.competition.shortName)} standings"><thead><tr><th scope="col" aria-label="Position">#</th><th scope="col">Club</th><th scope="col" aria-label="Played">P</th><th scope="col" aria-label="Points">Pts</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="note">No standings published yet.</p>'}
+          ${model.tablesLive ? '<p class="note">As it stands, including live matches.</p>' : ""}
+          ${rows && legend ? `<div class="aside__legend">${legend}</div>` : ""}`}
     </aside>`;
 }
 

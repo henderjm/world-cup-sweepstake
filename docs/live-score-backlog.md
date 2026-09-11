@@ -146,7 +146,7 @@ failure/status variants, not a claim of production deployment or end-to-end late
 | Priority | Item | Definition of done |
 | --- | --- | --- |
 | P0 | Diagnose intermittent live request stalls | A production CL request exceeded 20 seconds, while subsequent calls took 21–23ms. The Worker reported a provider-limit cool-off with daily quota remaining. Correlate request timings with upstream/cache waits before assigning the cause; add a bounded upstream recovery path with tests. The frontend eight-second limit exposes the stall but increasing it alone is insufficient. |
-| P1 | Show league tables on wider screens | At desktop widths (initial target: 1200px and above), show the relevant league table alongside Scores without a separate tab change. In All matches, make the table's competition explicit and selectable. Preserve date, Live and Following selections; tables use the same feed and disclose stale/unavailable data. Verify 1200px and 1440px layouts, keyboard access and no horizontal overflow; mobile scores remain usable at 320px and 390px. Requested by the user September 10. |
+| Ready for review | Show league tables on wider screens | At desktop widths (initial target: 1200px and above), show the relevant league table alongside Scores without a separate tab change. In All matches, make the table's competition explicit and selectable. Preserve date, Live and Following selections; tables use the same feed and disclose stale/unavailable data. Verify 1200px and 1440px layouts, keyboard access and no horizontal overflow; mobile scores remain usable at 320px and 390px. Requested by the user September 10. |
 | P1 | Restore automatic Worker publishing | GitHub's Worker workflow currently skips deployment because `CLOUDFLARE_API_TOKEN` is unset. Configure an appropriately scoped deployment credential and verify the actual deploy step runs on the next approved release. A green skipped workflow is not deployment evidence. The September 10 release was deployed successfully using the existing local OAuth login. |
 | P1 | Measure actual event latency | Compare timestamped provider events and observed delivery across live matches. Establish p50/p95 delay and update reliability; feed age alone does not prove event latency. |
 | P1 — next | Qualifying versus main knockout presentation | Keep qualification history available, but avoid presenting a wall of July fixtures as the main knockout destination in September. Group two-leg ties with correct aggregate and penalty handling; never invent future draws. |
@@ -330,6 +330,39 @@ Verification on an isolated export excluding native and knockout work:
   `scripts/qa/worker-provider-timeout.js`. Both local servers were stopped.
 
 Next P0 step: correlate slow live requests with provider, cache and pacer timing,
-and assess a total browser-route latency budget. The desktop table item remains
-queued, followed by finishing the isolated knockout presentation work. Public
+and assess a total browser-route latency budget. The desktop table item is now implemented locally (see below); finishing the isolated knockout presentation work follows. Public
 deployment of this new Worker change requires approval.
+
+## September 11 — desktop standings, ready for review
+
+Implemented the user's wider-screen table request. At 1200px and above, All
+matches now includes a right-hand standings panel. Its independent competition
+selector defaults to the league with relevant visible matches and honours an
+explicit choice for the visit. It preserves the date, Live and Following
+filters; full-table navigation opens the correct league and Back restores the
+previous scores route. The panel uses the same feed snapshot as the matches.
+
+Reused and improved the single-league mini table: native table semantics,
+labelled position/club/played/points columns, full wrapping team names, league
+identity, live-projection wording and per-feed age. Loading, missing standings,
+initial failure and delayed updates have distinct states. Known rows survive a
+feed outage and retry restores updates. The panel is hidden below 1200px; the
+existing mobile Table entry remains available. Intermediate desktop widths
+now use two columns rather than squeezing scores beside a third column.
+
+Validation on an isolated export, excluding native and unfinished knockout work:
+- 1,471 tests passed and production build passed.
+- `scripts/qa/desktop-standings.js` passed independent table choice, preserved
+  filters, polling updates and selector focus, delayed-data retention/retry,
+  full-table/Back navigation, loading, initial failure/retry and empty standings.
+- No horizontal overflow at 320, 390, 1024, 1200 or 1440px. The standings panel is
+  visible at the two wider sizes and hidden at the other three.
+- Inspected captured real-feed screenshots at
+  [1440px](live-score-evidence/desktop-standings.png) and
+  [1200px](live-score-evidence/desktop-standings-1200.png). At 1440px the scores
+  column is 616px wide and the table is 300px; six September 10 CL matches remain
+  readable beside it. These screenshots replay the September 10 feed, not current
+  match results. Some externally hosted crests were unavailable during capture.
+
+Not deployed. P0 latency correlation remains open; the bounded provider read
+change is also local and requires deployment approval.
