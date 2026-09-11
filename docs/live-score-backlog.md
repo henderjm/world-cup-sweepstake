@@ -1,6 +1,6 @@
 # Daily live-score product backlog
 
-Updated: 2026-09-10. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
+Updated: 2026-09-11. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
 Starting revision: `bfaf0a66e03febeda47647789e275853155ef638`.
 
 ## Mandate and continuation
@@ -297,3 +297,39 @@ Intermittent CL request stalls and GitHub-to-Worker HTTP 502s remain a P0
 investigation; do not claim the snapshot repair fixes upstream latency. The
 first combined browser attempt during propagation timed out; subsequent
 clean-context checks and the public fallback JSON succeeded.
+
+## September 11 — bounded provider reads, ready for review
+
+The deployed recovery repair remains in place. A read-only production sample at
+08:03 UTC returned CL in 130ms with 234 fixtures; the provider-limit flag was
+clear. This quiet-period sample does not explain the earlier 20-second stalls.
+
+Found a concrete recovery gap in the Worker: its shared API-Football fetch had
+no deadline. Added a five-second abort covering response headers and body, so
+stalled reads can reach the existing stale/ingested-data fallback and release
+coalesced callers. This applies to provider reads used by live scores and other
+Worker features; their existing failure handling and stale grace are retained.
+It bounds each provider read, not a route's total duration across multiple reads
+or time waiting in the request pacer/cache. Do not claim the P0 latency issue
+is resolved or that this change has been deployed.
+
+Verification on an isolated export excluding native and knockout work:
+- 1,467 JavaScript tests passed; frontend build and Worker bundle dry run passed.
+- New route tests hold headers and body separately, confirm two concurrent
+  callers share one request and both receive a bounded failure, and prove the
+  failed promise is removed so a later read succeeds. A separate route test
+  preserves a 61-second-old score with its original timestamp on timeout and
+  accepts a later score update.
+- Browser plus actual local Worker implementation, with a simulated upstream:
+  initial read 414ms, stalled read 5,002ms, recovered read 203ms. The known 1–0
+  score remained visible with a delayed marker, then updated to 2–0 and cleared
+  the marker after recovery. No JavaScript errors. This used the real five-second
+  abort; unit tests shorten its timer.
+- Reproduction: start `scripts/qa/stalled-provider-server.mjs` with the isolated
+  export path (port 8733), preview that export's build on 8732, then run
+  `scripts/qa/worker-provider-timeout.js`. Both local servers were stopped.
+
+Next P0 step: correlate slow live requests with provider, cache and pacer timing,
+and assess a total browser-route latency budget. The desktop table item remains
+queued, followed by finishing the isolated knockout presentation work. Public
+deployment of this new Worker change requires approval.
