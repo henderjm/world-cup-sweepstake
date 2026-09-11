@@ -8,6 +8,8 @@ import { learnPages } from "./learnSeo.js";
 import { TUTORIALS } from "./tutorials.js";
 import { localDateKey, validScoreDate } from "./scoreDates.js";
 import { followsTeam, followedMatches } from "./teamFollows.js";
+import { knockoutMatches, knockoutRounds, selectedKnockoutRound } from "./knockout.js";
+export { knockoutMatches } from "./knockout.js";
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -92,7 +94,7 @@ export function renderCompetitionChips(activeCode, includeAll = false) {
 
 // -- Hero -----------------------------------------------------------------------
 
-export function renderHero(model) {
+export function renderHero(model, { title: titleOverride = null, showSummary = true } = {}) {
   const live = model.matches.filter((match) => isLive(match.status));
   const next = model.matches
     .filter((match) => ["TIMED", "SCHEDULED"].includes(match.status))
@@ -106,13 +108,13 @@ export function renderHero(model) {
     : next?.matchday ?? latestMatchday(model.matches.filter((match) => isFinished(match.status)));
   const leader = model.tables?.[0]?.rows?.[0] ?? null;
 
-  const title = !seasonStarted && next
+  const title = titleOverride ? esc(titleOverride) : !seasonStarted && next
     ? `Season starts ${esc(dayLabel(next.utcDate))}`
     : currentMatchday
       ? `Matchday ${currentMatchday}`
       : "Live scores & table";
 
-  const chips = [
+  const chips = showSummary ? [
     live.length
       ? `<span class="chip"><span class="chip__dot"></span>${live.length} live now</span>`
       : next
@@ -123,7 +125,7 @@ export function renderHero(model) {
       : "",
   ]
     .filter(Boolean)
-    .join("");
+    .join("") : "";
 
   return `
     <div class="hero__head">
@@ -131,7 +133,7 @@ export function renderHero(model) {
         <p class="hero__eyebrow">${esc(model.competition.name)}</p>
         <h1 class="hero__title">${title}</h1>
       </div>
-      <div class="hero__meta">${chips}</div>
+      ${chips ? `<div class="hero__meta">${chips}</div>` : ""}
     </div>`;
 }
 
@@ -154,7 +156,7 @@ const SCORES_TABS = [
 ];
 
 export function renderScoresTabs(model, activeTab) {
-  const hasKnockout = knockoutMatches(model).length > 0;
+  const hasKnockout = model.competition?.code === "CL" || knockoutMatches(model).length > 0;
   return `<div class="stabs">${SCORES_TABS.filter(([key]) => key !== "knockout" || hasKnockout)
     .map(
       ([key, label]) =>
@@ -451,72 +453,43 @@ export function renderMiniTable(model, { competitions = [] } = {}) {
 
 // -- Knockout (cups) ------------------------------------------------------------------------------
 
-const KNOCKOUT_STAGE_ORDER = [
-  "FIRST_QUALIFYING_ROUND",
-  "SECOND_QUALIFYING_ROUND",
-  "THIRD_QUALIFYING_ROUND",
-  "QUALIFYING",
-  "PLAYOFFS",
-  "PLAYOFF_ROUND",
-  "LAST_32",
-  "ROUND_OF_32",
-  "LAST_16",
-  "ROUND_OF_16",
-  "QUARTER_FINALS",
-  "SEMI_FINALS",
-  "THIRD_PLACE",
-  "FINAL",
-];
-
-const LEAGUE_STAGES = new Set(["REGULAR_SEASON", "LEAGUE_STAGE", "GROUP_STAGE"]);
-
-export function knockoutMatches(model) {
-  return model.matches.filter((match) => match.stage && !LEAGUE_STAGES.has(match.stage));
-}
-
-// Display-only knockout board: one column per stage in bracket order, each tie card
-// a real fixture (two-legged rounds show both legs). No seeding, no projection.
-export function renderKnockout(model) {
-  const byStage = new Map();
-  knockoutMatches(model).forEach((match) => {
-    if (!byStage.has(match.stage)) byStage.set(match.stage, []);
-    byStage.get(match.stage).push(match);
-  });
-
-  if (!byStage.size) {
-    return `<p class="note">No knockout ties yet. They appear once the draw is made.</p>`;
-  }
-
-  const stageRank = (stage) => {
-    const index = KNOCKOUT_STAGE_ORDER.indexOf(stage);
-    return index === -1 ? KNOCKOUT_STAGE_ORDER.indexOf("PLAYOFFS") - 0.5 : index;
-  };
-
-  const koCard = (match) => `<div class="kocard kocard--openable" data-match-id="${match.id ?? ""}" role="button" tabindex="0">
-      <div class="kocard__grid">
-        <span class="kocard__team">${badgeFor(match.homeTeam)}<span class="kocard__name">${esc(displayTeamName(match.homeTeam))}</span></span>
-        <span class="kocard__score">${Number.isFinite(match.score?.home) ? match.score.home : "–"}</span>
-        <span class="kocard__team">${badgeFor(match.awayTeam)}<span class="kocard__name">${esc(displayTeamName(match.awayTeam))}</span></span>
-        <span class="kocard__score">${Number.isFinite(match.score?.away) ? match.score.away : "–"}</span>
-      </div>
-      <p class="kocard__note">${esc(statusLabel(match))}${match.utcDate ? ` · ${esc(dayLabel(match.utcDate))}` : ""}${penaltyTag(match)}</p>
-    </div>`;
-
-  const columns = [...byStage.entries()]
-    .sort((a, b) => stageRank(a[0]) - stageRank(b[0]))
-    .map(
-      ([stage, matches]) => `<div class="kocol">
-        <h3>${esc(formatStage(stage))}</h3>
-        ${matches
-          .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))
-          .map(koCard)
-          .join("")}
-      </div>`,
-    )
-    .join("");
-
-  return `<div class="koboard">${columns}</div>
-    <p class="note" style="margin-top:10px;">Ties straight from the feed; two-legged rounds show both legs.</p>`;
+export function renderKnockout(model, options = {}) {
+  const rounds = knockoutRounds(model);
+  const { phase, available, selected } = selectedKnockoutRound(rounds, options);
+  const count = value => rounds.filter(round => round.phase === value).reduce((sum, round) => sum + round.ties.length, 0);
+  const phaseControls = `<div class="ko-phases" role="group" aria-label="Competition phase">
+    <button class="seg ${phase === "main" ? "is-active" : ""}" data-knockout-phase="main" aria-pressed="${phase === "main"}">Knockout phase (${count("main")})</button>
+    <button class="seg ${phase === "qualifying" ? "is-active" : ""}" data-knockout-phase="qualifying" aria-pressed="${phase === "qualifying"}">Qualifying (${count("qualifying")})</button>
+  </div>`;
+  if (!selected) return `${phaseControls}${renderFeedDelayBanner(model, Date.now())}<section class="card">
+    <h2 class="card__title">${phase === "main" ? "No knockout fixtures published yet" : "No qualifying fixtures published"}</h2>
+    <p class="note">${phase === "main" ? "Main knockout fixtures will appear when they are available in the feed. Qualifying results remain available under Qualifying." : "Qualifying matches will appear here when available."}</p>
+  </section>`;
+  const roundSelect = `<label class="ko-round-select">Round<select data-knockout-round aria-label="Knockout round">
+    ${available.map(round => `<option value="${esc(round.stage)}" ${round === selected ? "selected" : ""}>${esc(formatStage(round.stage))} (${round.ties.length})</option>`).join("")}
+  </select></label>`;
+  const cards = selected.ties.map(tie => {
+    const final = selected.stage === "FINAL";
+    const result = tie.state === "complete" ? `${displayTeamName(tie.winner)} ${final ? "win the final" : "advance"}${tie.penalties ? " on penalties" : ""}`
+      : tie.state === "live" ? (tie.penalties ? "Penalty shoot-out in progress" : final ? "Live score" : "Live aggregate")
+      : tie.state === "first-leg" ? "After the first leg"
+      : tie.state === "scheduled" ? "Not started"
+      : tie.aggregate ? "Winner not confirmed" : "Aggregate unavailable — check the individual matches";
+    const legs = tie.legs.map((match, index) => `<button type="button" class="ko-leg" data-match-id="${match.id ?? ""}">
+      <span>${tie.twoLegged ? `${index === 0 ? "First" : "Second"} leg · ` : ""}${esc(statusLabel(match))}${match.utcDate ? ` · ${esc(dayLabel(match.utcDate))}` : ""}</span>
+      <span>${esc(displayTeamName(match.homeTeam))} <b>${esc(scoreText(match))}</b> ${esc(displayTeamName(match.awayTeam))}${penaltyTag(match)}</span>
+    </button>`).join("");
+    return `<article class="kocard" data-knockout-tie aria-label="${esc(tie.teams.join(" v "))}">
+      <p class="kocard__label">${final ? "Final" : "Aggregate"}</p>
+      <div class="kocard__grid">${tie.teams.map((team, index) => `<span class="kocard__team">${badgeFor(team)}<span class="kocard__name">${esc(displayTeamName(team))}</span></span><span class="kocard__score">${tie.aggregate?.[index] ?? "–"}</span>`).join("")}</div>
+      <p class="kocard__note ${tie.winner ? "is-complete" : ""}">${esc(result)}</p>
+      ${tie.penalties ? `<p class="kocard__note">Penalties ${tie.penalties[0]}–${tie.penalties[1]}</p>` : ""}
+      <div class="ko-legs">${legs}</div>
+    </article>`;
+  }).join("");
+  return `${phaseControls}${roundSelect}${renderFeedDelayBanner(model, Date.now())}
+    <h2 class="ko-round-title">${esc(formatStage(selected.stage))} · ${selected.ties.length} ${selected.ties.length === 1 ? "tie" : "ties"}</h2>
+    <div class="ko-ties">${cards}</div>`;
 }
 
 // -- Fixtures ----------------------------------------------------------------------------------------

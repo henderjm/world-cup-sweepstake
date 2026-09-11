@@ -24,14 +24,20 @@ export function readScoreRoute(hash) {
   if (!SCORES_TABS.includes(tab)) return null;
   const params = new URLSearchParams(hash.split("?")[1] ?? "");
   const date = params.get("date");
-  return { tab, followingOnly: params.get("following") === "1", date: validScoreDate(date) ? date : null, liveOnly: params.get("live") === "1", competition: Object.hasOwn(COMPETITIONS, params.get("competition")) ? params.get("competition") : null };
+  const phase = ["main", "qualifying"].includes(params.get("phase")) ? params.get("phase") : null;
+  const round = /^[A-Z0-9_]{1,60}$/.test(params.get("round") ?? "") ? params.get("round") : null;
+  return { tab, phase, round, followingOnly: params.get("following") === "1", date: validScoreDate(date) ? date : null, liveOnly: params.get("live") === "1", competition: Object.hasOwn(COMPETITIONS, params.get("competition")) ? params.get("competition") : null };
 }
 
-export function scoreRouteHash(date, liveOnly, competition = null, tab = "live", followingOnly = false) {
+export function scoreRouteHash({ date = null, liveOnly = false, competition = null, tab = "live", followingOnly = false, phase = null, round = null } = {}) {
   const params = new URLSearchParams();
   if (validScoreDate(date)) params.set("date", date);
   if (liveOnly) params.set("live", "1");
   if (followingOnly) params.set("following", "1");
   if (Object.hasOwn(COMPETITIONS, competition)) params.set("competition", competition);
+  if (tab === "knockout") {
+    if (["main", "qualifying"].includes(phase)) params.set("phase", phase);
+    if (/^[A-Z0-9_]{1,60}$/.test(round ?? "")) params.set("round", round);
+  }
   return `${SCORES_TABS.includes(tab) ? tab : "live"}${params.size ? `?${params}` : ""}`;
 }

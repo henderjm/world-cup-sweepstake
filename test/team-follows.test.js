@@ -58,7 +58,7 @@ test("Following includes home and away fixtures once, keeping competition identi
 });
 
 test("Following survives date, competition and tab routes", () => {
-  const route = readScoreRoute(scoreRouteHash("2026-09-10", true, "CL", "live", true));
+  const route = readScoreRoute(scoreRouteHash({ date: "2026-09-10", liveOnly: true, competition: "CL", followingOnly: true }));
   assert.equal(route.followingOnly, true);
   assert.equal(route.competition, "CL");
   assert.equal(route.date, "2026-09-10");

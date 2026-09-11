@@ -1,5 +1,6 @@
 import { loadModel, modelSignature } from "./data.js";
 import { createScoreFeeds, combinedScoreModel } from "./scoreFeeds.js";
+import { knockoutRounds, selectedKnockoutRound } from "./knockout.js";
 import { createLocalFollows, uniqueFollows, followsTeam, LOCAL_FOLLOWS_KEY } from "./teamFollows.js";
 import { SCORES_TABS, localDateKey, readScoreRoute, scoreRouteHash, shiftScoreDate, validScoreDate } from "./scoreDates.js";
 import { trackGameweek } from "./fantasyGameweekTracker.js";
@@ -300,6 +301,8 @@ const state = {
   scoreCompetition: initialScores?.competition ?? null,
   scoreDate: initialScores?.date ?? null,
   tableCompetition: null,
+  knockoutPhase: initialScores?.phase ?? null,
+  knockoutRound: initialScores?.round ?? null,
   followingOnly: initialScores?.followingOnly ?? false,
   followOpen: false,
   followSearch: "",
@@ -836,7 +839,9 @@ function renderAll() {
 function renderLayout() {
   const focused = document.activeElement;
   const caret = focused?.hasAttribute("data-follow-search") ? focused.selectionStart : null;
-  const selector = focused?.hasAttribute("data-standings-selector") ? "[data-standings-selector]"
+  const selector = focused?.hasAttribute("data-knockout-round") ? "[data-knockout-round]"
+    : focused?.dataset.knockoutPhase ? `[data-knockout-phase="${focused.dataset.knockoutPhase}"]`
+    : focused?.hasAttribute("data-standings-selector") ? "[data-standings-selector]"
     : focused?.hasAttribute("data-follow-search") ? "[data-follow-search]"
     : focused?.hasAttribute("data-follow-manager") ? "[data-follow-manager]"
     : focused?.hasAttribute("data-save-follows") ? "[data-save-follows]"
@@ -931,12 +936,12 @@ function renderLayoutContent() {
   }
 
   // A tab that makes no sense in this competition falls back to the live view.
-  if (state.tab === "knockout" && knockoutMatches(model).length === 0) state.tab = "live";
+  if (state.tab === "knockout" && model.competition.code !== "CL" && knockoutMatches(model).length === 0) state.tab = "live";
 
   const panel = `
     <div class="panelcol">
       ${state.isMobile ? renderCompetitionChips(state.competition, true) : ""}
-      ${renderHero(model)}
+      ${renderHero(model, state.tab === "knockout" ? { title: "Knockout rounds", showSummary: false } : {})}
       ${renderScoresTabs(model, state.tab)}
       ${renderPanel()}
     </div>`;
@@ -954,8 +959,14 @@ function renderPanel() {
   switch (state.tab) {
     case "tables":
       return renderTable(model);
-    case "knockout":
-      return renderKnockout(model);
+    case "knockout": {
+      const selection = selectedKnockoutRound(knockoutRounds(model), { phase: state.knockoutPhase, round: state.knockoutRound });
+      if (selection.selected) {
+        state.knockoutPhase = selection.phase;
+        state.knockoutRound = selection.selected.stage;
+      }
+      return renderKnockout(model, { phase: state.knockoutPhase, round: state.knockoutRound });
+    }
     case "fixtures":
       return renderFixtures(model, resolvedFixtureView(), state.fixtureTeam);
     case "predict":
@@ -4072,7 +4083,7 @@ function syncAccountButton() {
 }
 
 function scoresHash() {
-  return scoreRouteHash(state.scoreDate, state.scoresLiveOnly, state.tab === "live" ? state.scoreCompetition : state.competition, state.tab, state.followingOnly);
+  return scoreRouteHash({ date: state.scoreDate, liveOnly: state.scoresLiveOnly, competition: state.tab === "live" ? state.scoreCompetition : state.competition, tab: state.tab, followingOnly: state.followingOnly, phase: state.knockoutPhase, round: state.knockoutRound });
 }
 
 function setTab(tab) {
@@ -4101,6 +4112,8 @@ function wireHashRouting() {
       state.scoreDate = scores.date;
       state.scoresLiveOnly = scores.liveOnly;
       state.followingOnly = scores.followingOnly;
+      state.knockoutPhase = scores.phase;
+      state.knockoutRound = scores.round;
       state.scoreCompetition = scores.competition;
       if (scores.competition) {
         state.competition = scores.competition;
@@ -4346,6 +4359,14 @@ function applyBoardImport() {
 
 function wireLayoutControls() {
   elements.layout.addEventListener("click", (event) => {
+    const phase = event.target.closest("[data-knockout-phase]");
+    if (phase) {
+      state.knockoutPhase = phase.dataset.knockoutPhase;
+      state.knockoutRound = null;
+      window.history.pushState(null, "", `#${scoresHash()}`);
+      renderLayout();
+      return;
+    }
     const manager = event.target.closest("[data-follow-manager]");
     if (manager) {
       state.followOpen = !state.followOpen;
@@ -5197,6 +5218,12 @@ function wireLayoutControls() {
   elements.layout.addEventListener("change", (event) => {
     if (event.target.matches("[data-standings-selector]") && COMPETITION_CODES.includes(event.target.value)) {
       state.tableCompetition = event.target.value;
+      renderLayout();
+      return;
+    }
+    if (event.target.matches("[data-knockout-round]")) {
+      state.knockoutRound = event.target.value;
+      window.history.pushState(null, "", `#${scoresHash()}`);
       renderLayout();
       return;
     }

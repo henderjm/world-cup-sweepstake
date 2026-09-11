@@ -149,7 +149,7 @@ failure/status variants, not a claim of production deployment or end-to-end late
 | Ready for review | Show league tables on wider screens | At desktop widths (initial target: 1200px and above), show the relevant league table alongside Scores without a separate tab change. In All matches, make the table's competition explicit and selectable. Preserve date, Live and Following selections; tables use the same feed and disclose stale/unavailable data. Verify 1200px and 1440px layouts, keyboard access and no horizontal overflow; mobile scores remain usable at 320px and 390px. Requested by the user September 10. |
 | P1 | Restore automatic Worker publishing | GitHub's Worker workflow currently skips deployment because `CLOUDFLARE_API_TOKEN` is unset. Configure an appropriately scoped deployment credential and verify the actual deploy step runs on the next approved release. A green skipped workflow is not deployment evidence. The September 10 release was deployed successfully using the existing local OAuth login. |
 | P1 | Measure actual event latency | Compare timestamped provider events and observed delivery across live matches. Establish p50/p95 delay and update reliability; feed age alone does not prove event latency. |
-| P1 — next | Qualifying versus main knockout presentation | Keep qualification history available, but avoid presenting a wall of July fixtures as the main knockout destination in September. Group two-leg ties with correct aggregate and penalty handling; never invent future draws. |
+| Ready for review | Qualifying versus main knockout presentation | Keep qualification history available, but avoid presenting a wall of July fixtures as the main knockout destination in September. Group two-leg ties with correct aggregate and penalty handling; never invent future draws. |
 | P1 | Team identity and labels | The feed says Sabah FA while both benchmarks say Sabah FK. Verify provider team ID, crest and destination before changing display aliases; do not rewrite stored follow keys based on a name alone. |
 | P1 | Match detail navigation/accessibility | Summary, events, lineups and stats affordances; partial-coverage wording. Retain verified focus trap/restoration and retries. Verify scheduled, live, finished and postponed states. |
 | P2 | Product polish and performance | Align metadata/brand subtitle with score-first positioning, align the single-league hero with the selected date, check native calendar interaction through polling, and measure rendering/request budgets. Keep existing features reachable. |
@@ -220,10 +220,7 @@ failure/status variants, not a claim of production deployment or end-to-end late
 
 ## Next run
 
-The approved release is deployed; see the release record below. The unfinished
-knockout changes remain in the working tree; `test/knockout.test.js` currently has
-one failing conservative-aggregate case and must pass along with browser checks
-before that slice is included in a later release.
+The approved release is deployed; see the release record below. The knockout presentation is now verified locally and ready for review; see the September 11 completion record below.
 
 After resolving the P0 live-request latency investigation, inspect the existing diff, then improve Champions League qualifying versus
 main knockout presentation. Verify round/leg and aggregate data before grouping
@@ -366,3 +363,47 @@ Validation on an isolated export, excluding native and unfinished knockout work:
 
 Not deployed. P0 latency correlation remains open; the bounded provider read
 change is also local and requires deployment approval.
+
+## September 11 — Champions League knockout presentation, ready for review
+
+Separated qualifying history from the main knockout phase and replaced individual
+match columns with round selection and grouped ties. September 10's captured
+feed contains 90 qualifying matches: 14 first-round ties, 14 second-round ties,
+10 third-round ties and seven qualifying play-offs. No main knockout fixtures
+were published in that capture, so its main view has an explicit empty state.
+The qualifying view opens at its latest completed round. Both legs remain
+accessible through match-detail buttons. The heading no longer mixes in the
+next league fixture or current league leader.
+
+Aggregates orient both legs to the same teams, exclude shoot-out goals, and
+confirm advancement only after completion. Live shoot-outs remain undecided.
+The final is one match. Missing/repeated legs, invalid ordering, unavailable
+scores and administrative/postponed/cancelled outcomes do not infer advancement.
+The initial failing test exposed `AWARDED` being treated as a completed played
+leg; the knockout calculation now requires `FINISHED` explicitly.
+
+Rule references checked for the implementation: UEFA 2026/27
+[qualifying format](https://documents.uefa.com/r/Regulations-of-the-UEFA-Champions-League-2026/27/Article-15-Match-system-qualifying-phase-and-play-offs-Online),
+[knockout format](https://documents.uefa.com/r/Regulations-of-the-UEFA-Champions-League-2026/27/Article-20-Match-system-knockout-phase-Online) and
+[tied scores and penalties](https://documents.uefa.com/r/Regulations-of-the-UEFA-Champions-League-2026/27/Article-21-Knockout-system-extra-time-and-penalty-shoot-outs-Online).
+The feed lacks explicit tie/leg identifiers, so only two distinct reversed
+home/away fixtures with ordered dates in a known CL round support a two-leg
+aggregate. A missing return fixture is not assumed to be a special one-leg tie.
+
+Validation on an isolated export excluding native work:
+- 1,483 JavaScript tests and production build passed.
+- `scripts/qa/knockout-rounds.js` checks all 45 captured ties and 90 leg links,
+  phase/round selection, reload and Back, drawer focus restoration, live
+  aggregate and penalty updates, a single-match final, loading and unpublished
+  fixtures, retained results during feed failure and recovery. No overflow at
+  320, 390 or 1440px. Historical inputs are stored in `scripts/qa/fixtures/`.
+- Browser testing found and fixed a round-selection jump when a live tie finished.
+  The selected/default round is now retained through score updates and keeps
+  keyboard focus. The main scores overview's 17 browser regressions also passed
+  after the route formatter changed to named options.
+- Visual evidence: [mobile](live-score-evidence/mobile-qualifying-ties.png) and
+  [desktop](live-score-evidence/desktop-qualifying-ties.png), replaying the captured
+  September 10 feed rather than claiming current fixtures.
+
+Not deployed. P0 latency correlation remains open; next product work is match
+detail section navigation and coverage states. Preserve separate native edits.

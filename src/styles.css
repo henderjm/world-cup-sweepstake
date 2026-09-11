@@ -660,9 +660,17 @@ button { font-family: inherit; cursor: pointer; }
 
 /* Knockout ------------------------------------------------------------------------------- */
 
-.koboard { display: flex; gap: 16px; overflow-x: auto; padding: 4px 2px 10px; }
-.kocol { flex: none; width: 250px; display: flex; flex-direction: column; gap: 10px; }
-.kocol h3 { font-size: 11px; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.ko-phases { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.ko-phases .seg { min-height: 44px; }
+.ko-round-select { display: grid; gap: 6px; font-size: 13px; margin-bottom: 18px; max-width: 340px; }
+.ko-round-select select { min-height: 44px; padding: 8px; background: var(--surface); color: var(--text); border: 1px solid var(--line-2); border-radius: 8px; font: inherit; width: 100%; }
+.ko-round-title { font-size: 15px; margin: 0 0 12px; }
+.ko-ties { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); }
+.ko-legs { display: grid; gap: 4px; margin-top: 12px; }
+.ko-leg { display: grid; gap: 4px; padding: 10px 0; min-height: 44px; width: 100%; border: 0; border-top: 1px solid var(--line-2); background: none; color: var(--text); text-align: left; font: inherit; font-size: 12px; }
+.ko-leg > span:first-child { color: var(--muted); font-size: 11px; }
+.kocard__label { font-size: 11px; color: var(--muted); margin: 0 0 8px; }
+.kocard__note.is-complete { color: var(--accent); }
 
 .kocard {
   background: var(--surface);
@@ -670,15 +678,10 @@ button { font-family: inherit; cursor: pointer; }
   border-radius: 12px;
   padding: 10px 12px;
 }
-.kocard--openable { cursor: pointer; }
-.kocard--openable:hover { border-color: var(--accent-line); }
-.kocard--tbd { background: transparent; border-style: dashed; }
-.kocard--tbd p { font-size: 12px; color: var(--muted); text-align: center; padding: 8px 0; }
-
 .kocard__grid { display: grid; grid-template-columns: minmax(0, 1fr) 26px; gap: 5px; align-items: center; }
 .kocard__team { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .kocard__team .tb { width: 20px; height: 20px; font-size: 7.5px; }
-.kocard__name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kocard__name { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .kocard__score { text-align: center; font-size: 13px; font-weight: 900; font-variant-numeric: tabular-nums; }
 .kocard__note { margin-top: 8px; font-size: 11px; color: var(--muted); }
 

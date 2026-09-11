@@ -1,0 +1,1547 @@
+{
+  "competition": "CL",
+  "source": "Captured API-Football qualifying fixtures, September 10 2026",
+  "lastUpdated": "2026-09-10T21:14:50.738Z",
+  "standings": [],
+  "matches": [
+    {
+      "id": 1554368,
+      "utcDate": "2026-07-07T16:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Lincoln Red Imps FC",
+      "awayTeam": "Inter Club d'Escaldes",
+      "score": {
+        "home": 3,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/667.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/3342.png"
+    },
+    {
+      "id": 1554361,
+      "utcDate": "2026-07-07T16:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Ararat-Armenia",
+      "awayTeam": "Riga",
+      "score": {
+        "home": 2,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/3683.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/10124.png"
+    },
+    {
+      "id": 1554366,
+      "utcDate": "2026-07-07T16:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Kauno Žalgiris",
+      "awayTeam": "Drita",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/3872.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/14281.png"
+    },
+    {
+      "id": 1554371,
+      "utcDate": "2026-07-07T16:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Sabah FA",
+      "awayTeam": "The New Saints",
+      "score": {
+        "home": 2,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/13976.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/354.png"
+    },
+    {
+      "id": 1554373,
+      "utcDate": "2026-07-07T17:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Vardar Skopje",
+      "awayTeam": "KuPS",
+      "score": {
+        "home": 0,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/574.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/1165.png"
+    },
+    {
+      "id": 1554364,
+      "utcDate": "2026-07-07T17:30:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Floriana",
+      "awayTeam": "Shamrock Rovers",
+      "score": {
+        "home": 2,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/4625.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/652.png"
+    },
+    {
+      "id": 1554372,
+      "utcDate": "2026-07-07T18:30:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Tre Fiori",
+      "awayTeam": "Larne",
+      "score": {
+        "home": 0,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/2260.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/5354.png"
+    },
+    {
+      "id": 1554362,
+      "utcDate": "2026-07-07T18:30:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Borac Banja Luka",
+      "awayTeam": "Levski Sofia",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/3364.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/646.png"
+    },
+    {
+      "id": 1554367,
+      "utcDate": "2026-07-07T18:45:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "KI Klaksvik",
+      "awayTeam": "Atert Bissen",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/701.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/15847.png"
+    },
+    {
+      "id": 1554374,
+      "utcDate": "2026-07-07T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Vikingur Reykjavik",
+      "awayTeam": "Gyori ETO FC",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/278.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/2402.png"
+    },
+    {
+      "id": 1554365,
+      "utcDate": "2026-07-08T15:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Kairat Almaty",
+      "awayTeam": "Sutjeska",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/664.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/673.png"
+    },
+    {
+      "id": 1554363,
+      "utcDate": "2026-07-08T16:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Flora Tallinn",
+      "awayTeam": "FC Iberia 1999",
+      "score": {
+        "home": 2,
+        "away": 3
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/687.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/3502.png"
+    },
+    {
+      "id": 1554370,
+      "utcDate": "2026-07-08T17:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Petrocub",
+      "awayTeam": "Egnatia Rrogozhinë",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/2271.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/3327.png"
+    },
+    {
+      "id": 1554369,
+      "utcDate": "2026-07-08T17:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "ML Vitebsk",
+      "awayTeam": "Universitatea Craiova",
+      "score": {
+        "home": 1,
+        "away": 4
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/7808.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/632.png"
+    },
+    {
+      "id": 1554381,
+      "utcDate": "2026-07-14T15:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "AET",
+      "minute": 120,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "KuPS",
+      "awayTeam": "Vardar Skopje",
+      "score": {
+        "home": 2,
+        "away": 3
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/1165.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/574.png"
+    },
+    {
+      "id": 1554380,
+      "utcDate": "2026-07-14T16:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Inter Club d'Escaldes",
+      "awayTeam": "Lincoln Red Imps FC",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/3342.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/667.png"
+    },
+    {
+      "id": 1554379,
+      "utcDate": "2026-07-14T16:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "FC Iberia 1999",
+      "awayTeam": "Flora Tallinn",
+      "score": {
+        "home": 2,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/3502.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/687.png"
+    },
+    {
+      "id": 1554378,
+      "utcDate": "2026-07-14T17:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Gyori ETO FC",
+      "awayTeam": "Vikingur Reykjavik",
+      "score": {
+        "home": 2,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/2402.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/278.png"
+    },
+    {
+      "id": 1554384,
+      "utcDate": "2026-07-14T17:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Riga",
+      "awayTeam": "Ararat-Armenia",
+      "score": {
+        "home": 3,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/10124.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/3683.png"
+    },
+    {
+      "id": 1554387,
+      "utcDate": "2026-07-14T17:30:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "The New Saints",
+      "awayTeam": "Sabah FA",
+      "score": {
+        "home": 1,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/354.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/13976.png"
+    },
+    {
+      "id": 1554383,
+      "utcDate": "2026-07-14T17:30:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Levski Sofia",
+      "awayTeam": "Borac Banja Luka",
+      "score": {
+        "home": 4,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/646.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/3364.png"
+    },
+    {
+      "id": 1554376,
+      "utcDate": "2026-07-14T18:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Drita",
+      "awayTeam": "Kauno Žalgiris",
+      "score": {
+        "home": 2,
+        "away": 3
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/14281.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/3872.png"
+    },
+    {
+      "id": 1554385,
+      "utcDate": "2026-07-14T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Shamrock Rovers",
+      "awayTeam": "Floriana",
+      "score": {
+        "home": 5,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/652.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/4625.png"
+    },
+    {
+      "id": 1554382,
+      "utcDate": "2026-07-14T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Larne",
+      "awayTeam": "Tre Fiori",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/5354.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/2260.png"
+    },
+    {
+      "id": 1554388,
+      "utcDate": "2026-07-15T17:30:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Universitatea Craiova",
+      "awayTeam": "ML Vitebsk",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/632.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/7808.png"
+    },
+    {
+      "id": 1554375,
+      "utcDate": "2026-07-15T18:15:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Atert Bissen",
+      "awayTeam": "KI Klaksvik",
+      "score": {
+        "home": 1,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/15847.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/701.png"
+    },
+    {
+      "id": 1554386,
+      "utcDate": "2026-07-15T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Sutjeska",
+      "awayTeam": "Kairat Almaty",
+      "score": {
+        "home": 0,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/673.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/664.png"
+    },
+    {
+      "id": 1554377,
+      "utcDate": "2026-07-15T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "FIRST_QUALIFYING_ROUND",
+      "homeTeam": "Egnatia Rrogozhinë",
+      "awayTeam": "Petrocub",
+      "score": {
+        "home": 6,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/3327.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/2271.png"
+    },
+    {
+      "id": 1589418,
+      "utcDate": "2026-07-21T16:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Mjallby AIF",
+      "awayTeam": "Lincoln Red Imps FC",
+      "score": {
+        "home": 3,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/2240.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/667.png"
+    },
+    {
+      "id": 1589416,
+      "utcDate": "2026-07-21T16:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "FC Iberia 1999",
+      "awayTeam": "Slovan Bratislava",
+      "score": {
+        "home": 0,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/3502.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/656.png"
+    },
+    {
+      "id": 1589415,
+      "utcDate": "2026-07-21T16:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Ararat-Armenia",
+      "awayTeam": "Shamrock Rovers",
+      "score": {
+        "home": 2,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/3683.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/652.png"
+    },
+    {
+      "id": 1589419,
+      "utcDate": "2026-07-21T16:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Sabah FA",
+      "awayTeam": "KuPS",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/13976.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/1165.png"
+    },
+    {
+      "id": 1556501,
+      "utcDate": "2026-07-21T17:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Aarhus",
+      "awayTeam": "Lech Poznan",
+      "score": {
+        "home": 1,
+        "away": 4
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/406.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/347.png"
+    },
+    {
+      "id": 1556502,
+      "utcDate": "2026-07-21T18:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Fenerbahçe",
+      "awayTeam": "Gornik Zabrze",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/611.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/340.png"
+    },
+    {
+      "id": 1556504,
+      "utcDate": "2026-07-21T18:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "FC Thun",
+      "awayTeam": "Dinamo Zagreb",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/1012.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/620.png"
+    },
+    {
+      "id": 1556503,
+      "utcDate": "2026-07-21T18:30:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Sturm Graz",
+      "awayTeam": "Heart Of Midlothian",
+      "score": {
+        "home": 4,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/637.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/254.png"
+    },
+    {
+      "id": 1591934,
+      "utcDate": "2026-07-21T18:45:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "KI Klaksvik",
+      "awayTeam": "Kauno Žalgiris",
+      "score": {
+        "home": 0,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/701.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/3872.png"
+    },
+    {
+      "id": 1589420,
+      "utcDate": "2026-07-21T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Vikingur Reykjavik",
+      "awayTeam": "Hapoel Beer Sheva",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/278.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/563.png"
+    },
+    {
+      "id": 1589417,
+      "utcDate": "2026-07-21T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Larne",
+      "awayTeam": "FK Crvena Zvezda",
+      "score": {
+        "home": 0,
+        "away": 4
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/5354.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/598.png"
+    },
+    {
+      "id": 1591936,
+      "utcDate": "2026-07-22T17:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Omonia Nicosia",
+      "awayTeam": "Kairat Almaty",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/3402.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/664.png"
+    },
+    {
+      "id": 1591935,
+      "utcDate": "2026-07-22T17:30:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Levski Sofia",
+      "awayTeam": "Universitatea Craiova",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/646.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/632.png"
+    },
+    {
+      "id": 1591933,
+      "utcDate": "2026-07-22T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Egnatia Rrogozhinë",
+      "awayTeam": "Celje",
+      "score": {
+        "home": 3,
+        "away": 3
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/3327.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/4360.png"
+    },
+    {
+      "id": 1589423,
+      "utcDate": "2026-07-28T15:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "KuPS",
+      "awayTeam": "Sabah FA",
+      "score": {
+        "home": 0,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/1165.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/13976.png"
+    },
+    {
+      "id": 1589424,
+      "utcDate": "2026-07-28T16:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Lincoln Red Imps FC",
+      "awayTeam": "Mjallby AIF",
+      "score": {
+        "home": 0,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/667.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/2240.png"
+    },
+    {
+      "id": 1556505,
+      "utcDate": "2026-07-28T18:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "AET",
+      "minute": 120,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Dinamo Zagreb",
+      "awayTeam": "FC Thun",
+      "score": {
+        "home": 3,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/620.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/1012.png"
+    },
+    {
+      "id": 1591937,
+      "utcDate": "2026-07-28T18:15:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "PEN",
+      "minute": 120,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Celje",
+      "awayTeam": "Egnatia Rrogozhinë",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "penalties": {
+        "home": 4,
+        "away": 1
+      },
+      "homeCrest": "https://media.api-sports.io/football/teams/4360.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/3327.png"
+    },
+    {
+      "id": 1556507,
+      "utcDate": "2026-07-28T18:45:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Heart Of Midlothian",
+      "awayTeam": "Sturm Graz",
+      "score": {
+        "home": 0,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/254.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/637.png"
+    },
+    {
+      "id": 1589425,
+      "utcDate": "2026-07-28T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Shamrock Rovers",
+      "awayTeam": "Ararat-Armenia",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/652.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/3683.png"
+    },
+    {
+      "id": 1591938,
+      "utcDate": "2026-07-29T15:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "PEN",
+      "minute": 120,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Kairat Almaty",
+      "awayTeam": "Omonia Nicosia",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "penalties": {
+        "home": 6,
+        "away": 5
+      },
+      "homeCrest": "https://media.api-sports.io/football/teams/664.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/3402.png"
+    },
+    {
+      "id": 1591939,
+      "utcDate": "2026-07-29T16:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Kauno Žalgiris",
+      "awayTeam": "KI Klaksvik",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/3872.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/701.png"
+    },
+    {
+      "id": 1556508,
+      "utcDate": "2026-07-29T17:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "PEN",
+      "minute": 120,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Lech Poznan",
+      "awayTeam": "Aarhus",
+      "score": {
+        "home": 0,
+        "away": 3
+      },
+      "penalties": {
+        "home": 3,
+        "away": 4
+      },
+      "homeCrest": "https://media.api-sports.io/football/teams/347.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/406.png"
+    },
+    {
+      "id": 1589422,
+      "utcDate": "2026-07-29T17:30:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Hapoel Beer Sheva",
+      "awayTeam": "Vikingur Reykjavik",
+      "score": {
+        "home": 2,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/563.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/278.png"
+    },
+    {
+      "id": 1591940,
+      "utcDate": "2026-07-29T17:30:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Universitatea Craiova",
+      "awayTeam": "Levski Sofia",
+      "score": {
+        "home": 2,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/632.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/646.png"
+    },
+    {
+      "id": 1556506,
+      "utcDate": "2026-07-29T18:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Gornik Zabrze",
+      "awayTeam": "Fenerbahçe",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/340.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/611.png"
+    },
+    {
+      "id": 1589421,
+      "utcDate": "2026-07-29T18:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "FK Crvena Zvezda",
+      "awayTeam": "Larne",
+      "score": {
+        "home": 5,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/598.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/5354.png"
+    },
+    {
+      "id": 1589426,
+      "utcDate": "2026-07-29T18:15:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "SECOND_QUALIFYING_ROUND",
+      "homeTeam": "Slovan Bratislava",
+      "awayTeam": "FC Iberia 1999",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/656.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/3502.png"
+    },
+    {
+      "id": 1607168,
+      "utcDate": "2026-08-04T16:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Mjallby AIF",
+      "awayTeam": "Slovan Bratislava",
+      "score": {
+        "home": 1,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/2240.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/656.png"
+    },
+    {
+      "id": 1605370,
+      "utcDate": "2026-08-04T16:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Ararat-Armenia",
+      "awayTeam": "Celje",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/3683.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/4360.png"
+    },
+    {
+      "id": 1607166,
+      "utcDate": "2026-08-04T17:30:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Hapoel Beer Sheva",
+      "awayTeam": "FK Crvena Zvezda",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/563.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/598.png"
+    },
+    {
+      "id": 1607167,
+      "utcDate": "2026-08-04T17:30:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Levski Sofia",
+      "awayTeam": "Kairat Almaty",
+      "score": {
+        "home": 1,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/646.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/664.png"
+    },
+    {
+      "id": 1598824,
+      "utcDate": "2026-08-04T18:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Olympiakos Piraeus",
+      "awayTeam": "NEC Nijmegen",
+      "score": {
+        "home": 0,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/553.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/413.png"
+    },
+    {
+      "id": 1607164,
+      "utcDate": "2026-08-04T18:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Dinamo Zagreb",
+      "awayTeam": "Kauno Žalgiris",
+      "score": {
+        "home": 5,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/620.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/3872.png"
+    },
+    {
+      "id": 1598826,
+      "utcDate": "2026-08-04T18:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Sparta Praha",
+      "awayTeam": "Lyon",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/628.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/80.png"
+    },
+    {
+      "id": 1598825,
+      "utcDate": "2026-08-04T18:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Union St. Gilloise",
+      "awayTeam": "Bodo/Glimt",
+      "score": {
+        "home": 3,
+        "away": 3
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/1393.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/327.png"
+    },
+    {
+      "id": 1607163,
+      "utcDate": "2026-08-05T17:10:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Aarhus",
+      "awayTeam": "Sabah FA",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/406.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/13976.png"
+    },
+    {
+      "id": 1607165,
+      "utcDate": "2026-08-05T18:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Fenerbahçe",
+      "awayTeam": "Sturm Graz",
+      "score": {
+        "home": 2,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/611.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/637.png"
+    },
+    {
+      "id": 1607170,
+      "utcDate": "2026-08-11T15:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Kairat Almaty",
+      "awayTeam": "Levski Sofia",
+      "score": {
+        "home": 0,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/664.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/646.png"
+    },
+    {
+      "id": 1598827,
+      "utcDate": "2026-08-11T16:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "AET",
+      "minute": 120,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Bodo/Glimt",
+      "awayTeam": "Union St. Gilloise",
+      "score": {
+        "home": 3,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/327.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/1393.png"
+    },
+    {
+      "id": 1607172,
+      "utcDate": "2026-08-11T16:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Sabah FA",
+      "awayTeam": "Aarhus",
+      "score": {
+        "home": 4,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/13976.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/406.png"
+    },
+    {
+      "id": 1607171,
+      "utcDate": "2026-08-11T17:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Kauno Žalgiris",
+      "awayTeam": "Dinamo Zagreb",
+      "score": {
+        "home": 1,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/3872.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/620.png"
+    },
+    {
+      "id": 1598829,
+      "utcDate": "2026-08-11T17:30:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "AET",
+      "minute": 120,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "NEC Nijmegen",
+      "awayTeam": "Olympiakos Piraeus",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/413.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/553.png"
+    },
+    {
+      "id": 1607169,
+      "utcDate": "2026-08-11T18:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "FK Crvena Zvezda",
+      "awayTeam": "Hapoel Beer Sheva",
+      "score": {
+        "home": 0,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/598.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/563.png"
+    },
+    {
+      "id": 1607173,
+      "utcDate": "2026-08-11T18:15:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Slovan Bratislava",
+      "awayTeam": "Mjallby AIF",
+      "score": {
+        "home": 2,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/656.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/2240.png"
+    },
+    {
+      "id": 1605371,
+      "utcDate": "2026-08-11T18:15:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Celje",
+      "awayTeam": "Ararat-Armenia",
+      "score": {
+        "home": 2,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/4360.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/3683.png"
+    },
+    {
+      "id": 1607174,
+      "utcDate": "2026-08-11T18:30:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Sturm Graz",
+      "awayTeam": "Fenerbahçe",
+      "score": {
+        "home": 0,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/637.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/611.png"
+    },
+    {
+      "id": 1598828,
+      "utcDate": "2026-08-11T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "THIRD_QUALIFYING_ROUND",
+      "homeTeam": "Lyon",
+      "awayTeam": "Sparta Praha",
+      "score": {
+        "home": 3,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/80.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/628.png"
+    },
+    {
+      "id": 1622621,
+      "utcDate": "2026-08-18T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "PLAYOFFS",
+      "homeTeam": "Fenerbahçe",
+      "awayTeam": "Lyon",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/611.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/80.png"
+    },
+    {
+      "id": 1622620,
+      "utcDate": "2026-08-18T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "PLAYOFFS",
+      "homeTeam": "Dinamo Zagreb",
+      "awayTeam": "Viking",
+      "score": {
+        "home": 2,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/620.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/759.png"
+    },
+    {
+      "id": 1622622,
+      "utcDate": "2026-08-18T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "PLAYOFFS",
+      "homeTeam": "Levski Sofia",
+      "awayTeam": "AEK Athens FC",
+      "score": {
+        "home": 0,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/646.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/575.png"
+    },
+    {
+      "id": 1610923,
+      "utcDate": "2026-08-19T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "PLAYOFFS",
+      "homeTeam": "Celtic",
+      "awayTeam": "Lask Linz",
+      "score": {
+        "home": 3,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/247.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/1026.png"
+    },
+    {
+      "id": 1622624,
+      "utcDate": "2026-08-19T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "PLAYOFFS",
+      "homeTeam": "NEC Nijmegen",
+      "awayTeam": "Bodo/Glimt",
+      "score": {
+        "home": 1,
+        "away": 3
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/413.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/327.png"
+    },
+    {
+      "id": 1622623,
+      "utcDate": "2026-08-19T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "PLAYOFFS",
+      "homeTeam": "Hapoel Beer Sheva",
+      "awayTeam": "Sabah FA",
+      "score": {
+        "home": 2,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/563.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/13976.png"
+    },
+    {
+      "id": 1622625,
+      "utcDate": "2026-08-19T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "PLAYOFFS",
+      "homeTeam": "Slovan Bratislava",
+      "awayTeam": "Celje",
+      "score": {
+        "home": 1,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/656.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/4360.png"
+    },
+    {
+      "id": 1622626,
+      "utcDate": "2026-08-25T16:45:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "AET",
+      "minute": 120,
+      "stage": "PLAYOFFS",
+      "homeTeam": "Sabah FA",
+      "awayTeam": "Hapoel Beer Sheva",
+      "score": {
+        "home": 5,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/13976.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/563.png"
+    },
+    {
+      "id": 1622627,
+      "utcDate": "2026-08-25T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "PLAYOFFS",
+      "homeTeam": "Bodo/Glimt",
+      "awayTeam": "NEC Nijmegen",
+      "score": {
+        "home": 3,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/327.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/413.png"
+    },
+    {
+      "id": 1610924,
+      "utcDate": "2026-08-25T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "AET",
+      "minute": 120,
+      "stage": "PLAYOFFS",
+      "homeTeam": "Lask Linz",
+      "awayTeam": "Celtic",
+      "score": {
+        "home": 5,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/1026.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/247.png"
+    },
+    {
+      "id": 1622630,
+      "utcDate": "2026-08-26T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "PLAYOFFS",
+      "homeTeam": "Lyon",
+      "awayTeam": "Fenerbahçe",
+      "score": {
+        "home": 1,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/80.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/611.png"
+    },
+    {
+      "id": 1622629,
+      "utcDate": "2026-08-26T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "PLAYOFFS",
+      "homeTeam": "AEK Athens FC",
+      "awayTeam": "Levski Sofia",
+      "score": {
+        "home": 4,
+        "away": 0
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/575.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/646.png"
+    },
+    {
+      "id": 1622631,
+      "utcDate": "2026-08-26T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "FT",
+      "minute": 90,
+      "stage": "PLAYOFFS",
+      "homeTeam": "Viking",
+      "awayTeam": "Dinamo Zagreb",
+      "score": {
+        "home": 3,
+        "away": 1
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/759.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/620.png"
+    },
+    {
+      "id": 1622628,
+      "utcDate": "2026-08-26T19:00:00+00:00",
+      "status": "FINISHED",
+      "providerStatus": "AET",
+      "minute": 120,
+      "stage": "PLAYOFFS",
+      "homeTeam": "Celje",
+      "awayTeam": "Slovan Bratislava",
+      "score": {
+        "home": 1,
+        "away": 2
+      },
+      "penalties": null,
+      "homeCrest": "https://media.api-sports.io/football/teams/4360.png",
+      "awayCrest": "https://media.api-sports.io/football/teams/656.png"
+    }
+  ]
+}

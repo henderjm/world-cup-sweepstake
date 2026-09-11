@@ -66,8 +66,10 @@ test("the hero reflects the live matchday instead of the next matchday", () => {
 test("qualifying play-offs and knockout play-offs have distinct labels", () => {
   assert.equal(formatStage("PLAYOFFS"), "Qualifying play-offs");
   assert.equal(formatStage("PLAYOFF_ROUND"), "Knockout play-offs");
-  const html = renderKnockout({ matches: [fixture(1, "PLAYOFFS", "Home", "Away"), fixture(2, "PLAYOFF_ROUND", "Home", "Away")] });
-  assert.ok(html.indexOf("Qualifying play-offs") < html.indexOf("Knockout play-offs"));
+  const model = { competition: { code: "CL" }, matches: [fixture(1, "PLAYOFFS", "Home", "Away"), fixture(2, "PLAYOFF_ROUND", "Home", "Away")] };
+  assert.match(renderKnockout(model, { phase: "qualifying" }), /Qualifying play-offs/);
+  assert.doesNotMatch(renderKnockout(model, { phase: "qualifying" }), /Knockout play-offs/);
+  assert.match(renderKnockout(model), /Knockout play-offs/);
 });
 
 test("half-time and interruptions survive mapping and model construction with distinct labels", () => {
