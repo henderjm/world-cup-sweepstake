@@ -114,3 +114,32 @@ test("neither input is mutated", () => {
   assert.equal(JSON.stringify(primary), primarySnapshot);
   assert.equal(JSON.stringify(fallback), fallbackSnapshot);
 });
+
+for (const missing of ['home', 'away']) {
+  test(`a missing ${missing} lineup recovers independently without replacing the other team's fresh selection`, () => {
+    const primary = fullDetail();
+    const fallback = fullDetail();
+    const available = missing === 'home' ? 'away' : 'home';
+    primary[missing] = { name: primary[missing].name, crest: 'current.png', lineup: [], bench: [] };
+    primary[available] = { ...primary[available], lineup: [player('Fresh starter')], bench: [player('Fresh bench')], coach: 'Fresh coach', formation: '3-5-2' };
+    fallback[missing].name = 'Older provider spelling';
+    const before = JSON.stringify({ primary, fallback });
+    const merged = fillDetailSections(primary, fallback);
+    assert.equal(merged[available], primary[available]);
+    assert.deepEqual(merged[missing].lineup, fallback[missing].lineup);
+    assert.deepEqual(merged[missing].bench, fallback[missing].bench);
+    assert.equal(merged[missing].formation, fallback[missing].formation);
+    assert.equal(merged[missing].coach, fallback[missing].coach);
+    assert.equal(merged[missing].name, primary[missing].name);
+    assert.equal(merged[missing].crest, 'current.png');
+    assert.equal(JSON.stringify({ primary, fallback }), before);
+  });
+}
+
+test('recovering an absent side also recovers its team identity', () => {
+  const fallback = fullDetail();
+  const merged = fillDetailSections({ home: fallback.home }, fallback);
+  assert.equal(merged.away.name, 'Tottenham');
+  assert.equal(merged.away.crest, 't.png');
+  assert.deepEqual(merged.away.lineup, fallback.away.lineup);
+});

@@ -20,8 +20,8 @@
 //
 // A detail has three supplementary SECTIONS: lineups (either side's XI),
 // events (goals + cards + subs, one timeline), and player stats. The score is
-// how many are non-empty; sections are only ever moved WHOLE, never mixed
-// within, because half a timeline from each of two reads is not a timeline.
+// how many are non-empty. Events move as one timeline; each team's lineup
+// moves with its own formation, coach and bench.
 
 export function detailSubstanceScore(detail) {
   if (!detail) return 0;
@@ -43,6 +43,7 @@ export function detailHasSubstance(detail) {
 function fillSide(primarySide, fallbackSide) {
   if (!fallbackSide) return primarySide;
   return {
+    ...fallbackSide,
     ...primarySide,
     formation: fallbackSide.formation ?? null,
     coach: fallbackSide.coach ?? null,
@@ -61,11 +62,10 @@ export function fillDetailSections(primary, fallback) {
   if (!primary) return fallback ?? null;
   if (!fallback) return primary;
   const merged = { ...primary };
-  const primaryHasLineups = Boolean(primary.home?.lineup?.length || primary.away?.lineup?.length);
-  const fallbackHasLineups = Boolean(fallback.home?.lineup?.length || fallback.away?.lineup?.length);
-  if (!primaryHasLineups && fallbackHasLineups) {
-    merged.home = fillSide(primary.home, fallback.home);
-    merged.away = fillSide(primary.away, fallback.away);
+  for (const side of ["home", "away"]) {
+    if (!primary[side]?.lineup?.length && fallback[side]?.lineup?.length) {
+      merged[side] = fillSide(primary[side], fallback[side]);
+    }
   }
   const primaryHasEvents = Boolean(primary.goals?.length || primary.cards?.length || primary.subs?.length);
   const fallbackHasEvents = Boolean(fallback.goals?.length || fallback.cards?.length || fallback.subs?.length);

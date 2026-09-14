@@ -1,6 +1,6 @@
 # Daily live-score product backlog
 
-Updated: 2026-09-11. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
+Updated: 2026-09-14. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
 Starting revision: `bfaf0a66e03febeda47647789e275853155ef638`.
 
 ## Mandate and continuation
@@ -152,7 +152,8 @@ failure/status variants, not a claim of production deployment or end-to-end late
 | Ready for review | Qualifying versus main knockout presentation | Keep qualification history available, but avoid presenting a wall of July fixtures as the main knockout destination in September. Group two-leg ties with correct aggregate and penalty handling; never invent future draws. |
 | P1 | Team identity and labels | The feed says Sabah FA while both benchmarks say Sabah FK. Verify provider team ID, crest and destination before changing display aliases; do not rewrite stored follow keys based on a name alone. |
 | Ready for review | Match detail navigation/accessibility | Persistent Overview, Timeline, Line-ups and Banter shortcuts with 44px targets. Retain focus, reading position, score route and drafts through refreshes; distinguish loading, absent coverage, initial failure and delayed detail. Verify scheduled, live, finished, postponed and cancelled states at 320, 390 and 1440px. |
-| P1 | Match statistics coverage | Audit the mapped provider and baked payloads for available team statistics before exposing a Stats destination. Show supported metrics with source/coverage states; preserve per-player and fantasy contracts. Do not imply zero when a metric is absent. |
+| P1 | Match statistics coverage | Audit completed September 14: team metrics are absent from the mapped payload and current fetch paths. Establish an endpoint/cache/request budget and preserve nulls before adding a Stats destination. Show supported metrics with source/coverage states; preserve per-player and fantasy contracts. Do not imply zero when a metric is absent. |
+| Ready for review | Recover either team's missing line-up | A started match with one published XI checks the static detail even when events and player stats are present. Recover only the missing side with its formation, coach and bench; keep fresh sections intact, and prefer the live XI when it returns. Missing saved coverage stays explicit. |
 | P2 | Product polish and performance | Align metadata/brand subtitle with score-first positioning, align the single-league hero with the selected date, check native calendar interaction through polling, and measure rendering/request budgets. Keep existing features reachable. |
 
 ## Verification ledger
@@ -460,3 +461,44 @@ Not deployed. Next bounded product work: audit match statistics coverage before
 adding metrics, or resolve the provider team identity mismatch. P0 production
 latency correlation remains open; the provider timeout protection is still local.
 Preserve the separate native work and the pending release approval boundary.
+
+
+## September 14 — independent line-up recovery, ready for review
+
+Completed the interrupted September 11 work. A Worker detail response could
+contain events, player stats and one team's XI, score as fully populated, and
+skip the static fallback. Even when another gap triggered the fallback, the
+merge treated both teams as one section, so one present XI blocked the other's
+recovery. The drawer now checks the saved detail for either missing XI in a
+started match and merges each team independently. Formation, coach, starters
+and bench move together; fresh players, events and stats remain authoritative.
+An entirely absent side also recovers its team name and crest.
+
+Validation:
+- Isolated export excludes separate native work; 1,494 tests and build passed.
+  September 14 verified source hashes and the served asset `index-CXVe7DPC.js`
+  still match that tested build. No code changed between those checks.
+- `scripts/qa/partial-lineups.js` passed three browser scenarios: missing home,
+  missing away, and unavailable saved coverage. Fresh starters/bench/events stay
+  intact; a later complete live response replaces saved players, stops redundant
+  fallback reads and preserves the section focus and viewport position.
+- `scripts/qa/match-detail-sections.js` passed all nine groups against this build
+  on September 14, including 320/390/1440px navigation, loading, missing coverage,
+  failure/retry, retained details, stable drafts and postponed/cancelled states.
+  Earlier attempts were interrupted by the browser closing; those attempts are
+  not counted as passes. Existing screenshots were retained without timestamp churn.
+
+Statistics audit (repository evidence, not a live provider coverage claim):
+- Worker, bake and feeder fetch lineups, events and player payloads, but no
+  `/fixtures/statistics` payload. `mapApiFootballMatchDetail` transports no team
+  possession, shots or expected-goals metrics.
+- `mapPlayerStats` currently transports minutes, position and defensive counts
+  used elsewhere, and defaults missing counts to zero. Those fields cannot safely
+  stand in for team match statistics or distinguish absent defensive coverage.
+- A statistics feature needs explicit nullable ingestion, coverage states and a
+  bounded provider/cache budget. No new provider endpoint, purchase or request
+  volume was introduced in this fix. Existing fantasy/statistics fields are unchanged.
+
+Not deployed. Next bounded work: verify the Sabah provider identity before any
+label change. P0 production latency correlation and the pending public-release
+approval remain open. Preserve the unrelated native-app edits.

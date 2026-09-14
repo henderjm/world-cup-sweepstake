@@ -162,7 +162,7 @@ async function loadDetail(match, signal) {
   // (fillDetailSections; the fresher Worker read always wins a section it has).
   let detail = DATA_API ? await fetchDetailJson(`${DATA_API}/match/${match.id}`, signal) : null;
   const started = isLive(match.status) || isFinished(match.status);
-  if (!detail || (started && detailSubstanceScore(detail) < DETAIL_SECTION_COUNT)) {
+  if (!detail || (started && (detailSubstanceScore(detail) < DETAIL_SECTION_COUNT || !detail.home?.lineup?.length || !detail.away?.lineup?.length))) {
     if (signal.aborted) return;
     const baked = await fetchDetailJson(staticSrc, signal);
     if (baked) detail = fillDetailSections(detail, baked);
