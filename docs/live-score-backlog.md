@@ -145,15 +145,16 @@ failure/status variants, not a claim of production deployment or end-to-end late
 
 | Priority | Item | Definition of done |
 | --- | --- | --- |
-| P0 | Diagnose intermittent live request stalls | A production CL request exceeded 20 seconds, while subsequent calls took 21–23ms. The Worker reported a provider-limit cool-off with daily quota remaining. Correlate request timings with upstream/cache waits before assigning the cause; add a bounded upstream recovery path with tests. The frontend eight-second limit exposes the stall but increasing it alone is insufficient. |
-| Ready for review | Show league tables on wider screens | At desktop widths (initial target: 1200px and above), show the relevant league table alongside Scores without a separate tab change. In All matches, make the table's competition explicit and selectable. Preserve date, Live and Following selections; tables use the same feed and disclose stale/unavailable data. Verify 1200px and 1440px layouts, keyboard access and no horizontal overflow; mobile scores remain usable at 320px and 390px. Requested by the user September 10. |
+| P0 | Provider rate-limit failures and intermittent stalls | September 14 tagged production logs confirm a PL request was rejected by the provider per-minute limit with daily quota remaining. The five-second provider deadline is deployed; investigate request pacing across concurrent consumers and egress. This does not establish the cause of the earlier CL request exceeding 20 seconds, followed by calls taking 21–23ms. The Worker reported a provider-limit cool-off with daily quota remaining. Correlate request timings with upstream/cache waits before assigning the cause; add a bounded upstream recovery path with tests. The frontend eight-second limit exposes the stall but increasing it alone is insufficient. |
+| Deployed September 14 | Show league tables on wider screens | At desktop widths (initial target: 1200px and above), show the relevant league table alongside Scores without a separate tab change. In All matches, make the table's competition explicit and selectable. Preserve date, Live and Following selections; tables use the same feed and disclose stale/unavailable data. Verify 1200px and 1440px layouts, keyboard access and no horizontal overflow; mobile scores remain usable at 320px and 390px. Requested by the user September 10. |
+| P0 | Preserve standings through partial feed responses | September 14 live verification briefly showed no PL standings while the deployed static fallback contained 20 rows. Distinguish missing upstream table coverage from genuinely unpublished standings; recover known rows without changing scores or pretending they are current. Reproduce with partial payloads before changing ingestion. |
 | P1 | Restore automatic Worker publishing | GitHub's Worker workflow currently skips deployment because `CLOUDFLARE_API_TOKEN` is unset. Configure an appropriately scoped deployment credential and verify the actual deploy step runs on the next approved release. A green skipped workflow is not deployment evidence. The September 10 release was deployed successfully using the existing local OAuth login. |
 | P1 | Measure actual event latency | Compare timestamped provider events and observed delivery across live matches. Establish p50/p95 delay and update reliability; feed age alone does not prove event latency. |
-| Ready for review | Qualifying versus main knockout presentation | Keep qualification history available, but avoid presenting a wall of July fixtures as the main knockout destination in September. Group two-leg ties with correct aggregate and penalty handling; never invent future draws. |
+| Deployed September 14 | Qualifying versus main knockout presentation | Keep qualification history available, but avoid presenting a wall of July fixtures as the main knockout destination in September. Group two-leg ties with correct aggregate and penalty handling; never invent future draws. |
 | P1 | Team identity and labels | The feed says Sabah FA while both benchmarks say Sabah FK. Verify provider team ID, crest and destination before changing display aliases; do not rewrite stored follow keys based on a name alone. |
-| Ready for review | Match detail navigation/accessibility | Persistent Overview, Timeline, Line-ups and Banter shortcuts with 44px targets. Retain focus, reading position, score route and drafts through refreshes; distinguish loading, absent coverage, initial failure and delayed detail. Verify scheduled, live, finished, postponed and cancelled states at 320, 390 and 1440px. |
+| Deployed September 14 | Match detail navigation/accessibility | Persistent Overview, Timeline, Line-ups and Banter shortcuts with 44px targets. Retain focus, reading position, score route and drafts through refreshes; distinguish loading, absent coverage, initial failure and delayed detail. Verify scheduled, live, finished, postponed and cancelled states at 320, 390 and 1440px. |
 | P1 | Match statistics coverage | Audit completed September 14: team metrics are absent from the mapped payload and current fetch paths. Establish an endpoint/cache/request budget and preserve nulls before adding a Stats destination. Show supported metrics with source/coverage states; preserve per-player and fantasy contracts. Do not imply zero when a metric is absent. |
-| Ready for review | Recover either team's missing line-up | A started match with one published XI checks the static detail even when events and player stats are present. Recover only the missing side with its formation, coach and bench; keep fresh sections intact, and prefer the live XI when it returns. Missing saved coverage stays explicit. |
+| Deployed September 14 | Recover either team's missing line-up | A started match with one published XI checks the static detail even when events and player stats are present. Recover only the missing side with its formation, coach and bench; keep fresh sections intact, and prefer the live XI when it returns. Missing saved coverage stays explicit. |
 | P2 | Product polish and performance | Align metadata/brand subtitle with score-first positioning, align the single-league hero with the selected date, check native calendar interaction through polling, and measure rendering/request budgets. Keep existing features reachable. |
 
 ## Verification ledger
@@ -502,3 +503,57 @@ Statistics audit (repository evidence, not a live provider coverage claim):
 Not deployed. Next bounded work: verify the Sabah provider identity before any
 label change. P0 production latency correlation and the pending public-release
 approval remain open. Preserve the unrelated native-app edits.
+
+
+## September 14 — approved release deployed and verified
+
+The user explicitly requested "deploy them" after the completed local fixes.
+Published code `07867e6305df25456569113b757cf4cdc476aa21` from a clean committed
+export, excluding all separate uncommitted native work. This supersedes the
+September 11 release approval gate for these completed changes only.
+
+- Pages deployment [34822635110](https://github.com/henderjm/world-cup-sweepstake/actions/runs/34822635110)
+  succeeded. Production serves `index-CXVe7DPC.js`, matching the tested build.
+- Worker `goon-squad-data` deployed with existing local OAuth, version
+  `0f07f1fa-0f27-4407-88cd-1ccd6e203853`. Tagged runtime logs confirm that version
+  handled the checked public requests. Its five-second deadline bounds each
+  provider read; it is not a total route-latency guarantee.
+- Automatic Worker workflow [34822635107](https://github.com/henderjm/world-cup-sweepstake/actions/runs/34822635107)
+  still skipped publication because its repository token is unset. The explicit
+  local deploy, not that green skipped workflow, is the Worker release evidence.
+- The deployed static fallback refreshed PL to `2026-09-14T08:25:54.458Z` and CL
+  to `2026-09-14T08:25:55.070Z`. PL contains 380 fixtures and 20 standings rows;
+  CL contains 234 fixtures and 36 standings rows. September 12–13 PL matches are
+  final, rather than reverting to the old committed seed.
+
+Production browser checks (real live/static data, no clock override):
+- Desktop All matches has the selectable standings panel; selecting CL displays
+  all 36 league-phase rows. Champions League qualifying defaults to seven
+  play-off ties with 14 leg links.
+- At 390px, September 13's Man United–Man City fixture shows 0–1. Opening it
+  loads events and both line-ups; section navigation works and Escape restores
+  the match row focus and date route. No page or drawer overflow and no JS errors.
+- With Worker requests deliberately blocked in an isolated browser context,
+  production fallback still displays that final score and all 20 PL standings
+  rows, labels both feeds/standings delayed and exposes retries. The test makes
+  no changes to production data.
+
+Unresolved provider problem observed during verification:
+- Initial public checks returned 502 for both competitions. Later tagged CL
+  returned 200 in 366ms, while tagged PL returned 502 in 182ms (54ms Worker wall
+  time). The PL request log explicitly reports API-Football's per-minute rate
+  limit rejection on `/fixtures`, delivered inside an upstream HTTP-200 error
+  payload. This was not a five-second timeout. Quota diagnostics at the time
+  showed 7,282 of 7,500 daily calls remaining and a temporary limited flag.
+- Other checks and the deployment refresh successfully obtained both feeds.
+  This is intermittent; successful fallback and deployment do not resolve it.
+- One fresh PL browser response displayed "No standings published yet" while
+  the deployed fallback had 20 rows. Added a P0 recovery item; avoid presenting
+  missing upstream coverage as a genuinely unpublished league table.
+- Tagged tail was stopped. Full request headers were kept only in temporary
+  diagnostic output; this record contains the relevant status/version/error.
+
+Next: prioritize provider refusal/pacing evidence and partial-standings recovery.
+The previous 20-second CL stall still lacks correlated cause evidence. No new
+spending or production data mutation occurred. Future public changes require
+approval. This release record itself is a local documentation commit.
