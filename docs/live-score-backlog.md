@@ -151,6 +151,7 @@ Continue competitor analysis and implementation within PL/CL.
 | P0 | Provider rate-limit failures and intermittent stalls | September 14 tagged production logs confirm a PL request was rejected by the provider per-minute limit with daily quota remaining. The five-second provider deadline is deployed. September 19: a one-second admission limit for the isolate's upstream queue is implemented and browser-verified locally; excess reads reach existing saved-data recovery without issuing another provider call. Global pacing across isolates/egress remains open. This does not establish the cause of the earlier CL request exceeding 20 seconds, followed by calls taking 21–23ms. Correlate request timings with upstream/cache waits before assigning the cause. A route can make several upstream reads, so these limits are not a total route deadline; the frontend eight-second limit alone is insufficient. |
 | Deployed September 14 | Show league tables on wider screens | At desktop widths (initial target: 1200px and above), show the relevant league table alongside Scores without a separate tab change. In All matches, make the table's competition explicit and selectable. Preserve date, Live and Following selections; tables use the same feed and disclose stale/unavailable data. Verify 1200px and 1440px layouts, keyboard access and no horizontal overflow; mobile scores remain usable at 320px and 390px. Requested by the user September 10. |
 | Ready for review | Preserve standings through partial feed responses | September 14 live verification briefly showed no PL standings while the deployed static fallback contained 20 rows. Distinguish missing upstream table coverage from genuinely unpublished standings; recover known rows without changing scores or pretending they are current. Reproduce with partial payloads before changing ingestion. |
+| Ready for review | Keep supplementary player stats from delaying scores | Bound the scorer-file wait to 1.5 seconds including body reads. With a healthy score feed and stalled stats, show scores within 3.5 seconds of local browser navigation at 390px and 1440px. Distinguish loading, unavailable/Retry, unpublished and recovered data; preserve fixture freshness and verify no page errors or overflow. September 19 checks pass. |
 | P1 | Restore automatic Worker publishing | GitHub's Worker workflow currently skips deployment because `CLOUDFLARE_API_TOKEN` is unset. Configure an appropriately scoped deployment credential and verify the actual deploy step runs on the next approved release. A green skipped workflow is not deployment evidence. The September 10 release was deployed successfully using the existing local OAuth login. |
 | P1 | Measure actual event latency | Compare timestamped provider events and observed delivery across live matches. Establish p50/p95 delay and update reliability; feed age alone does not prove event latency. |
 | Deployed September 14 | Qualifying versus main knockout presentation | Keep qualification history available, but avoid presenting a wall of July fixtures as the main knockout destination in September. Group two-leg ties with correct aggregate and penalty handling; never invent future draws. |
@@ -651,3 +652,35 @@ Limitations and next work:
 - Provider throttling remains P0 pending correlated production measurements and
   a concrete cross-isolate pacing decision. Referee context remains P1 and new
   leagues remain out of scope. Public release still requires approval.
+
+## September 19 — supplementary player stats no longer hold scores for eight seconds
+
+Found a separate browser-side delay: `loadModel` waits for both the live feed and
+static scorer file. A stalled scorer download could hold already-fetched scores
+for its full eight-second timeout. Its timeout is now 1.5 seconds, including body
+reading. This is an intentionally short budget for supplementary data; a slow
+connection can show the unavailable state, with Retry, while scores remain usable.
+
+Player stats now distinguishes a failed/malformed response from a valid empty
+board. Failure says temporarily unavailable and offers Retry; an empty board
+says statistics are not published yet, without claiming that no goals occurred.
+The visible failure flag participates in refresh detection so a successful empty
+response can clear it even when the fixture scores are unchanged. No new API
+calls, providers or leagues were added.
+
+Validation on an isolated export excluding unrelated native work:
+- 1,516 tests pass and the production build succeeds. Focused tests cover stalled
+  headers/body, malformed rows, error/empty/recovered states, preserved fresh
+  scores, and refresh detection without a score change.
+- Real browser checks at 390px and 1440px exercise initial loading, stalled downloads, failed
+  Retry, empty results, successful recovery and score updates. Scores appeared
+  in 2,033ms and 2,036ms including navigation while the scorer request remained
+  stalled. Delayed fixtures keep their warning; fresh fixtures remain fresh.
+  No page errors or horizontal overflow. These are synthetic local timings.
+- Reproduction: `scripts/qa/scorer-loading.js` against the production preview.
+
+Next: the Worker still awaits standings after fetching scores. Its error path
+can reuse the previous table without an independent age marker; inspect that
+alongside its request budget before changing it. Account-wide provider pacing
+and correlated production latency measurements remain open P0 work. This change
+is local and requires approval before public release.

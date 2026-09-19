@@ -579,8 +579,6 @@ export function renderFixtures(model, view = "results", team = "All") {
 
 // -- Player stats --------------------------------------------------------------------------------------
 
-// Goals / assists / involvements: everything the feed really has. The design's xG,
-// Extra stat columns stay out until their scoring and display rules are agreed.
 const STAT_SORTS = {
   goals: { label: "Goals", compare: compareByGoals, key: "goals" },
   assists: {
@@ -609,8 +607,11 @@ export function renderStats(model, sortKey = "goals") {
       <span class="statbar__season">Season ${seasonLabel(model)}</span>
     </div>`;
 
+  if (model.scorersUnavailable) {
+    return `${head}<p class="note" role="status">Player statistics temporarily unavailable. <button class="score-league__table" data-score-feed-retry="${model.competition.code}">Retry</button></p>`;
+  }
   if (!scorers.length) {
-    return `${head}<p class="note">No goals yet. The scorer board appears once the first goals are in.</p>`;
+    return `${head}<p class="note">Player statistics are not published yet.</p>`;
   }
 
   const sorted = (key) => (STAT_SORTS[activeKey].key === key ? "is-sorted" : "");

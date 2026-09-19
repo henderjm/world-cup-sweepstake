@@ -109,6 +109,7 @@ export function buildModel(raw, scorerData = {}) {
     standingsDelayed: Boolean(raw.standingsDelayed),
     standingsUpdatedAt: raw.standingsUpdatedAt ?? null,
     standingsUnavailable: Boolean(raw.standingsUnavailable),
+    scorersUnavailable: Boolean(scorerData.unavailable),
     competition,
     matches,
     tables,
@@ -133,23 +134,27 @@ export function modelSignature(model) {
   // Fetch timestamps change on every poll; only visible content should repaint.
   return JSON.stringify([
     model.competition, model.hasData, model.source, model.error, model.stale, model.loading,
-    model.matches, model.tables, model.scorers, model.standingsDelayed, model.standingsUpdatedAt, model.standingsUnavailable, localDateKey(),
+    model.matches, model.tables, model.scorers, model.scorersUnavailable, model.standingsDelayed, model.standingsUpdatedAt, model.standingsUnavailable, localDateKey(),
   ]);
 }
 
 // Goal involvements are baked into a separate static file (data/<comp>/scorers.json)
-// by the fetch script. It always reads from static: the Worker live path has no
-// scorers endpoint. Missing or unreachable means an empty board, never a broken app.
+// by the fetch script. Keep this supplementary file's wait short because scores
+// and stats share a model load; a stalled CDN must not hold fresh scores for 8s.
 async function loadScorers(comp) {
   try {
     const response = await fetch(`./data/${encodeURIComponent(comp)}/scorers.json?cache=${Date.now()}`, {
       cache: "no-store",
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(1500),
     });
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-    return await response.json();
+    const data = await response.json();
+    if (!Array.isArray(data?.scorers) || !data.scorers.every(row => row
+      && typeof row.player === "string" && typeof row.team === "string"
+      && [row.goals, row.assists, row.points].every(Number.isFinite))) throw new Error("Invalid player statistics");
+    return data;
   } catch {
-    return { scorers: [] };
+    return { scorers: [], unavailable: true };
   }
 }
 
