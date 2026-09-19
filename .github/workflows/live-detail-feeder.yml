@@ -1,25 +1,7 @@
-# Feeds live match detail into the Worker's KV safety copy from GitHub's
-# egress IPs, which api-sports trusts (the hourly Pages bake proves it),
-# through the same 11:00-22:00 UTC window the bake uses.
-# A run also pushes today's fixtures to /ingest/live/:comp as the live
-# SCOREBOARD's safety copy, and keeps pushing once a minute for as long as a
-# match is in play (LOOP_BUDGET_MS in the script).
-# See scripts/feed-live-details.mjs for the full rationale; the short version
-# is that api-sports soft-throttles the shared Cloudflare Workers IPs with
-# 200-with-empty responses, so the Worker cannot always read data that
-# provably exists. Missing secrets make the script a green no-op on purpose.
-#
-# THE SCHEDULE IS ONLY THE STARTER. GitHub's cron is documented best-effort
-# and measured here as worse: Aug 26-28 2026 it fired this */5 schedule twice
-# in 48 hours, so a matchday's whole safety net slept through the afternoon.
-# Each run therefore re-arms the NEXT run itself (the final step: wait a few
-# minutes, then workflow_dispatch this same file), so one firing -- cron or
-# manual -- sustains the chain for the rest of the window, and the cron's only
-# remaining job is to (re)start a chain that died. workflow_dispatch is one of
-# the two event types the default GITHUB_TOKEN is allowed to create runs for,
-# so this needs no PAT; `permissions: actions: write` below is what authorizes
-# it. The queued-run check keeps a cron firing mid-chain from doubling it, and
-# the concurrency group serializes whatever slips through.
+# Cron starts the chain; self-dispatch keeps it running because scheduled
+# starts have been unreliable. The concurrency group and queued-run check
+# prevent overlapping feeders. Live runs trade two minutes of the old idle
+# pause for two more score passes, preserving the detail-refresh cadence.
 name: Feed live match detail
 
 on:
@@ -38,8 +20,7 @@ permissions:
 jobs:
   feed:
     runs-on: ubuntu-latest
-    # Feed step (up to ~4.5 min while a match is live) + the 3-minute re-arm
-    # pause, with headroom.
+    # Six-minute live loop plus restart pause and setup headroom.
     timeout-minutes: 12
     steps:
       - name: Check out
@@ -51,29 +32,27 @@ jobs:
           node-version: 22
 
       - name: Feed live match detail
+        id: feed
         run: node scripts/feed-live-details.mjs
         env:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           DETAIL_INGEST_TOKEN: ${{ secrets.DETAIL_INGEST_TOKEN }}
           API_FOOTBALL_COMPETITIONS: "PL:2026"
 
-      # `always()` so a transient feed failure cannot kill the chain; outside
-      # the window the chain ends itself. The pause is a runner sleep because
-      # a workflow_dispatch cannot be scheduled for later; a public repo's
-      # minutes are free, and ~4 minutes per link keeps the idle cadence near
-      # the cron's intended one. The queued check runs AFTER the pause, so a
-      # cron run queued during it is seen and not doubled.
+      # Keep the short pause while live (or fixture discovery is uncertain).
+      # Idle runs retain the slower cadence. Always re-arm after a failed step.
       - name: Re-arm the next run
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REARM_DELAY_SECONDS: ${{ steps.feed.outputs.rearm_delay_seconds || '180' }}
         run: |
           hour=$(date -u +%H)
           if [ "$hour" -lt 11 ] || [ "$hour" -ge 22 ]; then
             echo "outside the 11:00-22:00 UTC window; the chain ends here"
             exit 0
           fi
-          sleep 180
+          sleep "$REARM_DELAY_SECONDS"
           queued=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/live-detail-feeder.yml/runs?status=queued&per_page=1" --jq '.total_count' || echo 0)
           if [ "${queued:-0}" -gt 0 ]; then
             echo "a run is already queued; not doubling the chain"

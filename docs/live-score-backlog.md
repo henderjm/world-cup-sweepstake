@@ -796,3 +796,54 @@ The timestamp bug is fixed locally; the reported intermittent score lag remains
 open. Next: correlate source batch times, actual event arrival, provider refusal
 and feeder-gap intervals. Review continuous backup coverage within the existing
 quota before changing its cadence. This incident does not authorize deployment.
+
+## September 19 — reduce deliberate gaps in backup score delivery
+
+The incident investigation found a three-minute restart pause after roughly
+four score passes. Local changes extend the active loop budget from four to six
+minutes and reduce the pause to one minute when matches are live or discovery
+is uncertain. Idle/finished days retain the three-minute pause. In the controlled
+normal-duration run, the next detail run starts at the same point in the cycle,
+with six score pushes instead of four. Detail still runs once per job.
+
+Additional safeguards:
+- A failed/malformed discovery or an empty response after a live pass does not
+  declare the matchday idle. Detail is still fetched after the first successful
+  discovery when the initial attempt failed. The bounded loop retries; real finished fixtures
+  return to the slower cadence.
+- Provider reads and ingest writes have ten-second header/body deadlines.
+  The detail loop stops starting matches after the run budget is exhausted;
+  unfinished detail work is left for the next job.
+- Workflow output chooses the restart pause, with the previous three-minute
+  delay retained if the step fails before producing output. Existing concurrency,
+  queued-run check, execution window, and configured PL league remain intact.
+
+Acceptance and evidence:
+- 1,529 tests and production build pass; workflow YAML parses. Seven new tests run
+  the actual feeder script against a simulated provider and clock, covering live
+  cadence, initial/transient/empty/malformed discovery, failed ingestion, idle fixtures
+  and newly finished games. Detail requests are unchanged in the normal-cycle
+  comparison; scheduled live pushes are at most 62 seconds apart in that fixture.
+- The typical change costs two extra fixture reads per roughly six-minute cycle:
+  approximately 220 extra reads across eleven continuously live hours for the
+  single configured competition. This is a planning estimate, not a global cap
+  or billing forecast. Recheck actual quota after an approved rollout.
+- A real browser against the local Worker ingestion route sees backup scores
+  advance 1–0, 2–0, 3–0 while the primary provider is refused. A simulated missed
+  push retains 3–0 with its 121-second age, and the next push delivers 4–0. The
+  delayed-source warning remains explicit. No page errors or desktop overflow.
+  The browser fixture validates ingestion and display, not GitHub runner timing.
+- Reproduction: `test/live-feeder.test.js`, `scripts/qa/feeder-browser-server.mjs`
+  and `scripts/qa/feeder-continuity.js`.
+
+Limits: GitHub queue/setup delays can still extend the handoff. Slow detail work
+can delay the second score pass; the first push is sent before detail begins.
+A first-pass empty response has no prior live state to distinguish missing
+coverage from an idle day. The feeder currently covers PL only; CL is an existing
+competition needing backup coverage, but enabling it should avoid polling its
+empty matchdays once a minute. None of this is deployed; the public-release
+approval request remains pending. Do not count the intermittent incident resolved
+until an approved release is checked during actual matches.
+
+Next P0: verify live runner-to-runner gaps and source delivery after approval;
+prepare efficient CL backup coverage and continue correlating provider refusals.
