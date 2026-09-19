@@ -121,7 +121,7 @@ export function renderHero(model, { title: titleOverride = null, showSummary = t
         ? `<span class="chip">Next: ${esc(displayTeamName(next.homeTeam))} v ${esc(displayTeamName(next.awayTeam))} · ${esc(dayLabel(next.utcDate))}</span>`
         : "",
     seasonStarted && leader
-      ? `<span class="chip">Top: ${esc(displayTeamName(leader.team))} · ${leader.points} pts</span>`
+      ? `<span class="chip">Top${model.standingsDelayed ? " (saved)" : ""}: ${esc(displayTeamName(leader.team))} · ${leader.points} pts</span>`
       : "",
   ]
     .filter(Boolean)
@@ -350,8 +350,8 @@ function formDots(form) {
 }
 
 export function renderTable(model) {
-  if (!model.tables.length) {
-    return `<p class="note">No table published yet.</p>`;
+  if (!model.tables.some(table => table.rows.length)) {
+    return model.standingsUnavailable ? renderStandingsNotice(model) : `<p class="note">No table published yet.</p>`;
   }
 
   const cards = model.tables
@@ -389,7 +389,14 @@ export function renderTable(model) {
     })
     .join("");
 
-  return `${cards}${renderLegend(model.competition, "legend")}`;
+  return `${renderStandingsNotice(model)}${cards}${renderLegend(model.competition, "legend")}`;
+}
+
+function renderStandingsNotice(model) {
+  const message = model.standingsUnavailable ? "Standings temporarily unavailable."
+    : model.standingsDelayed ? `Standings updates delayed. Showing the saved table from ${esc(dateLabel(model.standingsUpdatedAt))}.`
+    : model.stale ? "Standings updates delayed." : "";
+  return message ? `<p class="note" role="status">${message} <button class="score-league__table" data-score-feed-retry="${model.competition.code}">Retry</button></p>` : "";
 }
 
 function renderLegend(competition, className) {
@@ -443,9 +450,9 @@ export function renderMiniTable(model, { competitions = [] } = {}) {
       ${competitions.length ? `<label class="aside__competition">Competition<select data-standings-selector>${competitions.map(comp => `<option value="${comp.code}"${comp.code === code ? " selected" : ""}>${esc(comp.shortName)}</option>`).join("")}</select></label>` : `<p class="aside__competition-name">${esc(model.competition.shortName)}</p>`}
       ${model.loading ? '<p class="note" role="status">Loading standings…</p>'
         : model.error ? `<p class="note" role="status">Standings unavailable.</p><button class="seg" data-score-feed-retry="${code}">Retry standings</button>`
-        : `${model.stale ? `<p class="note" role="status">Standings updates delayed. <button class="score-league__table" data-score-feed-retry="${code}">Retry</button></p>` : ""}
-          <p class="score-league__freshness">Updated <span data-feed-age="${code}"></span></p>
-          ${rows ? `<table class="mini-table" aria-label="${esc(model.competition.shortName)} standings"><thead><tr><th scope="col" aria-label="Position">#</th><th scope="col">Club</th><th scope="col" aria-label="Played">P</th><th scope="col" aria-label="Points">Pts</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="note">No standings published yet.</p>'}
+        : `${renderStandingsNotice(model)}
+          ${model.standingsDelayed || model.standingsUnavailable ? "" : `<p class="score-league__freshness">Updated <span data-feed-age="${code}"></span></p>`}
+          ${rows ? `<table class="mini-table" aria-label="${esc(model.competition.shortName)} standings"><thead><tr><th scope="col" aria-label="Position">#</th><th scope="col">Club</th><th scope="col" aria-label="Played">P</th><th scope="col" aria-label="Points">Pts</th></tr></thead><tbody>${rows}</tbody></table>` : model.standingsUnavailable ? "" : '<p class="note">No standings published yet.</p>'}
           ${model.tablesLive ? '<p class="note">As it stands, including live matches.</p>' : ""}
           ${rows && legend ? `<div class="aside__legend">${legend}</div>` : ""}`}
     </aside>`;

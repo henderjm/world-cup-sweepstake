@@ -1,6 +1,6 @@
 # Daily live-score product backlog
 
-Updated: 2026-09-14. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
+Updated: 2026-09-19. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
 Starting revision: `bfaf0a66e03febeda47647789e275853155ef638`.
 
 ## Mandate and continuation
@@ -141,16 +141,20 @@ failure/status variants, not a claim of production deployment or end-to-end late
     with navigation starting at 785px at 390 × 844. The team picker is an explicit
     management view; its opening naturally moves matches below the picker.
 
+New leagues are explicitly out of scope for now (user direction, September 19).
+Continue competitor analysis and implementation within PL/CL.
+
 ## Prioritized remaining work
 
 | Priority | Item | Definition of done |
 | --- | --- | --- |
 | P0 | Provider rate-limit failures and intermittent stalls | September 14 tagged production logs confirm a PL request was rejected by the provider per-minute limit with daily quota remaining. The five-second provider deadline is deployed; investigate request pacing across concurrent consumers and egress. This does not establish the cause of the earlier CL request exceeding 20 seconds, followed by calls taking 21–23ms. The Worker reported a provider-limit cool-off with daily quota remaining. Correlate request timings with upstream/cache waits before assigning the cause; add a bounded upstream recovery path with tests. The frontend eight-second limit exposes the stall but increasing it alone is insufficient. |
 | Deployed September 14 | Show league tables on wider screens | At desktop widths (initial target: 1200px and above), show the relevant league table alongside Scores without a separate tab change. In All matches, make the table's competition explicit and selectable. Preserve date, Live and Following selections; tables use the same feed and disclose stale/unavailable data. Verify 1200px and 1440px layouts, keyboard access and no horizontal overflow; mobile scores remain usable at 320px and 390px. Requested by the user September 10. |
-| P0 | Preserve standings through partial feed responses | September 14 live verification briefly showed no PL standings while the deployed static fallback contained 20 rows. Distinguish missing upstream table coverage from genuinely unpublished standings; recover known rows without changing scores or pretending they are current. Reproduce with partial payloads before changing ingestion. |
+| Ready for review | Preserve standings through partial feed responses | September 14 live verification briefly showed no PL standings while the deployed static fallback contained 20 rows. Distinguish missing upstream table coverage from genuinely unpublished standings; recover known rows without changing scores or pretending they are current. Reproduce with partial payloads before changing ingestion. |
 | P1 | Restore automatic Worker publishing | GitHub's Worker workflow currently skips deployment because `CLOUDFLARE_API_TOKEN` is unset. Configure an appropriately scoped deployment credential and verify the actual deploy step runs on the next approved release. A green skipped workflow is not deployment evidence. The September 10 release was deployed successfully using the existing local OAuth login. |
 | P1 | Measure actual event latency | Compare timestamped provider events and observed delivery across live matches. Establish p50/p95 delay and update reliability; feed age alone does not prove event latency. |
 | Deployed September 14 | Qualifying versus main knockout presentation | Keep qualification history available, but avoid presenting a wall of July fixtures as the main knockout destination in September. Group two-leg ties with correct aggregate and penalty handling; never invent future draws. |
+| P1 | Referee profiles and match context | Open referee history from match detail within PL/CL. Verify identity mapping before grouping names; show competition, period, counted matches and missing coverage. Derive only supported card statistics from complete saved match data. Do not treat scored penalties as penalties awarded or claim foul averages without that feed. Reuse cached data; no new per-visit provider calls. |
 | P1 | Team identity and labels | The feed says Sabah FA while both benchmarks say Sabah FK. Verify provider team ID, crest and destination before changing display aliases; do not rewrite stored follow keys based on a name alone. |
 | Deployed September 14 | Match detail navigation/accessibility | Persistent Overview, Timeline, Line-ups and Banter shortcuts with 44px targets. Retain focus, reading position, score route and drafts through refreshes; distinguish loading, absent coverage, initial failure and delayed detail. Verify scheduled, live, finished, postponed and cancelled states at 320, 390 and 1440px. |
 | P1 | Match statistics coverage | Audit completed September 14: team metrics are absent from the mapped payload and current fetch paths. Establish an endpoint/cache/request budget and preserve nulls before adding a Stats destination. Show supported metrics with source/coverage states; preserve per-player and fantasy contracts. Do not imply zero when a metric is absent. |
@@ -557,3 +561,60 @@ Next: prioritize provider refusal/pacing evidence and partial-standings recovery
 The previous 20-second CL stall still lacks correlated cause evidence. No new
 spending or production data mutation occurred. Future public changes require
 approval. This release record itself is a local documentation commit.
+
+
+## September 19 — competitor refresh and standings recovery, ready for review
+
+User direction: continue backlog, competitor analysis and implementation; do not
+expand leagues for now. The existing hourly continuation remains appropriate.
+
+Targeted competitor inspection at 390px and 1440px:
+- [FotMob referee profile](https://www.fotmob.com/referees/1001070362/ricardo-fierro)
+  exposes season totals for matches, yellow/red cards and penalties; it separately
+  labels a multi-year comparison period for card/foul averages and lists recent
+  matches. The profile fit both widths. Product takeaway: show the sample and
+  period alongside any referee statistic. Our mapped referee is currently a name;
+  reliable identity grouping and explicit coverage are prerequisites. Fouls and
+  all penalties awarded are not present in the existing mapped detail.
+- [LiveScore standings](https://www.livescore.com/en/football/england/premier-league/standings/)
+  exposes league-level fixtures, results, standings, player/team-stat navigation
+  and describes home/away/form tables. Browser inspection loaded the shell and
+  explanatory content at both widths but did not expose table rows in the sampled
+  state, so do not claim live-table parity or latency verification. The obsolete
+  `/table/` path returned 404; use `/standings/` for future checks.
+
+Implemented independent recovery for an empty/missing TOTAL standings response:
+- Keep the fresh fixture payload and score timestamp. Recover a valid same-season
+  table from this visit/device, otherwise check the existing static file with a
+  three-second bound. No new provider requests. An initial missing-table recovery
+  can add up to three seconds before this competition finishes loading; known
+  saved tables avoid that additional request.
+- Retain the table's own timestamp, mark it saved/delayed on desktop and the full
+  mobile table, and mark the hero's saved leader. Disable live table projection
+  and derived form on a recovered table rather than combine unmatched snapshots.
+- Recovery persists across reload, or works for the visit with storage blocked.
+  Reject wrong-competition, wrong-season, malformed, future-dated and more than
+  seven-day-old candidates. The seven-day maximum is a product retention limit,
+  not a freshness promise. A valid live table clears the saved state.
+- A started league with no recoverable table says temporarily unavailable with
+  Retry; an unstarted or qualifying-only competition can still say unpublished.
+  This handles absent tables, not partially truncated tables with some valid rows.
+
+Validation on an isolated export excluding native edits:
+- 1,505 tests and production build pass. New tests cover separate score/table age,
+  cached reloads, bad candidates, season isolation, blocked storage, safe recovery,
+  genuine unstarted states and no invented live projections.
+- Six browser scenarios cover known saved table, first-visit static recovery,
+  unavailable static data, pre-season empty state, wrong season and blocked storage.
+  Fresh score changes survive partial responses; Retry clears saved/unavailable
+  status; mobile full table fits and saved timestamps never inherit the score age.
+- Existing desktop standings regression passes ten groups, including loading,
+  initial error/retry, table selector/focus, filters, Back and 320/390/1024/1200/1440
+  layouts. Its live-but-empty expectation now correctly says unavailable.
+- Synthetic visual evidence: [desktop](live-score-evidence/standings-recovery-desktop.png)
+  and [mobile](live-score-evidence/standings-recovery-mobile.png). These are recovery
+  fixtures, not current league positions.
+
+Not deployed. Next P0 work remains provider throttling/pacing and preservation of
+fresh scores under that pressure. Referee context is now a scoped P1 feature;
+no new leagues, spending or provider request paths were introduced.

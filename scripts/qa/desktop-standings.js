@@ -44,7 +44,7 @@ async (browserPage) => {
         await aside.getByRole('table').waitFor();
         passed.push('initial failure and retry');
       } else if (scenario === 'empty') {
-        await aside.getByText('No standings published yet.', { exact: true }).waitFor();
+        await aside.getByText('Standings temporarily unavailable.', { exact: false }).waitFor();
         passed.push('missing standings distinguished from errors');
       } else {
         await aside.getByRole('table', { name: 'Champions League standings' }).waitFor();

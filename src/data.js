@@ -13,6 +13,7 @@ import { withLiveTable } from "./liveTable.js";
 import { isLive } from "./format.js";
 import { localDateKey } from "./scoreDates.js";
 import { retainNewestScores } from "./scoreSnapshot.js";
+import { createStandingsRecovery } from "./standingsRecovery.js";
 
 // Set this to your deployed Cloudflare Worker origin to serve live data without a
 // deploy, e.g. "https://goon-squad-data.<your-subdomain>.workers.dev". Leave empty to
@@ -34,9 +35,17 @@ function devApiOverride() {
   }
 }
 
+const recoverStandings = createStandingsRecovery(async comp => {
+  const response = await fetch(`./data/${encodeURIComponent(comp)}/live.json?cache=${Date.now()}`, {
+    cache: "no-store", signal: AbortSignal.timeout(3000),
+  });
+  if (!response.ok) throw new Error("Standings fallback unavailable");
+  return response.json();
+});
+
 export async function loadModel(comp = DEFAULT_COMPETITION_CODE) {
   const [raw, scorerData] = await Promise.all([loadLiveData(comp), loadScorers(comp)]);
-  return buildModel(retainNewestScores(raw, comp), scorerData);
+  return buildModel(await recoverStandings(retainNewestScores(raw, comp), comp), scorerData);
 }
 
 export function buildModel(raw, scorerData = {}) {
@@ -83,8 +92,8 @@ export function buildModel(raw, scorerData = {}) {
   const tableMatches = base.standingsStages
     ? matches.filter((match) => base.standingsStages.includes(match.stage))
     : matches;
-  const baseTables = buildLeagueTables(standingsPayload, competition, buildTeamPerformance(tableMatches));
-  const { tables, live: tablesLive } = withLiveTable({
+  const baseTables = buildLeagueTables(standingsPayload, competition, raw.standingsDelayed ? new Map() : buildTeamPerformance(tableMatches));
+  const { tables, live: tablesLive } = raw.standingsDelayed ? { tables: baseTables, live: false } : withLiveTable({
     tables: baseTables,
     matches: tableMatches,
     zones: competition.zones,
@@ -97,6 +106,9 @@ export function buildModel(raw, scorerData = {}) {
     hasData: true,
     ...staleness(raw),
     tablesLive,
+    standingsDelayed: Boolean(raw.standingsDelayed),
+    standingsUpdatedAt: raw.standingsUpdatedAt ?? null,
+    standingsUnavailable: Boolean(raw.standingsUnavailable),
     competition,
     matches,
     tables,
@@ -121,7 +133,7 @@ export function modelSignature(model) {
   // Fetch timestamps change on every poll; only visible content should repaint.
   return JSON.stringify([
     model.competition, model.hasData, model.source, model.error, model.stale, model.loading,
-    model.matches, model.tables, model.scorers, localDateKey(),
+    model.matches, model.tables, model.scorers, model.standingsDelayed, model.standingsUpdatedAt, model.standingsUnavailable, localDateKey(),
   ]);
 }
 
