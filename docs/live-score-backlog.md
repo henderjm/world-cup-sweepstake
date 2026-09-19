@@ -148,7 +148,7 @@ Continue competitor analysis and implementation within PL/CL.
 
 | Priority | Item | Definition of done |
 | --- | --- | --- |
-| P0 | Provider rate-limit failures and intermittent stalls | September 14 tagged production logs confirm a PL request was rejected by the provider per-minute limit with daily quota remaining. The five-second provider deadline is deployed; investigate request pacing across concurrent consumers and egress. This does not establish the cause of the earlier CL request exceeding 20 seconds, followed by calls taking 21–23ms. The Worker reported a provider-limit cool-off with daily quota remaining. Correlate request timings with upstream/cache waits before assigning the cause; add a bounded upstream recovery path with tests. The frontend eight-second limit exposes the stall but increasing it alone is insufficient. |
+| P0 | Provider rate-limit failures and intermittent stalls | September 14 tagged production logs confirm a PL request was rejected by the provider per-minute limit with daily quota remaining. The five-second provider deadline is deployed. September 19: a one-second admission limit for the isolate's upstream queue is implemented and browser-verified locally; excess reads reach existing saved-data recovery without issuing another provider call. Global pacing across isolates/egress remains open. This does not establish the cause of the earlier CL request exceeding 20 seconds, followed by calls taking 21–23ms. Correlate request timings with upstream/cache waits before assigning the cause. A route can make several upstream reads, so these limits are not a total route deadline; the frontend eight-second limit alone is insufficient. |
 | Deployed September 14 | Show league tables on wider screens | At desktop widths (initial target: 1200px and above), show the relevant league table alongside Scores without a separate tab change. In All matches, make the table's competition explicit and selectable. Preserve date, Live and Following selections; tables use the same feed and disclose stale/unavailable data. Verify 1200px and 1440px layouts, keyboard access and no horizontal overflow; mobile scores remain usable at 320px and 390px. Requested by the user September 10. |
 | Ready for review | Preserve standings through partial feed responses | September 14 live verification briefly showed no PL standings while the deployed static fallback contained 20 rows. Distinguish missing upstream table coverage from genuinely unpublished standings; recover known rows without changing scores or pretending they are current. Reproduce with partial payloads before changing ingestion. |
 | P1 | Restore automatic Worker publishing | GitHub's Worker workflow currently skips deployment because `CLOUDFLARE_API_TOKEN` is unset. Configure an appropriately scoped deployment credential and verify the actual deploy step runs on the next approved release. A green skipped workflow is not deployment evidence. The September 10 release was deployed successfully using the existing local OAuth login. |
@@ -618,3 +618,36 @@ Validation on an isolated export excluding native edits:
 Not deployed. Next P0 work remains provider throttling/pacing and preservation of
 fresh scores under that pressure. Referee context is now a scoped P1 feature;
 no new leagues, spending or provider request paths were introduced.
+
+## September 19 — bounded provider queue, ready for review
+
+The five-second provider timeout starts after request pacing. The old pacing
+queue had no admission deadline, so concurrent uncached reads could spend the
+browser's response budget waiting to start. The queue now rejects reads that
+cannot start within one second, while preserving the 200ms minimum spacing.
+Rejected reads issue no provider call and use the existing delayed-data/error
+paths. Cache hits still bypass the queue; a rejected or late timer does not wedge
+later requests. The clock used for pacing is monotonic.
+
+Acceptance evidence on an isolated export excluding unrelated native edits:
+- All 1,509 tests pass, including deterministic burst spacing, excess admission,
+  delayed timer and queue recovery cases, and a real Worker route burst retaining
+  its previous score and timestamp before recovering on a later read.
+- Production build and Worker bundle dry run pass; no deployment performed.
+- Mobile browser against the actual Worker with a local simulated provider:
+  initial response 419ms, overloaded response 924ms, recovered response 342ms.
+  A 1–0 score remains visible with “Live data is behind”; recovery changes it to
+  2–0 and clears the notice. No page errors. This is a controlled fixture, not
+  production latency evidence.
+- Reproducible scripts: `scripts/qa/queued-provider-server.mjs` and
+  `scripts/qa/worker-provider-queue.js`. The burst starts with the incoming live
+  request so browser navigation does not consume the overload window first.
+
+Limitations and next work:
+- This bounds admission in one isolate. It does not enforce an account-wide
+  provider rate limit or resolve shared-egress throttling.
+- Multiple sequential provider calls can still accumulate latency within a
+  route. Preserve fresh score reads if supplementary data cannot finish.
+- Provider throttling remains P0 pending correlated production measurements and
+  a concrete cross-isolate pacing decision. Referee context remains P1 and new
+  leagues remain out of scope. Public release still requires approval.
