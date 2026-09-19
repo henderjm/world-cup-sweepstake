@@ -754,3 +754,45 @@ browser fallback) and correlate provider refusals across consumers before
 choosing a cross-isolate pacing policy. The known per-minute refusals are still
 unresolved. Avoid extending timeout tuning without fresh evidence. Referee
 context remains P1; no new leagues. This change is not deployed.
+
+## September 19, 15:19–15:27 UTC — intermittent score-update incident
+
+User reported wrong/frozen scores, then confirmed they had caught up. Exact
+match and incorrect score were not supplied, so the preceding failure is not
+attributed to a specific provider refusal or client state.
+
+Current production evidence:
+- Mobile kickoffdraft.com serves the September 14 asset `index-CXVe7DPC.js`.
+  The later reliability improvements remain local. No browser page errors.
+- Real browser observed PL responses at 15:21:40 and 15:22:00, confirming the
+  twenty-second poll. Both contained the same scores/minutes, but `lastUpdated`
+  advanced to the response time. Code confirms a cached live batch (60-second
+  TTL) was being re-dated on every response. This proves misleading freshness,
+  not that the underlying scores were wrong at those two instants.
+- Newcastle's observed minute advanced from 60 to 61 and Everton from 63 to 64
+  during diagnosis. User independently confirmed the scores were then right.
+- Quota check: limited=false, 6,792/7,500 provider calls remaining. This snapshot
+  cannot rule out an earlier refusal. The backup feeder was active; completed run
+  35451113100 logged accepted five-fixture ingests at 15:13:11, 15:14:22,
+  15:15:23 and 15:16:23. Next run 35451449171 began its job at 15:19:32. The
+  workflow deliberately waits three minutes before re-arming, leaving a backup
+  coverage gap. Accepted ingestion alone is not proof of live score delivery.
+- Competitor pages did not expose usable live match rows during this check;
+  there is no independent timestamped competitor score comparison for the fault.
+
+Implemented source-age correction:
+- Live score responses keep their batch retrieval timestamp through in-memory
+  and shared-cache hits. A new successful batch advances it; repeated browser
+  polls do not. Concurrent readers of a stale cache result also inherit its age.
+- Later isolate fallback retains that original score age. Pushed safety copies
+  keep their own timestamp. No shorter polling interval or extra provider reads.
+- 1,522 tests and production build pass; Worker bundle dry run passes. Real
+  browser against the actual local Worker shows “just now”, “20s ago” on a
+  cached read, then “just now” on a new score; a stalled provider retains the
+  score with “6m ago (delayed)”, and recovery updates the score and clears delay.
+  No page errors. Reproduction: `scripts/qa/score-source-age.js`.
+
+The timestamp bug is fixed locally; the reported intermittent score lag remains
+open. Next: correlate source batch times, actual event arrival, provider refusal
+and feeder-gap intervals. Review continuous backup coverage within the existing
+quota before changing its cadence. This incident does not authorize deployment.

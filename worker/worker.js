@@ -849,6 +849,7 @@ async function getLive(comp, token, env = null) {
     // pre-match batch no longer fails the whole read -- marking it failed let
     // an older pushed copy overwrite kicked-off scores that had just arrived.
     let liveReadFailed = null;
+    let scoreUpdatedAt = null;
     let activeFixtureCount = 0;
     let answeredActiveCount = 0;
     for (const request of polling.requests) {
@@ -864,6 +865,11 @@ async function getLive(comp, token, env = null) {
         const updates = mapApiFootballMatches(livePayload);
         matches = mergeFixtureUpdates(matches, updates);
         if (carriesLiveTruth) {
+          const freshness = payloadFreshness.get(livePayload);
+          if (freshness) {
+            scoreUpdatedAt = Math.min(scoreUpdatedAt ?? freshness.storedAt, freshness.storedAt);
+            if (freshness.stale) staleAgeMs = Math.max(staleAgeMs, Date.now() - freshness.storedAt);
+          }
           const answered = new Set(updates.map((match) => match.id));
           answeredActiveCount += request.fixtures.filter((match) => answered.has(match.id)).length;
         }
@@ -921,13 +927,9 @@ async function getLive(comp, token, env = null) {
     const last = lastLive.get(comp.code)?.body;
     const previous = last?.season === comp.season ? last : null;
     const tableFreshness = standings && payloadFreshness.get(standings);
-    // An overlaid body stamps the age of the scores it is actually carrying;
-    // anything else keeps the existing accounting untouched. Taking the smaller
-    // of the two would be the one genuinely dangerous answer: with a healthy
-    // schedule read (staleAgeMs 0) and scores from a copy pushed a minute ago,
-    // it would stamp "just now" over a minute-old scoreline, which is the exact
-    // dishonesty the backdating in getLive exists to prevent.
-    const bodyAgeMs = overlaid ? liveAgeMs : staleAgeMs;
+    // Use the source batch time even on healthy cache hits. A pushed overlay
+    // carries its own age; fetching or assembling a response cannot reset it.
+    const bodyAgeMs = overlaid ? liveAgeMs : Math.max(staleAgeMs, scoreUpdatedAt == null ? 0 : Date.now() - scoreUpdatedAt);
     const body = {
       source: "API-Football",
       lastUpdated: new Date(Date.now() - bodyAgeMs).toISOString(),

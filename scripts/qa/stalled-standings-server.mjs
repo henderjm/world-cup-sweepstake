@@ -11,8 +11,9 @@ const reset = async nextMode => {
 Date.now = () => now;
 globalThis.fetch = async (url, { signal }) => {
   if (!String(url).startsWith('https://v3.football.api-sports.io/')) throw Error('Unexpected fixture origin');
+  const wait = () => new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+  if (mode === 'score-slow' && String(url).includes('/fixtures?ids=')) return wait();
   if (String(url).includes('/standings')) {
-    const wait = () => new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
     if (mode === 'slow') return wait();
     if (mode === 'body') return { ok: true, status: 200, headers: new Headers(), json: wait };
     return Response.json({ errors: [], response: mode === 'empty' ? [] : [{ league: { standings: [[{
@@ -30,6 +31,7 @@ globalThis.fetch = async (url, { signal }) => {
 await reset('healthy');
 createServer(async (req, res) => {
   if (req.url.startsWith('/reset/')) { await reset(req.url.split('/').at(-1)); res.end('reset'); return; }
+  if (req.url.startsWith('/clock/')) { now += Number(req.url.split('/').at(-1)) * 1000; res.end('advanced'); return; }
   if (req.url.startsWith('/mode/')) { mode = req.url.split('/').at(-1); score++; now += 361000; res.end('ready'); return; }
   if (req.url !== '/CL/live') { res.writeHead(404); res.end(); return; }
   const started = performance.now();
