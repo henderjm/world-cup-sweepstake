@@ -68,7 +68,7 @@ for (const scenario of ['cl-failure', 'cl-empty']) {
 test('a known upcoming Champions League kickoff resumes discovery within the live loop', t => {
   const result = run(t, 'cl-kickoff', undefined, 'PL:2026,CL:2026');
   const reads = result.calls.filter(call => call.query.includes('league=2'));
-  assert.equal(reads.length, 5);
+  assert.equal(reads.length, 6);
   assert.ok(reads[1].at >= 90000 && reads[1].at < 150000);
   assert.equal(result.output, 'rearm_delay_seconds=60\n');
 });
@@ -126,4 +126,34 @@ test('genuinely idle and newly finished matchdays return to the slower cadence',
   assert.equal(finished.discoveries, 3);
   assert.equal(idle.output, 'rearm_delay_seconds=180\n');
   assert.equal(finished.output, 'rearm_delay_seconds=180\n');
+});
+
+for (const scenario of ['crowded-slow', 'crowded-stall', 'crowded-headers', 'crowded-ingest']) {
+  test(`${scenario}: detail work cannot monopolise score delivery for both leagues`, t => {
+    const result = run(t, scenario, undefined, 'PL:2026,CL:2026');
+    for (const competition of ['PL', 'CL']) {
+      const pushes = result.pushes.filter(push => push.competition === competition);
+      assert.ok(pushes.length >= 5, `${competition}: only ${pushes.length} pushes`);
+      for (let i = 1; i < pushes.length; i++) {
+        assert.ok(pushes[i].at - pushes[i - 1].at <= 71000, `${competition}: score gap exceeded 71 seconds`);
+      }
+    }
+    const details = result.calls.filter(call => call.path.startsWith('/ingest/detail/'));
+    if (scenario === 'crowded-slow') assert.ok(details.length >= 8, 'Detail should keep making progress between score polls');
+    if (scenario === 'crowded-ingest') assert.ok(details.length >= 7, 'Slow ingestion should not starve detail');
+    if (['crowded-stall', 'crowded-headers'].includes(scenario)) {
+      assert.ok(result.timeouts >= 19, 'Every failed match must hit its request deadline');
+      assert.equal(details.length, 0, 'Incomplete detail must not be ingested');
+    }
+    assert.equal(new Set(details.map(call => call.path)).size, details.length, 'Detail repeated within the job');
+    assert.ok(result.elapsed <= 360000, 'Slow detail exceeded the job budget');
+  });
+}
+
+test('the real run deadline cancels a stalled detail body', t => {
+  const result = run(t, 'real-body-stall', 1000);
+  assert.equal(result.timeouts, 1);
+  assert.equal(result.calls.filter(call => call.path.startsWith('/ingest/detail/')).length, 0);
+  assert.ok(result.elapsed >= 900 && result.elapsed < 2000, `Elapsed ${result.elapsed}ms`);
+  assert.equal(result.output, 'rearm_delay_seconds=60\n');
 });

@@ -56,12 +56,18 @@ function worthFeeding(match, now) {
   return false;
 }
 
-async function apiGet(path, { detail = false } = {}) {
+function requestSignal(deadline) {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw new Error("Feeder run deadline reached");
+  return AbortSignal.timeout(Math.min(10000, remaining));
+}
+
+async function apiGet(path, { detail = false, deadline } = {}) {
   if (quota.limitedUntil > Date.now()) throw new Error("Provider cooldown");
   if (detail && budgetLevel(quota, Date.now()) !== BUDGET_NORMAL) throw new Error("Preserving quota for scores");
-  await sleep(Math.max(0, lastProviderRead + PACING_MS - Date.now()));
+  await sleep(Math.max(0, Math.min(lastProviderRead + PACING_MS, deadline) - Date.now()));
   lastProviderRead = Date.now();
-  const response = await fetch(`${API}${path}`, { headers: { "x-apisports-key": KEY }, signal: AbortSignal.timeout(10000) });
+  const response = await fetch(`${API}${path}`, { headers: { "x-apisports-key": KEY }, signal: requestSignal(deadline) });
   const reading = parseQuotaHeaders(response.headers);
   for (const [key, value] of Object.entries(reading)) {
     if (value != null) quota[key] = value;
@@ -77,50 +83,54 @@ async function apiGet(path, { detail = false } = {}) {
 // The scoreboard copy: the discovery payload, pushed verbatim for the Worker to
 // map. Failure is logged and swallowed - detail feeding is the job this script
 // was written for and must not be lost to a scoreboard push going wrong.
-async function feedLive(code, fixtures) {
+async function feedLive(code, fixtures, deadline) {
   try {
     const response = await fetch(`${WORKER_ORIGIN}/ingest/live/${code}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
       body: JSON.stringify({ fixtures }),
-      signal: AbortSignal.timeout(10000),
+      signal: requestSignal(deadline),
     });
-    const result = await response.json().catch(() => ({}));
+    const result = await response.json();
     console.log(`${code}: live ingest ${response.status} ${JSON.stringify(result)}`);
   } catch (error) {
     console.log(`${code}: live ingest failed (${error.message})`);
   }
 }
 
-async function feedMatch(id) {
-  const fixture = await apiGet(`/fixtures?id=${id}`, { detail: true });
-  const lineups = await apiGet(`/fixtures/lineups?fixture=${id}`, { detail: true });
-  const events = await apiGet(`/fixtures/events?fixture=${id}`, { detail: true });
-  const players = await apiGet(`/fixtures/players?fixture=${id}`, { detail: true });
+async function feedMatch(id, deadline, refreshScores) {
+  const read = async path => {
+    await refreshScores();
+    return apiGet(path, { detail: true, deadline });
+  };
+  const fixture = await read(`/fixtures?id=${id}`);
+  const lineups = await read(`/fixtures/lineups?fixture=${id}`);
+  const events = await read(`/fixtures/events?fixture=${id}`);
+  const players = await read(`/fixtures/players?fixture=${id}`);
+  await refreshScores();
   const response = await fetch(`${WORKER_ORIGIN}/ingest/detail/${id}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
     body: JSON.stringify({ fixture, lineups, events, players }),
-    signal: AbortSignal.timeout(10000),
+    signal: requestSignal(deadline),
   });
-  const result = await response.json().catch(() => ({}));
+  const result = await response.json();
   console.log(`match ${id}: ingest ${response.status} ${JSON.stringify(result)}`);
   if (!response.ok) throw new Error(`ingest ${id}: HTTP ${response.status}`);
 }
 
 // Discover and push every due competition before detail can delay its neighbours.
-async function runPass({ detailed, deadline, states }) {
-  const now = Date.now();
-  const today = new Date(now).toISOString().slice(0, 10);
-  let fed = 0;
-  const details = [];
+async function refreshScores({ scheduled, pending, deadline, states }) {
   for (const { code, season, leagueId } of COMPETITIONS) {
+    const now = Date.now();
+    if (now >= deadline) break;
+    const today = new Date(now).toISOString().slice(0, 10);
     const previous = states.get(code);
     if (previous && now < previous.nextAt) continue;
     let payload;
     let matches;
     try {
-      payload = await apiGet(`/fixtures?league=${leagueId}&season=${season}&date=${today}`);
+      payload = await apiGet(`/fixtures?league=${leagueId}&season=${season}&date=${today}`, { deadline });
       matches = mapApiFootballMatches(payload);
     } catch (error) {
       console.log(`feeder: could not read ${code} fixtures for ${today} (${error.message}); skipping`);
@@ -132,27 +142,12 @@ async function runPass({ detailed, deadline, states }) {
     const nextAt = active ? now + LOOP_INTERVAL_MS
       : Math.min(...plan.requests.flatMap(request => request.fixtures.map(match => Date.parse(match.utcDate))));
     states.set(code, { active: Boolean(active), nextAt });
-    await feedLive(code, payload);
-    if (!detailed.has(code) && matches.length) {
-      details.push({ code, candidates: matches.filter(match => worthFeeding(match, now)) });
+    await feedLive(code, payload, deadline);
+    if (!scheduled.has(code) && matches.length) {
+      scheduled.add(code);
+      pending.push(...matches.filter(match => worthFeeding(match, now)));
     }
   }
-  for (const { code, candidates } of details) {
-    if (budgetLevel(quota, Date.now()) !== BUDGET_NORMAL) break;
-    detailed.add(code);
-    console.log(`${code}: ${candidates.length} match(es) worth feeding`);
-    for (const match of candidates) {
-      if (Date.now() >= deadline || budgetLevel(quota, Date.now()) !== BUDGET_NORMAL) break;
-      try {
-        await feedMatch(match.id);
-        fed += 1;
-      } catch (error) {
-        console.log(`match ${match.id}: ${error.message}`);
-      }
-      await sleep(PACING_MS);
-    }
-  }
-  return { fed, keepChecking: [...states.values()].some(state => state.active || state.nextAt < deadline) };
 }
 
 async function main() {
@@ -161,28 +156,29 @@ async function main() {
     return;
   }
   const deadline = Date.now() + LOOP_BUDGET_MS;
-  let passes = 0;
   let fed = 0;
-  let keepChecking = false;
-  const detailed = new Set();
-  const states = new Map();
-  for (;;) {
-    // Detail is fed once per run on purpose. It is the DRAWER's safety copy and
-    // moves on the timescale of goals; the scoreboard moves on the timescale of
-    // a clock. Feeding detail every pass would multiply a run's upstream cost
-    // several times over to refresh something nobody watches tick.
-    const result = await runPass({ detailed, deadline, states });
-    fed += result.fed;
-    passes += 1;
-    keepChecking = result.keepChecking;
-    if (!keepChecking) {
-      console.log("feeder: nothing in play; one pass is enough");
-      break;
+  const scheduled = new Set(), pending = [], states = new Map();
+  const refresh = () => refreshScores({ scheduled, pending, deadline, states });
+  while (Date.now() < deadline) {
+    await refresh();
+    if (Date.now() >= deadline) break;
+    if (pending.length && budgetLevel(quota, Date.now()) === BUDGET_NORMAL) {
+      const match = pending.shift();
+      try {
+        // A slow detail body must not hold up every later score poll in the job.
+        await feedMatch(match.id, deadline, refresh);
+        fed += 1;
+      } catch (error) {
+        console.log(`match ${match.id}: ${error.message}`);
+      }
+      continue;
     }
-    if (Date.now() + LOOP_INTERVAL_MS >= deadline) break;
-    await sleep(LOOP_INTERVAL_MS);
+    const nextAt = Math.min(...[...states.values()].map(state => state.nextAt));
+    if (nextAt >= deadline) break;
+    await sleep(Math.max(0, nextAt - Date.now()));
   }
-  console.log(`feeder: done, ${fed} match(es) fed across ${passes} pass(es)`);
+  const keepChecking = [...states.values()].some(state => state.active || state.nextAt < deadline);
+  console.log(`feeder: done, ${fed} match(es) fed`);
   if (process.env.GITHUB_OUTPUT) {
     await appendFile(process.env.GITHUB_OUTPUT, `rearm_delay_seconds=${keepChecking ? 60 : 180}\n`);
   }

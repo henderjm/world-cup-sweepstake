@@ -1,10 +1,20 @@
 // Local Worker ingestion fixture. Simulates provider refusal and backup pushes.
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
+import { readFile } from 'node:fs/promises';
 const { default: worker } = await import(pathToFileURL(process.argv[2] + '/worker/worker.js'));
 const competition = process.argv[3] ?? 'PL';
 if (!['PL', 'CL'].includes(competition)) throw Error('Use PL or CL for this fixture');
 let now = Date.parse('2026-09-19T15:00:00Z'), score = 1;
+const start = now;
+const trace = process.env.FEEDER_TRACE ? JSON.parse(await readFile(process.env.FEEDER_TRACE, 'utf8')) : null;
+const deliveries = trace?.pushes.filter(push => push.competition === competition);
+let delivery = 0;
+if (deliveries) {
+  if (!deliveries.length) throw Error('Trace has no deliveries for this competition');
+  now = start + deliveries[0].at;
+  score = deliveries[0].score;
+}
 Date.now = () => now;
 const kv = new Map();
 const env = { API_FOOTBALL_KEY: 'fixture', DETAIL_INGEST_TOKEN: 'fixture', API_FOOTBALL_COMPETITIONS: `${competition}:2026`,
@@ -28,6 +38,17 @@ async function push() {
 }
 await push();
 createServer(async (req, res) => {
+  if (req.url === '/schedule') {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify(deliveries ?? [])); return;
+  }
+  if (req.url === '/next' && deliveries?.[delivery + 1]) {
+    const sample = deliveries[++delivery];
+    now = start + sample.at;
+    score = sample.score;
+    await push();
+    res.end('ready'); return;
+  }
   if (req.url.startsWith('/step/')) {
     const seconds = Number(req.url.split('/').at(-1));
     now += seconds * 1000;

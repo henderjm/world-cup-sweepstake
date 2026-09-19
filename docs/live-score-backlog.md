@@ -908,3 +908,46 @@ test a full slow matchday before releasing this feeder expansion. GitHub
 queue/setup gaps and late matches around the 22:00 UTC restart cutoff also need
 production measurement or explicit coverage. The intermittent score incident
 remains open, and the public-release approval request remains pending.
+
+## September 19 — score polls continue through slow match-detail work
+
+Reproduced the release-gating delay above using one PL and eighteen CL fixtures,
+with each detail response body taking nine simulated seconds. The previous
+feeder sent just one score push per league and then spent the remaining job on
+detail. The regression test failed before the scheduler change.
+
+The feeder now queues one detail batch per competition and checks for due score
+polls between each detail read and before detail ingestion. It sleeps until the
+next competition is due, instead of adding a minute after completing all detail.
+Requests retain their ten-second limit and are also capped by the remaining
+six-minute run budget. This includes response-body reads and ingest writes.
+Timed-out ingestion bodies are reported as failures rather than silently parsed
+as an empty successful response. Quota shedding and provider pacing remain in
+place, without concurrent upstream fan-out.
+
+Acceptance and evidence:
+- The same slow-matchday trace now contains six pushes for each league, with a
+  maximum 63,800 ms gap, nine completed detail ingestions and no repeated detail
+  batch. The run ends at 360,000 ms, cancelling its last incomplete request.
+- Regression scenarios include stalled detail headers, stalled detail bodies,
+  slow detail ingestion, idle days, kickoff transitions, quota refusal and
+  recovery. In the four crowded fixtures, both leagues retain at least five
+  pushes and no gap exceeds 71 seconds. Those bounds assume responsive score
+  discovery/ingestion; they are not a production service-level guarantee.
+- A separate real-clock check proves the actual abort signal cancels a stalled
+  detail body at the shortened run deadline; it does not rely on fake timers.
+- 1,549 tests pass, including 27 feeder cases; the isolated production build
+  passes. Unrelated native/mobile and Worker changes were excluded.
+- The headless browser replays the actual slow-feeder trace through the local
+  Worker's ingestion route while the primary provider is unavailable. All six
+  scores, 0–0 through 5–0, appear in both PL and CL. Backup-source warnings remain
+  visible; mobile and desktop checks have no page errors or overflow.
+  Reproduction: `scripts/qa/README.md` and `scripts/qa/feeder-scheduling.js`.
+
+The slow-detail release gate is addressed locally. Remaining P0: verify actual
+runner handoffs and score-source delivery after an approved rollout, and cover
+late matches around the 22:00 UTC restart cutoff. Detail remains best effort:
+severely slow providers can leave later matches without a new detail snapshot
+within a job; repeated-job fairness is a follow-up. Source refusals and GitHub
+queue delays can still cause stale scores. No public deployment was performed,
+and the intermittent production incident remains open.
