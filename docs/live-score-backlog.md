@@ -22,6 +22,16 @@ decision requiring user input. Read the working diff first and preserve it. Do
 not redo the full competitor audit each hour: use the evidence below, take the
 next bounded improvement, verify it and update this file.
 
+Browser testing preference, September 19: all browser checks and competitor
+inspections must run headlessly, including hourly continuations. Do not launch
+visible Chrome or steal focus. Use `scripts/qa/run-headless.mjs`; setup and
+fixture prerequisites are in `scripts/qa/README.md`. Capture screenshots from
+the headless browser when visual review is needed.
+Verified the headless runner against `feeder-continuity.js`: mobile scores
+advanced 1–0, 2–0, 3–0, retained 3–0 with a 121-second stale age, then recovered
+to 4–0; desktop overflow and page-error checks passed. This used an isolated
+local build and simulated provider, with no public release.
+
 ## Initial browser benchmark
 
 Inspected the running [app](https://kickoffdraft.com),

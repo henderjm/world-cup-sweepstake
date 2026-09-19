@@ -1,0 +1,36 @@
+# Browser checks
+
+Run all browser QA headlessly. The user works on this laptop while checks run:
+do not open Chrome, use a headed browser tool, or steal focus. This applies to
+manual checks, competitor inspections and hourly task continuations too. Use
+headless screenshots when visual inspection is needed.
+
+The existing `.js` checks contain an async function accepting a Playwright page.
+Run them with the shared runner, which explicitly launches headless Chromium
+and closes it on success or failure:
+
+```sh
+node scripts/qa/run-headless.mjs scripts/qa/feeder-continuity.js
+```
+
+Playwright and its matching Chromium headless shell must already be installed.
+If Playwright is installed outside this checkout, set `PLAYWRIGHT_MODULE_PATH`
+to the absolute path of its `index.mjs`. The runner does not install packages,
+download browsers or fall back to a visible browser. Only run trusted repository
+checks: these scripts execute with Node access.
+
+Start the local preview and any fixture server listed at the top of the selected
+check first. For the feeder continuity check, use separate terminals:
+
+```sh
+npm run build
+npm exec vite preview -- --host 127.0.0.1 --port 8732
+```
+
+```sh
+node scripts/qa/feeder-browser-server.mjs "$PWD"
+```
+
+The check verifies mobile score updates, stale-data handling and desktop layout
+against a simulated provider. It does not validate production delivery. Stop
+both local servers afterwards. An assertion failure exits the runner nonzero.

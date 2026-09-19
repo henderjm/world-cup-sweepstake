@@ -1,4 +1,4 @@
-// Run with the Playwright browser_run_code_unsafe tool's filename argument.
+// Run with scripts/qa/run-headless.mjs.
 async (browserPage) => {
   const context = await browserPage.context().browser().newContext();
   const page = await context.newPage();

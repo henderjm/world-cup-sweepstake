@@ -1,4 +1,4 @@
-// Run with browser_run_code_unsafe and the local preview on port 8731.
+// Run with scripts/qa/run-headless.mjs and the local preview on port 8731.
 async (browserPage) => {
   const context = await browserPage.context().browser().newContext({ viewport: browserPage.viewportSize() });
   const page = await context.newPage();
