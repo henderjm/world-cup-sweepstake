@@ -6,6 +6,25 @@ import { renderMiniTable, renderTable, renderHero } from '../src/views.js';
 const now = Date.parse('2026-09-19T12:00:00Z');
 const full = { competition: 'PL', season: 2026, lastUpdated: '2026-09-19T11:00:00Z', matches: [{ id: 1, status: 'FINISHED', utcDate: '2026-09-19T10:00:00Z', homeTeam: 'Home', awayTeam: 'Away', score: { home: 1, away: 0 } }], standings: [{ type: 'TOTAL', table: [{ position: 1, team: { name: 'Home' }, playedGames: 1, points: 3 }] }] };
 const partial = () => ({ ...full, lastUpdated: '2026-09-19T12:00:00Z', matches: [{ ...full.matches[0], score: { home: 2, away: 0 }, status: 'IN_PLAY' }], standings: [] });
+test('server-recovered tables keep their own age through a later empty response and reload', async t => {
+  setup(t);
+  const recover = createStandingsRecovery(() => { throw Error('offline'); });
+  const raw = { ...partial(), standings: full.standings, standingsDelayed: true, standingsUpdatedAt: full.lastUpdated };
+  const model = buildModel(await recover(raw, 'PL'));
+  assert.equal(model.stale, false);
+  assert.equal(model.tablesLive, false);
+  assert.match(renderMiniTable(model), /Showing the saved table/);
+  const reloaded = await createStandingsRecovery(() => { throw Error('offline'); })(partial(), 'PL');
+  assert.equal(reloaded.standingsUpdatedAt, full.lastUpdated);
+});
+test('an expired server-recovered table cannot be refreshed by the score timestamp', async t => {
+  setup(t);
+  const raw = { ...partial(), standings: full.standings, standingsDelayed: true, standingsUpdatedAt: '2026-09-01T00:00:00Z' };
+  const recovered = await createStandingsRecovery(() => { throw Error('offline'); })(raw, 'PL');
+  assert.equal(recovered.standings.length, 0);
+  assert.equal(recovered.standingsUnavailable, true);
+  assert.equal(recovered.matches[0].score.home, 2);
+});
 function setup(t) {
   t.mock.method(Date, 'now', () => now);
   const values = new Map();

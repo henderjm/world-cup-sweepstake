@@ -914,8 +914,13 @@ async function getLive(comp, token, env = null) {
       `/standings?league=${comp.leagueId}&season=${comp.season}`,
       token,
       polling.mode === "live" || polling.mode === "kickoff_wait" ? 5 * 60 : 6 * 60 * 60,
-      stale,
+      { staleGraceMs: LIVE_FEED_STALE_GRACE_MS },
     ).catch(() => null);
+    const mappedStandings = standings ? mapApiFootballStandingsPayload(standings) : [];
+    const hasTable = mappedStandings.some(group => group.table.length > 0);
+    const last = lastLive.get(comp.code)?.body;
+    const previous = last?.season === comp.season ? last : null;
+    const tableFreshness = standings && payloadFreshness.get(standings);
     // An overlaid body stamps the age of the scores it is actually carrying;
     // anything else keeps the existing accounting untouched. Taking the smaller
     // of the two would be the one genuinely dangerous answer: with a healthy
@@ -936,9 +941,11 @@ async function getLive(comp, token, env = null) {
       competition: comp.code,
       season: comp.season,
       matches,
-      standings: standings
-        ? mapApiFootballStandingsPayload(standings)
-        : lastLive.get(comp.code)?.body?.standings ?? [],
+      standings: hasTable ? mappedStandings : previous?.standings ?? [],
+      standingsUpdatedAt: hasTable
+        ? new Date(tableFreshness?.storedAt ?? Date.now()).toISOString()
+        : previous?.standingsUpdatedAt ?? previous?.lastUpdated ?? null,
+      standingsDelayed: hasTable ? Boolean(tableFreshness?.stale) : Boolean(previous?.standings?.length),
     };
     // Backdated by the body's own age, so that when this entry is later served
     // as the stale fallback, markStaleLive reports how old the SCORES are rather
@@ -7172,6 +7179,9 @@ async function fetchLiveMatchDetail(summary, token) {
 // why this exists at all; the short version is that one cron tick asked for the
 // same season-schedule URL eight times and paid for it more often than not.
 const responseCache = createResponseCache();
+// Metadata follows the shared payload through memo hits and coalesced callers.
+// A table's saved age must never inherit the score response's newer timestamp.
+const payloadFreshness = new WeakMap();
 // Coalescing is separate from the memo because a promise is not a cacheable
 // value: two passes reaching the same URL microseconds apart must share ONE
 // upstream request, and without this the memo would not be populated yet for
@@ -7228,7 +7238,9 @@ async function readColoCache(path, cacheTtl, graceMs) {
     const ttlSeconds = Number.isFinite(storedTtl) && storedTtl > 0 ? Math.min(Number(cacheTtl), storedTtl) : Number(cacheTtl);
     const state = classifyColoEntry({ storedAt, now: Date.now(), ttlMs: ttlSeconds * 1000, graceMs });
     if (state === "expired") return undefined;
-    return { payload: await hit.json(), state, storedAt };
+    const payload = await hit.json();
+    payloadFreshness.set(payload, { storedAt, stale: state === "stale" });
+    return { payload, state, storedAt };
   } catch {
     return undefined; // the cache must never break the request it rides on
   }
@@ -7386,6 +7398,7 @@ async function fetchUpstream(url, path, token, cacheTtl) {
   // Stored only on success. A thrown error must never be memoised: a single
   // upstream blip would otherwise be replayed as a failure for the whole
   // window, turning a one-second fault into a six-hour outage.
+  payloadFreshness.set(payload, { storedAt: Date.now(), stale: false });
   writeCached(responseCache, url, payload, effectiveCacheTtl(payload, cacheTtl), Date.now());
   return payload;
 }

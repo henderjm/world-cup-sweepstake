@@ -6,6 +6,7 @@ export const hasStandings = raw => Array.isArray(raw?.standings) && raw.standing
   && group.table.every(row => typeof (row?.team?.shortName ?? row?.team?.name) === "string"
     && Number.isFinite(row?.points) && Number.isFinite(row?.playedGames)));
 const MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+const tableTimestamp = candidate => candidate?.standingsUpdatedAt ?? candidate?.lastUpdated;
 
 export function createStandingsRecovery(loadFallback) {
   const saved = new Map();
@@ -13,19 +14,20 @@ export function createStandingsRecovery(loadFallback) {
     if (raw.error || raw.competition !== competition) return raw;
     const key = `gs-standings-${competition}`;
     const remember = candidate => {
-      const snapshot = { competition, season: candidate.season, lastUpdated: candidate.lastUpdated, standings: candidate.standings };
+      const snapshot = { competition, season: candidate.season, lastUpdated: tableTimestamp(candidate), standings: candidate.standings };
       saved.set(competition, snapshot);
       try { globalThis.localStorage.setItem(key, JSON.stringify(snapshot)); } catch { /* Keep the in-memory copy when storage is blocked. */ }
     };
     const valid = candidate => {
-      const age = Date.now() - Date.parse(candidate?.lastUpdated);
+      const age = Date.now() - Date.parse(tableTimestamp(candidate));
       return raw.season != null && candidate?.season === raw.season && candidate.competition === competition
         && !candidate.error && hasStandings(candidate) && Number.isFinite(age) && age >= -60000 && age <= MAX_AGE;
     };
-    if (hasStandings(raw)) {
+    if (hasStandings(raw) && (!raw.standingsDelayed || valid(raw))) {
       if (valid(raw)) remember(raw);
       return raw;
     }
+    raw = { ...raw, standings: [], standingsDelayed: false, standingsUpdatedAt: null };
     let previous = saved.get(competition);
     try {
       const stored = JSON.parse(globalThis.localStorage.getItem(key));
@@ -38,7 +40,7 @@ export function createStandingsRecovery(loadFallback) {
     }
     if (valid(previous)) {
       remember(previous);
-      return { ...raw, standings: previous.standings, standingsDelayed: true, standingsUpdatedAt: previous.lastUpdated };
+      return { ...raw, standings: previous.standings, standingsDelayed: true, standingsUpdatedAt: tableTimestamp(previous) };
     }
     return { ...raw, standingsUnavailable: started };
   };

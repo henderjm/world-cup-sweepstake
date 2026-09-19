@@ -150,7 +150,7 @@ Continue competitor analysis and implementation within PL/CL.
 | --- | --- | --- |
 | P0 | Provider rate-limit failures and intermittent stalls | September 14 tagged production logs confirm a PL request was rejected by the provider per-minute limit with daily quota remaining. The five-second provider deadline is deployed. September 19: a one-second admission limit for the isolate's upstream queue is implemented and browser-verified locally; excess reads reach existing saved-data recovery without issuing another provider call. Global pacing across isolates/egress remains open. This does not establish the cause of the earlier CL request exceeding 20 seconds, followed by calls taking 21–23ms. Correlate request timings with upstream/cache waits before assigning the cause. A route can make several upstream reads, so these limits are not a total route deadline; the frontend eight-second limit alone is insufficient. |
 | Deployed September 14 | Show league tables on wider screens | At desktop widths (initial target: 1200px and above), show the relevant league table alongside Scores without a separate tab change. In All matches, make the table's competition explicit and selectable. Preserve date, Live and Following selections; tables use the same feed and disclose stale/unavailable data. Verify 1200px and 1440px layouts, keyboard access and no horizontal overflow; mobile scores remain usable at 320px and 390px. Requested by the user September 10. |
-| Ready for review | Preserve standings through partial feed responses | September 14 live verification briefly showed no PL standings while the deployed static fallback contained 20 rows. Distinguish missing upstream table coverage from genuinely unpublished standings; recover known rows without changing scores or pretending they are current. Reproduce with partial payloads before changing ingestion. |
+| Ready for review | Preserve standings through partial feed responses | September 19: browser recovery and Worker saved-table metadata implemented. Retain each table's retrieval timestamp through memo/shared-cache reads, refusal, empty responses and reloads; mark saved tables separately without backdating fresh scores. Reject saved tables older than seven days. Validate concurrent callers, first visits, missing fallback, genuine unpublished states and recovery. All checks pass locally; not deployed. |
 | Ready for review | Keep supplementary player stats from delaying scores | Bound the scorer-file wait to 1.5 seconds including body reads. With a healthy score feed and stalled stats, show scores within 3.5 seconds of local browser navigation at 390px and 1440px. Distinguish loading, unavailable/Retry, unpublished and recovered data; preserve fixture freshness and verify no page errors or overflow. September 19 checks pass. |
 | P1 | Restore automatic Worker publishing | GitHub's Worker workflow currently skips deployment because `CLOUDFLARE_API_TOKEN` is unset. Configure an appropriately scoped deployment credential and verify the actual deploy step runs on the next approved release. A green skipped workflow is not deployment evidence. The September 10 release was deployed successfully using the existing local OAuth login. |
 | P1 | Measure actual event latency | Compare timestamped provider events and observed delivery across live matches. Establish p50/p95 delay and update reliability; feed age alone does not prove event latency. |
@@ -684,3 +684,37 @@ can reuse the previous table without an independent age marker; inspect that
 alongside its request budget before changing it. Account-wide provider pacing
 and correlated production latency measurements remain open P0 work. This change
 is local and requires approval before public release.
+
+## September 19 — Worker standings freshness is independent of scores
+
+Confirmed two related problems: a refused standings request could reuse the
+Worker's previous rows with a fresh score timestamp and no saved-data marker;
+a table recovered from the shared cache could instead backdate fresh scores.
+
+The Worker now reports `standingsUpdatedAt` and `standingsDelayed` separately.
+Payload metadata retains the retrieval/cache timestamp through memo hits and
+coalesced callers, so a repeated read cannot make an old table younger. Empty
+or refused table responses retain the previous same-season rows with their
+original timestamp and a saved marker. A healthy table clears that state.
+The browser stores this table timestamp independently of scores and applies its
+existing seven-day retention limit to server-recovered tables too. Expired rows
+reach the established fallback/unavailable path. No additional provider reads.
+
+Acceptance evidence, isolated from unrelated native edits:
+- 1,519 tests pass. The real Worker route test covers memo hits, concurrent
+  refusals, shared-cache stale recovery, expired shared cache with isolate
+  fallback, empty provider responses, healthy recovery, and cold isolates.
+  Fresh score timestamps remain current while table timestamps stay unchanged.
+- Browser recovery suite passes eight scenarios at desktop and mobile widths:
+  device-saved, first-visit fallback, unavailable, preseason, wrong season,
+  blocked storage, server-saved and server-expired. Saved tables retain their own
+  age across reload, avoid live projection and unnecessary fallback reads, and
+  clear their marker after Retry succeeds. No page errors or mobile overflow.
+- Production build and Worker bundle dry run pass. Browser fixtures are synthetic;
+  these checks do not establish production freshness or event-delivery latency.
+
+Next P0: standings requests still run after the score requests and can consume
+up to the provider timeout. Bound this supplementary wait without leaving an
+untracked background request or losing fresh scores. Account-wide pacing and
+correlated production latency measurements remain open. Referee context remains
+P1, new leagues remain out of scope, and public deployment requires approval.
