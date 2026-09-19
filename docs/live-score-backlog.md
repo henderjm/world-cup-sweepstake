@@ -718,3 +718,39 @@ up to the provider timeout. Bound this supplementary wait without leaving an
 untracked background request or losing fresh scores. Account-wide pacing and
 correlated production latency measurements remain open. Referee context remains
 P1, new leagues remain out of scope, and public deployment requires approval.
+
+## September 19 — bounded standings provider wait
+
+Standings used the same five-second provider timeout as score-critical reads,
+although the live route requests them after obtaining the scores. They now have
+a 1.5-second deadline beginning before the upstream queue wait and covering both
+response headers and body. An expired queued request is not sent. Cancellation
+reaches the existing marked saved-table or missing-table paths; it does not leave
+a background origin fetch running. Other endpoints retain their five-second
+provider timeout. No retries or extra provider calls were added.
+
+This is a supplementary-data policy: a table response taking longer than the
+budget can fall back even while the provider is technically available. The
+saved-table notice and Retry make that tradeoff visible. It is not a total route
+deadline: fixture reads, cache access and browser static recovery also take time.
+
+Acceptance evidence from an isolated export excluding unrelated native work:
+- 1,521 tests pass; production build and Worker bundle dry run pass.
+- Real Worker route tests cover header/body stalls, warm saved tables, cold empty
+  table coverage, cancellation, concurrent-request coalescing, and later recovery.
+  Scores and their timestamps stay current; saved table timestamps do not advance.
+- Browser against the real Worker and a local simulated provider: desktop slow
+  table response 1,593ms, mobile first-visit body stall 1,705ms. Both are below the
+  2.5-second local response acceptance bound; later mobile stalled read 1,503ms.
+  Fresh scores remain visible, desktop shows the saved table, mobile explains
+  unavailable standings, and Retry restores the table and next score. No page
+  errors or horizontal overflow. These are controlled timings, not production
+  latency measurements.
+- Reproduction: `scripts/qa/stalled-standings-server.mjs` and
+  `scripts/qa/worker-standings-timeout.js`.
+
+Next P0: measure where production time is spent (cache, queue, provider and
+browser fallback) and correlate provider refusals across consumers before
+choosing a cross-isolate pacing policy. The known per-minute refusals are still
+unresolved. Avoid extending timeout tuning without fresh evidence. Referee
+context remains P1; no new leagues. This change is not deployed.

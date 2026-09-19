@@ -57,7 +57,7 @@ test("a timed-out status refresh serves the recent score with its original age a
   let now = Date.parse("2026-09-10T19:20:00Z");
   t.mock.method(Date, "now", () => now);
   t.mock.method(AbortSignal, "timeout", milliseconds => {
-    assert.equal(milliseconds, 5000);
+    assert.ok([1500, 5000].includes(milliseconds));
     const controller = new AbortController();
     setTimeout(() => controller.abort(new DOMException("Provider deadline exceeded", "TimeoutError")), 1);
     return controller.signal;

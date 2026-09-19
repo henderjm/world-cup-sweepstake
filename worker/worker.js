@@ -7342,12 +7342,15 @@ function effectiveCacheTtl(payload, cacheTtl) {
 }
 
 async function fetchUpstream(url, path, token, cacheTtl) {
+  // Standings are supplementary to scores; their budget includes the queue wait.
+  const standingsDeadline = path.startsWith("/standings?") ? AbortSignal.timeout(1500) : null;
   await paceUpstream();
+  standingsDeadline?.throwIfAborted();
   const response = await fetch(url, {
     headers: { "x-apisports-key": token },
     cf: { cacheTtl, cacheEverything: true },
     // A stalled provider read must release coalesced callers and reach stale/KV recovery.
-    signal: AbortSignal.timeout(5000),
+    signal: standingsDeadline ?? AbortSignal.timeout(5000),
   });
   // Recorded here and nowhere else: this is the single chokepoint every
   // upstream call passes through, so anything measured further out would be a
