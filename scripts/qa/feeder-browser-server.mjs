@@ -5,22 +5,23 @@ import { readFile } from 'node:fs/promises';
 const { default: worker } = await import(pathToFileURL(process.argv[2] + '/worker/worker.js'));
 const competition = process.argv[3] ?? 'PL';
 if (!['PL', 'CL'].includes(competition)) throw Error('Use PL or CL for this fixture');
-let now = Date.parse('2026-09-19T15:00:00Z'), score = 1;
-const start = now;
 const trace = process.env.FEEDER_TRACE ? JSON.parse(await readFile(process.env.FEEDER_TRACE, 'utf8')) : null;
+const start = trace?.startedAt ?? Date.parse('2026-09-19T15:00:00Z');
+let now = start, score = 1, status = '1H';
 const deliveries = trace?.pushes.filter(push => push.competition === competition);
 let delivery = 0;
 if (deliveries) {
   if (!deliveries.length) throw Error('Trace has no deliveries for this competition');
   now = start + deliveries[0].at;
   score = deliveries[0].score;
+  status = deliveries[0].status ?? status;
 }
 Date.now = () => now;
 const kv = new Map();
 const env = { API_FOOTBALL_KEY: 'fixture', DETAIL_INGEST_TOKEN: 'fixture', API_FOOTBALL_COMPETITIONS: `${competition}:2026`,
   ANALYSIS_CACHE: { get: async key => kv.get(key) ?? null, put: async (key, value) => { kv.set(key, value); } } };
 const fixtures = () => ({ errors: [], response: [{
-  fixture: { id: 900001, date: '2026-09-19T14:30:00Z', status: { short: '1H', elapsed: 30 } },
+  fixture: { id: 900001, date: new Date(start - 1800000).toISOString(), status: { short: status, elapsed: 30 } },
   league: { id: competition === 'CL' ? 2 : 39, season: 2026, round: competition === 'CL' ? 'League Stage - 1' : 'Regular Season - 5' },
   teams: { home: { id: 1, name: 'Home' }, away: { id: 2, name: 'Away' } },
   goals: { home: score, away: 0 }, score: { fulltime: { home: null, away: null } },
@@ -40,12 +41,13 @@ await push();
 createServer(async (req, res) => {
   if (req.url === '/schedule') {
     res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify(deliveries ?? [])); return;
+    res.end(JSON.stringify({ startedAt: start, deliveries: deliveries ?? [] })); return;
   }
   if (req.url === '/next' && deliveries?.[delivery + 1]) {
     const sample = deliveries[++delivery];
     now = start + sample.at;
     score = sample.score;
+    status = sample.status ?? status;
     await push();
     res.end('ready'); return;
   }

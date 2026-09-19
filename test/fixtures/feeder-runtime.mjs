@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 const scenario = process.env.FEEDER_TEST_SCENARIO;
 const realTime = scenario === 'real-body-stall';
-const start = realTime ? Date.now() : Date.parse('2026-09-19T15:00:00Z');
+const start = realTime ? Date.now() : Date.parse(process.env.FEEDER_TEST_START ?? '2026-09-19T15:00:00Z');
 let now = start, discoveries = 0;
 const calls = [], pushes = [];
 const byLeague = {};
@@ -40,7 +40,7 @@ globalThis.fetch = async (url, options) => {
     if (parsed.pathname.startsWith('/ingest/live/')) {
       if (scenario === 'failed-ingest') throw Error('Ingest unavailable');
       const body = JSON.parse(options.body);
-      if (body.fixtures.response.length) pushes.push({ at: now - start, competition: parsed.pathname.split('/').at(-1), score: body.fixtures.response[0].goals.home });
+      if (body.fixtures.response.length) pushes.push({ at: now - start, competition: parsed.pathname.split('/').at(-1), score: body.fixtures.response[0].goals.home, status: body.fixtures.response[0].fixture.status.short, ids: body.fixtures.response.map(row => row.fixture.id) });
     }
     return Response.json({ stored: true });
   }
@@ -49,6 +49,10 @@ globalThis.fetch = async (url, options) => {
     discoveries++;
     byLeague[league] = (byLeague[league] ?? 0) + 1;
     const count = byLeague[league];
+    if (scenario.startsWith('overnight') && parsed.searchParams.get('date') !== new Date(start - 1800000).toISOString().slice(0, 10)) {
+      if (scenario === 'overnight-failure') return new Response('Unavailable', { status: 503 });
+      return Response.json({ response: [], errors: [] });
+    }
     if (scenario === 'cl-failure' && league === '2' && count === 1) return new Response('Unavailable', { status: 503 });
     if (scenario === 'cl-empty' && league === '2' && count === 2) return Response.json({ response: [], errors: [] });
     if (scenario === 'http-limit' && discoveries === 1) return new Response('Rate limited', { status: 429 });
@@ -59,7 +63,8 @@ globalThis.fetch = async (url, options) => {
     if (scenario === 'malformed') return Response.json({});
     if (scenario === 'empty' && discoveries === 2) return Response.json({ response: [], errors: [] });
     const kickoffSoon = scenario === 'cl-kickoff' && league === '2';
-    const status = kickoffSoon && now < start + 90000 ? 'NS' : scenario === 'idle' ? 'NS' : scenario === 'finished' && discoveries >= 3 ? 'FT'
+    const status = scenario === 'overnight-finished' && now - start >= 120000 ? 'FT'
+      : kickoffSoon && now < start + 90000 ? 'NS' : scenario === 'idle' ? 'NS' : scenario === 'finished' && discoveries >= 3 ? 'FT'
       : ({ 'extra-time': 'ET', 'shootout': 'P', 'extra-break': 'BT' }[scenario] ?? '1H');
     const headers = {};
     if (['low-quota', 'critical-quota', 'quota-retained'].includes(scenario) && (scenario !== 'quota-retained' || discoveries === 1)) {
@@ -99,4 +104,4 @@ globalThis.fetch = async (url, options) => {
   }
   return response;
 };
-process.on('exit', () => writeFileSync(process.env.FEEDER_TEST_RESULT, JSON.stringify({ calls, pushes, discoveries, byLeague, timeouts, elapsed: Date.now() - start })));
+process.on('exit', () => writeFileSync(process.env.FEEDER_TEST_RESULT, JSON.stringify({ startedAt: start, calls, pushes, discoveries, byLeague, timeouts, elapsed: Date.now() - start })));

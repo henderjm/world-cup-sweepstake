@@ -55,3 +55,10 @@ and the desired competition argument. Run `feeder-scheduling.js` through the
 headless runner with the same `QA_COMPETITION` value. The browser replays the
 recorded score deliveries through local Worker ingestion and checks the visible
 scores. Time is accelerated; this is not a measurement of production latency.
+
+For the midnight journey, use `FEEDER_TEST_SCENARIO=overnight`,
+`FEEDER_TEST_START=2026-09-19T23:58:00Z` and
+`API_FOOTBALL_COMPETITIONS=CL:2026` when recording the trace. Run the same fixture
+server and headless replay for CL. It checks that the ongoing match remains on
+Today after midnight and that the overnight explanation appears. The browser
+uses UTC for this reproducible boundary; unit tests cover the viewer's local day.

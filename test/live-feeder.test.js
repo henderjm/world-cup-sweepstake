@@ -5,26 +5,26 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-function run(t, scenario, budget, competitions = 'PL:2026') {
+function run(t, scenario, budget, competitions = 'PL:2026', start = '2026-09-19T15:00:00Z') {
   const dir = mkdtempSync(join(tmpdir(), 'feeder-test-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const result = join(dir, 'result.json'), output = join(dir, 'output');
   const env = { ...process.env, API_FOOTBALL_KEY: 'fixture', DETAIL_INGEST_TOKEN: 'fixture',
     API_FOOTBALL_COMPETITIONS: competitions, WORKER_ORIGIN: 'https://fixture.invalid',
-    FEEDER_TEST_SCENARIO: scenario, FEEDER_TEST_RESULT: result, GITHUB_OUTPUT: output };
+    FEEDER_TEST_SCENARIO: scenario, FEEDER_TEST_RESULT: result, FEEDER_TEST_START: start, GITHUB_OUTPUT: output };
   delete env.FEEDER_LOOP_BUDGET_MS; delete env.FEEDER_LOOP_INTERVAL_MS;
   if (competitions == null) delete env.API_FOOTBALL_COMPETITIONS;
   if (budget) env.FEEDER_LOOP_BUDGET_MS = String(budget);
   const child = spawnSync(process.execPath, ['--import', './test/fixtures/feeder-runtime.mjs', 'scripts/feed-live-details.mjs'], { env, encoding: 'utf8', timeout: 10000 });
   assert.equal(child.status, 0, child.stderr || child.stdout);
-  return { ...JSON.parse(readFileSync(result)), output: readFileSync(output, 'utf8') };
+  return { ...JSON.parse(readFileSync(result)), output: Object.fromEntries(readFileSync(output, 'utf8').trim().split('\n').map(line => line.split('='))) };
 }
 
 test('live coverage fills the old re-arm gap without increasing detail frequency', t => {
   const old = run(t, 'live', 240000), current = run(t, 'live');
   assert.equal(old.discoveries, 4);
   assert.equal(current.discoveries, 6);
-  assert.equal(current.output, 'rearm_delay_seconds=60\n');
+  assert.equal(current.output.rearm_delay_seconds, '60');
   const details = result => result.calls.filter(call => call.path.startsWith('/fixtures/') || call.path.startsWith('/ingest/detail/'));
   assert.deepEqual(details(current), details(old), 'Added live passes must not repeat detail fan-out');
   assert.equal(current.pushes.at(-1).at + 60000, old.pushes.at(-1).at + 180000, 'Detail run cadence changed');
@@ -52,7 +52,7 @@ test('an idle competition is read only once while its neighbour remains live', t
   assert.deepEqual(run(t, 'pl-idle', undefined, 'PL:2026,CL:2026').byLeague, { 39: 1, 2: 6 });
   const idle = run(t, 'both-idle', undefined, 'PL:2026,CL:2026');
   assert.deepEqual(idle.byLeague, { 39: 1, 2: 1 });
-  assert.equal(idle.output, 'rearm_delay_seconds=180\n');
+  assert.equal(idle.output.rearm_delay_seconds, '180');
 });
 
 for (const scenario of ['cl-failure', 'cl-empty']) {
@@ -70,7 +70,7 @@ test('a known upcoming Champions League kickoff resumes discovery within the liv
   const reads = result.calls.filter(call => call.query.includes('league=2'));
   assert.equal(reads.length, 6);
   assert.ok(reads[1].at >= 90000 && reads[1].at < 150000);
-  assert.equal(result.output, 'rearm_delay_seconds=60\n');
+  assert.equal(result.output.rearm_delay_seconds, '60');
 });
 
 for (const scenario of ['low-quota', 'critical-quota', 'quota-retained']) {
@@ -104,7 +104,7 @@ for (const scenario of ['extra-time', 'extra-break', 'shootout']) {
     assert.equal(result.discoveries, 6);
     assert.equal(result.pushes.length, 6);
     assert.equal(result.calls.filter(call => call.path.startsWith('/ingest/detail/')).length, 1);
-    assert.equal(result.output, 'rearm_delay_seconds=60\n');
+    assert.equal(result.output.rearm_delay_seconds, '60');
   });
 }
 
@@ -112,7 +112,7 @@ for (const scenario of ['transient', 'first-failure', 'empty', 'malformed', 'fai
   test(`${scenario} discovery/ingest does not stop live rechecks`, t => {
     const result = run(t, scenario);
     assert.equal(result.discoveries, 6);
-    assert.equal(result.output, 'rearm_delay_seconds=60\n');
+    assert.equal(result.output.rearm_delay_seconds, '60');
     assert.ok(result.elapsed < 360000, 'Run exceeded its bounded loop');
     if (['transient', 'first-failure', 'empty'].includes(scenario)) assert.equal(result.pushes.length, 5);
     if (scenario === 'first-failure') assert.equal(result.calls.filter(call => call.path.startsWith('/ingest/detail/')).length, 1);
@@ -124,8 +124,8 @@ test('genuinely idle and newly finished matchdays return to the slower cadence',
   const idle = run(t, 'idle'), finished = run(t, 'finished');
   assert.equal(idle.discoveries, 1);
   assert.equal(finished.discoveries, 3);
-  assert.equal(idle.output, 'rearm_delay_seconds=180\n');
-  assert.equal(finished.output, 'rearm_delay_seconds=180\n');
+  assert.equal(idle.output.rearm_delay_seconds, '180');
+  assert.equal(finished.output.rearm_delay_seconds, '180');
 });
 
 for (const scenario of ['crowded-slow', 'crowded-stall', 'crowded-headers', 'crowded-ingest']) {
@@ -155,5 +155,45 @@ test('the real run deadline cancels a stalled detail body', t => {
   assert.equal(result.timeouts, 1);
   assert.equal(result.calls.filter(call => call.path.startsWith('/ingest/detail/')).length, 0);
   assert.ok(result.elapsed >= 900 && result.elapsed < 2000, `Elapsed ${result.elapsed}ms`);
-  assert.equal(result.output, 'rearm_delay_seconds=60\n');
+  assert.equal(result.output.rearm_delay_seconds, '60');
+});
+
+test('a live Champions League match stays in the backup across UTC midnight', t => {
+  const result = run(t, 'overnight', undefined, 'CL:2026', '2026-09-19T23:58:00Z');
+  assert.equal(result.pushes.length, 6);
+  assert.ok(result.pushes.at(-1).at > 120000);
+  assert.ok(result.pushes.every(push => push.ids.includes(900002)));
+  const dates = new Set(result.calls.filter(call => call.query.includes('date=')).map(call => new URLSearchParams(call.query).get('date')));
+  assert.deepEqual([...dates], ['2026-09-19', '2026-09-20']);
+  assert.equal(result.output.follow_up_needed, 'true');
+});
+
+test('a cold job after midnight still discovers yesterday\'s ongoing match', t => {
+  const result = run(t, 'overnight', undefined, 'CL:2026', '2026-09-20T00:10:00Z');
+  assert.equal(result.pushes.length, 6);
+  assert.ok(result.calls[0].query.includes('date=2026-09-19'));
+  assert.equal(result.output.follow_up_needed, 'true');
+});
+
+test('full time after midnight delivers the result and ends overnight rearming', t => {
+  const result = run(t, 'overnight-finished', undefined, 'CL:2026', '2026-09-19T23:58:00Z');
+  assert.equal(result.pushes.length, 3);
+  assert.equal(result.pushes.at(-1).status, 'FT');
+  assert.ok(result.pushes.at(-1).at >= 120000);
+  assert.equal(result.output.rearm_delay_seconds, '180');
+  assert.equal(result.output.follow_up_needed, 'false');
+});
+
+test('partial overnight discovery failure cannot publish an incomplete fresh snapshot', t => {
+  const result = run(t, 'overnight-failure', undefined, 'CL:2026', '2026-09-19T23:58:00Z');
+  assert.equal(result.pushes.length, 2);
+  assert.ok(result.pushes.every(push => push.at < 120000));
+  assert.equal(result.output.follow_up_needed, 'true');
+  assert.equal(result.output.rearm_delay_seconds, '60');
+});
+
+test('restart hints distinguish empty matchdays, upcoming kickoffs and unavailable discovery', t => {
+  assert.equal(run(t, 'both-idle').output.follow_up_needed, 'false');
+  assert.equal(run(t, 'idle').output.follow_up_needed, 'true');
+  assert.equal(run(t, 'malformed').output.follow_up_needed, 'true');
 });

@@ -1,12 +1,33 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { localDateKey, readScoreRoute, scoreRouteHash, shiftScoreDate, validScoreDate } from "../src/scoreDates.js";
-import { renderLive } from "../src/views.js";
+import { renderLive, renderScoresHome } from "../src/views.js";
 
 process.env.TZ = "Europe/Dublin";
 
 test("date keys use the viewer's local day, including a UTC kickoff after local midnight", () => {
   assert.equal(localDateKey("2026-09-10T23:30:00Z"), "2026-09-11");
+});
+
+test("Today keeps yesterday's ongoing matches visible after local midnight", t => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-09-19T23:05:00Z'));
+  const model = { competition: { code: 'CL', shortName: 'Champions League' }, hasData: true, matches: [
+    { id: 1, homeTeam: 'Home', awayTeam: 'Away', utcDate: '2026-09-19T21:30Z', status: 'EXTRA_TIME', score: { home: 2, away: 2 } },
+    { id: 2, homeTeam: 'Finished', awayTeam: 'Away', utcDate: '2026-09-19T20:00Z', status: 'FINISHED', score: { home: 1, away: 0 } },
+    { id: 3, homeTeam: 'Old', awayTeam: 'Away', utcDate: '2026-09-18T21:00Z', status: 'IN_PLAY', score: { home: 0, away: 0 } },
+  ] };
+  for (const html of [renderLive(model), renderLive(model, { liveOnly: true }), renderScoresHome([model])]) {
+    assert.match(html, /data-match-id="1"/);
+    assert.match(html, /still live from yesterday/);
+    assert.match(html, /seg__count">1</);
+    assert.doesNotMatch(html, /data-match-id="[23]"/);
+  }
+  const history = renderLive(model, { date: '2026-09-19' });
+  assert.match(history, /data-match-id="2"/);
+  assert.doesNotMatch(history, /still live from yesterday/);
+  model.matches[0].status = 'FINISHED';
+  assert.doesNotMatch(renderLive(model), /data-match-id="1"/);
+  assert.match(renderLive(model, { date: '2026-09-19' }), /data-match-id="1"/);
 });
 
 test("date navigation crosses DST and month boundaries by calendar day", () => {

@@ -11,6 +11,7 @@ import { appendFile } from "node:fs/promises";
 import { assertApiFootballPayload } from "../src/apiFootballPayload.js";
 import { parseQuotaHeaders, isLimitRejection } from "../src/apiQuota.js";
 import { budgetLevel, BUDGET_NORMAL } from "../src/apiBudget.js";
+import { fixtureDates } from "./live-feeder-window.mjs";
 
 const WORKER_ORIGIN = process.env.WORKER_ORIGIN ?? "https://goon-squad-data.gs-wc.workers.dev";
 const API = "https://v3.football.api-sports.io";
@@ -124,24 +125,30 @@ async function refreshScores({ scheduled, pending, deadline, states }) {
   for (const { code, season, leagueId } of COMPETITIONS) {
     const now = Date.now();
     if (now >= deadline) break;
-    const today = new Date(now).toISOString().slice(0, 10);
+    const dates = fixtureDates(now);
+    const dateKey = dates.join(',');
     const previous = states.get(code);
-    if (previous && now < previous.nextAt) continue;
+    if (previous?.dateKey === dateKey && now < previous.nextAt) continue;
     let payload;
     let matches;
     try {
-      payload = await apiGet(`/fixtures?league=${leagueId}&season=${season}&date=${today}`, { deadline });
+      const response = [];
+      for (const date of dates) {
+        const day = await apiGet(`/fixtures?league=${leagueId}&season=${season}&date=${date}`, { deadline });
+        response.push(...day.response);
+      }
+      payload = { response, errors: [] };
       matches = mapApiFootballMatches(payload);
     } catch (error) {
-      console.log(`feeder: could not read ${code} fixtures for ${today} (${error.message}); skipping`);
-      states.set(code, { active: true, nextAt: now + LOOP_INTERVAL_MS });
+      console.log(`feeder: could not read ${code} fixtures for ${dates.join(', ')} (${error.message}); skipping`);
+      states.set(code, { active: true, nextAt: now + LOOP_INTERVAL_MS, dateKey });
       continue;
     }
     const plan = fixturePollingPlan(matches, now);
     const active = plan.mode === "live" || plan.mode === "kickoff_wait" || (previous?.active && !matches.length);
     const nextAt = active ? now + LOOP_INTERVAL_MS
       : Math.min(...plan.requests.flatMap(request => request.fixtures.map(match => Date.parse(match.utcDate))));
-    states.set(code, { active: Boolean(active), nextAt });
+    states.set(code, { active: Boolean(active), nextAt, dateKey });
     await feedLive(code, payload, deadline);
     if (!scheduled.has(code) && matches.length) {
       scheduled.add(code);
@@ -180,7 +187,8 @@ async function main() {
   const keepChecking = [...states.values()].some(state => state.active || state.nextAt < deadline);
   console.log(`feeder: done, ${fed} match(es) fed`);
   if (process.env.GITHUB_OUTPUT) {
-    await appendFile(process.env.GITHUB_OUTPUT, `rearm_delay_seconds=${keepChecking ? 60 : 180}\n`);
+    const followUpNeeded = [...states.values()].some(state => Number.isFinite(state.nextAt));
+    await appendFile(process.env.GITHUB_OUTPUT, `rearm_delay_seconds=${keepChecking ? 60 : 180}\nfollow_up_needed=${followUpNeeded}\n`);
   }
 }
 

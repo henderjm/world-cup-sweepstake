@@ -6,7 +6,7 @@ import { dateLabel, dayLabel, formatStage, isFinished, isLive, statusLabel } fro
 import { feedDelayNotice, isOverdueFixture } from "./fixtureFreshness.js";
 import { learnPages } from "./learnSeo.js";
 import { TUTORIALS } from "./tutorials.js";
-import { localDateKey, validScoreDate } from "./scoreDates.js";
+import { localDateKey, shiftScoreDate, validScoreDate } from "./scoreDates.js";
 import { followsTeam, followedMatches } from "./teamFollows.js";
 import { knockoutMatches, knockoutRounds, selectedKnockoutRound } from "./knockout.js";
 export { knockoutMatches } from "./knockout.js";
@@ -269,7 +269,9 @@ function renderFollowControls(feeds, options) {
 }
 
 function matchesOnDate(model, date) {
-  return (model.matches ?? []).filter(match => localDateKey(match.utcDate) === date)
+  const yesterday = date === localDateKey() ? shiftScoreDate(date, -1) : null;
+  return (model.matches ?? []).filter(match => localDateKey(match.utcDate) === date
+    || (yesterday && isLive(match.status) && localDateKey(match.utcDate) === yesterday))
     .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate));
 }
 
@@ -290,7 +292,8 @@ function scoreDayRows(model, selectedDate, liveOnly, follows = [], followingOnly
     .filter(match => ["TIMED", "SCHEDULED"].includes(match.status) && localDateKey(match.utcDate) > selectedDate)
     .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))[0];
   const empty = followingOnly ? (liveOnly ? "No followed teams are live on this date." : "No followed teams play on this date.") : liveOnly ? "No live matches on this date." : selectedDate === localDateKey() ? "No kick-offs today." : "No matches on this date.";
-  return `${matches.length ? matches.map(match => matchLine(match, model.competition?.code, follows)).join("") : `<p class="note">${empty}</p>`}
+  return `${matches.some(match => localDateKey(match.utcDate) !== selectedDate) ? '<p class="note">Includes matches still live from yesterday.</p>' : ''}
+    ${matches.length ? matches.map(match => matchLine(match, model.competition?.code, follows)).join("") : `<p class="note">${empty}</p>`}
     ${!dayMatches.length && next ? `<p class="note">Next: ${esc(displayTeamName(next.homeTeam))} v ${esc(displayTeamName(next.awayTeam))} · ${esc(dayLabel(next.utcDate))}</p>` : ""}`;
 }
 

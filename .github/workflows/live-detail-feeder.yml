@@ -46,13 +46,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REARM_DELAY_SECONDS: ${{ steps.feed.outputs.rearm_delay_seconds || '180' }}
+          FEEDER_FOLLOW_UP: ${{ steps.feed.outputs.follow_up_needed || 'false' }}
         run: |
-          hour=$(date -u +%H)
-          if [ "$hour" -lt 11 ] || [ "$hour" -ge 22 ]; then
-            echo "outside the 11:00-22:00 UTC window; the chain ends here"
+          if ! node scripts/live-feeder-window.mjs; then
+            echo "no match follow-up needed outside daytime hours, or the overnight retry limit was reached"
             exit 0
           fi
           sleep "$REARM_DELAY_SECONDS"
+          if ! node scripts/live-feeder-window.mjs; then
+            echo "the restart window ended during the pause"
+            exit 0
+          fi
           queued=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/live-detail-feeder.yml/runs?status=queued&per_page=1" --jq '.total_count' || echo 0)
           if [ "${queued:-0}" -gt 0 ]; then
             echo "a run is already queued; not doubling the chain"

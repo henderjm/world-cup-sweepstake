@@ -951,3 +951,50 @@ severely slow providers can leave later matches without a new detail snapshot
 within a job; repeated-job fairness is a follow-up. Source refusals and GitHub
 queue delays can still cause stale scores. No public deployment was performed,
 and the intermittent production incident remains open.
+
+## September 19 — late matches survive the restart cutoff and midnight
+
+Two distinct gaps were present: the workflow stopped self-dispatching at 22:00
+UTC even when scores were still live, and both discovery and Today's screen
+could drop an ongoing match when the date changed.
+
+Prepared locally:
+- Daytime rearming remains 11:00–22:00 UTC. Afterwards, live/uncertain fixtures
+  and known upcoming kickoffs can keep the chain running until 03:00 UTC. Empty
+  or finished matchdays stop self-dispatching. The policy is checked before and
+  after the restart pause; a missing output does not start an overnight chain.
+  The existing scheduled triggers through the 22nd UTC hour are unchanged.
+- Between midnight and 03:00 UTC, discovery combines the previous and current
+  UTC dates, including a cold job with no inherited state. Date rollover
+  invalidates a competition's idle polling state. A failed date read preserves
+  the existing backup instead of publishing a partial snapshot as fresh.
+- Today and its Live filter include matches still live from the viewer's
+  previous local day, with an explicit explanation. Historical dates retain
+  their kickoff-date semantics; finished matches stay on their original date.
+  Older stuck statuses from before yesterday are not added to Today.
+
+Acceptance and evidence:
+- Boundary tests cover 21:59, 22:00, midnight, 02:59, 03:00 and the next daytime
+  window, plus a year rollover. The executable command used by the workflow is
+  tested with late follow-up both enabled and disabled.
+- The actual feeder script sends six CL pushes across a simulated 23:58–00:03
+  run. A fresh 00:10 job discovers the previous day's fixture. A full-time result
+  is delivered before overnight follow-up is disabled. Partial failures keep
+  retrying without refreshing an incomplete backup.
+- Headless mobile/desktop replay of that feeder trace through the local Worker
+  shows all six scores on Today across midnight and the overnight explanation,
+  with no page errors or desktop overflow. Provider refusal is simulated; the
+  backup delay warning remains visible. This is not a production latency claim.
+- 1,558 tests and the isolated production build pass. Workflow YAML parses.
+  Unit rendering checks cover the combined home screen, single competition,
+  Live filter, historical dates and finished/older matches using Dublin time.
+  Reproduction is documented in `scripts/qa/README.md`.
+
+Limits and next work: 03:00 UTC is an explicit cap against a stuck provider
+status or prolonged outage, not round-the-clock coverage. During an active
+overnight job each due competition uses two discovery reads per poll instead of
+one; request pacing, quota shedding and the job budget remain intact. Existing
+cron starts still determine whether a chain begins, and GitHub queue delays can
+extend gaps. P0 remains approval-dependent runtime validation of runner handoffs
+and score delivery; detail fairness on repeatedly slow matchdays is next local
+work. Nothing here is deployed and the production incident remains open.
