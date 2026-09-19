@@ -5,14 +5,15 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-function run(t, scenario, budget) {
+function run(t, scenario, budget, competitions = 'PL:2026') {
   const dir = mkdtempSync(join(tmpdir(), 'feeder-test-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const result = join(dir, 'result.json'), output = join(dir, 'output');
   const env = { ...process.env, API_FOOTBALL_KEY: 'fixture', DETAIL_INGEST_TOKEN: 'fixture',
-    API_FOOTBALL_COMPETITIONS: 'PL:2026', WORKER_ORIGIN: 'https://fixture.invalid',
+    API_FOOTBALL_COMPETITIONS: competitions, WORKER_ORIGIN: 'https://fixture.invalid',
     FEEDER_TEST_SCENARIO: scenario, FEEDER_TEST_RESULT: result, GITHUB_OUTPUT: output };
   delete env.FEEDER_LOOP_BUDGET_MS; delete env.FEEDER_LOOP_INTERVAL_MS;
+  if (competitions == null) delete env.API_FOOTBALL_COMPETITIONS;
   if (budget) env.FEEDER_LOOP_BUDGET_MS = String(budget);
   const child = spawnSync(process.execPath, ['--import', './test/fixtures/feeder-runtime.mjs', 'scripts/feed-live-details.mjs'], { env, encoding: 'utf8', timeout: 10000 });
   assert.equal(child.status, 0, child.stderr || child.stdout);
@@ -31,6 +32,81 @@ test('live coverage fills the old re-arm gap without increasing detail frequency
     assert.ok(current.pushes[i].at - current.pushes[i - 1].at <= 62000);
   }
 });
+
+test('both competitions receive scores before any detail and every provider call is paced', t => {
+  const result = run(t, 'live', undefined, null);
+  assert.deepEqual(result.byLeague, { 39: 6, 2: 6 });
+  assert.deepEqual(result.calls.slice(0, 4).map(call => call.path), ['/fixtures', '/ingest/live/PL', '/fixtures', '/ingest/live/CL']);
+  assert.equal(result.calls.filter(call => call.path.startsWith('/ingest/detail/')).length, 2);
+  const reads = result.calls.filter(call => call.provider);
+  for (let i = 1; i < reads.length; i++) assert.ok(reads[i].at - reads[i - 1].at >= 400);
+  for (const competition of ['PL', 'CL']) {
+    const pushes = result.pushes.filter(push => push.competition === competition);
+    assert.equal(pushes.length, 6);
+    for (let i = 1; i < pushes.length; i++) assert.ok(pushes[i].at - pushes[i - 1].at <= 65000);
+  }
+});
+
+test('an idle competition is read only once while its neighbour remains live', t => {
+  assert.deepEqual(run(t, 'cl-idle', undefined, 'PL:2026,CL:2026').byLeague, { 39: 6, 2: 1 });
+  assert.deepEqual(run(t, 'pl-idle', undefined, 'PL:2026,CL:2026').byLeague, { 39: 1, 2: 6 });
+  const idle = run(t, 'both-idle', undefined, 'PL:2026,CL:2026');
+  assert.deepEqual(idle.byLeague, { 39: 1, 2: 1 });
+  assert.equal(idle.output, 'rearm_delay_seconds=180\n');
+});
+
+for (const scenario of ['cl-failure', 'cl-empty']) {
+  test(`${scenario} recovers without disrupting Premier League pushes`, t => {
+    const result = run(t, scenario, undefined, 'PL:2026,CL:2026');
+    assert.deepEqual(result.byLeague, { 39: 6, 2: 6 });
+    assert.equal(result.pushes.filter(push => push.competition === 'PL').length, 6);
+    assert.equal(result.pushes.filter(push => push.competition === 'CL').length, 5);
+    assert.equal(result.calls.filter(call => call.path === '/ingest/detail/900002').length, 1);
+  });
+}
+
+test('a known upcoming Champions League kickoff resumes discovery within the live loop', t => {
+  const result = run(t, 'cl-kickoff', undefined, 'PL:2026,CL:2026');
+  const reads = result.calls.filter(call => call.query.includes('league=2'));
+  assert.equal(reads.length, 5);
+  assert.ok(reads[1].at >= 90000 && reads[1].at < 150000);
+  assert.equal(result.output, 'rearm_delay_seconds=60\n');
+});
+
+for (const scenario of ['low-quota', 'critical-quota', 'quota-retained']) {
+  test(`${scenario} preserves live reads and skips optional detail across both competitions`, t => {
+    const result = run(t, scenario, undefined, 'PL:2026,CL:2026');
+    assert.deepEqual(result.byLeague, { 39: 6, 2: 6 });
+    assert.equal(result.calls.filter(call => call.provider).length, 12);
+    assert.equal(result.pushes.length, 12);
+  });
+}
+
+test('a declining quota stops detail fan-out before its next provider request', t => {
+  const result = run(t, 'quota-drops-in-detail', undefined, 'PL:2026,CL:2026');
+  assert.equal(result.calls.filter(call => call.provider && !call.query.includes('date=')).length, 1);
+  assert.equal(result.calls.filter(call => call.path.startsWith('/ingest/detail/')).length, 0);
+  assert.equal(result.pushes.length, 12);
+});
+
+for (const scenario of ['http-limit', 'payload-limit', 'minute-empty']) {
+  test(`${scenario} cools down the shared feeder before calling the next competition`, t => {
+    const result = run(t, scenario, undefined, 'PL:2026,CL:2026');
+    const reads = result.calls.filter(call => call.provider);
+    assert.ok(reads[1].at - reads[0].at >= 60000);
+    assert.ok(result.pushes.some(push => push.competition === 'CL'));
+  });
+}
+
+for (const scenario of ['extra-time', 'extra-break', 'shootout']) {
+  test(`Champions League ${scenario} keeps score discovery active`, t => {
+    const result = run(t, scenario, undefined, 'CL:2026');
+    assert.equal(result.discoveries, 6);
+    assert.equal(result.pushes.length, 6);
+    assert.equal(result.calls.filter(call => call.path.startsWith('/ingest/detail/')).length, 1);
+    assert.equal(result.output, 'rearm_delay_seconds=60\n');
+  });
+}
 
 for (const scenario of ['transient', 'first-failure', 'empty', 'malformed', 'failed-ingest']) {
   test(`${scenario} discovery/ingest does not stop live rechecks`, t => {

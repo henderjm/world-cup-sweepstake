@@ -37,7 +37,7 @@ jobs:
         env:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           DETAIL_INGEST_TOKEN: ${{ secrets.DETAIL_INGEST_TOKEN }}
-          API_FOOTBALL_COMPETITIONS: "PL:2026"
+          API_FOOTBALL_COMPETITIONS: "PL:2026,CL:2026"
 
       # Keep the short pause while live (or fixture discovery is uncertain).
       # Idle runs retain the slower cadence. Always re-arm after a failed step.

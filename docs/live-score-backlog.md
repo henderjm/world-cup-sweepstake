@@ -857,3 +857,54 @@ until an approved release is checked during actual matches.
 
 Next P0: verify live runner-to-runner gaps and source delivery after approval;
 prepare efficient CL backup coverage and continue correlating provider refusals.
+
+## September 19 — Champions League backup coverage and quota safeguards
+
+Prepared locally: the feeder and workflow now include the existing Champions
+League alongside Premier League. This does not add a new product league. Each
+competition has its own polling state: live or uncertain discovery retries,
+an idle competition is read once per job, and a known upcoming kickoff resumes
+discovery within the job. Extra time, the extra-time break and penalties remain
+active, using the same status rules as the Worker.
+
+All due competitions receive their first score push before optional match
+detail starts. Provider requests share a 400 ms minimum spacing within this
+process. Optional detail stops at the existing 15% daily-quota threshold,
+including when the threshold is crossed mid-match. Missing quota headers retain
+the last known reading. HTTP 429, provider allowance errors and a zero minute
+allowance pause this process's upstream requests for 60 seconds; score reads
+resume afterwards. This is not a rate limiter shared with the Worker or other
+jobs, and does not guarantee the account cannot reach its limit.
+
+Acceptance and validation:
+- 1,544 tests pass, including 22 feeder scenarios. The production build and
+  workflow YAML parse pass in an isolated checkout excluding unrelated mobile
+  work.
+- In a simulated six-minute run with both competitions live, each receives six
+  score pushes, with no repeated detail batch and no push gap above 65 seconds
+  for the immediate-response fixture. All provider reads are at least 400 ms
+  apart. Defaults and workflow configuration include PL and CL.
+- An empty CL matchday costs one discovery while PL continues its six passes;
+  the reverse is also tested. Both idle return to the slower restart cadence.
+- A kickoff 90 seconds into the run resumes CL reads within 60 seconds of
+  kickoff. CL failures and transient empty responses recover while PL continues.
+- Low/critical quota retains score delivery for both leagues without detail
+  requests. Refusals prevent an immediate request to the next competition.
+- Headless mobile/desktop checks for both PL and CL use the actual local Worker
+  ingestion route with primary-provider refusal. Scores advance 1–0, 2–0, 3–0;
+  a missed push retains 3–0 with a 121-second age; recovery displays 4–0.
+  No page errors or desktop overflow. Reproduce with the instructions in
+  `scripts/qa/README.md`. These checks simulate source delivery, not GitHub
+  scheduling or production latency.
+
+Budget planning: an idle additional competition adds one read per job; a live
+one adds approximately one fixture read per minute plus four reads per eligible
+match's detail batch while quota is healthy. The number of jobs, match count and
+provider latency determine the actual daily spend. No paid service was added.
+
+Release gate / next P0: slow detail fan-out can still delay subsequent score
+passes, especially on a crowded CL matchday. Bound or interleave that work and
+test a full slow matchday before releasing this feeder expansion. GitHub
+queue/setup gaps and late matches around the 22:00 UTC restart cutoff also need
+production measurement or explicit coverage. The intermittent score incident
+remains open, and the public-release approval request remains pending.

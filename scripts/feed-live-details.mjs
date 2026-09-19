@@ -6,15 +6,17 @@
 // Missing credentials leave this optional feeder inactive.
 
 import { COMPETITIONS as COMPETITION_CONFIG } from "../src/competitions.js";
-import { mapApiFootballMatches } from "../src/mapApiFootball.js";
+import { mapApiFootballMatches, fixturePollingPlan } from "../src/mapApiFootball.js";
 import { appendFile } from "node:fs/promises";
 import { assertApiFootballPayload } from "../src/apiFootballPayload.js";
+import { parseQuotaHeaders, isLimitRejection } from "../src/apiQuota.js";
+import { budgetLevel, BUDGET_NORMAL } from "../src/apiBudget.js";
 
 const WORKER_ORIGIN = process.env.WORKER_ORIGIN ?? "https://goon-squad-data.gs-wc.workers.dev";
 const API = "https://v3.football.api-sports.io";
 const KEY = process.env.API_FOOTBALL_KEY;
 const TOKEN = process.env.DETAIL_INGEST_TOKEN;
-const COMPETITIONS = (process.env.API_FOOTBALL_COMPETITIONS ?? "PL:2026")
+const COMPETITIONS = (process.env.API_FOOTBALL_COMPETITIONS ?? "PL:2026,CL:2026")
   .split(",")
   .map((pair) => {
     const [code, season] = pair.split(":").map((part) => part.trim());
@@ -40,11 +42,13 @@ const LOOP_BUDGET_MS = Number(process.env.FEEDER_LOOP_BUDGET_MS ?? 6 * 60 * 1000
 const LOOP_INTERVAL_MS = Number(process.env.FEEDER_LOOP_INTERVAL_MS ?? 60 * 1000);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+let lastProviderRead = 0;
+let quota = {};
 
 function worthFeeding(match, now) {
   const kickoff = Date.parse(match.utcDate);
   if (!Number.isFinite(kickoff)) return false;
-  if (match.status === "IN_PLAY" || match.status === "PAUSED") return true;
+  if (fixturePollingPlan([match], now).mode === "live") return true;
   if (match.status === "TIMED" || match.status === "SCHEDULED") {
     return kickoff - now <= LINEUP_LEAD_MS && kickoff - now > 0;
   }
@@ -52,10 +56,22 @@ function worthFeeding(match, now) {
   return false;
 }
 
-async function apiGet(path) {
+async function apiGet(path, { detail = false } = {}) {
+  if (quota.limitedUntil > Date.now()) throw new Error("Provider cooldown");
+  if (detail && budgetLevel(quota, Date.now()) !== BUDGET_NORMAL) throw new Error("Preserving quota for scores");
+  await sleep(Math.max(0, lastProviderRead + PACING_MS - Date.now()));
+  lastProviderRead = Date.now();
   const response = await fetch(`${API}${path}`, { headers: { "x-apisports-key": KEY }, signal: AbortSignal.timeout(10000) });
+  const reading = parseQuotaHeaders(response.headers);
+  for (const [key, value] of Object.entries(reading)) {
+    if (value != null) quota[key] = value;
+  }
+  if (reading.minuteRemaining === 0) quota.limitedUntil = Date.now() + 60000;
+  if (isLimitRejection(response.status, null)) quota.limitedUntil = Date.now() + 60000;
   if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
-  return assertApiFootballPayload(await response.json());
+  const payload = await response.json();
+  if (isLimitRejection(response.status, payload?.errors)) quota.limitedUntil = Date.now() + 60000;
+  return assertApiFootballPayload(payload);
 }
 
 // The scoreboard copy: the discovery payload, pushed verbatim for the Worker to
@@ -77,13 +93,10 @@ async function feedLive(code, fixtures) {
 }
 
 async function feedMatch(id) {
-  const fixture = await apiGet(`/fixtures?id=${id}`);
-  await sleep(PACING_MS);
-  const lineups = await apiGet(`/fixtures/lineups?fixture=${id}`);
-  await sleep(PACING_MS);
-  const events = await apiGet(`/fixtures/events?fixture=${id}`);
-  await sleep(PACING_MS);
-  const players = await apiGet(`/fixtures/players?fixture=${id}`);
+  const fixture = await apiGet(`/fixtures?id=${id}`, { detail: true });
+  const lineups = await apiGet(`/fixtures/lineups?fixture=${id}`, { detail: true });
+  const events = await apiGet(`/fixtures/events?fixture=${id}`, { detail: true });
+  const players = await apiGet(`/fixtures/players?fixture=${id}`, { detail: true });
   const response = await fetch(`${WORKER_ORIGIN}/ingest/detail/${id}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
@@ -95,17 +108,15 @@ async function feedMatch(id) {
   if (!response.ok) throw new Error(`ingest ${id}: HTTP ${response.status}`);
 }
 
-// One pass over every configured competition: discover today's fixtures, push
-// them as the scoreboard safety copy, and (after its first successful discovery) feed the
-// detail payloads for the matches that matter. Reports whether anything is
-// actually in play, which is what decides whether the run keeps going.
-async function runPass({ detailed, deadline, expectLive }) {
+// Discover and push every due competition before detail can delay its neighbours.
+async function runPass({ detailed, deadline, states }) {
   const now = Date.now();
   const today = new Date(now).toISOString().slice(0, 10);
   let fed = 0;
-  let live = false;
-  let uncertain = false;
+  const details = [];
   for (const { code, season, leagueId } of COMPETITIONS) {
+    const previous = states.get(code);
+    if (previous && now < previous.nextAt) continue;
     let payload;
     let matches;
     try {
@@ -113,33 +124,35 @@ async function runPass({ detailed, deadline, expectLive }) {
       matches = mapApiFootballMatches(payload);
     } catch (error) {
       console.log(`feeder: could not read ${code} fixtures for ${today} (${error.message}); skipping`);
-      uncertain = true;
+      states.set(code, { active: true, nextAt: now + LOOP_INTERVAL_MS });
       continue;
     }
-    // Pushed before the detail fan-out below, deliberately: the scoreboard is
-    // what a reader is staring at while a match is on, and a slow or failing
-    // detail pass must never hold it up.
+    const plan = fixturePollingPlan(matches, now);
+    const active = plan.mode === "live" || plan.mode === "kickoff_wait" || (previous?.active && !matches.length);
+    const nextAt = active ? now + LOOP_INTERVAL_MS
+      : Math.min(...plan.requests.flatMap(request => request.fixtures.map(match => Date.parse(match.utcDate))));
+    states.set(code, { active: Boolean(active), nextAt });
     await feedLive(code, payload);
-    if (expectLive && !matches.length) uncertain = true;
-    if (matches.some((match) => match.status === "IN_PLAY" || match.status === "PAUSED")) live = true;
-    if (detailed.has(code)) continue;
+    if (!detailed.has(code) && matches.length) {
+      details.push({ code, candidates: matches.filter(match => worthFeeding(match, now)) });
+    }
+  }
+  for (const { code, candidates } of details) {
+    if (budgetLevel(quota, Date.now()) !== BUDGET_NORMAL) break;
     detailed.add(code);
-
-    const candidates = matches.filter((match) => worthFeeding(match, now));
-    console.log(`${code}: ${candidates.length} of ${matches.length} match(es) today worth feeding`);
+    console.log(`${code}: ${candidates.length} match(es) worth feeding`);
     for (const match of candidates) {
-      if (Date.now() >= deadline) break;
+      if (Date.now() >= deadline || budgetLevel(quota, Date.now()) !== BUDGET_NORMAL) break;
       try {
         await feedMatch(match.id);
         fed += 1;
       } catch (error) {
-        // One broken match must not block the others; the next run retries.
         console.log(`match ${match.id}: ${error.message}`);
       }
       await sleep(PACING_MS);
     }
   }
-  return { fed, live, uncertain };
+  return { fed, keepChecking: [...states.values()].some(state => state.active || state.nextAt < deadline) };
 }
 
 async function main() {
@@ -152,15 +165,16 @@ async function main() {
   let fed = 0;
   let keepChecking = false;
   const detailed = new Set();
+  const states = new Map();
   for (;;) {
     // Detail is fed once per run on purpose. It is the DRAWER's safety copy and
     // moves on the timescale of goals; the scoreboard moves on the timescale of
     // a clock. Feeding detail every pass would multiply a run's upstream cost
     // several times over to refresh something nobody watches tick.
-    const result = await runPass({ detailed, deadline, expectLive: keepChecking });
+    const result = await runPass({ detailed, deadline, states });
     fed += result.fed;
     passes += 1;
-    keepChecking = result.live || result.uncertain;
+    keepChecking = result.keepChecking;
     if (!keepChecking) {
       console.log("feeder: nothing in play; one pass is enough");
       break;

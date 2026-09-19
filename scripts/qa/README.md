@@ -34,3 +34,7 @@ node scripts/qa/feeder-browser-server.mjs "$PWD"
 The check verifies mobile score updates, stale-data handling and desktop layout
 against a simulated provider. It does not validate production delivery. Stop
 both local servers afterwards. An assertion failure exits the runner nonzero.
+
+To repeat the feeder check for Champions League, restart the fixture server
+with `CL` as its second argument and set `QA_COMPETITION=CL` on the runner.
+The default for both is Premier League (`PL`).

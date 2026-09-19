@@ -1,5 +1,6 @@
 // Local production preview on 8732; feeder-browser-server.mjs on 8733.
 async (browserPage) => {
+  const competition = process.env.QA_COMPETITION ?? 'PL';
   const context = await browserPage.context().browser().newContext({ viewport: { width: 390, height: 844 } });
   try {
     const page = await context.newPage();
@@ -10,14 +11,14 @@ async (browserPage) => {
     await page.route('**/data/*/scorers.json*', r => r.fulfill({ json: { scorers: [] } }));
     await page.route('**/data/*/live.json*', r => r.fulfill({ status: 503 }));
     await page.route('https://goon-squad-data.gs-wc.workers.dev/**', async route => {
-      if (!route.request().url().endsWith('/PL/live')) return route.fulfill({ status: 404 });
-      const response = await route.fetch({ url: 'http://127.0.0.1:8733/PL/live' });
+      if (!route.request().url().endsWith(`/${competition}/live`)) return route.fulfill({ status: 404 });
+      const response = await route.fetch({ url: `http://127.0.0.1:8733/${competition}/live` });
       const data = await response.json();
       if (!data.ingestedLive) throw Error('Fixture did not use the backup ingestion path');
       samples.push({ score: data.matches[0].score.home, ageMs: data.staleAgeMs });
       await route.fulfill({ response, headers: { ...response.headers(), 'access-control-allow-origin': '*' } });
     });
-    await page.goto('http://127.0.0.1:8732/#live?competition=PL');
+    await page.goto(`http://127.0.0.1:8732/#live?competition=${competition}`);
     const check = async score => {
       await page.locator('.score-day [data-match-id="900001"]').getByText(`${score} – 0`, { exact: true }).waitFor();
       await page.getByText('Live data is behind', { exact: true }).waitFor();
@@ -34,6 +35,6 @@ async (browserPage) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     if (!await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)) throw Error('Desktop overflow');
     if (errors.length) throw Error(errors.join('; '));
-    return { samples, passed: ['backup updates visible during primary refusal', 'handoff update visible', 'missing push retains score with correct age', 'next push recovers'], errors };
+    return { competition, samples, passed: ['backup updates visible during primary refusal', 'handoff update visible', 'missing push retains score with correct age', 'next push recovers'], errors };
   } finally { await context.close(); }
 }
