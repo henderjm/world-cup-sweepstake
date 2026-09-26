@@ -16,6 +16,18 @@ responded successfully while a CL sample returned 502. Daily exhaustion alone
 does not explain that sample. GitHub main and latest listed workflows remain on
 September 14 revision `07867e6`; later local fixes are not production evidence.
 
+September 26 release authorization: the user requested "push the fixes".
+The release includes the completed score, fallback and feeder changes through
+`996c6d4`. A read-only download of active Worker version
+`a0860be8-13ad-4fd9-a05f-f63fd650582e` (September 19) exactly matches the release
+bundle after normalizing build-directory paths, including the native sign-in
+and notification backend. Those already deployed backend sources and Android
+audience configuration are now included in the release to prevent a regression
+on the next deployment. Separate mobile frontend/packaging work remains local.
+The isolated release passes 1,563 JavaScript tests, the production build, Go
+tests and Worker bundling. AWS infrastructure and API-plan changes remain
+proposals; this release authorizes neither new spending nor that cutover.
+
 Make Kickoff Draft a compelling daily live-score destination. Prioritize scores
 while preserving fantasy, predictions, Paper Run and existing accounts. Make
 routine product and engineering decisions autonomously. Ask before spending,

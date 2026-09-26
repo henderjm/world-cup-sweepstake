@@ -21,6 +21,14 @@ API_FOOTBALL_COMPETITIONS = "PL:2026,CL:2026"
 # used — the GIS ID-token flow doesn't need it). Authorized JavaScript origins
 # must include the site origin and http://localhost:8731.
 GOOGLE_CLIENT_ID = "68606512741-6un71mt70pt688bkpcd7r86pjqjmt07l.apps.googleusercontent.com"
+# Native iOS Google client ID from GoogleService-Info.plist (set after Firebase setup).
+# GOOGLE_IOS_CLIENT_ID = ""
+# Web OAuth client used by Android's Firebase Google sign-in (client_type 3 in
+# google-services.json). Set separately when Firebase uses a different project
+# so the existing website keeps its Google client and authorized origins.
+GOOGLE_ANDROID_WEB_CLIENT_ID = "254961106243-4nji8cdlltdvkusaoktg848kpe70lok6.apps.googleusercontent.com"
+# Native delivery uses the FCM HTTP v1 API. Store the service-account JSON only
+# as the FCM_SERVICE_ACCOUNT Worker secret; never as a VITE_ variable or app asset.
 # Web Push VAPID. The public key is public config (it is also in src/push.js); the
 # private half is the VAPID_PRIVATE_JWK secret (npx wrangler secret put). The contact
 # is sent to push services as the VAPID subject, per the spec.

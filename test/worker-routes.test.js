@@ -923,12 +923,12 @@ function authDb(seen) {
   };
 }
 
-function stubTokeninfo(sub) {
+function stubTokeninfo(sub, audience = "test-client-id") {
   const original = globalThis.fetch;
   globalThis.fetch = async () =>
     new Response(
       JSON.stringify({
-        aud: "test-client-id",
+        aud: audience,
         iss: "https://accounts.google.com",
         sub,
         email: "someone@example.test",
@@ -942,9 +942,9 @@ function stubTokeninfo(sub) {
   };
 }
 
-async function signInWithSub(sub) {
+async function signInWithSub(sub, { audience = "test-client-id", androidClientId } = {}) {
   const seen = [];
-  const restore = stubTokeninfo(sub);
+  const restore = stubTokeninfo(sub, audience);
   try {
     const response = await worker.fetch(
       new Request("https://example.test/auth/google", {
@@ -952,13 +952,27 @@ async function signInWithSub(sub) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ credential: "x".repeat(64) }),
       }),
-      { ...env, GOOGLE_CLIENT_ID: "test-client-id", DB: authDb(seen) },
+      { ...env, GOOGLE_CLIENT_ID: "test-client-id", GOOGLE_ANDROID_WEB_CLIENT_ID: androidClientId, DB: authDb(seen) },
     );
     return { response, seen };
   } finally {
     restore();
   }
 }
+
+test("a separate Android OAuth client requires explicit configuration and preserves web sign-in", async () => {
+  const sub = "104283910938501928374";
+  for (const [audience, androidClientId, expected] of [
+    ["test-client-id", "android-web-client", 200],
+    ["android-web-client", "android-web-client", 200],
+    ["android-web-client", undefined, 401],
+    ["unrelated-client", "android-web-client", 401],
+  ]) {
+    const { response, seen } = await signInWithSub(sub, { audience, androidClientId });
+    assert.equal(response.status, expected);
+    if (expected === 401) assert.ok(!seen.some((sql) => sql.startsWith("INSERT INTO sessions")));
+  }
+});
 
 test("a bot account cannot be signed in as", async () => {
   const { response, seen } = await signInWithSub("bot:1:deadbeef");

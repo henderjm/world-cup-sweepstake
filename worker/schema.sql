@@ -70,8 +70,8 @@ CREATE TABLE IF NOT EXISTS banter_reactions (
   PRIMARY KEY (match_id, user_id, emoji)
 );
 
--- Web Push subscriptions, one row per browser/device. The endpoint is the identity;
--- a dead endpoint (404/410 from the push service) is pruned on send.
+-- HTTPS endpoints use Web Push keys; fcm:<token> identifies a native device and
+-- leaves the Web Push key fields empty. Both use the same account/prefs joins.
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   endpoint TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

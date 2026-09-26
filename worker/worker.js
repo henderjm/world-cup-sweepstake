@@ -1,3 +1,5 @@
+import { nativeEndpoint, nativePushConfigured, sendNativePush } from "./native-push.js";
+
 // Goon Squad data API (Cloudflare Worker).
 //
 // Proxies API-Football so the static site can poll for live data many times a
@@ -206,6 +208,8 @@ const ALLOWED_ORIGINS = new Set([
   "https://www.kickoffdraft.com",
   "http://localhost:8731",
   "http://127.0.0.1:8731",
+  "https://localhost",
+  "capacitor://localhost",
 ]);
 
 // Banter: the allowed reaction set. A fixed allowlist stops the store being used
@@ -1212,7 +1216,7 @@ async function handleGoogleAuth(request, env, cors) {
     return json({ error: "verifier unavailable" }, 502, cors);
   }
   if (
-    info.aud !== env.GOOGLE_CLIENT_ID ||
+    ![env.GOOGLE_CLIENT_ID, env.GOOGLE_ANDROID_WEB_CLIENT_ID, env.GOOGLE_IOS_CLIENT_ID].filter(Boolean).includes(info.aud) ||
     !GOOGLE_ISSUERS.has(info.iss) ||
     !info.sub ||
     info.email_verified !== "true"
@@ -6074,7 +6078,7 @@ const DEFAULT_PREFS = {
 };
 
 function pushConfigured(env) {
-  return Boolean(env.DB && env.VAPID_PRIVATE_JWK && env.VAPID_PUBLIC_KEY);
+  return Boolean(env.DB && ((env.VAPID_PRIVATE_JWK && env.VAPID_PUBLIC_KEY) || nativePushConfigured(env)));
 }
 
 async function handlePushSubscribe(request, env, cors) {
@@ -6087,6 +6091,21 @@ async function handlePushSubscribe(request, env, cors) {
   } catch {
     return json({ error: "bad body" }, 400, cors);
   }
+  if (sub?.provider === "fcm") {
+    if (!nativePushConfigured(env)) return json({ error: "native push not configured" }, 501, cors);
+    const endpoint = nativeEndpoint(sub.token);
+    if (!endpoint) return json({ error: "bad token" }, 400, cors);
+    try {
+      await env.DB.prepare(
+        `INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth) VALUES (?1, ?2, '', '')
+         ON CONFLICT(endpoint) DO UPDATE SET user_id = ?2, p256dh = '', auth = ''`,
+      ).bind(endpoint, user.id).run();
+      return json({ ok: true }, 200, cors);
+    } catch {
+      return json({ error: "push unavailable" }, 502, cors);
+    }
+  }
+  if (!env.VAPID_PRIVATE_JWK || !env.VAPID_PUBLIC_KEY) return json({ error: "web push not configured" }, 501, cors);
   const endpoint = String(sub?.endpoint ?? "");
   const p256dh = String(sub?.keys?.p256dh ?? "");
   const auth = String(sub?.keys?.auth ?? "");
@@ -6109,7 +6128,7 @@ async function handlePushSubscribe(request, env, cors) {
 }
 
 async function handlePushUnsubscribe(request, env, cors) {
-  if (!pushConfigured(env)) return json({ error: "push not configured" }, 501, cors);
+  if (!env.DB) return json({ error: "push not configured" }, 501, cors);
   const user = await sessionUser(request, env);
   if (!user) return json({ error: "signed out" }, 401, cors);
   let endpoint;
@@ -6128,24 +6147,29 @@ async function handlePushUnsubscribe(request, env, cors) {
   }
 }
 
-// Sends a test notification to every device the caller has enabled, so the whole
-// pipeline (encryption, the push service, the service worker) is verifiable
-// without waiting for a goal.
+// Older web builds omit the endpoint and still test all of their own devices.
+// New clients select one device so another phone cannot mask a failed delivery.
 async function handlePushTest(request, env, cors) {
   if (!pushConfigured(env)) return json({ error: "push not configured" }, 501, cors);
   const user = await sessionUser(request, env);
   if (!user) return json({ error: "signed out" }, 401, cors);
+  let endpoint;
   try {
-    const subs = await env.DB.prepare(
-      "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?1",
-    )
-      .bind(user.id)
-      .all();
+    const body = await request.text();
+    endpoint = body ? JSON.parse(body)?.endpoint : undefined;
+  } catch {
+    return json({ error: "device required" }, 400, cors);
+  }
+  if (endpoint !== undefined && (typeof endpoint !== "string" || !endpoint)) return json({ error: "device required" }, 400, cors);
+  try {
+    const query = env.DB.prepare("SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?1" +
+      (endpoint === undefined ? "" : " AND endpoint = ?2"));
+    const subs = await (endpoint === undefined ? query.bind(user.id) : query.bind(user.id, endpoint)).all();
     const results = await Promise.all(
       (subs.results ?? []).map((sub) =>
         sendPush(env, sub, {
           title: "Kickoff Draft test",
-          body: "Push notifications are working on this device.",
+          body: "If you can see this alert, this device received your test notification.",
           url: env.SITE_ORIGIN ?? "",
           tag: "sg-test",
         }),
@@ -6320,6 +6344,13 @@ async function sendMatchEvents(env, comp, match, events) {
 
 async function sendPush(env, sub, payload) {
   try {
+    if (sub.endpoint.startsWith("fcm:")) {
+      const result = await sendNativePush(env, sub.endpoint, payload);
+      if (result.expired) {
+        await env.DB.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?1").bind(sub.endpoint).run();
+      }
+      return result.accepted;
+    }
     const { endpoint, headers, body } = await buildPushHTTPRequest({
       privateJWK: env.VAPID_PRIVATE_JWK,
       message: {
