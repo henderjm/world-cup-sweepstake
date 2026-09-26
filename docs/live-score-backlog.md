@@ -1,9 +1,20 @@
 # Daily live-score product backlog
 
-Updated: 2026-09-19. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
+Updated: 2026-09-26. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
 Starting revision: `bfaf0a66e03febeda47647789e275853155ef638`.
 
 ## Mandate and continuation
+
+September 26 priority reset: the user requested a structural reassessment and
+is open to AWS and a larger API plan. The next P0 is the dedicated collector and
+stored-data read path proposed in `docs/live-score-architecture.md`, beginning
+with local implementation and a priced infrastructure plan. Deprioritize further
+GitHub-feeder refinements. No AWS resources, subscription upgrade or public
+cutover has been approved or performed by this assessment. Current read-only
+evidence: the quota endpoint reports 7,492/7,500 daily requests remaining; PL
+responded successfully while a CL sample returned 502. Daily exhaustion alone
+does not explain that sample. GitHub main and latest listed workflows remain on
+September 14 revision `07867e6`; later local fixes are not production evidence.
 
 Make Kickoff Draft a compelling daily live-score destination. Prioritize scores
 while preserving fantasy, predictions, Paper Run and existing accounts. Make
