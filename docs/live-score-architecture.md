@@ -5,6 +5,11 @@ Status: local design; no infrastructure provisioned, subscription changed or
 production traffic moved. Supersedes further incremental feeder work as the
 next major reliability investment.
 
+Reliability requirements: `live-score-reliability.md` defines the match-window
+targets, independent measurement, provider dependency and failover acceptance
+gates. Price an active collector and a standby in separate availability zones;
+the single-task cost allowance below is not a quote for that stronger design.
+
 ## Recommendation
 
 Build a dedicated score ingestion service on AWS, keep the existing website and
@@ -39,10 +44,12 @@ to cure provider refusals.
   claim that current daily exhaustion explains all failures. It does not prove
   the cause of the CL error or historical delays. Requests without the website's
   Origin header were refused and were not used to diagnose provider health.
-- GitHub `main` and the latest listed workflow runs still use `07867e6` from
-  14 September. The tested September 19 changes through `0554c6c` are local.
-  Worker deployment identity was not independently rechecked in this assessment.
-  Local test success has not established production recovery.
+- The earlier assessment found GitHub `main` at `07867e6`. The subsequent
+  September 26 approved release pushed `c6274e8` and verified the published
+  website. Downloaded active Worker version `a0860be8-13ad-4fd9-a05f-f63fd650582e`
+  already matched the reconciled release bundle after build-path normalization.
+  Headless PL/CL reads succeeded; CL standings used a labelled saved table.
+  This release check does not establish sustained busy-matchday reliability.
 
 ## Proposed flow
 
