@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-04",
-  "revision": "024dfb3",
+  "revision": "cf5787c",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -39,8 +39,8 @@
       "title": "Migrate every provider consumer",
       "summary": "Prevent details, stats and background jobs competing with scores.",
       "acceptance": "Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.",
-      "next": "Remove obsolete Worker provider-key prerequisites in stored mode and verify scheduled behavior without credentials; complete the final consumer census.",
-      "evidence": "024dfb3 adds stored player-pool read/export and the fantasy workflow gate. Draft IDs, tiers, xP and source ages are preserved; failures retain previous files. All 75 service and 1,656 app tests pass. No remote flag enabled or deployment."
+      "next": "Include all stored-mode switches, provider-key removal and rollback in the priced trial; verify runtime traffic and downstream side effects after approval.",
+      "evidence": "cf5787c removes key-only Worker guards. All 1,657 app tests, keyless cron replay and headless mobile/desktop detail journeys pass. Predictions and notification state verified locally; no real messages or provider calls. Cloud runtime census remains; not deployed."
     },
     {
       "id": "cloud",

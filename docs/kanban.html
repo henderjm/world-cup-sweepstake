@@ -10,7 +10,7 @@
 @media(max-width:650px){#kickoff-kanban .lanes{grid-template-columns:1fr}}
 </style>
 <div id="kickoff-kanban">
-<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code 024dfb3</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
+<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code cf5787c</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
 <div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">2</span></h3><article data-card="reliability">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Make busy matchdays reliable</summary>
@@ -18,7 +18,7 @@
 <p>Architecture work underway; production reliability remains unmeasured.</p></article><article data-card="consumers">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Migrate every provider consumer</summary>
-<dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Remove obsolete Worker provider-key prerequisites in stored mode and verify scheduled behavior without credentials; complete the final consumer census.</dd><dt>Evidence</dt><dd>024dfb3 adds stored player-pool read/export and the fantasy workflow gate. Draft IDs, tiers, xP and source ages are preserved; failures retain previous files. All 75 service and 1,656 app tests pass. No remote flag enabled or deployment.</dd></dl></details>
+<dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Include all stored-mode switches, provider-key removal and rollback in the priced trial; verify runtime traffic and downstream side effects after approval.</dd><dt>Evidence</dt><dd>cf5787c removes key-only Worker guards. All 1,657 app tests, keyless cron replay and headless mobile/desktop detail journeys pass. Predictions and notification state verified locally; no real messages or provider calls. Cloud runtime census remains; not deployed.</dd></dl></details>
 <p>Prevent details, stats and background jobs competing with scores.</p></article></section><section aria-label="Up next"><h3>Up next <span class="text-muted">5</span></h3><article data-card="monitor">
 <span class="viz-badge">P0 · first</span>
 <details><summary class="cursor-interaction">External monitoring and approved paging</summary>
