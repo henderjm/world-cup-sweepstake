@@ -10,7 +10,7 @@
 @media(max-width:650px){#kickoff-kanban .lanes{grid-template-columns:1fr}}
 </style>
 <div id="kickoff-kanban">
-<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code 6aa525c</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
+<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code fa25837</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
 <div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">4</span></h3><article data-card="reliability">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Make busy matchdays reliable</summary>
@@ -18,7 +18,7 @@
 <p>Architecture work underway; production reliability remains unmeasured.</p></article><article data-card="monitor">
 <span class="viz-badge">P0 · first</span>
 <details><summary class="cursor-interaction">External monitoring and approved paging</summary>
-<dl><dt>Acceptance</dt><dd>Record both PL and CL, missing observations and worst-fixture freshness independently. Inject an incident and verify delivery to the configured alert receiver plus recovery. Preserve dated evidence.</dd><dt>Next action</dt><dd>Implement automatic window rollover, retention and durable receiver delivery; finish independent watchdog choice and pricing.</dd><dt>Evidence</dt><dd>6aa525c: recorder and watcher recover ownership after process failure. All 34 related tests pass, including real HTTP restart, overlapping watcher rejection and pending alert retry without lock deletion. Hosting, supervision and human paging remain uninstalled; no purchase or deployment.</dd></dl></details>
+<dl><dt>Acceptance</dt><dd>Record both PL and CL, missing observations and worst-fixture freshness independently. Inject an incident and verify delivery to the configured alert receiver plus recovery. Preserve dated evidence.</dd><dt>Next action</dt><dd>Implement retention and durable receiver delivery; finish external supervision, schedule renewal and independent watchdog pricing.</dd><dt>Evidence</dt><dd>fa25837: explicit window handover preserves PL/CL probes while prior alerts retry. 36 related tests pass; focused path tests also pass. Concurrent runners excluded; restart adds no probes or acknowledged deliveries. Hosting and human paging remain uninstalled.</dd></dl></details>
 <p>Local watcher is verified; continuous hosting and real paging remain open.</p></article><article data-card="consumers">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Migrate every provider consumer</summary>
