@@ -45,3 +45,10 @@ test('trial starts no collectors, preserves durable coordination, and isolates t
   assert.equal(resources.CollectorTask.Properties.ContainerDefinitions[0].ReadonlyRootFilesystem, true);
   assert.equal(resources.CollectorNetwork.Properties.SecurityGroupIngress, undefined);
 });
+
+test('trial cannot be applied in a different account or region by switching CLI credentials', () => {
+  assert.deepEqual(template.Rules.SelectedAccountOnly.Assertions[0].Assert,
+    { 'Fn::Equals': [{ Ref: 'AWS::AccountId' }, '134471064301'] });
+  assert.deepEqual(template.Rules.IrelandOnly.Assertions[0].Assert,
+    { 'Fn::Equals': [{ Ref: 'AWS::Region' }, 'eu-west-1'] });
+});

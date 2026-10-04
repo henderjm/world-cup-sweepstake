@@ -85,6 +85,21 @@
           "AssertDescription": "Use distinct public subnets in different availability zones."
         }
       ]
+    },
+    "SelectedAccountOnly": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Equals": [
+              {
+                "Ref": "AWS::AccountId"
+              },
+              "134471064301"
+            ]
+          },
+          "AssertDescription": "Deploy this trial only in the existing AWS account selected by the owner."
+        }
+      ]
     }
   },
   "Conditions": {

@@ -1,0 +1,307 @@
+{
+  "checkedAt": "2026-10-04T15:04:05.358024+00:00",
+  "accountId": "134471064301",
+  "region": "eu-west-1",
+  "templateSha256": "59cfb1bf467038a948840c72760f30a255d7c2443617f8b0fc4161cf7a744b49",
+  "syntheticResourceArns": true,
+  "runtimeRoleEnforcementVerified": false,
+  "cases": [
+    {
+      "role": "ReaderRole",
+      "action": "dynamodb:GetItem",
+      "keys": [
+        "SCORE#PL#2026"
+      ],
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "allowed",
+      "decisions": [
+        "allowed"
+      ],
+      "passed": true
+    },
+    {
+      "role": "ReaderRole",
+      "action": "dynamodb:GetItem",
+      "keys": [
+        "SCORE#CL#2026"
+      ],
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "allowed",
+      "decisions": [
+        "allowed"
+      ],
+      "passed": true
+    },
+    {
+      "role": "ReaderRole",
+      "action": "dynamodb:GetItem",
+      "keys": [
+        "DETAIL#CL#2026#123"
+      ],
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "allowed",
+      "decisions": [
+        "allowed"
+      ],
+      "passed": true
+    },
+    {
+      "role": "ReaderRole",
+      "action": "dynamodb:GetItem",
+      "keys": [
+        "FANTASY#PL#2026"
+      ],
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "allowed",
+      "decisions": [
+        "allowed"
+      ],
+      "passed": true
+    },
+    {
+      "role": "ReaderRole",
+      "action": "dynamodb:GetItem",
+      "keys": null,
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "denied",
+      "decisions": [
+        "implicitDeny"
+      ],
+      "passed": true
+    },
+    {
+      "role": "ReaderRole",
+      "action": "dynamodb:GetItem",
+      "keys": [
+        "COLLECTOR"
+      ],
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "denied",
+      "decisions": [
+        "implicitDeny"
+      ],
+      "passed": true
+    },
+    {
+      "role": "ReaderRole",
+      "action": "dynamodb:GetItem",
+      "keys": [
+        "PROVIDER_BUDGET"
+      ],
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "denied",
+      "decisions": [
+        "implicitDeny"
+      ],
+      "passed": true
+    },
+    {
+      "role": "ReaderRole",
+      "action": "dynamodb:GetItem",
+      "keys": [
+        "SCORE#PL#2026",
+        "PROVIDER_BUDGET"
+      ],
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "denied",
+      "decisions": [
+        "implicitDeny"
+      ],
+      "passed": true
+    },
+    {
+      "role": "ReaderRole",
+      "action": "dynamodb:GetItem",
+      "keys": [
+        "SCORE#OTHER#2026"
+      ],
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "denied",
+      "decisions": [
+        "implicitDeny"
+      ],
+      "passed": true
+    },
+    {
+      "role": "ReaderRole",
+      "action": "dynamodb:PutItem",
+      "keys": [
+        "SCORE#PL#2026"
+      ],
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "denied",
+      "decisions": [
+        "implicitDeny"
+      ],
+      "passed": true
+    },
+    {
+      "role": "ReaderRole",
+      "action": "dynamodb:Scan",
+      "keys": null,
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "denied",
+      "decisions": [
+        "implicitDeny"
+      ],
+      "passed": true
+    },
+    {
+      "role": "ReaderRole",
+      "action": "secretsmanager:GetSecretValue",
+      "keys": null,
+      "resource": "arn:aws:secretsmanager:eu-west-1:134471064301:secret:kickoff-policy-simulation-ABC123",
+      "expected": "denied",
+      "decisions": [
+        "implicitDeny"
+      ],
+      "passed": true
+    },
+    {
+      "role": "ReaderRole",
+      "action": "dynamodb:GetItem",
+      "keys": [
+        "SCORE#PL#2026"
+      ],
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation-other",
+      "expected": "denied",
+      "decisions": [
+        "implicitDeny"
+      ],
+      "passed": true
+    },
+    {
+      "role": "CollectorRole",
+      "action": "dynamodb:PutItem",
+      "keys": [
+        "COLLECTOR"
+      ],
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "allowed",
+      "decisions": [
+        "allowed"
+      ],
+      "passed": true
+    },
+    {
+      "role": "CollectorRole",
+      "action": "dynamodb:PutItem",
+      "keys": [
+        "PROVIDER_BUDGET"
+      ],
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "allowed",
+      "decisions": [
+        "allowed"
+      ],
+      "passed": true
+    },
+    {
+      "role": "CollectorRole",
+      "action": "dynamodb:PutItem",
+      "keys": [
+        "SCORE#CL#2026"
+      ],
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "allowed",
+      "decisions": [
+        "allowed"
+      ],
+      "passed": true
+    },
+    {
+      "role": "CollectorRole",
+      "action": "dynamodb:ConditionCheckItem",
+      "keys": [
+        "COLLECTOR"
+      ],
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "allowed",
+      "decisions": [
+        "allowed"
+      ],
+      "passed": true
+    },
+    {
+      "role": "CollectorRole",
+      "action": "dynamodb:ConditionCheckItem",
+      "keys": [
+        "PROVIDER_BUDGET"
+      ],
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "denied",
+      "decisions": [
+        "implicitDeny"
+      ],
+      "passed": true
+    },
+    {
+      "role": "CollectorRole",
+      "action": "dynamodb:PutItem",
+      "keys": null,
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "denied",
+      "decisions": [
+        "implicitDeny"
+      ],
+      "passed": true
+    },
+    {
+      "role": "CollectorRole",
+      "action": "dynamodb:DeleteTable",
+      "keys": null,
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "denied",
+      "decisions": [
+        "implicitDeny"
+      ],
+      "passed": true
+    },
+    {
+      "role": "CollectorRole",
+      "action": "secretsmanager:GetSecretValue",
+      "keys": null,
+      "resource": "arn:aws:secretsmanager:eu-west-1:134471064301:secret:kickoff-policy-simulation-ABC123",
+      "expected": "denied",
+      "decisions": [
+        "implicitDeny"
+      ],
+      "passed": true
+    },
+    {
+      "role": "ExecutionRole",
+      "action": "secretsmanager:GetSecretValue",
+      "keys": null,
+      "resource": "arn:aws:secretsmanager:eu-west-1:134471064301:secret:kickoff-policy-simulation-ABC123",
+      "expected": "allowed",
+      "decisions": [
+        "allowed"
+      ],
+      "passed": true
+    },
+    {
+      "role": "ExecutionRole",
+      "action": "secretsmanager:GetSecretValue",
+      "keys": null,
+      "resource": "arn:aws:secretsmanager:eu-west-1:134471064301:secret:kickoff-policy-simulation-ABC123-other",
+      "expected": "denied",
+      "decisions": [
+        "implicitDeny"
+      ],
+      "passed": true
+    },
+    {
+      "role": "ExecutionRole",
+      "action": "dynamodb:GetItem",
+      "keys": [
+        "PROVIDER_BUDGET"
+      ],
+      "resource": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-policy-simulation",
+      "expected": "denied",
+      "decisions": [
+        "implicitDeny"
+      ],
+      "passed": true
+    }
+  ]
+}

@@ -1837,3 +1837,14 @@ checks passed; DNS and ACL configuration also inspected. No ECS clusters or
 DynamoDB tables returned in the region. Keep Kickoff runtime resources/IAM
 dedicated; no corporate application reuse or production-network modification.
 Actual egress, runtime IAM and trial spending/deployment remain gates.
+
+## October 4 — existing-account template and IAM checks
+
+Trial template now asserts selected AWS account `134471064301`. Four local
+infrastructure checks, cfn-lint and AWS read-only template validation passed.
+AWS custom-policy simulation passed 24 declared-role cases: allowed public reads,
+denied reader writes/budget/secret access, mixed or absent key denial, collector
+fencing scope and execution-role secret scope. Evidence retains the template hash
+in `live-score-evidence/2026-10-04-aws-policy-simulation.json`; rerun with
+`scripts/qa/aws-policy-simulation.py`. No AWS resources created. Deployed-role
+trust/permissions, actual task egress and external monitoring remain gates.

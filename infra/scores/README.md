@@ -108,3 +108,24 @@ and actual HTTPS/provider acceptance remain unverified. The report always says
 `deploymentReady: false`. Subnet public-IP defaults are not required because the
 task definition explicitly requests public addresses. Recheck near deployment;
 this report does not lock AWS configuration against later changes.
+
+## Selected account and policy simulation
+
+The template now has an account assertion for `134471064301`, alongside Ireland
+and subnet constraints. Changing the local AWS profile cannot silently retarget
+this trial. October 4 `aws cloudformation validate-template` accepted the template;
+this checks syntax, not resource creation, rule outcomes or runtime access.
+
+From the repository root, `python3 scripts/qa/aws-policy-simulation.py` reruns 24
+read-only AWS custom-policy cases. It checks STS account identity before simulation
+and resolves the template's resource references to synthetic ARNs in that account.
+No table, secret, role or stack is created or read. Evidence records the template
+SHA-256 and individual decisions. The script uses current local AWS credentials;
+never inject those credentials into the application or collector image.
+
+Simulation passed public-reader positive/negative checks, missing/mixed leading
+keys, another table, reader writes/scans/secret access, collector item/fence
+permissions and execution-role secret scoping. These are isolated identity-policy
+simulations, not tests of deployed roles, resource policies, permission boundaries,
+SCPs, trust policies or actual DynamoDB transactions. Retain real assumed-role
+positive/denial tests as an approved trial gate.
