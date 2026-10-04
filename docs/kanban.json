@@ -1,24 +1,166 @@
 {
   "updated": "2026-10-04",
-  "revision": "bb977b8",
+  "revision": "d50aab4",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
-  "columns": ["In progress", "Up next", "Waiting", "Validated locally", "Released"],
+  "columns": [
+    "In progress",
+    "Up next",
+    "Waiting",
+    "Validated locally",
+    "Released"
+  ],
   "cards": [
-    {"id":"reliability","status":"In progress","priority":"P0","title":"Make busy matchdays reliable","summary":"Architecture work underway; production reliability remains unmeasured.","acceptance":"Measure 99.95% usable scoreboards and 99.9% active observation freshness. Measure provider-visible change to screen separately: p95 ≤30s, p99 ≤60s. Warn after 45s. Missing checks and provider failures count against the user-facing result.","next":"Install independent monitoring and prove alert delivery, then complete consumer migration and a priced cloud trial.","evidence":"Local foundation through bb977b8. This is the ongoing programme, not a claim that an unattended process is running."},
-    {"id":"monitor","status":"Up next","priority":"P0 · first","title":"Independent monitoring and alerts","summary":"Turn the local recorder into an operational monitor.","acceptance":"Record both PL and CL, missing observations and worst-fixture freshness independently. Inject an incident and verify delivery to the configured alert receiver plus recovery. Preserve dated evidence.","next":"Choose and package the monitor and receiver; prepare any spending or external setup for approval.","evidence":"Recorder exists in 64f7336; continuous operation and delivered alerts are unverified."},
-    {"id":"consumers","status":"Up next","priority":"P0","title":"Migrate every provider consumer","summary":"Prevent details, stats and background jobs competing with scores.","acceptance":"Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.","next":"Map each direct provider call to its replacement and verification scenario.","evidence":"Shared admission tested locally in 8468ca6; account-wide production control is not established."},
-    {"id":"cloud","status":"Up next","priority":"P0","title":"Package and price the AWS trial","summary":"Prepare a reviewable active and standby deployment.","acceptance":"Produce infrastructure, monthly cost assumptions, read-only IAM, throttling, egress constraints and rollback. Exercise multi-zone takeover and cold/warm traffic after approval.","next":"Prepare deployment artifacts and a costed plan before asking to spend.","evidence":"No AWS resources or subscription upgrades created."},
-    {"id":"latency","status":"Up next","priority":"P0","title":"Measure real matchday delivery","summary":"Establish busy-window evidence instead of inferring reliability from a build.","acceptance":"Retain timestamped PL/CL observations and p50/p95/p99 delivery reports; disclose coverage gaps. Verify stale warnings and recovery in headless browser journeys.","next":"Run after independent monitoring and approved shadow deployment are ready.","evidence":"Synthetic recovery passes; sustained production nines are unknown."},
-    {"id":"referee","status":"Up next","priority":"P1","title":"Referee context and match statistics","summary":"Refresh the FotMob benchmark once reliability is under control.","acceptance":"Verify referee identity, period, competition and sample size. Preserve unknown statistics. Reuse stored data without per-visit provider calls; validate endpoint budget before adding statistics.","next":"Refresh the PL/CL competitor audit headlessly and review supported source coverage.","evidence":"Scoped in the September 19 backlog. New leagues remain deprioritized."},
-    {"id":"polish","status":"Up next","priority":"P2","title":"Team labels and score-first polish","summary":"Resolve identity mismatches and remaining navigation and visual gaps.","acceptance":"Verify Sabah identity before changing labels or follow keys. Align hero/date and metadata, retain calendar state during polling, measure rendering budgets and keep existing features reachable.","next":"Take the highest-impact bounded product fix after the reliability critical path.","evidence":"Initial mobile and desktop benchmark recorded September 10; targeted refresh September 19."},
-    {"id":"cutover","status":"Waiting","priority":"P0","title":"Approve spending and public cutover","summary":"Future gate: not asking for approval yet.","acceptance":"User approves the concrete priced trial before resources or upgrades, and approves public deployment separately after busy-window reliability evidence and rollback are ready.","next":"Complete the plan and validation evidence first. No user action needed now.","evidence":"Local engineering is not blocked by this gate."},
-    {"id":"storage","status":"Validated locally","priority":"P0","title":"Partitioned storage and read service","summary":"Viewers read stored scores without provider access.","acceptance":"Atomic, fenced publication; bounded coherent reads; corrupt data unavailable; scores and quota survive restart. Test mobile and desktop loading, empty, stale and recovery states.","next":"Package for cloud trial and validate actual IAM, latency and capacity.","evidence":"bb977b8 · 42 service checks, 1,606 app tests and headless journeys passed. Synthetic 1,000-fixture warm unchanged read: 1,431-byte manifest. Not a cloud latency or browser payload result."},
-    {"id":"collector","status":"Validated locally","priority":"P0","title":"Prioritized collector and shared API budget","summary":"Bound provider work and preserve known scores through failures.","acceptance":"Prioritize live fixtures, validate discovery completeness, count every attempt, persist cooldowns, reject stale owners and keep stale observation ages honest.","next":"Migrate remaining consumers and validate the shared production path.","evidence":"1f57fe8, 8468ca6, a9e2647 · local database, synthetic provider and restart tests. No production cutover."},
-    {"id":"recorder","status":"Validated locally","priority":"P0","title":"Reliability recorder and read contract","summary":"Version-aware recovery with a durable measurement baseline.","acceptance":"Reject older snapshots without discarding valid mixed-age updates. Record missing checks rather than silently excluding them from reliability reports.","next":"Deploy independent monitoring with tested alert delivery.","evidence":"4d9b364, 64f7336 · locally verified; not an installed continuous monitor."},
-    {"id":"tables","status":"Released","priority":"P1","title":"League tables on wider screens","summary":"Relevant table alongside Scores at 1200px and above.","acceptance":"Explicit selectable competition, retained date/Live/Following filters, honest stale state and no overflow. Mobile remains usable.","next":"Keep in desktop regression checks as the data path changes.","evidence":"Repository release record: September 14, 07867e6. Historical release evidence, not a fresh production check."},
-    {"id":"cl","status":"Released","priority":"P0","title":"Champions League stage and table fixes","summary":"Separate qualification from league points and main knockouts.","acceptance":"Correct stage labels, league-phase points/form, aggregate and penalty handling; preserve qualification history and never invent future draws.","next":"Replay these cases against the replacement stored feed before cutover.","evidence":"Repository release records: September 10 and September 14. Historical validation."},
-    {"id":"journeys","status":"Released","priority":"P1","title":"Find matches, follow teams and open details","summary":"Date and live filters, local follows and match-detail navigation.","acceptance":"Persist date/filter/follows, preserve detail focus and drafts during updates, and expose loading, missing coverage and retry states.","next":"Retest against LiveScore and FotMob after reliability work; preserve these journeys during migration.","evidence":"September 10/14 release records. Covers local follows, combined PL/CL scores, detail navigation and line-up recovery."}
+    {
+      "id": "reliability",
+      "status": "In progress",
+      "priority": "P0",
+      "title": "Make busy matchdays reliable",
+      "summary": "Architecture work underway; production reliability remains unmeasured.",
+      "acceptance": "Measure 99.95% usable scoreboards and 99.9% active observation freshness. Measure provider-visible change to screen separately: p95 \u226430s, p99 \u226460s. Warn after 45s. Missing checks and provider failures count against the user-facing result.",
+      "next": "Inventory every provider consumer; prepare migration and the priced cloud trial with independent monitoring.",
+      "evidence": "Local collector/read foundation bb977b8 and durable alert watcher d50aab4. This programme remains in progress; hourly automation is paused."
+    },
+    {
+      "id": "monitor",
+      "status": "Up next",
+      "priority": "P0 \u00b7 first",
+      "title": "External monitoring and approved paging",
+      "summary": "Local watcher is verified; continuous hosting and real paging remain open.",
+      "acceptance": "Record both PL and CL, missing observations and worst-fixture freshness independently. Inject an incident and verify delivery to the configured alert receiver plus recovery. Preserve dated evidence.",
+      "next": "Include independent hosting, watchdog, evidence retention and a downstream receiver adapter in the priced trial.",
+      "evidence": "d50aab4 proves synthetic loopback receipt through receiver refusal and process loss. No external receiver or human paging configured."
+    },
+    {
+      "id": "consumers",
+      "status": "Up next",
+      "priority": "P0",
+      "title": "Migrate every provider consumer",
+      "summary": "Prevent details, stats and background jobs competing with scores.",
+      "acceptance": "Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.",
+      "next": "Map each direct provider call to its replacement and verification scenario.",
+      "evidence": "Shared admission tested locally in 8468ca6; account-wide production control is not established."
+    },
+    {
+      "id": "cloud",
+      "status": "Up next",
+      "priority": "P0",
+      "title": "Package and price the AWS trial",
+      "summary": "Prepare a reviewable active and standby deployment.",
+      "acceptance": "Produce infrastructure, monthly cost assumptions, read-only IAM, throttling, egress constraints and rollback. Exercise multi-zone takeover and cold/warm traffic after approval.",
+      "next": "Prepare deployment artifacts and a costed plan before asking to spend.",
+      "evidence": "No AWS resources or subscription upgrades created."
+    },
+    {
+      "id": "latency",
+      "status": "Up next",
+      "priority": "P0",
+      "title": "Measure real matchday delivery",
+      "summary": "Establish busy-window evidence instead of inferring reliability from a build.",
+      "acceptance": "Retain timestamped PL/CL observations and p50/p95/p99 delivery reports; disclose coverage gaps. Verify stale warnings and recovery in headless browser journeys.",
+      "next": "Run after independent monitoring and approved shadow deployment are ready.",
+      "evidence": "Synthetic recovery passes; sustained production nines are unknown."
+    },
+    {
+      "id": "referee",
+      "status": "Up next",
+      "priority": "P1",
+      "title": "Referee context and match statistics",
+      "summary": "Refresh the FotMob benchmark once reliability is under control.",
+      "acceptance": "Verify referee identity, period, competition and sample size. Preserve unknown statistics. Reuse stored data without per-visit provider calls; validate endpoint budget before adding statistics.",
+      "next": "Refresh the PL/CL competitor audit headlessly and review supported source coverage.",
+      "evidence": "Scoped in the September 19 backlog. New leagues remain deprioritized."
+    },
+    {
+      "id": "polish",
+      "status": "Up next",
+      "priority": "P2",
+      "title": "Team labels and score-first polish",
+      "summary": "Resolve identity mismatches and remaining navigation and visual gaps.",
+      "acceptance": "Verify Sabah identity before changing labels or follow keys. Align hero/date and metadata, retain calendar state during polling, measure rendering budgets and keep existing features reachable.",
+      "next": "Take the highest-impact bounded product fix after the reliability critical path.",
+      "evidence": "Initial mobile and desktop benchmark recorded September 10; targeted refresh September 19."
+    },
+    {
+      "id": "cutover",
+      "status": "Waiting",
+      "priority": "P0",
+      "title": "Approve spending and public cutover",
+      "summary": "Future gate: not asking for approval yet.",
+      "acceptance": "User approves the concrete priced trial before resources or upgrades, and approves public deployment separately after busy-window reliability evidence and rollback are ready.",
+      "next": "Complete the plan and validation evidence first. No user action needed now.",
+      "evidence": "Local engineering is not blocked by this gate."
+    },
+    {
+      "id": "storage",
+      "status": "Validated locally",
+      "priority": "P0",
+      "title": "Partitioned storage and read service",
+      "summary": "Viewers read stored scores without provider access.",
+      "acceptance": "Atomic, fenced publication; bounded coherent reads; corrupt data unavailable; scores and quota survive restart. Test mobile and desktop loading, empty, stale and recovery states.",
+      "next": "Package for cloud trial and validate actual IAM, latency and capacity.",
+      "evidence": "bb977b8 \u00b7 42 service checks, 1,606 app tests and headless journeys passed. Synthetic 1,000-fixture warm unchanged read: 1,431-byte manifest. Not a cloud latency or browser payload result."
+    },
+    {
+      "id": "alerts",
+      "status": "Validated locally",
+      "priority": "P0",
+      "title": "Durable incident and recovery alerts",
+      "summary": "Failed or missing checks reach a receiver even after watcher restart.",
+      "acceptance": "Persist before send, require matching acknowledgment, deduplicate retries, preserve incident/recovery order and alert when the recorder stops.",
+      "next": "Configure an approved external receiver and verify downstream human delivery, plus a watchdog outside the monitor failure domain.",
+      "evidence": "d50aab4 \u00b7 1,620 app tests passed; 30 focused checks passed after final checksum change. Real local processes verify stale data, receiver refusal, watcher restart and recorder loss. All three distinct events acknowledged locally within ten seconds of detection."
+    },
+    {
+      "id": "collector",
+      "status": "Validated locally",
+      "priority": "P0",
+      "title": "Prioritized collector and shared API budget",
+      "summary": "Bound provider work and preserve known scores through failures.",
+      "acceptance": "Prioritize live fixtures, validate discovery completeness, count every attempt, persist cooldowns, reject stale owners and keep stale observation ages honest.",
+      "next": "Migrate remaining consumers and validate the shared production path.",
+      "evidence": "1f57fe8, 8468ca6, a9e2647 \u00b7 local database, synthetic provider and restart tests. No production cutover."
+    },
+    {
+      "id": "recorder",
+      "status": "Validated locally",
+      "priority": "P0",
+      "title": "Reliability recorder and read contract",
+      "summary": "Version-aware recovery with a durable measurement baseline.",
+      "acceptance": "Reject older snapshots without discarding valid mixed-age updates. Record missing checks rather than silently excluding them from reliability reports.",
+      "next": "Deploy independent monitoring with tested alert delivery.",
+      "evidence": "4d9b364, 64f7336 \u00b7 locally verified; not an installed continuous monitor."
+    },
+    {
+      "id": "tables",
+      "status": "Released",
+      "priority": "P1",
+      "title": "League tables on wider screens",
+      "summary": "Relevant table alongside Scores at 1200px and above.",
+      "acceptance": "Explicit selectable competition, retained date/Live/Following filters, honest stale state and no overflow. Mobile remains usable.",
+      "next": "Keep in desktop regression checks as the data path changes.",
+      "evidence": "Repository release record: September 14, 07867e6. Historical release evidence, not a fresh production check."
+    },
+    {
+      "id": "cl",
+      "status": "Released",
+      "priority": "P0",
+      "title": "Champions League stage and table fixes",
+      "summary": "Separate qualification from league points and main knockouts.",
+      "acceptance": "Correct stage labels, league-phase points/form, aggregate and penalty handling; preserve qualification history and never invent future draws.",
+      "next": "Replay these cases against the replacement stored feed before cutover.",
+      "evidence": "Repository release records: September 10 and September 14. Historical validation."
+    },
+    {
+      "id": "journeys",
+      "status": "Released",
+      "priority": "P1",
+      "title": "Find matches, follow teams and open details",
+      "summary": "Date and live filters, local follows and match-detail navigation.",
+      "acceptance": "Persist date/filter/follows, preserve detail focus and drafts during updates, and expose loading, missing coverage and retry states.",
+      "next": "Retest against LiveScore and FotMob after reliability work; preserve these journeys during migration.",
+      "evidence": "September 10/14 release records. Covers local follows, combined PL/CL scores, detail navigation and line-up recovery."
+    }
   ]
 }

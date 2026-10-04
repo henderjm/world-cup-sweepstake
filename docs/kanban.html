@@ -10,16 +10,16 @@
 @media(max-width:650px){#kickoff-kanban .lanes{grid-template-columns:1fr}}
 </style>
 <div id="kickoff-kanban">
-<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code bb977b8</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
+<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code d50aab4</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
 <div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">1</span></h3><article data-card="reliability">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Make busy matchdays reliable</summary>
-<dl><dt>Acceptance</dt><dd>Measure 99.95% usable scoreboards and 99.9% active observation freshness. Measure provider-visible change to screen separately: p95 ≤30s, p99 ≤60s. Warn after 45s. Missing checks and provider failures count against the user-facing result.</dd><dt>Next action</dt><dd>Install independent monitoring and prove alert delivery, then complete consumer migration and a priced cloud trial.</dd><dt>Evidence</dt><dd>Local foundation through bb977b8. This is the ongoing programme, not a claim that an unattended process is running.</dd></dl></details>
+<dl><dt>Acceptance</dt><dd>Measure 99.95% usable scoreboards and 99.9% active observation freshness. Measure provider-visible change to screen separately: p95 ≤30s, p99 ≤60s. Warn after 45s. Missing checks and provider failures count against the user-facing result.</dd><dt>Next action</dt><dd>Inventory every provider consumer; prepare migration and the priced cloud trial with independent monitoring.</dd><dt>Evidence</dt><dd>Local collector/read foundation bb977b8 and durable alert watcher d50aab4. This programme remains in progress; hourly automation is paused.</dd></dl></details>
 <p>Architecture work underway; production reliability remains unmeasured.</p></article></section><section aria-label="Up next"><h3>Up next <span class="text-muted">6</span></h3><article data-card="monitor">
 <span class="viz-badge">P0 · first</span>
-<details><summary class="cursor-interaction">Independent monitoring and alerts</summary>
-<dl><dt>Acceptance</dt><dd>Record both PL and CL, missing observations and worst-fixture freshness independently. Inject an incident and verify delivery to the configured alert receiver plus recovery. Preserve dated evidence.</dd><dt>Next action</dt><dd>Choose and package the monitor and receiver; prepare any spending or external setup for approval.</dd><dt>Evidence</dt><dd>Recorder exists in 64f7336; continuous operation and delivered alerts are unverified.</dd></dl></details>
-<p>Turn the local recorder into an operational monitor.</p></article><article data-card="consumers">
+<details><summary class="cursor-interaction">External monitoring and approved paging</summary>
+<dl><dt>Acceptance</dt><dd>Record both PL and CL, missing observations and worst-fixture freshness independently. Inject an incident and verify delivery to the configured alert receiver plus recovery. Preserve dated evidence.</dd><dt>Next action</dt><dd>Include independent hosting, watchdog, evidence retention and a downstream receiver adapter in the priced trial.</dd><dt>Evidence</dt><dd>d50aab4 proves synthetic loopback receipt through receiver refusal and process loss. No external receiver or human paging configured.</dd></dl></details>
+<p>Local watcher is verified; continuous hosting and real paging remain open.</p></article><article data-card="consumers">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Migrate every provider consumer</summary>
 <dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Map each direct provider call to its replacement and verification scenario.</dd><dt>Evidence</dt><dd>Shared admission tested locally in 8468ca6; account-wide production control is not established.</dd></dl></details>
@@ -43,11 +43,15 @@
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Approve spending and public cutover</summary>
 <dl><dt>Acceptance</dt><dd>User approves the concrete priced trial before resources or upgrades, and approves public deployment separately after busy-window reliability evidence and rollback are ready.</dd><dt>Next action</dt><dd>Complete the plan and validation evidence first. No user action needed now.</dd><dt>Evidence</dt><dd>Local engineering is not blocked by this gate.</dd></dl></details>
-<p>Future gate: not asking for approval yet.</p></article></section><section aria-label="Validated locally"><h3>Validated locally <span class="text-muted">3</span></h3><article data-card="storage">
+<p>Future gate: not asking for approval yet.</p></article></section><section aria-label="Validated locally"><h3>Validated locally <span class="text-muted">4</span></h3><article data-card="storage">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Partitioned storage and read service</summary>
 <dl><dt>Acceptance</dt><dd>Atomic, fenced publication; bounded coherent reads; corrupt data unavailable; scores and quota survive restart. Test mobile and desktop loading, empty, stale and recovery states.</dd><dt>Next action</dt><dd>Package for cloud trial and validate actual IAM, latency and capacity.</dd><dt>Evidence</dt><dd>bb977b8 · 42 service checks, 1,606 app tests and headless journeys passed. Synthetic 1,000-fixture warm unchanged read: 1,431-byte manifest. Not a cloud latency or browser payload result.</dd></dl></details>
-<p>Viewers read stored scores without provider access.</p></article><article data-card="collector">
+<p>Viewers read stored scores without provider access.</p></article><article data-card="alerts">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Durable incident and recovery alerts</summary>
+<dl><dt>Acceptance</dt><dd>Persist before send, require matching acknowledgment, deduplicate retries, preserve incident/recovery order and alert when the recorder stops.</dd><dt>Next action</dt><dd>Configure an approved external receiver and verify downstream human delivery, plus a watchdog outside the monitor failure domain.</dd><dt>Evidence</dt><dd>d50aab4 · 1,620 app tests passed; 30 focused checks passed after final checksum change. Real local processes verify stale data, receiver refusal, watcher restart and recorder loss. All three distinct events acknowledged locally within ten seconds of detection.</dd></dl></details>
+<p>Failed or missing checks reach a receiver even after watcher restart.</p></article><article data-card="collector">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Prioritized collector and shared API budget</summary>
 <dl><dt>Acceptance</dt><dd>Prioritize live fixtures, validate discovery completeness, count every attempt, persist cooldowns, reject stale owners and keep stale observation ages honest.</dd><dt>Next action</dt><dd>Migrate remaining consumers and validate the shared production path.</dd><dt>Evidence</dt><dd>1f57fe8, 8468ca6, a9e2647 · local database, synthetic provider and restart tests. No production cutover.</dd></dl></details>
