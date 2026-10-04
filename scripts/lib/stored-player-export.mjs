@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { storedOrigin, fetchStoredJson } from '../../worker/stored-read.js';
 import { previousSeasonsFor } from '../../src/fantasyPlayerTier.js';
 
-export async function exportStoredPlayerPool({ origin, competition, season, path, fetcher = fetch, now = Date.now }) {
+export async function exportStoredPlayerPool({ origin, competition, season, path, fetcher = fetch, now = Date.now, retainLastGood = false }) {
   if (competition !== 'PL' || !/^\d{4}$/.test(String(season))) throw Error('Unsupported stored player pool');
   const { body } = await fetchStoredJson(`${storedOrigin(origin)}/PL/players`, { fetcher, timeoutMs: 4000, maxBytes: 4 * 1024 * 1024 });
   const meta = body.coverage?.squads;
@@ -12,13 +12,18 @@ export async function exportStoredPlayerPool({ origin, competition, season, path
     && Number.isSafeInteger(value.collectorEpoch) && value.collectorEpoch > 0
     && Number.isSafeInteger(value.observedAt) && value.observedAt > 0 && value.observedAt <= now();
   if (body.source !== 'stored-score-service' || body.competition !== competition || body.season !== String(season)
-    || body.complete !== true || body.stale !== false || !validMeta(meta) || meta.state !== 'complete'
+    || body.complete !== true || body.stale !== false || !validMeta(meta) || !['complete', 'partial'].includes(meta.state)
     || now() - meta.observedAt > 2 * 86400000 || Date.parse(body.lastUpdated) !== meta.observedAt
     || !Array.isArray(body.players) || !body.players.length || body.players.length > 4000
     || body.players.some(player => !Number.isSafeInteger(player.id) || player.id < 1 || typeof player.name !== 'string'
       || !player.name.trim() || typeof player.team !== 'string' || !player.team.trim() || !['GK', 'DEF', 'MID', 'FWD'].includes(player.position))
     || new Set(body.players.map(player => player.id)).size !== body.players.length
     || !Array.isArray(body.degraded) || !body.xpStats || !body.priorSeasonStats) throw Error('Invalid or stale stored player pool');
+  const excluded = meta.excludedPlayerIds ?? [];
+  if (!Array.isArray(excluded) || excluded.length > 4000 || excluded.some(id => !Number.isSafeInteger(id) || id < 1)
+    || new Set(excluded).size !== excluded.length || body.players.some(player => excluded.includes(player.id))
+    || (meta.state === 'partial') !== Boolean(excluded.length) || body.degraded.includes('squads') !== Boolean(excluded.length))
+    throw Error('Invalid squad exclusion coverage');
   for (const year of previousSeasonsFor(season, 3)) {
     const entry = body.coverage.history?.[year];
     if (!entry || !['complete', 'missing', 'unavailable', 'stale', 'invalid'].includes(entry.state)
@@ -29,7 +34,14 @@ export async function exportStoredPlayerPool({ origin, competition, season, path
   try { old = JSON.parse(await readFile(path, 'utf8')); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (old && (old.season == null || String(old.season) === String(season))) {
-    if (Date.parse(old.lastUpdated) > meta.observedAt || body.degraded.length) throw Error('Export would regress player pool coverage or age');
+    if (body.degraded.length && retainLastGood && String(old.season) === String(season)
+      && old.complete === true && Array.isArray(old.players) && old.players.length
+      && Date.parse(old.lastUpdated) <= now() && now() - Date.parse(old.lastUpdated) <= 2 * 86400000)
+      return { retained: true, reason: 'Stored pool has incomplete coverage', degraded: body.degraded,
+        players: old.players.length, lastUpdated: old.lastUpdated };
+    if (Date.parse(old.lastUpdated) > meta.observedAt
+      || (body.degraded.length && now() - Date.parse(old.lastUpdated) <= 2 * 86400000))
+      throw Error('Export would regress player pool coverage or age');
     if (old.source === 'stored-score-service') {
       const pairs = [[old.coverage?.squads, meta], ...previousSeasonsFor(season, 3).map(year => [old.coverage?.history?.[year], body.coverage.history[year]])];
       if (pairs.some(([before, after]) => before && ['version', 'collectorEpoch', 'observedAt'].some(key => (before[key] ?? 0) > (after[key] ?? 0))))
