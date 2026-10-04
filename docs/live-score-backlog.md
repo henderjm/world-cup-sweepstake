@@ -1708,3 +1708,19 @@ concurrent initialization, reset refusal, and the actual CLI preview/identity/
 apply flow. Evidence: `/tmp/kickoff-initialization-suite.log`. No cloud writes or
 provider calls. Next: remote resource/runtime preflight, complete costs and an
 independent monitor/receiver proposal before deployment approval.
+
+### 4 October — read-only network preflight
+
+Added a target-explicit preview/check command for Ireland trial routing and
+placement. STS identity must match before any EC2 discovery. Checks owned VPC and
+subnets, distinct AZ IDs, available IPv4 capacity, explicit/main route resolution,
+active public default routes and attached internet gateways. No write action or
+provider call exists in the command. Missing network/runtime checks are retained
+in the output and deploymentReady remains false.
+
+Four focused tests passed, covering main-table inheritance, wrong-account early
+exit, same-zone/foreign/exhausted/pending/IPv6-only subnets, explicit private route
+override, blackhole/NAT routes, detached gateways and transitional associations.
+No approved target VPC/subnets have been supplied, so no live AWS preflight was
+run and no infrastructure assertion is made. Next: complete artifact/runtime
+preflight and monitoring/cost proposal before requesting deployment approval.

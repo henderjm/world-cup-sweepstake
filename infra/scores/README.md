@@ -90,3 +90,21 @@ actually stopped. That still requires runtime observation. It does not enable
 the services, alter existing usage, contact the provider or create infrastructure.
 For disposable tests only, SCORE_DYNAMODB_ENDPOINT must be loopback HTTP and
 synthetic credentials are used; a DynamoDB Local ARN cannot target AWS.
+
+## Read-only network preflight
+
+Save a target JSON containing the approved `accountId`, `vpcId` and two
+`subnetIds`. Run `node scripts/preflight-score-network.mjs TARGET.json` for a
+local preview; append `--check-aws` to use the current AWS CLI credentials for
+read-only STS/EC2 queries in Ireland. It rejects a different account before
+network discovery, checks VPC/subnet ownership and state, two distinct AZ IDs,
+at least two free IPv4 addresses per subnet, the effective route table (including
+implicit main-table association), and an active default route to an attached
+internet gateway. It performs no writes or provider calls.
+
+Retain the timestamped JSON with the change review. A pass is only a route and
+placement check: network ACLs, more-specific routes, DNS, task public-IP assignment
+and actual HTTPS/provider acceptance remain unverified. The report always says
+`deploymentReady: false`. Subnet public-IP defaults are not required because the
+task definition explicitly requests public addresses. Recheck near deployment;
+this report does not lock AWS configuration against later changes.
