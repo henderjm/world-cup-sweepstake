@@ -193,6 +193,27 @@
       "dailyLimit": 7500,
       "scoreReserve": 6000,
       "state": "supplementary work deferred; score requests remain admitted"
+    },
+    "postTakeoverPublication": {
+      "checkedAt": "2026-10-04T17:18:01.107Z",
+      "rows": [
+        {
+          "code": "PL",
+          "status": 200,
+          "updated": "2026-10-04T17:17:49.582Z",
+          "version": 5,
+          "epoch": 6,
+          "stale": false
+        },
+        {
+          "code": "CL",
+          "status": 200,
+          "updated": "2026-10-04T17:17:50.653Z",
+          "version": 5,
+          "epoch": 6,
+          "stale": false
+        }
+      ]
     }
   },
   "frontendSourceCommit": "c488c352fb85486f137ce097cf00b9ecaa466929",

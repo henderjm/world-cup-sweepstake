@@ -7,7 +7,9 @@ reads now use the Ireland AWS stack; frontend c488c35 is deployed, service
 artifacts are bb79bf0, and Worker version 8c76a000-759e-48ce-95ee-1241879d06f2
 uses the AWS origin with its provider key removed. Both ECS services target one
 task in separate AZs. The standby acquired epoch 6 within 15.916 seconds during
-a controlled stop; all twelve sampled public league reads succeeded.
+a controlled stop; all twelve sampled public league reads succeeded. Both
+leagues subsequently published version 5 under standby epoch 6 at 17:17:49/50 UTC,
+verified through the public Worker with stale=false.
 
 Release branch `codex/aws-cutover-release` and main contain the reviewed work.
 The primary checkout still contains unrelated mobile/native changes: preserve
