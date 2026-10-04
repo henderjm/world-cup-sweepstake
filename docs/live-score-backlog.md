@@ -1757,3 +1757,21 @@ provider subscription and listed ancillary charges remain excluded, so this is
 still not a full budget or spending request. All 21 records matched their saved
 official regional catalogs, generated report reproduced exactly, diff checks
 passed. No account access, resource changes or spending.
+
+### 4 October — monitoring operating proposal and hidden probe load
+
+Documented a candidate independent $6 DigitalOcean host plus $1.80 daily backup,
+Pushover recipient cost and actual-delivery gates in score-monitoring-trial.md.
+Official Healthchecks API minimum period/grace would delay its down threshold to
+two minutes after last ping, so it is rejected as the sole 60-second watchdog.
+Found current recorder windows are <=24h and watcher ledgers <=64MiB; simple
+process restart does not provide safe unattended continuation. Next engineering
+step is durable rollover/resume supervision and the receiver adapter, followed
+by a separately hosted fast watchdog decision. No service purchased or messaged.
+
+The proposed two-competition 15-second monitoring adds 345,600 reads/month,
+65.92 GiB response transfer at the existing payload assumption. Calculator now
+includes these requests separately from visitor traffic: AWS subtotals become
+$47.93/$70.01/$290.76 for 100k/1m/10m visitor requests. Monitor hosting, watchdog,
+paging and provider charges are still outside those AWS subtotals. Calculations
+reproduced and arithmetic checked; capacity and delivery remain unverified.

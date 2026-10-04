@@ -45,11 +45,14 @@ for CPU and memory alone.
 Run `node scripts/estimate-score-trial.mjs` to reproduce
 `costs/aws-trial-scenarios.json`. These are USD subtotals, not complete estimates:
 
-| Monthly stored API requests | Assumed response transfer | Modeled AWS subtotal |
+| Monthly visitor API requests | Assumed response transfer | Modeled AWS subtotal |
 | --- | --- | --- |
-| 100,000 | 19.07 GiB | $39.45 |
-| 1,000,000 | 190.73 GiB | $61.53 |
-| 10,000,000 | 1,907.35 GiB | $282.28 |
+| 100,000 | 84.99 GiB | $47.93 |
+| 1,000,000 | 256.65 GiB | $70.01 |
+| 10,000,000 | 1,973.27 GiB | $290.76 |
+
+Each scenario adds 345,600 PL/CL monitor reads (every 15 seconds for 30 days)
+to visitor requests. Transfer and AWS subtotals include those probes.
 
 Assumptions: 200 KiB transferred per response, 0.5 GiB Lambda memory, 150 ms per
 request, 30 DynamoDB read units per API request, and 10 million collector read
@@ -68,8 +71,8 @@ cost allowances; they are not installed monitoring. No NAT is in this design.
 
 Free-tier benefits are not assumed: the paid DynamoDB storage tier and first
 paid outbound-transfer rate apply from the first byte. These are conservative
-scenario assumptions, not an account bill forecast. At ten million requests,
-response transfer contributes $171.66 of the $282.28 modeled AWS subtotal; two
+scenario assumptions, not an account bill forecast. At ten million visitor requests plus monitoring,
+response transfer contributes $177.59 of the $290.76 modeled AWS subtotal; two
 public IPv4 addresses contribute $7.30/month. Response compression and actual
 payload sizes must be measured before reducing that allowance.
 
@@ -134,3 +137,8 @@ Infrastructure draft: `../infra/scores/trial.json` now declares the regional
 resources and roles with collectors defaulting off. Schema and local policy
 checks passed; cloud IAM, capacity and failover remain unverified. See the
 adjacent infrastructure README for inputs and remaining approval gates.
+
+See `score-monitoring-trial.md` for the independent host/receiver proposal and
+why a two-minute heartbeat fallback cannot satisfy the 60-second alert target.
+The candidate host and daily backup add $7.80/month, but fast watchdog and actual
+receiver integration remain unresolved, so this is not a complete total.

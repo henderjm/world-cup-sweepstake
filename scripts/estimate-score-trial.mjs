@@ -15,10 +15,13 @@ const assumptions = {
   collectorLogsGiB: 1, readerLogKiBPerRequest: 1, logRetentionDays: 14,
   standardAlarms: 4, customMetrics: 4, secrets: 1, secretReads: 1000,
   artifactWrites: 100, artifactReads: 1000,
+  monitorDays: 30, monitorCompetitions: 2, monitorIntervalSeconds: 15,
 
 };
-const scenarios = [100000, 1000000, 10000000].map(requests => {
+const scenarios = [100000, 1000000, 10000000].map(visitorRequests => {
   const a = assumptions;
+  const monitorRequests = a.monitorDays * 86400 * a.monitorCompetitions / a.monitorIntervalSeconds;
+  const requests = visitorRequests + monitorRequests;
   const responseGiB = requests * a.responseKiB / 1024 / 1024;
   const logGiB = a.collectorLogsGiB + requests * a.readerLogKiBPerRequest / 1024 / 1024;
   const costs = {
@@ -36,7 +39,7 @@ const scenarios = [100000, 1000000, 10000000].map(requests => {
     imageStorage: a.imageGiB * rate('AmazonECR', 'EU-TimedStorage-ByteHrs'),
     artifacts: a.artifactGiB * rate('AmazonS3', 'EU-TimedStorage-ByteHrs') + a.artifactWrites * rate('AmazonS3', 'EU-Requests-Tier1') + a.artifactReads * rate('AmazonS3', 'EU-Requests-Tier2'),
   };
-  return { requests, responseGiB: round(responseGiB), logGiB: round(logGiB),
+  return { visitorRequests, monitorRequests, requests, responseGiB: round(responseGiB), logGiB: round(logGiB),
     subtotalUsd: round(Object.values(costs).reduce((sum, value) => sum + value, 0)),
     componentsUsd: Object.fromEntries(Object.entries(costs).map(([key, value]) => [key, round(value)])) };
 });
@@ -48,5 +51,6 @@ console.log(JSON.stringify({ rateDate: snapshot.checked, region: snapshot.region
     'Paid storage/transfer tiers are applied from the first byte; no account-wide free allowances assumed.',
     'Log storage conservatively assumes no compression and 14/30 month retention.',
     'Metrics/alarms are cost allowances, not installed monitoring.',
+    'Visitor scenarios include an additional 345,600 monthly PL/CL monitor reads; browser journeys and watchdog calls are extra.',
     'All quantities are scenario assumptions, not measured production usage.'],
   status: 'Scenario subtotal only; not a total budget, bill forecast or spending approval. No free-tier or volume discounts applied.' }, null, 2));
