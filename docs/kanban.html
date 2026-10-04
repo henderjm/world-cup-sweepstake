@@ -10,7 +10,7 @@
 @media(max-width:650px){#kickoff-kanban .lanes{grid-template-columns:1fr}}
 </style>
 <div id="kickoff-kanban">
-<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code 8793cf6</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
+<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code f7341bd</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
 <div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">2</span></h3><article data-card="reliability">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Make busy matchdays reliable</summary>
@@ -18,7 +18,7 @@
 <p>Architecture work underway; production reliability remains unmeasured.</p></article><article data-card="consumers">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Migrate every provider consumer</summary>
-<dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Serve stored match detail with per-section degraded states; migrate Worker detail, settlement and notifications, then replay mobile and desktop journeys headlessly.</dd><dt>Evidence</dt><dd>8793cf6 connects single-request detail jobs to the supplementary budget. 54 service checks and six final collector checks passed, including score preemption, quota reserve, partial responses and takeover. Worker detail consumers remain on the old path; production unchanged.</dd></dl></details>
+<dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Add the bounded Worker stored-detail client, migrate public and background detail readers, then verify mobile and desktop journeys headlessly.</dd><dt>Evidence</dt><dd>f7341bd adds the stored match-detail API with independent freshness, null statistics and settlement-guard checks. All 63 service tests passed, including real local HTTP. Collector jobs share the budget; Worker detail consumers remain on the old path. Not deployed.</dd></dl></details>
 <p>Prevent details, stats and background jobs competing with scores.</p></article></section><section aria-label="Up next"><h3>Up next <span class="text-muted">5</span></h3><article data-card="monitor">
 <span class="viz-badge">P0 · first</span>
 <details><summary class="cursor-interaction">External monitoring and approved paging</summary>

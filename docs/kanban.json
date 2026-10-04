@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-04",
-  "revision": "8793cf6",
+  "revision": "f7341bd",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -39,8 +39,8 @@
       "title": "Migrate every provider consumer",
       "summary": "Prevent details, stats and background jobs competing with scores.",
       "acceptance": "Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.",
-      "next": "Serve stored match detail with per-section degraded states; migrate Worker detail, settlement and notifications, then replay mobile and desktop journeys headlessly.",
-      "evidence": "8793cf6 connects single-request detail jobs to the supplementary budget. 54 service checks and six final collector checks passed, including score preemption, quota reserve, partial responses and takeover. Worker detail consumers remain on the old path; production unchanged."
+      "next": "Add the bounded Worker stored-detail client, migrate public and background detail readers, then verify mobile and desktop journeys headlessly.",
+      "evidence": "f7341bd adds the stored match-detail API with independent freshness, null statistics and settlement-guard checks. All 63 service tests passed, including real local HTTP. Collector jobs share the budget; Worker detail consumers remain on the old path. Not deployed."
     },
     {
       "id": "cloud",
