@@ -1,0 +1,162 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Dedicated Kickoff Draft score artifacts and one-time credential transfer. Approved 4 October 2026.",
+  "Rules": {
+    "SelectedAccount": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Equals": [
+              {
+                "Ref": "AWS::AccountId"
+              },
+              "134471064301"
+            ]
+          },
+          "AssertDescription": "Selected AWS account only"
+        }
+      ]
+    },
+    "Ireland": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Equals": [
+              {
+                "Ref": "AWS::Region"
+              },
+              "eu-west-1"
+            ]
+          },
+          "AssertDescription": "Ireland only"
+        }
+      ]
+    }
+  },
+  "Resources": {
+    "Images": {
+      "Type": "AWS::ECR::Repository",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "RepositoryName": "kickoff-draft-scores",
+        "ImageTagMutability": "IMMUTABLE",
+        "ImageScanningConfiguration": {
+          "ScanOnPush": true
+        }
+      }
+    },
+    "Artifacts": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketName": "kickoff-draft-scores-134471064301-eu-west-1",
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        }
+      }
+    },
+    "ProviderKey": {
+      "Type": "AWS::SecretsManager::Secret",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Name": "kickoff-draft/api-football-key",
+        "Description": "Existing Kickoff Draft provider credential; transferred through scoped GitHub OIDC."
+      }
+    },
+    "CredentialTransfer": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "kickoff-draft-credential-transfer",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Federated": "arn:aws:iam::134471064301:oidc-provider/token.actions.githubusercontent.com"
+              },
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Condition": {
+                "StringEquals": {
+                  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+                  "token.actions.githubusercontent.com:sub": "repo:henderjm/world-cup-sweepstake:ref:refs/heads/codex/aws-credential-transfer"
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "OnlyTransferProviderKey",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "secretsmanager:PutSecretValue",
+                  "Resource": {
+                    "Ref": "ProviderKey"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "ImageRepositoryArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Images",
+          "Arn"
+        ]
+      }
+    },
+    "ImageRepositoryUri": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Images",
+          "RepositoryUri"
+        ]
+      }
+    },
+    "ArtifactBucket": {
+      "Value": {
+        "Ref": "Artifacts"
+      }
+    },
+    "ProviderSecretArn": {
+      "Value": {
+        "Ref": "ProviderKey"
+      }
+    },
+    "TransferRoleArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "CredentialTransfer",
+          "Arn"
+        ]
+      }
+    }
+  }
+}

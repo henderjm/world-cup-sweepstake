@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-04",
+  "status": "provisioning-collectors-disabled",
+  "account": "134471064301",
+  "region": "eu-west-1",
+  "bootstrapStack": "kickoff-draft-score-artifacts",
+  "serviceStack": "kickoff-draft-scores",
+  "sourceCommit": "2b9f362ce79c9e7623364d496102c1cc33bebfeb",
+  "image": "134471064301.dkr.ecr.eu-west-1.amazonaws.com/kickoff-draft-scores@sha256:2eb9496e51e05b88322abd848c12e763cf4400feb64000aba2380d711208da0a",
+  "reader": {
+    "bucket": "kickoff-draft-scores-134471064301-eu-west-1",
+    "key": "releases/2b9f362/reader.zip",
+    "version": "5z01TysviyWWHkU1N1oSS_l2ScrpR_6c",
+    "sha256": "1f822a81c5676d6bfe3c43f1a0cc64830755acd4d5a577f3d858c37f2cbd3c37"
+  },
+  "previousWorker": {
+    "id": "ddbc7f99-b470-4889-a27a-5051e084e51b",
+    "source": "wrangler",
+    "strategy": "percentage",
+    "author_email": "mark.hender@zellor.com",
+    "annotations": {
+      "workers/triggered_by": "deployment"
+    },
+    "versions": [
+      {
+        "version_id": "a0860be8-13ad-4fd9-a05f-f63fd650582e",
+        "percentage": 100
+      }
+    ],
+    "created_on": "2026-09-19T18:24:39.846171Z"
+  },
+  "workflowStatesBefore": {
+    "pages.yml": "active",
+    "live-detail-feeder.yml": "active",
+    "deploy-worker.yml": "active"
+  },
+  "sourceVariableBefore": null,
+  "providerCredential": "Transfer not performed; specific authorization requested after automatic review rejected workflow push.",
+  "networkPreflight": {
+    "accountId": "134471064301",
+    "vpcId": "vpc-040315a7fab57c7d5",
+    "subnetIds": [
+      "subnet-06066d59d42e0c22f",
+      "subnet-0fd40e3a0f50e2076"
+    ],
+    "region": "eu-west-1",
+    "checkedAt": "2026-10-04T16:26:00.432Z",
+    "checks": "account, VPC, subnet placement and default routes",
+    "routes": [
+      {
+        "subnetId": "subnet-06066d59d42e0c22f",
+        "availabilityZoneId": "euw1-az1",
+        "availableIpv4": 250,
+        "routeTableId": "rtb-05f177d67ed613167",
+        "gatewayId": "igw-0be4fead42529f46d"
+      },
+      {
+        "subnetId": "subnet-0fd40e3a0f50e2076",
+        "availabilityZoneId": "euw1-az2",
+        "availableIpv4": 251,
+        "routeTableId": "rtb-05f177d67ed613167",
+        "gatewayId": "igw-0be4fead42529f46d"
+      }
+    ],
+    "remaining": [
+      "Network ACLs and more-specific routes",
+      "DNS and actual HTTPS egress",
+      "Public-IP assignment on task ENIs",
+      "Artifact identity, runtime IAM, old-consumer shutdown and provider acceptance"
+    ],
+    "deploymentReady": false
+  },
+  "approval": "Owner explicitly approved AWS provisioning and cutover, modeled $65-$87/month for 100k-1m visitor reads, and brief score-data interruption. No provider upgrade or external monitoring purchase approved."
+}
