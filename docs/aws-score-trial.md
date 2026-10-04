@@ -34,7 +34,7 @@ Resolve this network choice in the infrastructure plan before approval.
 
 ## Verified price inputs and unmeasured quantities
 
-`costs/aws-ireland-rates.json` preserves seven official AWS Ireland rate records,
+`costs/aws-ireland-rates.json` preserves 21 official AWS Ireland rate records,
 SKUs, catalog versions and source URLs, retrieved on 4 October 2026 using the
 [public price-list mechanism](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/using-the-aws-price-list-bulk-api-fetching-price-list-files-manually.html).
 The [Fargate pricing page](https://aws.amazon.com/fargate/pricing/) describes CPU,
@@ -45,11 +45,11 @@ for CPU and memory alone.
 Run `node scripts/estimate-score-trial.mjs` to reproduce
 `costs/aws-trial-scenarios.json`. These are USD subtotals, not complete estimates:
 
-| Monthly stored API requests | Assumed response transfer | Compute/API/database subtotal |
+| Monthly stored API requests | Assumed response transfer | Modeled AWS subtotal |
 | --- | --- | --- |
-| 100,000 | 19.07 GiB | $27.17 |
-| 1,000,000 | 190.73 GiB | $33.29 |
-| 10,000,000 | 1,907.35 GiB | $94.54 |
+| 100,000 | 19.07 GiB | $39.45 |
+| 1,000,000 | 190.73 GiB | $61.53 |
+| 10,000,000 | 1,907.35 GiB | $282.28 |
 
 Assumptions: 200 KiB transferred per response, 0.5 GiB Lambda memory, 150 ms per
 request, 30 DynamoDB read units per API request, and 10 million collector read
@@ -59,12 +59,24 @@ ordinary writes; the assumed write-unit count must already include that effect.
 Cold partitions, concurrent Lambda instances, collector loop frequency and
 changed-part sizes must be measured before replacing these placeholders.
 
-Excluded costs remain explicit in the generated report: internet transfer,
-public IPv4/NAT, logs/metrics/alarms, independent monitor/paging, secrets, image
-registry/build storage, table storage/backups, provider subscription, tax/support
-and existing Cloudflare costs. No free-tier credits or discounts are assumed.
-At the larger scenario, network transfer can materially change the result. Do
-not quote the subtotal as the monthly budget or approve a trial from it.
+The model now includes outbound response transfer, two public IPv4 addresses,
+1 GiB each of table/PITR, ECR and S3 storage, one secret with 1,000 reads,
+100 artifact writes/1,000 reads, and allowances for four custom metrics and four
+standard alarms. Log assumptions are 1 GiB/month collector output plus 1 KiB/API
+request, retained for 14 days without assuming compression. Those alarms are
+cost allowances; they are not installed monitoring. No NAT is in this design.
+
+Free-tier benefits are not assumed: the paid DynamoDB storage tier and first
+paid outbound-transfer rate apply from the first byte. These are conservative
+scenario assumptions, not an account bill forecast. At ten million requests,
+response transfer contributes $171.66 of the $282.28 modeled AWS subtotal; two
+public IPv4 addresses contribute $7.30/month. Response compression and actual
+payload sizes must be measured before reducing that allowance.
+
+Still excluded: independent monitor hosting/watchdog/paging, provider subscription,
+other network transfer, build compute, log queries and restore operations,
+tax/support and existing Cloudflare charges. The operational proposal and full
+budget are therefore still incomplete; no approval is requested from this subtotal.
 
 ## Cutover sequence to prove in staging
 

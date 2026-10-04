@@ -49,8 +49,8 @@
       "title": "Package and price the AWS trial",
       "summary": "Artifacts and infrastructure are prepared locally; costs and operational gates remain incomplete.",
       "acceptance": "Produce infrastructure, monthly cost assumptions, read-only IAM, throttling, egress constraints and rollback. Exercise multi-zone takeover and cold/warm traffic after approval.",
-      "next": "Complete network/storage/monitoring costs, artifact identity and runtime preflight, and the approved-monitor proposal before requesting trial approval.",
-      "evidence": "63aa3d7: official Ireland rate inputs. 7454850: pinned Linux image and checksummed reader ZIP. 920fc3f: unapplied template with collectors off; lint passed. Full budget, actual IAM and cloud behavior remain unverified."
+      "next": "Finish independent monitor/watchdog/receiver proposal and pricing, provider allowance and remaining artifact/runtime checks before approval.",
+      "evidence": "21 official Ireland rate records now cover network, IPs, storage, backups, logs and service costs. Modeled AWS subtotals: $39.45/$61.53/$282.28 at 100k/1m/10m reads. Independent monitoring/paging and provider costs remain excluded. Infrastructure and artifacts are locally verified; no resources created."
     },
     {
       "id": "latency",

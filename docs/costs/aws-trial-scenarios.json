@@ -11,55 +11,97 @@
     "dynamoReadUnitsPerApiRequest": 30,
     "collectorReadUnits": 10000000,
     "collectorWriteUnits": 10000000,
-    "responseKiB": 200
+    "responseKiB": 200,
+    "tableGiB": 1,
+    "imageGiB": 1,
+    "artifactGiB": 1,
+    "collectorLogsGiB": 1,
+    "readerLogKiBPerRequest": 1,
+    "logRetentionDays": 14,
+    "standardAlarms": 4,
+    "customMetrics": 4,
+    "secrets": 1,
+    "secretReads": 1000,
+    "artifactWrites": 100,
+    "artifactReads": 1000
   },
   "scenarios": [
     {
       "requests": 100000,
       "responseGiB": 19.07,
-      "subtotalUsd": 27.17,
+      "logGiB": 1.1,
+      "subtotalUsd": 39.45,
       "componentsUsd": {
         "collectorCompute": 18.02,
         "collectorDatabase": 8.47,
         "readerDatabase": 0.42,
         "lambda": 0.15,
-        "httpApi": 0.11
+        "httpApi": 0.11,
+        "internetResponseTransfer": 1.72,
+        "publicIpv4": 7.3,
+        "tableStorageAndPitr": 0.5,
+        "logs": 0.64,
+        "metricsAndAlarms": 1.6,
+        "secrets": 0.41,
+        "imageStorage": 0.1,
+        "artifacts": 0.02
       }
     },
     {
       "requests": 1000000,
       "responseGiB": 190.73,
-      "subtotalUsd": 33.29,
+      "logGiB": 1.95,
+      "subtotalUsd": 61.53,
       "componentsUsd": {
         "collectorCompute": 18.02,
         "collectorDatabase": 8.47,
         "readerDatabase": 4.25,
         "lambda": 1.45,
-        "httpApi": 1.11
+        "httpApi": 1.11,
+        "internetResponseTransfer": 17.17,
+        "publicIpv4": 7.3,
+        "tableStorageAndPitr": 0.5,
+        "logs": 1.14,
+        "metricsAndAlarms": 1.6,
+        "secrets": 0.41,
+        "imageStorage": 0.1,
+        "artifacts": 0.02
       }
     },
     {
       "requests": 10000000,
       "responseGiB": 1907.35,
-      "subtotalUsd": 94.54,
+      "logGiB": 10.54,
+      "subtotalUsd": 282.28,
       "componentsUsd": {
         "collectorCompute": 18.02,
         "collectorDatabase": 8.47,
         "readerDatabase": 42.45,
         "lambda": 14.5,
-        "httpApi": 11.1
+        "httpApi": 11.1,
+        "internetResponseTransfer": 171.66,
+        "publicIpv4": 7.3,
+        "tableStorageAndPitr": 0.5,
+        "logs": 6.15,
+        "metricsAndAlarms": 1.6,
+        "secrets": 0.41,
+        "imageStorage": 0.1,
+        "artifacts": 0.02
       }
     }
   ],
   "excluded": [
-    "network transfer",
-    "public IPv4 or NAT",
-    "logs, metrics and alarms",
-    "independent monitor and paging",
-    "Secrets Manager, ECR and build artifacts",
-    "DynamoDB storage and backups",
+    "independent monitor hosting, watchdog and paging",
     "data subscription",
+    "other network transfer, build compute, log queries and restore operations",
     "tax, support and existing Cloudflare charges"
+  ],
+  "notes": [
+    "Public-subnet design uses no NAT gateway.",
+    "Paid storage/transfer tiers are applied from the first byte; no account-wide free allowances assumed.",
+    "Log storage conservatively assumes no compression and 14/30 month retention.",
+    "Metrics/alarms are cost allowances, not installed monitoring.",
+    "All quantities are scenario assumptions, not measured production usage."
   ],
   "status": "Scenario subtotal only; not a total budget, bill forecast or spending approval. No free-tier or volume discounts applied."
 }

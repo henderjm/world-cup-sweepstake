@@ -1741,3 +1741,19 @@ delayed-write, budget, collector and CLI checks passed. Evidence:
 `/tmp/kickoff-lease-suite.log` and `/tmp/kickoff-lease-measurement.log` (the latter
 separates workload counters from later takeover checks). This is a synthetic
 operation count, not a production cost or latency measurement. No deployment.
+
+### 4 October — price omitted AWS operating costs
+
+Extended the regional snapshot from seven to 21 official SKU/rate records,
+including public IPv4, internet response transfer, log ingestion/retention,
+metric/alarm allowances, table storage/PITR, ECR/S3 and Secrets Manager. Calculator
+now keys rates by service plus usage: several AWS services reuse the same storage
+usage name. Paid tiers apply without assuming account-wide free allowances.
+
+Expanded scenario subtotals: $39.45/$61.53/$282.28 at 100k/1m/10m API requests.
+Largest scenario includes $171.66 response transfer; all include $7.30 IPv4.
+Quantities remain explicit assumptions. Independent monitor/watchdog/paging,
+provider subscription and listed ancillary charges remain excluded, so this is
+still not a full budget or spending request. All 21 records matched their saved
+official regional catalogs, generated report reproduced exactly, diff checks
+passed. No account access, resource changes or spending.
