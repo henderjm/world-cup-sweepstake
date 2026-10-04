@@ -19,7 +19,7 @@ test("detail reads coalesce without retaining a polling TTL or leaking provider 
   let count = 0;
   const reader = createStoredDetailReader({ now: () => at, fetcher: async (url, options) => {
     count++; assert.equal(url, origin + "/CL/match/900001"); assert.deepEqual(options.headers, { Accept: "application/json" });
-    assert.equal(options.redirect, "error"); return Response.json(detail());
+    assert.equal(options.redirect, "manual"); return Response.json(detail());
   } });
   const [a, b] = await Promise.all([reader(comp, 900001, origin), reader(comp, 900001, origin)]);
   assert.equal(count, 1); a.home.lineup[0].id = 99; assert.equal(b.home.lineup[0].id, 1);

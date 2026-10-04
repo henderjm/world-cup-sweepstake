@@ -19,7 +19,7 @@ test("stored reads preserve metadata, accept validated empty seasons and never t
   const reader = createStoredScoreReader({ now: () => at, fetcher: async (url, options) => {
     assert.equal(url, origin + "/PL/live");
     assert.deepEqual(options.headers, { Accept: "application/json" });
-    assert.equal(options.redirect, "error");
+    assert.equal(options.redirect, "manual");
     return Response.json(feed({ matches: [] }));
   } });
   const body = await reader(comp, origin);
@@ -144,4 +144,16 @@ test("missing configuration and invalid stored origins cannot trigger a direct-p
   assert.equal((await request({})).status, 500);
   assert.equal((await request({ SCORE_READ_ORIGIN: "http://untrusted.invalid", API_FOOTBALL_KEY: "must-not-fallback" })).status, 502);
   assert.equal(calls, 0);
+});
+
+test("stored readers reject redirects without following them", async t => {
+  let followed = 0;
+  const server = createServer((req, res) => {
+    if (req.url === "/PL/live") { res.writeHead(302, { Location: "/elsewhere" }); res.end(); }
+    else { followed++; res.end(JSON.stringify(feed())); }
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  await assert.rejects(createStoredScoreReader()(comp, `http://127.0.0.1:${server.address().port}`), /unavailable/);
+  assert.equal(followed, 0);
 });
