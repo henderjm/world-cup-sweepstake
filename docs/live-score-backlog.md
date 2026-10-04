@@ -1876,3 +1876,21 @@ to correct all provider ranking discrepancies observed in the competitor review.
 
 30 focused tests and headless 390/1440px live-table journeys passed. No deployment.
 Source: https://www.uefa.com/uefachampionsleague/news/0291-1bd88ae04870-e1e038c319e3-1000--champions-league-league-phase-standings-how-teams-level-on-/
+
+## October 4 — integrated regression and refreshed trial artifacts
+
+All 1,678 root tests pass in the current worktree (which includes separate local
+mobile changes; this is not an exact-commit frontend release claim). Repackaged
+AWS service artifacts from committed `2b9f362ce79c9e7623364d496102c1cc33bebfeb`.
+All 80 service tests pass in its Linux/amd64 Node 24 image, non-root/read-only,
+with capabilities dropped and disposable DynamoDB Local. Test files and the
+fantasy-scoring consumer were mounted separately and match the source revision.
+The initial harness omitted that test-only consumer and was corrected; it was
+not added to the production image. Extracted Lambda ZIP loads and returns an
+unknown-route 404 without a database call. Temporary database container stopped.
+
+Hashes, source manifest and evidence limits are retained in
+`live-score-evidence/2026-10-04-release-2b9f362.json`. This supersedes the older
+7454850 service package for the candidate trial. Local image ID is not an ECR
+manifest digest; image and ZIP remain unuploaded. AWS runtime IAM/egress, external
+monitoring/paging, full operating costs and approved deployment are still gates.

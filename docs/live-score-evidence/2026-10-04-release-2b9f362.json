@@ -1,0 +1,78 @@
+{
+  "sourceCommit": "2b9f362ce79c9e7623364d496102c1cc33bebfeb",
+  "packagerNode": "v24.19.0",
+  "collectorImage": {
+    "localTag": "kickoff-score-trial:2b9f362",
+    "localImageId": "sha256:2eb9496e51e05b88322abd848c12e763cf4400feb64000aba2380d711208da0a",
+    "architecture": "amd64",
+    "user": "node",
+    "runtimeNode": "24.21.0",
+    "registryDigest": null,
+    "pushed": false
+  },
+  "readerZipSha256": "1f822a81c5676d6bfe3c43f1a0cc64830755acd4d5a577f3d858c37f2cbd3c37",
+  "localArtifactDirectory": "/tmp/kickoff-score-release-2b9f362",
+  "checks": {
+    "applicationTests": {
+      "passed": 1678,
+      "scope": "current worktree, including separate uncommitted mobile changes"
+    },
+    "serviceImageTests": {
+      "passed": 80,
+      "readOnly": true,
+      "capabilitiesDropped": true,
+      "database": "DynamoDB Local",
+      "testOnlyMounts": [
+        "services/scores/test",
+        "src/fantasyScoring.js"
+      ],
+      "testMountsMatchCommit": true
+    },
+    "extractedZip": "module loads; unknown route 404; no database call"
+  },
+  "deployed": false,
+  "limitations": [
+    "Local image ID is not an ECR manifest digest",
+    "No actual AWS runtime IAM or task egress verification",
+    "No busy-matchday reliability measurement",
+    "Test-only fantasy scoring module initially missing from harness; mounted separately before successful rerun"
+  ],
+  "sources": {
+    "services/scores/Dockerfile": "d79a6db8c684bc3e5ace5d48e26047684a2b6e1aba487ea6d7518b014156b194",
+    "services/scores/budget.mjs": "6f11781c33fac826463f2ca98a5b8ead89f94bf0f2afccfd1ce5bf7a9cb9359c",
+    "services/scores/collector.mjs": "55199595350aae602a8bc46d5cf08af4ebab14b9adfde1d0a56c9d14f1d754c4",
+    "services/scores/config.mjs": "0f8cd5299f178eee2e5dc581503412f0e2af787041a3f2cbcb5a6b51a8c6fd78",
+    "services/scores/detail-collector.mjs": "e059f4c266910a9a67a9b5b6a02ae484067f6b9f4135cd37f53fc9a8f9420cae",
+    "services/scores/detail-read.mjs": "da5e250a776b485d86b3a699318cd75dbf65149091958e666e3876c6d4855135",
+    "services/scores/details.mjs": "4f4e5b183bd45b18985dfacec64ebfcfad53d0db5635ef52a1338bcebca543bb",
+    "services/scores/dynamodb.mjs": "1b2cd987b82d88cfbe0443d1eb05d064bc1ab4b56667ec15d5bea09840dbfd4b",
+    "services/scores/fantasy-collector.mjs": "c5813793b0595d7dc796382cebbeccc8a315d7d35c619b257f7add6ad24fd9eb",
+    "services/scores/fantasy-data.mjs": "70fe7d5157823d044c3db2a6646c55a439dad492fb7b35dd969e9c94f0e358f1",
+    "services/scores/fantasy-read.mjs": "683e5e94b920960b92ad9519af6b70a6ca87ae3eefd152d10ebb44d5bca6f2d8",
+    "services/scores/fantasy-store.mjs": "db702c4f0201bc0780182524b130252c9db4b3f634704a3e62e5be91fe6047f2",
+    "services/scores/initialize-budget.mjs": "e5ae3f7671913a43dd549b742b1799be52cb1b1123250edf378af08fd9ce84ec",
+    "services/scores/lambda.mjs": "3e8e1ec91eca39d878c348bcb4b44dd22110cad4cd5df7bab0652b55bd059006",
+    "services/scores/layout.mjs": "52785431f6557b7a783838fb49d6ea369f34403e580bfba63ed3aa6cacd63aec",
+    "services/scores/package-lock.json": "326f26f201250ca6c9850b306151ef3f21f29e380599eb26b2f5c876eb36fe5e",
+    "services/scores/package.json": "b9f3775ac2b54c8280bd3c5b4efd6a58bce7edbd278839d893285065bf9880d8",
+    "services/scores/provider.mjs": "882d39a4220890ad59b6519bbab404f8b474163dd0c4bab612d5facd6ff333dc",
+    "services/scores/read-handler.mjs": "e97dba3a4c68ea7b6216cec6b22d64743c5b696ba1cbf7f12135f303e180c752",
+    "services/scores/run-collector.mjs": "d8b59bf1d64fccf3e49bf9951f15a766e2494d4b77699f333d439e59c5ffd3ee",
+    "services/scores/run-initialize-budget.mjs": "5dca5f812ce934e414729c68a585b19736d38f3862107f3a81f286dbc7f5c29c",
+    "services/scores/run-read-api.mjs": "7873fa177c0049860893c45a52d519b3fefb8cd94433588727012b596d81e909",
+    "services/scores/snapshots.mjs": "fcc34d8843db16b77303883bc4467ad63d65ac2c753867fb1fa034a72a1be245",
+    "src/apiFootballPayload.js": "cdb6592c8dbfe57f39b81f0467ffec1ebaed0325abb32a265e8470fd0aa318b8",
+    "src/apiQuota.js": "e468cff149ee2a6f1aa7b70248aa5144bcdf145b42fb9424e65f053c5f008c40",
+    "src/competitions.js": "97dd30fb366e87a64c5151a71065876c29ac976f8e2f35805de8651d9f32b00c",
+    "src/domain.js": "ecfd562ae40016356a4d046c70d8e15c187107b70335c0e339ecebd4924607bd",
+    "src/fantasy.js": "af3b32e18f28230c53f65738313977b3d081c60c4f3c90af0921bcc0e157e6af",
+    "src/fantasyExpectedPoints.js": "36daba443a246725f03cdcb28ee2bc1826207c79410dea56e3439bf4c7e42827",
+    "src/fantasyHistoricalXp.js": "5e7c4edb6eb89fbf1baa4e22822af21359a5ced9e8e92b2cbe7fb2c63971597a",
+    "src/fantasyPlayerTier.js": "9cac6abf03fc59f72d4e19824700558a8d2f5649b9fbc61b680138c9a5c61104",
+    "src/format.js": "9e9a42f86fc6ca485c4d8638d52755e15ec97f88a0bfa8f38f5a1119cecfcfad",
+    "src/mapApiFootball.js": "2fb5a73e3b3443574ae677833c5833b1a6a9c99ff97d7983e652276b3d238def",
+    "src/matchDetailCache.js": "b591ed5b6658dd7c17798a4b4f1cdd6f60f26aa7d9f7d3eabc0f6eec9d9dc35a",
+    "src/scoreSnapshot.js": "42c316abeb64868d67013b610830776c7602b5e708de892525022ef72409b05b",
+    "src/standingsRecovery.js": "cb2a0bb6c620089c1adcc37e7c047f6a8569ad92e34d4069053d947b875e5ba9"
+  }
+}
