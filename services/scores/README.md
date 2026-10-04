@@ -440,6 +440,18 @@ work or existing node_modules are copied. An existing destination is rejected.
 From that directory, run `node services/scores/run-collector.mjs` with the approved
 runtime configuration. The Lambda handler is `services/scores/lambda.handler`;
 its archive must preserve this directory structure, including the root package.json
-and installed service dependencies. This stages runnable files, not a container,
-Lambda upload, infrastructure plan or deployment. Container base-image pinning,
-artifact signing/upload and runtime/IAM validation remain required.
+and installed service dependencies. The packager also creates `artifacts/reader.zip` and its SHA-256 sidecar.
+The ZIP is not byte-reproducible because installed dependency timestamps vary;
+retain its checksum with the release manifest. Build the collector from this
+isolated directory, never the repository root:
+
+```sh
+docker build --platform linux/amd64 -f services/scores/Dockerfile -t YOUR_LOCAL_TAG .
+```
+
+The base Node 24 image is pinned by digest. The image runs as user `node` and
+supports a read-only filesystem; no inbound port is needed by the collector.
+Retain the built image digest, not just its mutable tag. The reader archive
+includes shared storage modules; IAM, not absence of code, must enforce read-only
+access. Signing/upload, infrastructure, IAM and real cloud validation remain
+required. Neither packaging command deploys or creates cloud resources.

@@ -1653,3 +1653,21 @@ test-only fantasyScoring helper were added separately to the temporary test copy
 The packaged Lambda entrypoint also loaded and rejected an unknown route without
 provider credentials. Reusing the output directory was rejected. Evidence:
 `/tmp/kickoff-package-tests.log`. No cloud/runtime capacity claim follows.
+
+### 4 October — runnable Linux image and reader archive
+
+`7454850` adds a digest-pinned Node 24 collector image recipe and checksummed
+reader ZIP. Built from that exact revision in an isolated directory. All 75
+service tests passed inside linux/amd64 Docker as non-root, read-only filesystem,
+all capabilities dropped and no-new-privileges; tests used disposable DynamoDB
+Local and synthetic provider traffic. Test sources and a test-only helper were
+mounted separately. The extracted ZIP loaded the actual Lambda entrypoint and
+returned 404 for an unknown route without provider credentials. This is not a
+Lambda runtime, IAM, capacity or availability-zone test.
+
+Local evidence: `/tmp/kickoff-image-tests.log`. Image manifest digest:
+`sha256:2798f07cec5f1d268c1bcf761060dc7833790f867f09ac43564d474c71333ac1`.
+Reader ZIP checksum:
+`29617bbbe0e4f9bb59592658911be527abf12fe5e71edb7fd49a994c244c5453`.
+Artifacts: `/tmp/kickoff-score-release-1004`; nothing uploaded/deployed. Next:
+infrastructure/IAM with denial tests, remaining costs and budget-safe runbook.
