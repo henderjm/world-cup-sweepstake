@@ -9,6 +9,10 @@ and locally verified, including headless UI states. Active/resting partitions an
 the read-service runtime now pass local sizing and consistency checks. Existing
 provider consumers, cloud capacity/IAM and operational monitoring still require work. No
 infrastructure provisioned, subscription changed or production traffic moved.
+The Worker shared `getLive` boundary now has a locally tested opt-in stored-read
+mode. `provider-consumer-migration.md` inventories direct and indirect callers,
+the remaining detail/player-data work and the cutover gates. The switch remains
+unset in production configuration; the whole Worker is not provider-free yet.
 Supersedes further incremental feeder work as the next major reliability investment.
 
 Reliability requirements: `live-score-reliability.md` defines the match-window

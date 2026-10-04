@@ -1,4 +1,5 @@
 import { nativeEndpoint, nativePushConfigured, sendNativePush } from "./native-push.js";
+import { createStoredScoreReader } from "./stored-scores.js";
 
 // Goon Squad data API (Cloudflare Worker).
 //
@@ -223,6 +224,7 @@ const PAPER_RUN_TTL = 90 * 24 * 60 * 60; // 90 days
 // failure was served as a never-changing 200 for the life of the isolate, which
 // suppressed the browser's own static fallback (see src/liveStale.js).
 const lastLive = new Map();
+const readStoredScores = createStoredScoreReader();
 
 // Per-match detail is 3 upstream requests; pacing between matches keeps a busy
 // multi-match minute-tick under the Ultra tier's ~7 req/sec ceiling instead of
@@ -608,7 +610,7 @@ export default {
           );
           return json({ error: "upstream unavailable" }, 502, cors);
         }
-        return json(data, 200, { ...cors, "Cache-Control": "public, max-age=15" });
+        return json(data, 200, { ...cors, "Cache-Control": env.SCORE_READ_ORIGIN ? "no-store" : "public, max-age=15" });
       }
 
       const detailRoute = url.pathname.match(/^\/match\/(\d{1,12})$/);
@@ -804,6 +806,8 @@ async function runCronPass(name, run) {
 const LIVE_FEED_STALE_GRACE_MS = 5 * 60 * 1000;
 
 async function getLive(comp, token, env = null) {
+  // A failed stored read must never revive a second provider collection path.
+  if (env?.SCORE_READ_ORIGIN) return readStoredScores(comp, env.SCORE_READ_ORIGIN);
   try {
     // A stale-served payload backdates the body's lastUpdated below, so the
     // "updated" chip can never say "just now" over a scoreline that is not.

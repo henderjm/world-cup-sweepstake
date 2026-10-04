@@ -75,3 +75,15 @@ in that service README) and `node scripts/qa/collector-server.mjs` on :8743, the
 run `collector.js` through the same headless runner. It uses the stored read API,
 real collector, budget, mapper and database with a synthetic local HTTP provider.
 Stop the QA server before its database so it can delete its owned test tables.
+
+## Stored score Worker migration
+
+Serve a committed frontend preview on `127.0.0.1:8742`, then run
+`node scripts/qa/stored-reader-server.mjs` in a separate terminal. Run
+`node scripts/qa/run-headless.mjs scripts/qa/stored-reader.js` with the installed
+Playwright module as described above. Start a fresh replay server for each run;
+its Worker memo is deliberately retained throughout a journey. Stop the owned
+server after the run. The harness blocks unexpected outbound requests and uses
+a synthetic stored-service response; it does not exercise DynamoDB. Local
+preview CORS is adapted in the browser route; unit tests separately verify the
+Worker's production-origin CORS response.

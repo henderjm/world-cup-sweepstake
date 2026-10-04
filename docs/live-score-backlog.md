@@ -1393,3 +1393,45 @@ The receiver acknowledgment proves receiver acceptance only. Human delivery,
 continuous hosting, real browser/version measurement and busy-window SLOs remain
 unverified. Keep monitoring setup open on the Kanban and record the local watcher
 as separately validated. The hourly task remains paused pending the user's answer.
+
+## October 4 — Worker score consumers migrate through one stored-read boundary
+
+Inventoried the four direct provider entry points and their indirect consumers
+in `docs/provider-consumer-migration.md`: the new collector, Worker, detail
+feeder and Go-backed static/player-pool scripts. Included release fallback
+refreshes, browser/monitor reads and scheduled/manual workflow entry points.
+This is checked source coverage, not a runtime census of the provider account.
+
+Added `worker/stored-scores.js` and an opt-in `SCORE_READ_ORIGIN` branch at the
+shared `getLive` boundary. All its Worker callers select that same source,
+including public scores and schedule reads used by fantasy, predictions,
+notifications, analysis and fixture validation. In stored mode a failure never
+revives direct provider reads or mixes in legacy/feeder state. Preserve bounded
+last-good snapshots separately by origin/competition/season with truthful age;
+the browser's existing stale cutoff still applies. No response memo TTL delays
+subsequent polls; concurrent reads coalesce. Reject malformed, oversized,
+regressing or incomplete snapshots while allowing newer downward corrections.
+Public responses use no-store in this mode. API keys are never forwarded to
+the read service. Production configuration was not changed.
+
+Validation: all 1,629 regression tests passed; the final nine focused checks
+passed after a linear-time fixture comparison and production CORS assertion.
+Headless replay through the actual Worker passed error/retry, empty, loading,
+stale retention and correction from 1–0 to 0–0, at 390px and 1440px without page
+errors or overflow. Five stored-service reads, zero provider calls. The replay
+initially exposed synthetic clock initialization and localhost/production CORS
+mismatches; fixed the harness, keeping production behavior unchanged. A malformed
+fixture test initially mutated shared test data; isolated its fixture objects.
+The committed frontend preview was reused after checking no committed frontend
+source changes since its recorded base. The new replay uses synthetic stored
+payloads; it does not repeat the earlier real DynamoDB collector integration.
+
+Remaining critical path: collect and persist supplementary lineups/events/player
+details through the shared budget, migrate Worker detail/settlement/notification
+consumers, then static exports and player history. The existing API key remains
+required for those unfinished consumers. Do not claim account-wide quota control
+or enable the opt-in publicly before priced infrastructure, approved deployment,
+runtime capacity checks and busy-window evidence. No spending, messaging,
+provider requests or public deployment occurred. Wrangler's dry-run bundle also
+passed using the already installed newer Node runtime (the default Node 20 is
+too old for the cached Wrangler); no runtime or package was installed.
