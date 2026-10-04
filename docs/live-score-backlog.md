@@ -1155,3 +1155,63 @@ approval, and validate cloud failure recovery before requesting public cutover.
 Independent match-window measurement and delivered alerts remain release gates.
 Current production nines remain unmeasured. No AWS resource, paid plan or public
 deployment was changed. Reproduction: `services/scores/README.md`.
+
+## October 4 — shared provider admission and bounded HTTP collection
+
+The previous goal turn made progress in `a9e2647`: real DynamoDB storage and
+restart/fencing checks. This continuation adds a persistent provider budget and
+HTTP client for the replacement service. The existing deployed Worker and GitHub
+consumers have not been redirected, so account-wide control in production is
+still an unmet cutover gate.
+
+`services/scores/budget.mjs` protects an explicit score reserve, enforces a hard
+daily ceiling, paces requests across second/minute boundaries and retains usage
+through takeover. Initialization requires verified current-day consumption and
+explicit limits; missing/corrupt storage cannot silently grant a fresh allowance.
+Each reservation commits under the collector lease before HTTP dispatch. Lost
+acknowledgements, timeouts and crashes consume the reservation. Admission and
+score publication now reuse the same transaction fencing code.
+
+`services/scores/provider.mjs` uses the direct API-Football origin, blocks
+redirects, limits streamed bodies to 8 MiB, and bounds headers/body collection
+to five seconds. It validates API error envelopes, including HTTP 200 quota
+refusals, and persists cooldown/backoff. Requests default to supplementary;
+essential score jobs must opt into the protected allowance. There are no hidden
+HTTP retries: each attempt needs a new reservation. Successful observation time
+is captured before database bookkeeping and remains separate from unknown
+provider event time.
+
+Evidence for this revision:
+- All 26 service checks pass: seven policy tests, nine existing real-database
+  storage checks and ten tests against both DynamoDB Local and a synthetic HTTP
+  server. Twelve competing callers cause one provider request; delayed old
+  admission cannot spend after takeover; lost admission replies cause no HTTP
+  request. Quota errors persist cooldown, and a stalled body aborts in about
+  five seconds without refunding its attempt.
+- The mapped-score pipeline publishes 1–0 then 2–0 through the existing mapper.
+  A subsequent provider outage leaves version 2 readable with a 46,001 ms stale
+  age. One hundred stored-score readers add zero provider requests. This uses
+  synthetic data and an injected clock; it is not a measured production delay.
+- An actual database process restart preserves scores, generation, counted
+  attempts and a refusal cooldown. Takeover cannot reset usage or bypass that
+  cooldown. The reproducible restart script uses an injected clock for expiry.
+- All 23 existing snapshot/API/browser-cache contract tests pass. No UI changed;
+  headless UI evidence from the earlier snapshot integration was not rerun or
+  claimed as validation of this new HTTP/database path.
+
+The client reuses existing quota-header parsing and error recognition. Direct
+dashboard subscriptions reset at UTC midnight; RapidAPI has a different reset
+policy. Provider guidance also confirms both account and source-IP protection,
+so the eventual priced networking proposal must assess dedicated egress.
+Sources: [rate limits](https://www.api-football.com/news/post/how-ratelimit-works),
+[reset rules](https://www.api-football.com/terms).
+
+Next P0: implement the runnable collector and priority queue. Validate complete
+PL/CL discovery, provider pagination and expected IDs before publication; batch
+live reads up to the supported 20 IDs; preserve individual observations when
+one batch fails; reconcile restart state without replaying obsolete jobs. Prove
+live-score jobs run before optional work and recover after 429/body stalls and
+collector takeover. Then migrate every existing provider consumer, add independent
+monitoring/alert delivery, and prepare the priced cloud rollout for approval.
+No real provider request, subscription change, AWS provisioning or public
+deployment was performed. Production reliability remains unmeasured.

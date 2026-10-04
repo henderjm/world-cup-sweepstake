@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import { GetItemCommand, PutItemCommand, TransactWriteItemsCommand } from "@aws-sdk/client-dynamodb";
 import { COMPETITIONS } from "../../src/competitions.js";
 import { nextSnapshot } from "./snapshots.mjs";
+import { initialBudget, reserveRequest, finishRequest } from "./budget.mjs";
 
 const leaseKey = { pk: { S: "COLLECTOR" } };
+const budgetKey = { pk: { S: "PROVIDER_BUDGET" } };
 function snapshotKey(competition, season) {
   if (!Object.hasOwn(COMPETITIONS, competition) || !/^\d{4}$/.test(String(season))) throw Error("Invalid snapshot identity");
   return { pk: { S: `SCORE#${competition}#${season}` } };
@@ -64,10 +66,43 @@ export class DynamoScoreStore {
 
   async publish(lease, input) {
     const previous = await this.read(input.competition, input.season);
-    const now = this.now(), validThrough = now + this.requestTimeoutMs;
+    const next = nextSnapshot(previous, input, { epoch: lease.epoch, now: this.now() });
+    await this.commit(lease, { ...snapshotKey(input.competition, input.season),
+      snapshot: { S: JSON.stringify(next) } }, input.baseVersion);
+    return next.version;
+  }
+
+  async readBudget() {
+    const result = await this.send(new GetItemCommand({ TableName: this.tableName, Key: budgetKey, ConsistentRead: true }));
+    return result.Item ? JSON.parse(result.Item.budget.S) : null;
+  }
+
+  async initializeBudget(lease, policy, used) {
+    const next = initialBudget(policy, used, this.now());
+    await this.writeBudget(lease, next, 0);
+  }
+
+  async reserve(lease, priority) {
+    const previous = await this.readBudget();
+    const result = reserveRequest(previous, { priority, id: randomUUID(), now: this.now(), admissionTimeoutMs: this.requestTimeoutMs });
+    if (!result.allowed) return result;
+    await this.writeBudget(lease, result.next, previous.version, result.permit.expiresAt);
+    return { allowed: true, permit: result.permit };
+  }
+
+  async finish(lease, permit, outcome) {
+    const previous = await this.readBudget();
+    const next = finishRequest(previous, permit, outcome, this.now());
+    await this.writeBudget(lease, next, previous.version);
+  }
+
+  writeBudget(lease, next, baseVersion, validThrough) {
+    return this.commit(lease, { ...budgetKey, budget: { S: JSON.stringify(next) } }, baseVersion, validThrough);
+  }
+
+  async commit(lease, item, baseVersion, validThrough = this.now() + this.requestTimeoutMs) {
     if (!lease || !Number.isSafeInteger(lease.expiresAt) || lease.expiresAt <= validThrough)
       throw Error("Collector lease expired or too close to expiry");
-    const next = nextSnapshot(previous, input, { epoch: lease.epoch, now });
     await this.send(new TransactWriteItemsCommand({
       ClientRequestToken: randomUUID(),
       TransactItems: [
@@ -80,13 +115,12 @@ export class DynamoScoreStore {
         } },
         { Put: {
           TableName: this.tableName,
-          Item: { ...snapshotKey(input.competition, input.season), version: { N: String(next.version) }, snapshot: { S: JSON.stringify(next) } },
-          ConditionExpression: previous ? "#version = :version" : "attribute_not_exists(pk)",
-          ...(previous ? { ExpressionAttributeNames: { "#version": "version" },
-            ExpressionAttributeValues: { ":version": { N: String(input.baseVersion) } } } : {}),
+          Item: { ...item, version: { N: String(baseVersion + 1) } },
+          ConditionExpression: baseVersion ? "#version = :version" : "attribute_not_exists(pk)",
+          ...(baseVersion ? { ExpressionAttributeNames: { "#version": "version" },
+            ExpressionAttributeValues: { ":version": { N: String(baseVersion) } } } : {}),
         } },
       ],
     }));
-    return next.version;
   }
 }

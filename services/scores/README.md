@@ -1,8 +1,9 @@
 # Stored score service
 
 Local implementation of the snapshot contract, DynamoDB storage adapter and
-read-only API for the planned collector. No production route uses this service
-yet. The provider polling loop and account-wide request budget are unfinished.
+read-only API for the planned collector, plus shared request admission and a
+bounded provider client. No production route uses this service yet. The polling
+loop and migration of existing provider consumers are unfinished.
 
 `snapshots.mjs` accepts complete normalized fixture snapshots and returns the
 existing `/PL/live` or `/CL/live` response shape, with additional version and
@@ -81,13 +82,66 @@ after an uncertain outcome, read the lease/snapshot again before deciding what
 to do. SDK retries of the same transaction retain its idempotency token; a new
 publication still checks its original base version. A replacement owner fences
 the previous owner's delayed transaction, but this does not fence provider calls
-already in flight. Account-wide admission remains separate unfinished work.
+already in flight. Request admission below coordinates consumers of this store;
+existing Worker and GitHub provider calls have not been migrated to it.
 
 Install the service's pinned dependency independently of the frontend:
 
 ```sh
 npm ci --prefix services/scores
 ```
+
+## Provider admission and transport
+
+One table represents one provider account. `PROVIDER_BUDGET` holds the persisted
+policy, UTC day, counted attempts, pacing/cooldown deadlines and current permit.
+Budget writes share the same lease and version-conditional transaction as score
+publications. Never create independent budgets for different leagues, processes
+or API keys belonging to the same account.
+
+`initializeBudget(lease, { dailyLimit, minuteLimit, scoreReserve }, used)` is a
+one-time cutover operation, not routine collector startup. It requires explicit
+limits and verified usage for the current UTC day, and refuses to replace an
+existing budget. Pause other consumers before observing usage and initializing;
+reserve any uncertain in-flight usage. The first minute admits no calls, allowing
+previous minute activity to drain. A missing/corrupt budget or unavailable database
+fails closed. Current production readers still bypass this admission, so this
+does not yet establish account-wide control of the deployed app.
+
+`ScoreProvider.request(lease, path, { priority })` reserves an attempt before
+dispatch. Only explicit `priority: "scores"` can consume the score reserve;
+unclassified requests default to supplementary. Every retry requires a new
+reservation. Denial returns `{ allowed: false, reason, retryAt }` without making
+an HTTP request; the future scheduler must return to its priority queue rather
+than sleeping inside an optional request. The client performs no hidden retries.
+
+Only one request permit is active at a time. Successful completion permits the
+next request after a gap based on both the minute limit and its conservative
+whole-number per-second rate. A crashed caller occupies its full dispatch/body
+deadline plus the gap. Timeouts and lost replies are never refunded. The client
+refuses expired dispatch permits and requires a lease covering the request
+deadline; conditional admission prevents a replaced collector acquiring more.
+This still cannot revoke an HTTP request already sent before takeover.
+
+The direct API-Football client uses a fixed HTTPS origin, refuses redirects,
+allows at most five seconds including streamed body reads, and caps bodies at
+8 MiB. It reuses the existing API envelope/error validation. Successful
+`observedAt` is captured after body validation, before database bookkeeping;
+it remains a collection timestamp, not proof of upstream event freshness.
+Discovery must additionally validate competition, season, pagination and expected
+fixture coverage before mapping/publishing. The collector implementing those
+checks is still pending.
+
+Provider quota headers can lower the configured limits and increase counted
+usage, never refund an attempt or automatically authorize a higher plan.
+HTTP 429, HTTP 200 quota errors and a zero minute allowance impose at least a
+60-second shared cooldown. Other failures back off from one to 30 seconds;
+`Retry-After` can extend the cooldown, capped at 24 hours. The direct dashboard
+subscription resets daily usage at UTC midnight; admission avoids requests whose
+deadline would cross that boundary and retains pacing/cooldowns across it. This
+UTC policy is not suitable for a RapidAPI subscription's different reset rules.
+[Provider rate limits](https://www.api-football.com/news/post/how-ratelimit-works),
+[subscription reset rules](https://www.api-football.com/terms).
 
 ## Read contract and browser compatibility
 
@@ -162,13 +216,19 @@ docker stop kickoff-score-dynamodb-test
 
 Use a new manifest path for each restart check. The database writes to its
 container filesystem, so restart retains data; stopping this disposable container
-removes it. Nine integration cases cover eight competing Node processes, renewal,
+removes it. Nine storage integration cases cover eight competing Node processes, renewal,
 takeover, a delayed old transaction, concurrent publications, a lost write reply,
 adapter reconnection, invalid writes, unavailable storage and 100 read-only API
-requests. The separate restart check verifies persisted scores and generations
-after an actual database process restart. This is not AWS availability-zone,
+requests. Seven budget policy cases cover admission, protected score allowance,
+second/minute pacing, conservative quota reconciliation, backoff and UTC rollover.
+Ten local HTTP/database cases verify competing callers, uncertain admission,
+takeover, cooldown, stalled/oversized/malformed bodies, redirects and a mapped
+score progressing from 1–0 to 2–0 before an outage preserves its original age.
+The separate restart check verifies persisted scores, generations, counted
+requests and cooldown after an actual database process restart. It uses an
+injected clock to exercise expiry without wall-clock sleeps. This is not AWS availability-zone,
 network-partition, IAM, throughput or sustained matchday reliability evidence.
 
-Next: collector discovery/polling, global admission and request budgets, priority
-scheduling, and independent monitoring. Price and seek approval for cloud
+Next: collector discovery/polling, priority scheduling, migration of every existing
+provider consumer, and independent monitoring. Price and seek approval for cloud
 infrastructure before validating AWS failover and a controlled production cutover.

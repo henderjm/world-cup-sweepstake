@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:integration": "node --test test/dynamodb.test.mjs"
+    "test:integration": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "3.1146.0"
