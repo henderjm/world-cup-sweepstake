@@ -10,8 +10,8 @@
 @media(max-width:650px){#kickoff-kanban .lanes{grid-template-columns:1fr}}
 </style>
 <div id="kickoff-kanban">
-<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code cf5787c</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
-<div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">2</span></h3><article data-card="reliability">
+<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code 63aa3d7</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
+<div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">3</span></h3><article data-card="reliability">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Make busy matchdays reliable</summary>
 <dl><dt>Acceptance</dt><dd>Measure 99.95% usable scoreboards and 99.9% active observation freshness. Measure provider-visible change to screen separately: p95 ≤30s, p99 ≤60s. Warn after 45s. Missing checks and provider failures count against the user-facing result.</dd><dt>Next action</dt><dd>Complete provider-consumer migration and prepare the priced cloud trial with independent monitoring.</dd><dt>Evidence</dt><dd>Local collector/read foundation bb977b8 and durable alert watcher d50aab4. This programme remains in progress; hourly automation is paused.</dd></dl></details>
@@ -19,15 +19,15 @@
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Migrate every provider consumer</summary>
 <dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Include all stored-mode switches, provider-key removal and rollback in the priced trial; verify runtime traffic and downstream side effects after approval.</dd><dt>Evidence</dt><dd>cf5787c removes key-only Worker guards. All 1,657 app tests, keyless cron replay and headless mobile/desktop detail journeys pass. Predictions and notification state verified locally; no real messages or provider calls. Cloud runtime census remains; not deployed.</dd></dl></details>
-<p>Prevent details, stats and background jobs competing with scores.</p></article></section><section aria-label="Up next"><h3>Up next <span class="text-muted">5</span></h3><article data-card="monitor">
+<p>Prevent details, stats and background jobs competing with scores.</p></article><article data-card="cloud">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Package and price the AWS trial</summary>
+<dl><dt>Acceptance</dt><dd>Produce infrastructure, monthly cost assumptions, read-only IAM, throttling, egress constraints and rollback. Exercise multi-zone takeover and cold/warm traffic after approval.</dd><dt>Next action</dt><dd>Prepare runnable deployment artifacts and infrastructure, measure cost inputs, and finish network/monitoring pricing before approval.</dd><dt>Evidence</dt><dd>63aa3d7 preserves seven official Ireland price records and reproducible scenario subtotals. Trial/cutover/rollback draft saved. Compute alone is $18.02/month; full budget and cloud validation remain incomplete. No resources created.</dd></dl></details>
+<p>Prepare a reviewable active and standby deployment.</p></article></section><section aria-label="Up next"><h3>Up next <span class="text-muted">4</span></h3><article data-card="monitor">
 <span class="viz-badge">P0 · first</span>
 <details><summary class="cursor-interaction">External monitoring and approved paging</summary>
 <dl><dt>Acceptance</dt><dd>Record both PL and CL, missing observations and worst-fixture freshness independently. Inject an incident and verify delivery to the configured alert receiver plus recovery. Preserve dated evidence.</dd><dt>Next action</dt><dd>Include independent hosting, watchdog, evidence retention and a downstream receiver adapter in the priced trial.</dd><dt>Evidence</dt><dd>d50aab4 proves synthetic loopback receipt through receiver refusal and process loss. No external receiver or human paging configured.</dd></dl></details>
-<p>Local watcher is verified; continuous hosting and real paging remain open.</p></article><article data-card="cloud">
-<span class="viz-badge">P0</span>
-<details><summary class="cursor-interaction">Package and price the AWS trial</summary>
-<dl><dt>Acceptance</dt><dd>Produce infrastructure, monthly cost assumptions, read-only IAM, throttling, egress constraints and rollback. Exercise multi-zone takeover and cold/warm traffic after approval.</dd><dt>Next action</dt><dd>Prepare deployment artifacts and a costed plan before asking to spend.</dd><dt>Evidence</dt><dd>No AWS resources or subscription upgrades created.</dd></dl></details>
-<p>Prepare a reviewable active and standby deployment.</p></article><article data-card="latency">
+<p>Local watcher is verified; continuous hosting and real paging remain open.</p></article><article data-card="latency">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Measure real matchday delivery</summary>
 <dl><dt>Acceptance</dt><dd>Retain timestamped PL/CL observations and p50/p95/p99 delivery reports; disclose coverage gaps. Verify stale warnings and recovery in headless browser journeys.</dd><dt>Next action</dt><dd>Run after independent monitoring and approved shadow deployment are ready.</dd><dt>Evidence</dt><dd>Synthetic recovery passes; sustained production nines are unknown.</dd></dl></details>

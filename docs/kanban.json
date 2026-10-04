@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-04",
-  "revision": "cf5787c",
+  "revision": "63aa3d7",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -44,13 +44,13 @@
     },
     {
       "id": "cloud",
-      "status": "Up next",
+      "status": "In progress",
       "priority": "P0",
       "title": "Package and price the AWS trial",
       "summary": "Prepare a reviewable active and standby deployment.",
       "acceptance": "Produce infrastructure, monthly cost assumptions, read-only IAM, throttling, egress constraints and rollback. Exercise multi-zone takeover and cold/warm traffic after approval.",
-      "next": "Prepare deployment artifacts and a costed plan before asking to spend.",
-      "evidence": "No AWS resources or subscription upgrades created."
+      "next": "Prepare runnable deployment artifacts and infrastructure, measure cost inputs, and finish network/monitoring pricing before approval.",
+      "evidence": "63aa3d7 preserves seven official Ireland price records and reproducible scenario subtotals. Trial/cutover/rollback draft saved. Compute alone is $18.02/month; full budget and cloud validation remain incomplete. No resources created."
     },
     {
       "id": "latency",
