@@ -120,3 +120,31 @@ coalescing, mutation isolation, origin/season isolation and real Worker routes.
 See `scripts/qa/stored-reader.js` and `stored-reader-server.mjs` for a headless
 mobile/desktop replay through the actual Worker with a synthetic stored service.
 No real provider traffic is needed for these checks.
+
+## Detail storage foundation — 4 October 2026
+
+`DynamoScoreStore` now supports per-fixture `readDetailManifest`, `readDetail`
+and `publishDetail`. Four independently observed sections (fixture, lineups,
+events, players) share a small versioned manifest; each payload is bounded to
+256 KiB. Publication atomically replaces one section and the manifest under the
+existing collector lease and expected version. Reads verify content digests and
+retry a whole publication once under the shared read deadline. Missing or
+corrupt parts fail rather than becoming successful empty detail.
+
+Section metadata records source observation time, coverage and the result being
+observed. `detailCoverage` identifies missing, stale, partial, unpublished and
+outdated terminal-result sections. A transition to full time or a later score
+correction requires observations against that result; refreshing discovery with
+an unchanged result does not invalidate detail. Raw nulls remain null in storage.
+
+This is a storage contract, not provider validation or a settlement change.
+The collector must validate endpoint identity and completeness before assigning
+coverage. It still needs one-request supplementary scheduling, metadata hydration
+on takeover, and last-good handling for partial provider responses. The read
+service and Worker must consume these records and propagate degraded sections
+before they can protect fantasy settlement. Neither currently uses this path.
+
+All 49 score-service tests passed against DynamoDB Local, including seven detail
+checks for restart, age preservation, invalid writes, terminal transitions,
+concurrent writers, delayed old-owner writes, mixed-version reads and corruption.
+No public deployment, real provider calls or frontend changes were made.

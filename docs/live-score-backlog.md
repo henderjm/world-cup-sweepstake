@@ -1435,3 +1435,23 @@ runtime capacity checks and busy-window evidence. No spending, messaging,
 provider requests or public deployment occurred. Wrangler's dry-run bundle also
 passed using the already installed newer Node runtime (the default Node 20 is
 too old for the cached Wrangler); no runtime or package was installed.
+
+### 2026-10-04 — independently observed match-detail storage
+
+Added bounded per-fixture detail sections and atomic manifest publication using
+the existing collector lease. Source times survive unrelated section updates;
+missing, partial, unpublished and stale states stay distinct. Result fingerprints
+identify detail collected before full time or before a corrected final score.
+Raw null statistics are preserved. Whole-read retries prevent mixed versions.
+
+Validation: all 49 score-service checks passed against real DynamoDB Local,
+including seven new detail-storage checks. Delayed writes after takeover and
+concurrent writers cannot overwrite newer data. Adapter restart preserves data;
+corrupt partitions fail instead of reporting successful empty sections.
+
+Next: wire collector jobs through the supplementary budget with score jobs
+preempting each individual detail request. Validate endpoint identity and
+coverage, preserve last-good partial responses, then serve stored detail and
+migrate Worker settlement/notification consumers. This storage foundation is not
+connected to production or to final fantasy settlement. No UI changed this turn;
+headless end-to-end journeys remain required when the read path is connected.

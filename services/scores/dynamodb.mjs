@@ -4,6 +4,7 @@ import { COMPETITIONS } from "../../src/competitions.js";
 import { nextSnapshot } from "./snapshots.mjs";
 import { initialBudget, reserveRequest, finishRequest } from "./budget.mjs";
 import { snapshotLayout, validateManifest, assembleSnapshot, digest, MAX_PART_BYTES } from "./layout.mjs";
+import { detailKey, validateDetailManifest, detailPublication } from "./details.mjs";
 
 const leaseKey = { pk: { S: "COLLECTOR" } };
 const budgetKey = { pk: { S: "PROVIDER_BUDGET" } };
@@ -107,6 +108,37 @@ export class DynamoScoreStore {
         Item: { pk: { S: `${key.pk.S}#${name}` }, digest: { S: part.digest }, data: { S: part.data } } } }));
     await this.commit(lease, { ...key, manifest: { S: JSON.stringify(manifest) } }, input.baseVersion, undefined, changed);
     return next.version;
+  }
+
+  async readDetailManifest(competition, season, id, signal) {
+    const key = detailKey(competition, season, id);
+    const result = await this.send(new GetItemCommand({ TableName: this.tableName,
+      Key: { pk: { S: key } }, ConsistentRead: true }), signal);
+    if (!result.Item) return null;
+    return validateDetailManifest(JSON.parse(result.Item.manifest.S), competition, season, id, Number(result.Item.version.N));
+  }
+
+  async readDetail(competition, season, id) {
+    const key = detailKey(competition, season, id), deadline = AbortSignal.timeout(this.requestTimeoutMs);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const manifest = await this.readDetailManifest(competition, season, id, deadline);
+      if (!manifest) return null;
+      const parts = await Promise.all(Object.entries(manifest.sections).map(async ([name, section]) =>
+        [name, await this.readPart(`${key}#${name}`, section.digest, deadline)]));
+      if (parts.every(([, data]) => data !== null))
+        return { ...manifest, payloads: Object.fromEntries(parts.map(([name, data]) => [name, JSON.parse(data)])) };
+    }
+    throw Error("Detail publication changed during read or a section is unavailable");
+  }
+
+  async publishDetail(lease, input) {
+    const previous = await this.readDetailManifest(input.competition, input.season, input.id);
+    const { manifest, part } = detailPublication(previous, input, lease, this.now());
+    const key = detailKey(input.competition, input.season, input.id);
+    await this.commit(lease, { pk: { S: key }, manifest: { S: JSON.stringify(manifest) } }, input.baseVersion, undefined,
+      [{ Put: { TableName: this.tableName, Item: { pk: { S: `${key}#${input.section}` },
+        digest: { S: part.digest }, data: { S: part.data } } } }]);
+    return manifest;
   }
 
   async readBudget() {
