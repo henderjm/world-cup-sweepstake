@@ -1826,3 +1826,14 @@ headless mobile/desktop journeys pass. No deployment.
 Next product checks: independently verify CL tie ordering before changing provider
 rank; remove redundant mini-table from the full-table page only if replaced by
 useful context (retain it on Scores); assess fixture discovery from league header.
+
+## October 4 — reuse existing AWS account
+
+User selected current account. STS verified `134471064301`, Ireland. Candidate
+non-production VPC and two AZ public subnets are captured in
+`infra/scores/targets/existing-account.json`; read-only preflight evidence is
+`live-score-evidence/2026-10-04-existing-aws-network.json`. Placement/default-route
+checks passed; DNS and ACL configuration also inspected. No ECS clusters or
+DynamoDB tables returned in the region. Keep Kickoff runtime resources/IAM
+dedicated; no corporate application reuse or production-network modification.
+Actual egress, runtime IAM and trial spending/deployment remain gates.

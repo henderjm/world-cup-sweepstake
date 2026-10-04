@@ -5,6 +5,29 @@ repository documentation. No AWS resources, subscription changes or deployment
 are authorized by this document. Do not request spending approval until the
 infrastructure plan, full estimate and operating gates below are reviewable.
 
+## Existing AWS account selected
+
+The user selected the currently configured AWS account on October 4. Read-only
+STS confirmed account `134471064301`, using the default local profile in
+`eu-west-1`. Keep deployments pinned to this account; do not create or switch
+accounts. The local IAM user is for these discovery calls, not a runtime identity.
+
+Candidate trial placement reuses `nonprod-zellor` VPC
+`vpc-040315a7fab57c7d5` and its public subnets in `euw1-az1` / `euw1-az2`.
+`infra/scores/targets/existing-account.json` is the repeatable preflight target.
+The retained October 4 network report passes ownership, capacity, AZ separation
+and active internet-gateway route checks. Separate read-only queries confirmed
+DNS support/hostnames enabled and default ACL `acl-0ab22efffd51c1fb3` allowing
+IPv4 traffic in both directions. These are configuration observations, not
+proof of actual task/provider connectivity or permission enforcement.
+
+No ECS clusters or DynamoDB tables were returned in Ireland at inspection time.
+Existing ECR repositories belong to other workloads: use dedicated Kickoff
+resources and IAM roles in this account, subject to the trial's spending approval.
+Do not alter existing production networks, applications or repositories. The
+candidate network has not been approved or changed by this read-only discovery.
+Account selection does not authorize new spending or public cutover.
+
 ## Deployment decision
 
 Use two on-demand Linux/x86 Fargate collectors, one per availability zone in

@@ -1,0 +1,34 @@
+{
+  "accountId": "134471064301",
+  "vpcId": "vpc-040315a7fab57c7d5",
+  "subnetIds": [
+    "subnet-06066d59d42e0c22f",
+    "subnet-0fd40e3a0f50e2076"
+  ],
+  "region": "eu-west-1",
+  "checkedAt": "2026-10-04T13:51:03.686Z",
+  "checks": "account, VPC, subnet placement and default routes",
+  "routes": [
+    {
+      "subnetId": "subnet-06066d59d42e0c22f",
+      "availabilityZoneId": "euw1-az1",
+      "availableIpv4": 250,
+      "routeTableId": "rtb-05f177d67ed613167",
+      "gatewayId": "igw-0be4fead42529f46d"
+    },
+    {
+      "subnetId": "subnet-0fd40e3a0f50e2076",
+      "availabilityZoneId": "euw1-az2",
+      "availableIpv4": 251,
+      "routeTableId": "rtb-05f177d67ed613167",
+      "gatewayId": "igw-0be4fead42529f46d"
+    }
+  ],
+  "remaining": [
+    "Network ACLs and more-specific routes",
+    "DNS and actual HTTPS egress",
+    "Public-IP assignment on task ENIs",
+    "Artifact identity, runtime IAM, old-consumer shutdown and provider acceptance"
+  ],
+  "deploymentReady": false
+}
