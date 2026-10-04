@@ -109,3 +109,15 @@ test('stored-mode script attempts the stored service before the legacy provider-
   });
   assert.equal(await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve); }), 7);
 });
+
+test('ambiguous squad identities remain visible in coverage without marking fresh data stale', () => {
+  const { squads, history } = fixtures();
+  squads.data.excludedPlayerIds = [416250];
+  const body = storedPlayerPool(squads, history, '2026', now);
+  assert.equal(body.coverage.squads.state, 'partial');
+  assert.deepEqual(body.coverage.squads.excludedPlayerIds, [416250]);
+  assert.deepEqual(body.degraded, ['squads']);
+  assert.equal(body.stale, false);
+  squads.data.excludedPlayerIds = [1];
+  assert.throws(() => storedPlayerPool(squads, history, '2026', now));
+});
