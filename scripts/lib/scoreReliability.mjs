@@ -87,6 +87,28 @@ export async function probe(plan, competition, scheduledAt, { fetcher = fetch, n
 const percentage = (good, total) => total ? 100 * good / total : null;
 const percentile = (values, fraction) => values.length ? [...values].sort((a, b) => a - b)[Math.ceil(values.length * fraction) - 1] : null;
 
+export function evaluateCheck(plan, code, at, row, retired, asOf) {
+  const completed = Boolean(row && Number.isFinite(row.completedAt) && row.completedAt <= asOf);
+  const timely = completed && row.startedAt >= at && row.startedAt <= at + Math.min(1000, plan.intervalMs / 10)
+    && row.completedAt <= at + plan.intervalMs;
+  const transportReason = !completed ? "missing-observation" : !timely ? "late-observation" : row.reason;
+  if (!transportReason) for (const detail of row?.fixtures ?? []) {
+    if (LIVE.has(detail.status) && !detail.reason) retired.delete(detail.id);
+  }
+  const expected = plan.fixtures.filter(f => f.competition === code && Date.parse(f.utcDate) <= at && !retired.has(f.id));
+  let usable = completed && timely && row.httpStatus === 200 && row.durationMs <= 2000
+    && !["invalid-feed", "invalid-fixture-ids", "invalid-json", "request-failed"].includes(row.reason);
+  const fixtures = expected.map(f => {
+    const detail = row?.fixtures?.find(m => m.id === f.id);
+    const reason = transportReason ?? detail?.reason ?? (!detail ? "missing-fixture" : null);
+    if (!detail || ["missing-fixture", "invalid-fixture", "kickoff-unconfirmed"].includes(detail.reason)) usable = false;
+    // A stale final result cannot erase an expected match from subsequent checks.
+    if (detail?.terminal && !reason) retired.add(f.id);
+    return { id: f.id, reason };
+  });
+  return { completed, transportReason, usable, fixtures };
+}
+
 export function summarize(plan, records, asOf = Date.now()) {
   const start = Date.parse(plan.start), end = Math.max(start, Math.min(Date.parse(plan.end), asOf));
   const slots = new Map();
@@ -105,24 +127,13 @@ export function summarize(plan, records, asOf = Date.now()) {
     const retired = new Set(), latencies = [];
     for (let at = start; at < end; at += plan.intervalMs) {
       const row = slots.get(`${code}:${at}`);
-      const completed = row && Number.isFinite(row.completedAt) && row.completedAt <= asOf;
+      const { completed, transportReason, usable, fixtures } = evaluateCheck(plan, code, at, row, retired, asOf);
       totals.scheduledChecks++;
       if (completed) { totals.completedChecks++; latencies.push(row.durationMs); }
       else totals.missingChecks++;
-      const timely = completed && row.startedAt >= at && row.startedAt <= at + Math.min(1000, plan.intervalMs / 10)
-        && row.completedAt <= at + plan.intervalMs;
-      const transportReason = !completed ? "missing-observation" : !timely ? "late-observation" : row.reason;
       if (transportReason) totals.feedReasons[transportReason] = (totals.feedReasons[transportReason] ?? 0) + 1;
-      if (!transportReason) for (const detail of row?.fixtures ?? []) {
-        if (LIVE.has(detail.status) && !detail.reason) retired.delete(detail.id);
-      }
-      const expected = plan.fixtures.filter(f => f.competition === code && Date.parse(f.utcDate) <= at && !retired.has(f.id));
-      let usable = completed && timely && row.httpStatus === 200 && row.durationMs <= 2000
-        && !["invalid-feed", "invalid-fixture-ids", "invalid-json", "request-failed"].includes(row.reason);
-      for (const f of expected) {
-        const detail = row?.fixtures?.find(m => m.id === f.id);
-        const reason = transportReason ?? detail?.reason ?? (!detail ? "missing-fixture" : null);
-        const stats = totals.fixtures[f.id] ??= { expected: 0, fresh: 0, longestFailureChecks: 0, consecutiveFailures: 0 };
+      for (const { id, reason } of fixtures) {
+        const stats = totals.fixtures[id] ??= { expected: 0, fresh: 0, longestFailureChecks: 0, consecutiveFailures: 0 };
         stats.expected++;
         totals.expectedFixtureChecks++;
         if (!reason) { stats.fresh++; totals.freshFixtureChecks++; stats.consecutiveFailures = 0; }
@@ -130,9 +141,6 @@ export function summarize(plan, records, asOf = Date.now()) {
           totals.reasons[reason] = (totals.reasons[reason] ?? 0) + 1;
           stats.longestFailureChecks = Math.max(stats.longestFailureChecks, ++stats.consecutiveFailures);
         }
-        if (!detail || ["missing-fixture", "invalid-fixture", "kickoff-unconfirmed"].includes(detail.reason)) usable = false;
-        // A stale final result cannot erase an expected match from subsequent checks.
-        if (detail?.terminal && !reason) retired.add(f.id);
       }
       if (usable) totals.usableApiChecks++;
     }

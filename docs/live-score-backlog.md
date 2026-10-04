@@ -1357,3 +1357,39 @@ sandbox preview passes headless checks at 320, 390, 736 and 1440 pixels: all
 14 cards present, details expand, no horizontal overflow or page errors.
 Inspected the desktop screenshot. The authenticated Page viewer itself was
 not browser-inspected. No app deployment or new infrastructure was performed.
+
+## October 4 — durable alert delivery and monitor failure detection
+
+Added `scripts/watch-score-reliability.mjs` beside the bounded recorder. It reads
+the append-only observation ledger in a separate process and creates per-league
+incident/recovery events for failed or missing checks. It makes no score or
+provider calls. Extracted the shared single-check evaluator from the report so
+fixture retirement, unavailable data and late observations have the same rules.
+An old idle schedule alone does not trigger an active-fixture incident.
+
+Persisted, checksummed state retains event IDs, attempts, retry timing and
+receiver acknowledgments across restarts. Events are saved before POST; retries
+use the same idempotency key and preserve incident-before-recovery ordering.
+An explicit matching event acknowledgment is required, not merely HTTP 200.
+Requests/body reads are bounded, credentials stay out of state/logs, and a
+changed/truncated observation prefix or corrupted state fails closed. Locks are
+never stolen from a potentially live watcher. Limits and operator recovery are
+documented in `docs/score-reliability-alerts.md`.
+
+Verification: all 1,620 app tests passed. After the final checksum addition, all
+30 focused recorder/alert tests passed again. The real-process test injects a
+stale score, rejects an alert, kills the watcher, verifies it stopped and
+restarts with preserved state. The receiver sees the same retry ID followed by
+recovery. Killing the recorder creates a new missing-observation incident. All
+three distinct events receive acknowledgments within ten seconds of local
+detection; this is synthetic loopback evidence, not production paging latency.
+No frontend code changed; no visible browser, real provider or external message
+receiver was used. No deployed resources or production behavior changed.
+
+Next: inventory and migrate all direct provider consumers; package the priced
+trial together with independent monitoring, durable evidence retention, a
+watchdog outside its failure domain and an approved downstream paging adapter.
+The receiver acknowledgment proves receiver acceptance only. Human delivery,
+continuous hosting, real browser/version measurement and busy-window SLOs remain
+unverified. Keep monitoring setup open on the Kanban and record the local watcher
+as separately validated. The hourly task remains paused pending the user's answer.

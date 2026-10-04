@@ -16,6 +16,9 @@ October 4: a bounded local API recorder and report command are implemented;
 see `score-reliability-recorder.md`. They preserve planned checks, missing
 observations and expected-fixture failures in an append-only ledger. This is
 measurement tooling, not an installed continuous monitor or an achieved SLO.
+A separate durable alert watcher is now locally verified, including receiver
+refusal and recorder/watcher process loss; see `score-reliability-alerts.md`.
+Actual external monitoring and downstream human alert delivery remain unverified.
 
 The September 26 release `c6274e8` passed 1,563 JavaScript tests, Go tests,
 production build and headless public mobile/desktop checks. Those checks saw

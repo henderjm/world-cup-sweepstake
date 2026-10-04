@@ -38,8 +38,10 @@ plan, so process loss, sleep or late startup does not improve the percentages.
 An interrupted final append is ignored with a warning and remains missing;
 malformed complete records and duplicate observations reject the report.
 
-The recorder is a foreground command that exits after its bounded window. No
-daemon, recurring schedule, infrastructure or alert destination is installed.
+The recorder is a foreground command that exits after its bounded window. The
+separate watcher in `score-reliability-alerts.md` can consume its ledger and
+deliver durable incident/recovery events to a configured receiver. No daemon,
+recurring schedule, infrastructure or real alert destination is installed.
 Move evidence out of `/tmp` to an approved durable location before relying on it
 for a multi-day baseline. Laptop sleep and network loss count as missing or
 failed observations; classify those separately when diagnosing an outage.
