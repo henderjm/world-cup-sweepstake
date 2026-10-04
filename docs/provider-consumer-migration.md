@@ -217,3 +217,48 @@ Remaining: Worker stored-detail client with bounded requests and version checks,
 then migrate public/cron/fantasy/notification readers and validate headless
 mobile and desktop journeys. The new service endpoint is not publicly deployed;
 production Worker detail reads still use the legacy provider path.
+
+## Worker detail migration — 4 October 2026
+
+`SCORE_READ_ORIGIN` now selects stored match detail as well as stored scores.
+The public drawer, live analysis, final analysis, red-card context, provisional
+fantasy points and final settlement pass their known competition to the stored
+reader. Stored mode does not consult/write the legacy detail KV fallback.
+Provider pacing and discretionary provider-budget shedding no longer suppress
+these stored reads. Other provider consumers and their API-key guards remain.
+
+The shared `stored-read.js` transport validates the origin, rejects redirects,
+sends no provider credentials and bounds headers/body time. Detail reads have a
+four-second deadline and 1 MiB response limit. In-flight reads coalesce; later
+polls re-read. The last-good detail cache is bounded to 32 entries/4 MiB, with at
+most 32 distinct in-flight reads. Identity, status, scores, section observations
+and separate score/detail generations are validated. Regressing versions cannot
+replace known detail; later downward corrections can. Every failure fallback
+marks all four sections degraded, even before the nominal freshness deadline,
+and recalculates age from original source observations.
+
+Final settlement retains its existing degraded-data guard. Stored provisional
+points skip degraded/substanceless responses; red-card context retains its prior
+count when the event section is degraded. The browser no longer fills explicitly
+stored missing/empty sections from a legacy static bake: doing so could restore
+a goal removed by a later correction. Legacy provider-mode fallback remains.
+
+Validation: 1,635 application tests passed after the final production changes.
+Fifteen focused stored-reader checks passed, including the real Worker route,
+coalescing, identity/version checks, shared transport deadline and legacy KV
+isolation. Wrangler dry-run bundle passed. A fresh isolated frontend preview
+contained committed sources plus the match-detail change, excluding unrelated
+mobile work. Headless 390px/1440px replay through the actual Worker and service
+response mapper passed cold failure/retry, missing sections, loading, lineups,
+stale retention, correction from 1–0 to 0–0, focus containment/restoration and
+no overflow. Explicit checks forbid static-bake reads after stored responses.
+Thirteen stored-service reads, zero provider calls, zero browser errors.
+
+The replay uses synthetic stored payloads, not the real database collector.
+Database/collector tests remain separate evidence. A repeated cold-start test
+needs a fresh replay process because last-good state intentionally survives in
+a warm Worker. Run the replay server once per QA invocation. The production
+switch remains unset; no public deployment, paid resources or real notifications
+were triggered. Full cron side-effect verification against representative D1
+state and real provider coverage remains required before cutover, alongside
+remaining feeder/static/player-history consumers and the priced cloud trial.

@@ -1,4 +1,5 @@
 import { nativeEndpoint, nativePushConfigured, sendNativePush } from "./native-push.js";
+import { createStoredDetailReader } from "./stored-detail.js";
 import { createStoredScoreReader } from "./stored-scores.js";
 
 // Goon Squad data API (Cloudflare Worker).
@@ -225,6 +226,7 @@ const PAPER_RUN_TTL = 90 * 24 * 60 * 60; // 90 days
 // suppressed the browser's own static fallback (see src/liveStale.js).
 const lastLive = new Map();
 const readStoredScores = createStoredScoreReader();
+const readStoredDetail = createStoredDetailReader();
 
 // Per-match detail is 3 upstream requests; pacing between matches keeps a busy
 // multi-match minute-tick under the Ultra tier's ~7 req/sec ceiling instead of
@@ -267,7 +269,7 @@ async function findKnownMatch(competitions, id, token, env = null) {
     try {
       const live = await getLive(comp, token, env);
       const match = live.matches.find((entry) => entry.id === id);
-      if (match) return match;
+      if (match) return { ...match, competition: comp.code };
     } catch {
       // one competition's feed being down must not 404 the others
     }
@@ -646,14 +648,14 @@ export default {
         // returned for zero upstream calls. It always answers with a real
         // match rather than an error, naming whatever it could not fetch on
         // detail.degraded exactly as a genuine upstream failure would.
-        let detail = await fetchMatchDetail(id, token, profile, known, currentBudgetLevel(), MATCH_DETAIL_STALE_GRACE_MS);
+        let detail = await fetchMatchDetail(id, token, profile, known, currentBudgetLevel(), MATCH_DETAIL_STALE_GRACE_MS, { env, comp: competitions.find(comp => comp.code === known.competition) });
         const degradedRead = Array.isArray(detail.degraded) && detail.degraded.length > 0;
         // A substanceless read of a match that has kicked off is upstream's
         // 200-with-empty failure shape wearing a clean face: a match at 32'
         // whose previous read carried full lineups does not legitimately have
         // nothing. It is treated exactly like a degraded read.
         const emptyLie = !degradedRead && !detailHasSubstance(detail) && (isLive(known.status) || isFinished(known.status));
-        if (degradedRead || emptyLie) {
+        if (!env.SCORE_READ_ORIGIN && (degradedRead || emptyLie)) {
           // Swap in the last substantial snapshot from KV when one exists (see
           // storeLastGoodDetail). The degraded list survives on the response:
           // the snapshot can lag by a tick, and the client's "some detail is
@@ -667,7 +669,7 @@ export default {
               degraded: degradedRead ? detail.degraded : ["/fixtures/lineups", "/fixtures/events", "/fixtures/players"],
             };
           }
-        } else {
+        } else if (!env.SCORE_READ_ORIGIN) {
           // A complete read doubles as the next refusal window's safety copy.
           await storeLastGoodDetail(env, detail);
         }
@@ -676,7 +678,7 @@ export default {
         // that degraded is capped much shorter so a transient upstream fault
         // cannot outlive itself in every reader's cache.
         const browserMaxAge = matchDetailBrowserMaxAge(profile, Boolean(detail.degraded));
-        return json(detail, 200, { ...cors, "Cache-Control": `public, max-age=${browserMaxAge}` });
+        return json(detail, 200, { ...cors, "Cache-Control": env.SCORE_READ_ORIGIN ? "no-store" : `public, max-age=${browserMaxAge}` });
       }
 
       const analysisRoute = url.pathname.match(/^\/analysis\/(\d{1,12})$/);
@@ -1047,7 +1049,7 @@ async function runScheduledAnalysis(env) {
   // just to compute a signature, plus an Anthropic call when it regenerates)
   // and the least load-bearing: a missing analysis renders as no card, while
   // the same calls spent on scoring settle a gameweek. See src/apiBudget.js.
-  if (!allowsAnalysis(currentBudgetLevel())) {
+  if (!env.SCORE_READ_ORIGIN && !allowsAnalysis(currentBudgetLevel())) {
     console.warn("analysis pass skipped: API-Football allowance low");
     return;
   }
@@ -1073,13 +1075,13 @@ async function analyseCompetition(env, comp) {
       let detail = null;
       let signature = analysisCacheSignature(match);
       if (!isMatchFinished(match)) {
-        if (index > 0) await sleep(MATCH_DETAIL_PACING_MS);
-        detail = await fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY);
+        if (index > 0 && !env.SCORE_READ_ORIGIN) await sleep(MATCH_DETAIL_PACING_MS);
+        detail = await fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY, { env, comp });
         signature += `:${analysisEventSignature(detail)}`;
       }
       const current = await readLatestAnalysis(env, match.id);
       if (current?.signature === signature) continue; // game state unchanged since last tick
-      const body = await generateAnalysis(env, match, live, env.API_FOOTBALL_KEY, detail);
+      const body = await generateAnalysis(env, match, live, env.API_FOOTBALL_KEY, detail, comp);
       await writeLatestAnalysis(env, match.id, { signature, body });
       // "Analysis ready" pushes only for the full-time read, and only once ever
       // per match: gated on a dedicated KV marker rather than the analysis cache
@@ -1117,9 +1119,9 @@ function analysisWorthGenerating(match) {
   return Number.isFinite(kickoff) && Date.now() - kickoff < ANALYSIS_FINAL_WINDOW_MS;
 }
 
-async function generateAnalysis(env, match, live, token, detail = null) {
+async function generateAnalysis(env, match, live, token, detail = null, comp = null) {
   // Analysis never settles anything, so the live stale grace is safe here too.
-  detail = detail ?? (await fetchMatchDetail(match.id, token, undefined, null, BUDGET_NORMAL, MATCH_DETAIL_STALE_GRACE_MS));
+  detail = detail ?? (await fetchMatchDetail(match.id, token, undefined, null, BUDGET_NORMAL, MATCH_DETAIL_STALE_GRACE_MS, { env, comp }));
 
   // Model override must support adaptive thinking + structured outputs.
   const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 60_000 });
@@ -3058,7 +3060,7 @@ async function runScheduledLivePoints(env) {
   // is tight those calls belong to scoring and the waiver runs, which is exactly
   // the ordering src/apiBudget.js encodes. Skipping also costs nothing
   // permanent, since the settled pass recomputes every point at full time.
-  if (!allowsLiveEventDetail(currentAllowanceLevel())) return;
+  if (!env.SCORE_READ_ORIGIN && !allowsLiveEventDetail(currentAllowanceLevel())) return;
 
   let live;
   try {
@@ -3090,8 +3092,9 @@ async function runScheduledLivePoints(env) {
 
   for (const [index, match] of inPlay.entries()) {
     try {
-      if (index > 0) await sleep(MATCH_DETAIL_PACING_MS);
-      let detail = await fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY);
+      if (index > 0 && !env.SCORE_READ_ORIGIN) await sleep(MATCH_DETAIL_PACING_MS);
+      let detail = await fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY, { env, comp });
+      if (env.SCORE_READ_ORIGIN && (detail.degraded?.length || !detailHasSubstance(detail))) continue;
       // Upstream's 200-with-empty soft throttle scores as an empty map, and
       // the upsert below would OVERWRITE a good provisional row with zeros:
       // managers watched their live score flicker to 0-0 through GW1's
@@ -3194,8 +3197,8 @@ async function runScheduledFantasyScoring(env) {
   const touchedGameweeks = new Set();
   for (const [index, match] of newlyFinished.entries()) {
     try {
-      if (index > 0) await sleep(MATCH_DETAIL_PACING_MS);
-      const detail = await fetchMatchDetail(match.id, env.API_FOOTBALL_KEY);
+      if (index > 0 && !env.SCORE_READ_ORIGIN) await sleep(MATCH_DETAIL_PACING_MS);
+      const detail = await fetchMatchDetail(match.id, env.API_FOOTBALL_KEY, undefined, null, BUDGET_NORMAL, 0, { env, comp });
       // A degraded read scores cleanly and settles WRONG FOREVER: no lineups
       // and no player stats means no appearance points for anybody, and
       // fantasy_scored_matches stops any later tick from correcting it. GW1's
@@ -6242,18 +6245,18 @@ async function notifyCompetition(env, comp) {
     let reds = prev?.reds ?? 0;
     let lastRed = null;
     let detailMinute = null;
-    if (isLive(match.status) && allowsLiveEventDetail(currentAllowanceLevel())) {
+    if (isLive(match.status) && (env.SCORE_READ_ORIGIN || allowsLiveEventDetail(currentAllowanceLevel()))) {
       try {
-        if (liveDetailFetches > 0) await sleep(MATCH_DETAIL_PACING_MS);
+        if (liveDetailFetches > 0 && !env.SCORE_READ_ORIGIN) await sleep(MATCH_DETAIL_PACING_MS);
         liveDetailFetches += 1;
-        const detail = await fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY);
+        const detail = await fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY, { env, comp });
         // Every good live read doubles as the drawer's cross-colo safety copy.
-        await storeLastGoodDetail(env, detail);
+        if (!env.SCORE_READ_ORIGIN) await storeLastGoodDetail(env, detail);
         // A substanceless read is upstream's 200-with-empty throttle, not a
         // match with no cards: resetting `reds` to zero off one would regress
         // the signature and re-fire the same dismissal on recovery, so it is
         // treated exactly like the fetch failure below and carried forward.
-        if (detailHasSubstance(detail)) {
+        if (detailHasSubstance(detail) && (!env.SCORE_READ_ORIGIN || !detail.degraded?.includes("/fixtures/events"))) {
           // YELLOW_RED is a second-yellow dismissal, not a separate RED booking.
           const redCards = (detail.cards ?? []).filter(
             (card) => card.card === "RED" || card.card === "YELLOW_RED",
@@ -6860,7 +6863,8 @@ function corsHeaders(request) {
 // in the edge cache, chosen from the fixture's state rather than fixed. Defaults
 // to the live windows so any caller that has not classified the match gets the
 // safe-but-expensive behaviour rather than accidentally serving stale scores.
-async function fetchMatchDetail(id, token, profile = MATCH_DETAIL_LIVE, summary = null, level = BUDGET_NORMAL, staleGraceMs = 0) {
+async function fetchMatchDetail(id, token, profile = MATCH_DETAIL_LIVE, summary = null, level = BUDGET_NORMAL, staleGraceMs = 0, context = null) {
+  if (context?.env.SCORE_READ_ORIGIN) return readStoredDetail(context.comp, id, context.env.SCORE_READ_ORIGIN);
   // Interactive detail reads include the fixture endpoint for half-time scores and
   // referee data.
   //
@@ -7196,7 +7200,8 @@ async function fetchSupplementaryJson(path, token, cacheTtl, degraded, staleGrac
   }
 }
 
-async function fetchLiveMatchDetail(summary, token) {
+async function fetchLiveMatchDetail(summary, token, context = null) {
+  if (context?.env.SCORE_READ_ORIGIN) return readStoredDetail(context.comp, summary.id, context.env.SCORE_READ_ORIGIN);
   // The minute cron already has the fixture summary from the batched live request.
   // Reuse it instead of spending another /fixtures call per match per minute. Events
   // remain minute-fresh; lineups are effectively immutable after kick-off and player

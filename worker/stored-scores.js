@@ -1,3 +1,4 @@
+import { storedOrigin, fetchStoredJson } from "./stored-read.js";
 import { isLive } from "../src/format.js";
 import { TERMINAL_MATCH_STATUSES } from "../src/mapApiFootball.js";
 import { snapshotObservationTime } from "../src/scoreSnapshot.js";
@@ -46,35 +47,14 @@ function age(body, now, failed = false) {
 export function createStoredScoreReader({ fetcher = (...args) => fetch(...args), now = Date.now, timeoutMs = 4000 } = {}) {
   const saved = new Map(), inflight = new Map();
   return async function read(comp, configuredOrigin) {
-    const origin = new URL(configuredOrigin);
-    if (origin.username || origin.password || origin.search || origin.hash || origin.pathname !== "/"
-      || !(origin.protocol === "https:" || (origin.protocol === "http:" && ["127.0.0.1", "localhost"].includes(origin.hostname))))
-      throw Error("Invalid stored score origin");
-    const key = `${origin.origin}/${comp.code}/${comp.season}`;
+    const origin = storedOrigin(configuredOrigin);
+    const key = `${origin}/${comp.code}/${comp.season}`;
     let request = inflight.get(key);
     if (!request) {
       request = (async () => {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-        let reader;
         try {
-          const response = await fetcher(`${origin.origin}/${encodeURIComponent(comp.code)}/live`, {
-            signal: controller.signal, redirect: "error", headers: { Accept: "application/json" },
-          });
-          if (!response.ok) throw Error("Stored scores unavailable");
-          reader = response.body?.getReader();
-          if (!reader) throw Error("Stored scores have no body");
-          const chunks = []; let size = 0;
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            size += value.byteLength;
-            if (size > 4 * 1024 * 1024) throw Error("Stored scores exceed read limit");
-            chunks.push(value);
-          }
-          const bytes = new Uint8Array(size); let offset = 0;
-          for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-          const body = validate(JSON.parse(new TextDecoder().decode(bytes)), comp, now());
+          const result = await fetchStoredJson(`${origin}/${encodeURIComponent(comp.code)}/live`, { fetcher, timeoutMs, maxBytes: 4 * 1024 * 1024 });
+          const body = validate(result.body, comp, now());
           const previous = saved.get(key);
           const ids = new Set(body.matches.map(match => match.id));
           if (previous && (body.snapshot.version < previous.snapshot.version
@@ -88,8 +68,6 @@ export function createStoredScoreReader({ fetcher = (...args) => fetch(...args),
           const previous = saved.get(key);
           if (previous) return age(previous, now(), true);
           throw error;
-        } finally {
-          clearTimeout(timer); controller.abort(); await reader?.cancel().catch(() => {});
         }
       })().finally(() => inflight.delete(key));
       inflight.set(key, request);

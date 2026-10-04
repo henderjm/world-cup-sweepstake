@@ -1493,3 +1493,25 @@ HTTP process checks. Eight new response tests cover unknown fixtures, complete
 statistics and settlement. Full lineup data caught and fixed an assembled-
 payload versus metadata-size validation error. No browser or production path
 changed: Worker integration and headless end-to-end replay remain next.
+
+### 2026-10-04 — Worker stored-detail integration and browser proof
+
+Connected public and background detail consumers to the opt-in stored service,
+with bounded/coalesced requests, independent section ages, version rejection and
+fully degraded last-good fallback. Prevent legacy KV/static detail mixing in
+stored mode. Keep settled fantasy guarded, skip degraded provisional writes and
+preserve red-card counts when event coverage is degraded. Existing provider mode
+remains available for the approved cutover/rollback decision.
+
+Verification: 1,635 app tests, fifteen focused reader checks and Worker dry-run
+bundle passed. Real headless mobile/desktop replay through the Worker and stored
+response mapper verified loading, retry, missing coverage, complete lineups,
+stale retention, downward goal correction, keyboard focus and layout. Thirteen
+stored reads and zero provider calls or page errors. The browser now explicitly
+avoids static exports for stored missing/empty sections, preventing old goals
+from reappearing. The build preview excludes unrelated mobile changes.
+
+Next: verify cron side effects with representative D1 state, migrate remaining
+feeder/static/player-history consumers, and package the priced cloud trial with
+independent monitoring. Production remains unchanged and sustained reliability
+is still unmeasured. No real browser windows, provider traffic or deployments.
