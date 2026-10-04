@@ -1671,3 +1671,22 @@ Reader ZIP checksum:
 `29617bbbe0e4f9bb59592658911be527abf12fe5e71edb7fd49a994c244c5453`.
 Artifacts: `/tmp/kickoff-score-release-1004`; nothing uploaded/deployed. Next:
 infrastructure/IAM with denial tests, remaining costs and budget-safe runbook.
+
+### 4 October — unapplied trial infrastructure
+
+Added `infra/scores/trial.json`: retained/PITR DynamoDB table, narrowly scoped
+reader/collector/execution roles, non-root read-only Fargate task, two separately
+placed services defaulting to zero tasks, versioned reader artifact, Lambda
+concurrency limit and throttled HTTP API. Requires existing approved public
+subnets, secret, private ECR image digest and versioned S3 archive. No resources
+created. Applying would spend money and expose a new read endpoint, requiring
+approval even while collectors are off.
+
+Validation: cfn-lint 1.57.1 passed with no findings; three Node policy/configuration
+regression checks passed. Transaction permissions were checked against AWS's
+DynamoDB transaction documentation and actual adapter operations. These checks
+validate the declared template, not AWS enforcement. Remaining gates and exact
+limitations (AZ/VPC/routing preflight, KMS assumption, retained-resource costs,
+IAM denial tests, initialization/operator tooling and monitoring) are recorded
+in `infra/scores/README.md`. Next: runnable budget initialization/preflight and
+complete cost/monitoring proposal before approval.

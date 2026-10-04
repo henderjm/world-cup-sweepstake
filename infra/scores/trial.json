@@ -1,0 +1,724 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Kickoff Draft score trial. Unapplied; explicit spending and public deployment approval required. Collectors default off.",
+  "Parameters": {
+    "ImageRepositoryArn": {
+      "Type": "String",
+      "MinLength": 1
+    },
+    "ProviderSecretArn": {
+      "Type": "String",
+      "MinLength": 1
+    },
+    "ArtifactBucket": {
+      "Type": "String",
+      "MinLength": 1
+    },
+    "ReaderKey": {
+      "Type": "String",
+      "MinLength": 1
+    },
+    "ReaderVersion": {
+      "Type": "String",
+      "MinLength": 1
+    },
+    "VpcId": {
+      "Type": "AWS::EC2::VPC::Id"
+    },
+    "SubnetA": {
+      "Type": "AWS::EC2::Subnet::Id"
+    },
+    "SubnetB": {
+      "Type": "AWS::EC2::Subnet::Id"
+    },
+    "Seasons": {
+      "Type": "String",
+      "AllowedPattern": "PL:[0-9]{4},CL:[0-9]{4}"
+    },
+    "CollectorImage": {
+      "Type": "String",
+      "AllowedPattern": "[0-9]{12}\\.dkr\\.ecr\\.eu-west-1\\.amazonaws\\.com/[a-z0-9/_-]+@sha256:[a-f0-9]{64}"
+    },
+    "EnableCollection": {
+      "Type": "String",
+      "Default": "false",
+      "AllowedValues": [
+        "false",
+        "true"
+      ],
+      "Description": "Only enable after approved budget initialization and old-consumer shutdown."
+    }
+  },
+  "Rules": {
+    "IrelandOnly": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Equals": [
+              {
+                "Ref": "AWS::Region"
+              },
+              "eu-west-1"
+            ]
+          },
+          "AssertDescription": "Trial is priced and scoped for Ireland."
+        }
+      ]
+    },
+    "DistinctSubnets": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "SubnetA"
+                  },
+                  {
+                    "Ref": "SubnetB"
+                  }
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "Use distinct public subnets in different availability zones."
+        }
+      ]
+    }
+  },
+  "Conditions": {
+    "CollectionEnabled": {
+      "Fn::Equals": [
+        {
+          "Ref": "EnableCollection"
+        },
+        "true"
+      ]
+    }
+  },
+  "Resources": {
+    "Scores": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "BillingMode": "PAY_PER_REQUEST",
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "pk",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "pk",
+            "KeyType": "HASH"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "DeletionProtectionEnabled": true,
+        "SSESpecification": {
+          "SSEEnabled": true
+        }
+      },
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "ReaderLogs": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "RetentionInDays": 14
+      },
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "CollectorLogs": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "RetentionInDays": 14
+      },
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "ReaderRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "ScoreRuntime",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:GetItem"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "Scores",
+                      "Arn"
+                    ]
+                  },
+                  "Condition": {
+                    "ForAllValues:StringLike": {
+                      "dynamodb:LeadingKeys": [
+                        "SCORE#PL#*",
+                        "SCORE#CL#*",
+                        "DETAIL#PL#*",
+                        "DETAIL#CL#*",
+                        "FANTASY#PL#*"
+                      ]
+                    },
+                    "Null": {
+                      "dynamodb:LeadingKeys": "false"
+                    }
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "ReaderLogs",
+                      "Arn"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "CollectorRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": {
+                  "aws:SourceAccount": {
+                    "Ref": "AWS::AccountId"
+                  }
+                },
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:*"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "ScoreRuntime",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:GetItem",
+                    "dynamodb:PutItem"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "Scores",
+                      "Arn"
+                    ]
+                  },
+                  "Condition": {
+                    "ForAllValues:StringLike": {
+                      "dynamodb:LeadingKeys": [
+                        "SCORE#PL#*",
+                        "SCORE#CL#*",
+                        "DETAIL#PL#*",
+                        "DETAIL#CL#*",
+                        "FANTASY#PL#*",
+                        "COLLECTOR",
+                        "PROVIDER_BUDGET"
+                      ]
+                    },
+                    "Null": {
+                      "dynamodb:LeadingKeys": "false"
+                    }
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:ConditionCheckItem"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "Scores",
+                      "Arn"
+                    ]
+                  },
+                  "Condition": {
+                    "ForAllValues:StringLike": {
+                      "dynamodb:LeadingKeys": [
+                        "COLLECTOR"
+                      ]
+                    },
+                    "Null": {
+                      "dynamodb:LeadingKeys": "false"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "ExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": {
+                  "aws:SourceAccount": {
+                    "Ref": "AWS::AccountId"
+                  }
+                },
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:*"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "ScoreRuntime",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecr:GetAuthorizationToken"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecr:BatchCheckLayerAvailability",
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchGetImage"
+                  ],
+                  "Resource": {
+                    "Ref": "ImageRepositoryArn"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "secretsmanager:GetSecretValue"
+                  ],
+                  "Resource": {
+                    "Ref": "ProviderSecretArn"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "CollectorLogs",
+                      "Arn"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "CollectorNetwork": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Score collectors: no inbound access, outbound HTTPS",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "SecurityGroupEgress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 443,
+            "ToPort": 443,
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "Cluster": {
+      "Type": "AWS::ECS::Cluster",
+      "Properties": {}
+    },
+    "CollectorTask": {
+      "Type": "AWS::ECS::TaskDefinition",
+      "Properties": {
+        "Cpu": "256",
+        "Memory": "512",
+        "NetworkMode": "awsvpc",
+        "RequiresCompatibilities": [
+          "FARGATE"
+        ],
+        "RuntimePlatform": {
+          "CpuArchitecture": "X86_64",
+          "OperatingSystemFamily": "LINUX"
+        },
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "ExecutionRole",
+            "Arn"
+          ]
+        },
+        "TaskRoleArn": {
+          "Fn::GetAtt": [
+            "CollectorRole",
+            "Arn"
+          ]
+        },
+        "ContainerDefinitions": [
+          {
+            "Name": "collector",
+            "Image": {
+              "Ref": "CollectorImage"
+            },
+            "Essential": true,
+            "User": "1000",
+            "ReadonlyRootFilesystem": true,
+            "StopTimeout": 30,
+            "LinuxParameters": {
+              "Capabilities": {
+                "Drop": [
+                  "ALL"
+                ]
+              }
+            },
+            "Environment": [
+              {
+                "Name": "SCORE_TABLE_NAME",
+                "Value": {
+                  "Ref": "Scores"
+                }
+              },
+              {
+                "Name": "SCORE_SEASONS",
+                "Value": {
+                  "Ref": "Seasons"
+                }
+              },
+              {
+                "Name": "AWS_REGION",
+                "Value": {
+                  "Ref": "AWS::Region"
+                }
+              }
+            ],
+            "Secrets": [
+              {
+                "Name": "API_FOOTBALL_KEY",
+                "ValueFrom": {
+                  "Ref": "ProviderSecretArn"
+                }
+              }
+            ],
+            "LogConfiguration": {
+              "LogDriver": "awslogs",
+              "Options": {
+                "awslogs-group": {
+                  "Ref": "CollectorLogs"
+                },
+                "awslogs-region": {
+                  "Ref": "AWS::Region"
+                },
+                "awslogs-stream-prefix": "scores",
+                "mode": "non-blocking",
+                "max-buffer-size": "1m"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "CollectorA": {
+      "Type": "AWS::ECS::Service",
+      "Properties": {
+        "Cluster": {
+          "Ref": "Cluster"
+        },
+        "TaskDefinition": {
+          "Ref": "CollectorTask"
+        },
+        "DesiredCount": {
+          "Fn::If": [
+            "CollectionEnabled",
+            1,
+            0
+          ]
+        },
+        "LaunchType": "FARGATE",
+        "PlatformVersion": "1.4.0",
+        "DeploymentConfiguration": {
+          "MinimumHealthyPercent": 0,
+          "MaximumPercent": 100,
+          "DeploymentCircuitBreaker": {
+            "Enable": true,
+            "Rollback": true
+          }
+        },
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "AssignPublicIp": "ENABLED",
+            "SecurityGroups": [
+              {
+                "Ref": "CollectorNetwork"
+              }
+            ],
+            "Subnets": [
+              {
+                "Ref": "SubnetA"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "CollectorB": {
+      "Type": "AWS::ECS::Service",
+      "Properties": {
+        "Cluster": {
+          "Ref": "Cluster"
+        },
+        "TaskDefinition": {
+          "Ref": "CollectorTask"
+        },
+        "DesiredCount": {
+          "Fn::If": [
+            "CollectionEnabled",
+            1,
+            0
+          ]
+        },
+        "LaunchType": "FARGATE",
+        "PlatformVersion": "1.4.0",
+        "DeploymentConfiguration": {
+          "MinimumHealthyPercent": 0,
+          "MaximumPercent": 100,
+          "DeploymentCircuitBreaker": {
+            "Enable": true,
+            "Rollback": true
+          }
+        },
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "AssignPublicIp": "ENABLED",
+            "SecurityGroups": [
+              {
+                "Ref": "CollectorNetwork"
+              }
+            ],
+            "Subnets": [
+              {
+                "Ref": "SubnetB"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "Reader": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Runtime": "nodejs24.x",
+        "Architectures": [
+          "x86_64"
+        ],
+        "Handler": "services/scores/lambda.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "ReaderRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "S3Bucket": {
+            "Ref": "ArtifactBucket"
+          },
+          "S3Key": {
+            "Ref": "ReaderKey"
+          },
+          "S3ObjectVersion": {
+            "Ref": "ReaderVersion"
+          }
+        },
+        "MemorySize": 512,
+        "Timeout": 10,
+        "ReservedConcurrentExecutions": 10,
+        "Environment": {
+          "Variables": {
+            "SCORE_TABLE_NAME": {
+              "Ref": "Scores"
+            },
+            "SCORE_SEASONS": {
+              "Ref": "Seasons"
+            }
+          }
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "ReaderLogs"
+          }
+        }
+      }
+    },
+    "ReadApi": {
+      "Type": "AWS::ApiGatewayV2::Api",
+      "Properties": {
+        "ProtocolType": "HTTP",
+        "Name": {
+          "Fn::Sub": "${AWS::StackName}-reader"
+        }
+      }
+    },
+    "ReadIntegration": {
+      "Type": "AWS::ApiGatewayV2::Integration",
+      "Properties": {
+        "ApiId": {
+          "Ref": "ReadApi"
+        },
+        "IntegrationType": "AWS_PROXY",
+        "IntegrationUri": {
+          "Fn::GetAtt": [
+            "Reader",
+            "Arn"
+          ]
+        },
+        "PayloadFormatVersion": "2.0",
+        "TimeoutInMillis": 12000
+      }
+    },
+    "ReadRoute": {
+      "Type": "AWS::ApiGatewayV2::Route",
+      "Properties": {
+        "ApiId": {
+          "Ref": "ReadApi"
+        },
+        "RouteKey": "GET /{proxy+}",
+        "Target": {
+          "Fn::Join": [
+            "/",
+            [
+              "integrations",
+              {
+                "Ref": "ReadIntegration"
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "ReadStage": {
+      "Type": "AWS::ApiGatewayV2::Stage",
+      "Properties": {
+        "ApiId": {
+          "Ref": "ReadApi"
+        },
+        "StageName": "$default",
+        "AutoDeploy": true,
+        "DefaultRouteSettings": {
+          "ThrottlingBurstLimit": 20,
+          "ThrottlingRateLimit": 10
+        }
+      }
+    },
+    "ReadPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Ref": "Reader"
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Sub": "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ReadApi}/*/GET/*"
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "ScoreTable": {
+      "Value": {
+        "Ref": "Scores"
+      }
+    },
+    "ReaderOrigin": {
+      "Value": {
+        "Fn::GetAtt": [
+          "ReadApi",
+          "ApiEndpoint"
+        ]
+      }
+    },
+    "ReaderRoleArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "ReaderRole",
+          "Arn"
+        ]
+      }
+    },
+    "CollectorRoleArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "CollectorRole",
+          "Arn"
+        ]
+      }
+    }
+  }
+}

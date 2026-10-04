@@ -18,8 +18,9 @@ or provider authority until it wins the lease.
 Use one regional on-demand DynamoDB table and a Lambda/HTTP API stored-read
 service. The reader gets GetItem only, restricted to SCORE, DETAIL and FANTASY
 key prefixes. It gets no write actions, budget/lease access or provider secret.
-The collector gets only the table operations used by the adapter and access to
-its provider secret. Separate execution/log permissions from application access.
+The collector application gets only the table operations used by the adapter.
+The separate ECS execution role reads its provider secret and injects it at
+startup; the reader gets neither that role nor the secret.
 No long-lived AWS keys go into GitHub or containers. The existing Cloudflare
 Worker retains authentication, D1, fantasy mutations, analysis and notifications.
 This is a regional design, not regional-disaster failover.
@@ -116,3 +117,8 @@ read-volume/partition/loop measurements; API limits and real egress validation
 plan; IAM denial tests; an exact budget-preserving cutover/rollback runbook; and
 an approved operator/paging destination. This draft closes the unsupported
 compute-price assumption, not the whole deployment package.
+
+Infrastructure draft: `../infra/scores/trial.json` now declares the regional
+resources and roles with collectors defaulting off. Schema and local policy
+checks passed; cloud IAM, capacity and failover remain unverified. See the
+adjacent infrastructure README for inputs and remaining approval gates.
