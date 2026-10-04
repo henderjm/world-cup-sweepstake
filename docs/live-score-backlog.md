@@ -1944,3 +1944,14 @@ Separately, six isolated pre-timing-fix schedule integration runs all passed.
 This did not reproduce the earlier extra incidents and does not establish their
 cause. Logs remain at `/tmp/kickoff-monitor-before.rcG0Ns/run-1.log` through
 `run-6.log`; keep strengthened timestamp/event diagnostics for recurrence.
+
+## October 4 — real recorder ENOSPC recovery
+
+Added an opt-in Linux tmpfs integration test for the actual recorder, using
+synthetic local PL/CL responses. It proves completed records survive unchanged,
+an actual partial append is removed safely on resume, missing slots remain in
+the denominator, future probes resume, and restarting again adds no probes or
+records. Uses inherited `flock` in the stock Node container; Python wrapper
+recovery remains separately tested. See `score-monitoring-trial.md` for the
+serial two-test command and limits. No production writes or provider requests.
+Retention, external supervision, watchdog and human paging remain next gates.

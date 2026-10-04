@@ -171,8 +171,9 @@ docker run --rm --platform linux/amd64 --network none --read-only \
   --mount type=bind,src="$PWD/scripts",dst=/work/scripts,readonly \
   --mount type=bind,src="$PWD/src",dst=/work/src,readonly \
   --mount type=bind,src="$PWD/test",dst=/work/test,readonly \
-  -e SCORE_ALERT_DISK_TEST_DIR=/evidence \
-  node:24-bookworm-slim node --test /work/test/score-alert-disk.test.js
+  -e SCORE_ALERT_DISK_TEST_DIR=/evidence -e SCORE_RECORDER_DISK_TEST_DIR=/evidence \
+  node:24-bookworm-slim node --test --test-concurrency=1 \
+  /work/test/score-alert-disk.test.js /work/test/score-recorder-disk.test.js
 ```
 
 The recorder also rechecks wall time after every timer wake-up so an early wake
@@ -183,3 +184,28 @@ late starts and includes event diagnostics on failure. Final related suite:
 run emitted four accepted events instead of two; three subsequent repetitions
 passed before the timing change, so its root cause is unconfirmed. Do not claim
 that intermittent failure is conclusively fixed; retain diagnostics on recurrence.
+
+## Recorder disk-full recovery
+
+The same disposable 64 KiB tmpfs now exercises recorder append failure with a
+real ENOSPC and a partial JSONL tail. Thirty synthetic active fixtures per
+competition make the failed write cross a filesystem block. Completed PL/CL
+observations remain byte-for-byte intact. Once test space is released, restart
+truncates only the partial tail and resumes future slots. Missed slots continue
+to reduce both competitions' coverage; another restart neither rewrites evidence
+nor repeats probes. No provider calls are made.
+
+This container uses `flock` to hold the same inherited descriptor protocol because
+the existing Node image does not contain Python. The Python wrapper's process
+recovery is covered separately by `score-recorder-resume.test.js`. Run the two
+disk tests serially as shown above: they deliberately fill the whole disposable
+volume. Both refuse non-tmpfs and volumes above 1 MiB. This proves local recorder
+append recovery, not power-loss durability, automatic disk reclamation, external
+supervision, watchdog detection or human receipt of an alert. Retention and those
+operational gates remain open.
+
+Observed local result: two durable probe records preserved, 2,406 partial bytes
+removed, eight final records, and 66.67% monitor coverage for each competition
+(two missed slots out of six). Both disk tests and all four Python-wrapper
+recovery tests passed. These synthetic values demonstrate honest gap accounting,
+not the app's production availability.
