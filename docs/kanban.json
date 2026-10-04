@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-04",
-  "revision": "472e286",
+  "revision": "1d3b15c",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -39,8 +39,8 @@
       "title": "Migrate every provider consumer",
       "summary": "Prevent details, stats and background jobs competing with scores.",
       "acceptance": "Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.",
-      "next": "Verify cron side effects against representative D1 state; migrate remaining feeder, static export and player-history consumers before the priced cloud trial.",
-      "evidence": "472e286 connects public and background Worker detail consumers to stored mode. 1,635 app tests, fifteen reader checks, Worker bundle and headless mobile/desktop replay passed. Thirteen stored reads, zero provider calls in replay. Remaining non-Worker consumers and cron state validation stay open; not deployed."
+      "next": "Migrate remaining feeder, static export and player-history consumers; prepare the priced cloud trial and independent monitoring.",
+      "evidence": "1d3b15c verifies the scheduled handler on local SQLite: live/outage/final transitions, atomic failure/retry, 22-player settlement and 50-22 H2H totals. Fixed full-time provisional-point loss. 1,635 app tests pass. Other consumers and cloud validation remain; not deployed."
     },
     {
       "id": "cloud",
@@ -109,8 +109,8 @@
       "title": "Worker score and match-detail reads",
       "summary": "Opt-in stored reads for scoreboards, match drawers and internal detail consumers.",
       "acceptance": "No provider fallback in stored mode; preserve source age and versions, retain labelled last-good data, allow downward corrections and keep existing features intact.",
-      "next": "Validate representative cron side effects and finish remaining provider-consumer migration before approving cutover.",
-      "evidence": "472e286 and f379742: score and detail integration locally verified. 1,635 app tests, fifteen reader checks and headless missing/stale/corrected detail journeys passed. No legacy detail mixing in stored responses. Not enabled or deployed."
+      "next": "Finish remaining provider consumers and validate actual cloud D1, IAM, capacity and matchday freshness in the approved trial.",
+      "evidence": "472e286 plus 1d3b15c: headless drawer checks and scheduled-state replay passed. Provisional points survive delayed final detail; settlement retry is atomic and idempotent locally. No provider or legacy detail KV calls in replay. Not enabled or deployed."
     },
     {
       "id": "alerts",

@@ -10,7 +10,7 @@
 @media(max-width:650px){#kickoff-kanban .lanes{grid-template-columns:1fr}}
 </style>
 <div id="kickoff-kanban">
-<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code 472e286</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
+<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code 1d3b15c</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
 <div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">2</span></h3><article data-card="reliability">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Make busy matchdays reliable</summary>
@@ -18,7 +18,7 @@
 <p>Architecture work underway; production reliability remains unmeasured.</p></article><article data-card="consumers">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Migrate every provider consumer</summary>
-<dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Verify cron side effects against representative D1 state; migrate remaining feeder, static export and player-history consumers before the priced cloud trial.</dd><dt>Evidence</dt><dd>472e286 connects public and background Worker detail consumers to stored mode. 1,635 app tests, fifteen reader checks, Worker bundle and headless mobile/desktop replay passed. Thirteen stored reads, zero provider calls in replay. Remaining non-Worker consumers and cron state validation stay open; not deployed.</dd></dl></details>
+<dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Migrate remaining feeder, static export and player-history consumers; prepare the priced cloud trial and independent monitoring.</dd><dt>Evidence</dt><dd>1d3b15c verifies the scheduled handler on local SQLite: live/outage/final transitions, atomic failure/retry, 22-player settlement and 50-22 H2H totals. Fixed full-time provisional-point loss. 1,635 app tests pass. Other consumers and cloud validation remain; not deployed.</dd></dl></details>
 <p>Prevent details, stats and background jobs competing with scores.</p></article></section><section aria-label="Up next"><h3>Up next <span class="text-muted">5</span></h3><article data-card="monitor">
 <span class="viz-badge">P0 · first</span>
 <details><summary class="cursor-interaction">External monitoring and approved paging</summary>
@@ -50,7 +50,7 @@
 <p>Viewers read stored scores without provider access.</p></article><article data-card="worker-reads">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Worker score and match-detail reads</summary>
-<dl><dt>Acceptance</dt><dd>No provider fallback in stored mode; preserve source age and versions, retain labelled last-good data, allow downward corrections and keep existing features intact.</dd><dt>Next action</dt><dd>Validate representative cron side effects and finish remaining provider-consumer migration before approving cutover.</dd><dt>Evidence</dt><dd>472e286 and f379742: score and detail integration locally verified. 1,635 app tests, fifteen reader checks and headless missing/stale/corrected detail journeys passed. No legacy detail mixing in stored responses. Not enabled or deployed.</dd></dl></details>
+<dl><dt>Acceptance</dt><dd>No provider fallback in stored mode; preserve source age and versions, retain labelled last-good data, allow downward corrections and keep existing features intact.</dd><dt>Next action</dt><dd>Finish remaining provider consumers and validate actual cloud D1, IAM, capacity and matchday freshness in the approved trial.</dd><dt>Evidence</dt><dd>472e286 plus 1d3b15c: headless drawer checks and scheduled-state replay passed. Provisional points survive delayed final detail; settlement retry is atomic and idempotent locally. No provider or legacy detail KV calls in replay. Not enabled or deployed.</dd></dl></details>
 <p>Opt-in stored reads for scoreboards, match drawers and internal detail consumers.</p></article><article data-card="alerts">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Durable incident and recovery alerts</summary>
