@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-04",
-  "revision": "d50aab4",
+  "revision": "f379742",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -34,13 +34,13 @@
     },
     {
       "id": "consumers",
-      "status": "Up next",
+      "status": "In progress",
       "priority": "P0",
       "title": "Migrate every provider consumer",
       "summary": "Prevent details, stats and background jobs competing with scores.",
       "acceptance": "Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.",
-      "next": "Map each direct provider call to its replacement and verification scenario.",
-      "evidence": "Shared admission tested locally in 8468ca6; account-wide production control is not established."
+      "next": "Collect and store lineups, events and player details through the shared budget, then redirect Worker detail readers and settlement consumers.",
+      "evidence": "f379742 inventories four direct provider entry points and adds the Worker getLive stored-read boundary. Details, feeder and build/player jobs still require migration; production switch remains unset."
     },
     {
       "id": "cloud",
@@ -101,6 +101,16 @@
       "acceptance": "Atomic, fenced publication; bounded coherent reads; corrupt data unavailable; scores and quota survive restart. Test mobile and desktop loading, empty, stale and recovery states.",
       "next": "Package for cloud trial and validate actual IAM, latency and capacity.",
       "evidence": "bb977b8 \u00b7 42 service checks, 1,606 app tests and headless journeys passed. Synthetic 1,000-fixture warm unchanged read: 1,431-byte manifest. Not a cloud latency or browser payload result."
+    },
+    {
+      "id": "worker-reads",
+      "status": "Validated locally",
+      "priority": "P0",
+      "title": "Worker score and schedule reads",
+      "summary": "One opt-in stored-service boundary for scoreboard and internal schedule consumers.",
+      "acceptance": "No provider fallback in stored mode; preserve source age and versions, retain labelled last-good data, allow downward corrections and keep existing features intact.",
+      "next": "Migrate supplementary detail and player consumers before claiming account-wide quota control or approving cutover.",
+      "evidence": "f379742 \u00b7 1,629 regression tests, nine focused checks, Worker dry-run bundle and headless mobile/desktop replay passed. Five stored-service reads, zero provider calls in the replay. Not enabled or deployed."
     },
     {
       "id": "alerts",
