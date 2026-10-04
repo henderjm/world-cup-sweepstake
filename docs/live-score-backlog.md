@@ -3,6 +3,28 @@
 Updated: 2026-10-04. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
 Starting revision: `bfaf0a66e03febeda47647789e275853155ef638`.
 
+## Current production state after approved AWS cutover
+
+October 4: the owner approved provisioning, cutover and the provider-key transfer.
+Production PL/CL score reads now use AWS in account 134471064301, eu-west-1.
+Two collectors share the fenced lease and provider budget. The Cloudflare Worker
+has no provider key; the GitHub detail feeder skips when the AWS origin is set.
+Frontend c488c35 is deployed; service image/reader are built from bb79bf0.
+Evidence: `live-score-evidence/2026-10-04-aws-cutover.json` and
+`live-score-evidence/2026-10-04-aws-takeover.json`. The controlled stop observed
+standby lease takeover within 15.916 seconds and twelve successful public feed
+reads. This is a quiet-day drill, not a busy-matchday availability measurement.
+Earlier dated preparation notes below are historical, not current deployment state.
+Hourly automation stays paused.
+
+| Priority | Remaining work | Acceptance |
+| --- | --- | --- |
+| P0 | Independent matchday monitoring and paging | Supervised collector-independent checks, monitor-loss watchdog, durable alerts and an approved receiver; preserve missing observations and measure the existing SLOs. No new paid service without approval. |
+| P0 | Public read capacity | Verify representative concurrent mobile/desktop clients against the 10 RPS / burst 20 AWS ceiling, including static exports. Demonstrate a cache/rate-limit strategy that meets agreed traffic and freshness targets before claiming capacity. |
+| P1 | Supplementary collection quality | Finish all three fantasy history seasons without touching the 6000-request score reserve. Stop repeated invalid archived-detail retries starving history. Log bounded validation reasons and fixture IDs. Verify cached exports retain source age and never invent player positions or xP. |
+| P1 | Provider squad conflicts | Player 416250 appears twice in Aston Villa with conflicting positions. The stored pool excludes every ambiguous ID and reports them in coverage. Publish unambiguous players, retain a recent complete export where possible, and verify eventual provider correction. |
+| P1 | Runtime permission evidence | Exercise denied provider/write operations under the actual reader role and verify least privilege without changing production data. |
+
 ## Mandate and continuation
 
 September 26 priority reset: the user requested a structural reassessment and

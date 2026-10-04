@@ -1,5 +1,8 @@
 # Score-service cutover and rollback
 
+> October 4 update: the owner approved and completed AWS provisioning and public score cutover. See `live-score-evidence/2026-10-04-aws-cutover.json` for actual artifacts, rollback identity and runtime evidence. Preparation and approval gates below describe the runbook; do not repeat budget initialization. Independent monitoring and sustained SLO proof remain outstanding.
+
+
 Preparation only. Account: `134471064301`; AWS region: `eu-west-1`.
 Repository: `henderjm/world-cup-sweepstake`. No commands below authorize spending,
 public deployment, changing provider credentials or stopping production jobs.

@@ -1,5 +1,29 @@
 # End-of-day handoff — 4 October 2026
 
+## AWS cutover completed after later owner approval
+
+The later AWS instruction superseded the initial wrap-up below. Production score
+reads now use the Ireland AWS stack; frontend c488c35 is deployed, service
+artifacts are bb79bf0, and Worker version 8c76a000-759e-48ce-95ee-1241879d06f2
+uses the AWS origin with its provider key removed. Both ECS services target one
+task in separate AZs. The standby acquired epoch 6 within 15.916 seconds during
+a controlled stop; all twelve sampled public league reads succeeded.
+
+Release branch `codex/aws-cutover-release` and main contain the reviewed work.
+The primary checkout still contains unrelated mobile/native changes: preserve
+them. Headless production journeys passed at 390px and 1440px: upcoming dates, both
+league tables, completed-match timeline/lineups, no browser errors or overflow.
+The paced manual export passed in run 37219360105. The shared budget reached
+1500 used, preserving 6000 requests for scores; supplementary work is deferred.
+Provider squad conflicts are explicitly excluded; supplementary history
+and detail coverage remain incomplete. The provider plan was not upgraded.
+Independent monitoring/paging and busy-day SLO evidence remain the first backlog
+items. Hourly automation remains PAUSED. See the cutover JSON and current backlog
+for exact resources, revisions, evidence and limitations.
+
+## Earlier wrap-up before AWS authorization
+
+
 Stopped at the user's request to conserve usage. Continue from branch
 `codex/live-score-quality`; implementation HEAD is `5594472`. Work is committed
 locally, but this branch has no upstream and no locally known remote branch

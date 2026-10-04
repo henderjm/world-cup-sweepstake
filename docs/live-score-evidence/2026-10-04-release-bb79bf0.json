@@ -1,0 +1,32 @@
+{
+  "commit": "bb79bf008172377a216dce2b30537034756f64b8",
+  "image": "134471064301.dkr.ecr.eu-west-1.amazonaws.com/kickoff-draft-scores@sha256:3e02e6dc5a9bb902712a24e009885653ced14c14aba128bd1b81742a1ad06eaf",
+  "reader": {
+    "bucket": "kickoff-draft-scores-134471064301-eu-west-1",
+    "key": "releases/bb79bf0/reader.zip",
+    "version": "FLE2E4kVyk8u54soe70rHTAyQQh46ltX",
+    "sha256": "b79c078c71b3b09aa3631c53051f3bf3523dfe84a7b93e4091d01fc25e1697bc"
+  },
+  "tests": {
+    "application": {
+      "passed": 1676,
+      "skipped": 2,
+      "failed": 0,
+      "commit": "6e22136"
+    },
+    "fantasyIntegration": {
+      "passed": 5,
+      "failed": 0,
+      "commit": "bb79bf0"
+    },
+    "pacedExporter": {
+      "passed": 6,
+      "failed": 0,
+      "commit": "c488c35"
+    }
+  },
+  "headlessRegression": [
+    "scores-overview.js",
+    "next-matchday.js"
+  ]
+}

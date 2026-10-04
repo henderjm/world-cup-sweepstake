@@ -10,24 +10,16 @@
 @media(max-width:650px){#kickoff-kanban .lanes{grid-template-columns:1fr}}
 </style>
 <div id="kickoff-kanban">
-<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code 7372c8d + monitoring cadence correction</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
-<div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">4</span></h3><article data-card="reliability">
+<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code AWS cutover: c488c35 frontend, bb79bf0 service</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
+<div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">2</span></h3><article data-card="reliability">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Make busy matchdays reliable</summary>
 <dl><dt>Acceptance</dt><dd>Measure 99.95% usable scoreboards and 99.9% active observation freshness. Measure provider-visible change to screen separately: p95 ≤30s, p99 ≤60s. Warn after 45s. Missing checks and provider failures count against the user-facing result.</dd><dt>Next action</dt><dd>Finish trial costs, independent monitoring and remaining preflight, then seek approval for the concrete trial.</dd><dt>Evidence</dt><dd>Local stored-mode migration, release artifacts, unapplied infrastructure and budget initialization are prepared. Latest service suite: 80 passed. Production reliability and actual AWS behavior remain unmeasured.</dd></dl></details>
-<p>Architecture work underway; production reliability remains unmeasured.</p></article><article data-card="monitor">
+<p>AWS cutover and a quiet-day takeover drill are verified; busy-day reliability remains unmeasured.</p></article><article data-card="monitor">
 <span class="viz-badge">P0 · first</span>
 <details><summary class="cursor-interaction">External monitoring and approved paging</summary>
 <dl><dt>Acceptance</dt><dd>Record both PL and CL, missing observations and worst-fixture freshness independently. Inject an incident and verify delivery to the configured alert receiver plus recovery. Preserve dated evidence.</dd><dt>Next action</dt><dd>Implement retention and durable receiver delivery; finish external supervision, schedule renewal and independent watchdog pricing.</dd><dt>Evidence</dt><dd>fa25837: explicit window handover preserves PL/CL probes while prior alerts retry. 36 related tests pass; focused path tests also pass. Concurrent runners excluded; restart adds no probes or acknowledged deliveries. Hosting and human paging remain uninstalled.</dd></dl></details>
-<p>Local watcher is verified; continuous hosting and real paging remain open.</p></article><article data-card="consumers">
-<span class="viz-badge">P0</span>
-<details><summary class="cursor-interaction">Migrate every provider consumer</summary>
-<dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Include all stored-mode switches, provider-key removal and rollback in the priced trial; verify runtime traffic and downstream side effects after approval.</dd><dt>Evidence</dt><dd>cf5787c removes key-only Worker guards. All 1,657 app tests, keyless cron replay and headless mobile/desktop detail journeys pass. Predictions and notification state verified locally; no real messages or provider calls. Cloud runtime census remains; not deployed.</dd></dl></details>
-<p>Prevent details, stats and background jobs competing with scores.</p></article><article data-card="cloud">
-<span class="viz-badge">P0</span>
-<details><summary class="cursor-interaction">Package and price the AWS trial</summary>
-<dl><dt>Acceptance</dt><dd>Produce infrastructure, monthly cost assumptions, read-only IAM, throttling, egress constraints and rollback. Exercise multi-zone takeover and cold/warm traffic after approval.</dd><dt>Next action</dt><dd>Finish independent monitor/watchdog/receiver proposal and pricing, provider allowance and remaining artifact/runtime checks before approval.</dd><dt>Evidence</dt><dd>Five-second PL/CL monitoring adds 1,036,800 API reads over 30 days. Existing October 4 Ireland rate snapshot yields AWS subtotals $64.88/$86.96/$307.71 for 100k/1m/10m visitor reads. Browser checks, external hosting/watchdog/paging and provider costs remain excluded.</dd></dl></details>
-<p>Artifacts and infrastructure are prepared locally; costs and operational gates remain incomplete.</p></article></section><section aria-label="Up next"><h3>Up next <span class="text-muted">3</span></h3><article data-card="latency">
+<p>Local watcher is verified; continuous hosting and real paging remain open.</p></article></section><section aria-label="Up next"><h3>Up next <span class="text-muted">3</span></h3><article data-card="latency">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Measure real matchday delivery</summary>
 <dl><dt>Acceptance</dt><dd>Retain timestamped PL/CL observations and p50/p95/p99 delivery reports; disclose coverage gaps. Verify stale warnings and recovery in headless browser journeys.</dd><dt>Next action</dt><dd>Run after independent monitoring and approved shadow deployment are ready.</dd><dt>Evidence</dt><dd>Synthetic recovery passes; sustained production nines are unknown.</dd></dl></details>
@@ -39,55 +31,63 @@
 <span class="viz-badge">P2</span>
 <details><summary class="cursor-interaction">Team labels and score-first polish</summary>
 <dl><dt>Acceptance</dt><dd>Verify Sabah identity before changing labels or follow keys. Align hero/date and metadata, retain calendar state during polling, measure rendering budgets and keep existing features reachable.</dd><dt>Next action</dt><dd>Take the highest-impact bounded product fix after the reliability critical path.</dd><dt>Evidence</dt><dd>Initial mobile and desktop benchmark recorded September 10; targeted refresh September 19.</dd></dl></details>
-<p>Resolve identity mismatches and remaining navigation and visual gaps.</p></article></section><section aria-label="Waiting"><h3>Waiting <span class="text-muted">1</span></h3><article data-card="cutover">
-<span class="viz-badge">P0</span>
-<details><summary class="cursor-interaction">Approve spending and public cutover</summary>
-<dl><dt>Acceptance</dt><dd>User approves the concrete priced trial before resources or upgrades, and approves public deployment separately after busy-window reliability evidence and rollback are ready.</dd><dt>Next action</dt><dd>Complete the plan and validation evidence first. No user action needed now.</dd><dt>Evidence</dt><dd>Local engineering is not blocked by this gate.</dd></dl></details>
-<p>Future gate: not asking for approval yet.</p></article></section><section aria-label="Validated locally"><h3>Validated locally <span class="text-muted">11</span></h3><article data-card="quiet-day">
-<span class="viz-badge">P1</span>
-<details><summary class="cursor-interaction">Reach the next matchday in one click</summary>
-<dl><dt>Acceptance</dt><dd>Keep competition and Following; reveal scheduled fixtures; Back restores filters. Preserve stale labels, 44px touch target and mobile layout. Malformed league identity cannot crash freshness labels.</dd><dt>Next action</dt><dd>Include in the next approved release; continue CL table and fixture discovery review.</dd><dt>Evidence</dt><dd>9694c15: 31 focused tests and headless 390/1440px CL/combined journeys passed; existing date/outage/recovery replay passed. Public LiveScore/FotMob comparison recorded October 4. No deployment.</dd></dl></details>
-<p>Quiet-day and empty-Live views lead directly to upcoming followed fixtures.</p></article><article data-card="artifacts">
-<span class="viz-badge">P0</span>
-<details><summary class="cursor-interaction">Pinned collector and reader artifacts</summary>
-<dl><dt>Acceptance</dt><dd>Build from an explicit commit, preserve source hashes, pin the image base, run non-root and load the reader from its extracted archive.</dd><dt>Next action</dt><dd>Rebuild from the approved final revision; verify ECR/S3 identities and retain uploaded digests.</dd><dt>Evidence</dt><dd>7454850: Linux image passed 75 service tests with read-only filesystem and no capabilities. Extracted reader entrypoint loaded. These artifacts predate later initialization/lease changes.</dd></dl></details>
-<p>Release files isolated from unrelated worktree edits.</p></article><article data-card="infrastructure">
-<span class="viz-badge">P0</span>
-<details><summary class="cursor-interaction">Trial infrastructure and scoped roles</summary>
-<dl><dt>Acceptance</dt><dd>Declare retained storage, narrow reader/collector roles, two isolated placements, throttled reads and collectors defaulting off. Verify actual IAM after approval.</dd><dt>Next action</dt><dd>Run AWS denial tests and placement/capacity checks in the approved trial.</dd><dt>Evidence</dt><dd>920fc3f: CloudFormation lint 1.57.1 and three policy/configuration regression checks passed. Local checks do not prove IAM enforcement.</dd></dl></details>
-<p>A reviewable template exists; no cloud resources created.</p></article><article data-card="initialization">
-<span class="viz-badge">P0</span>
-<details><summary class="cursor-interaction">Budget-preserving initialization</summary>
-<dl><dt>Acceptance</dt><dd>Preview without network calls; verify exact table, current-day evidence, uncertain requests and stopped-consumer attestation. Refuse existing budgets and competing initialization.</dd><dt>Next action</dt><dd>Use only after runtime shutdown proof and approval; keep the resulting evidence and let the lease expire naturally.</dd><dt>Evidence</dt><dd>d04d56f: actual CLI preview, wrong-table rejection, apply and reset refusal passed against DynamoDB Local. Four focused cases; full service suite now 80.</dd></dl></details>
-<p>Explicit usage evidence prevents a fresh trial from resetting consumed allowance.</p></article><article data-card="network">
-<span class="viz-badge">P0</span>
-<details><summary class="cursor-interaction">Read-only network preflight</summary>
-<dl><dt>Acceptance</dt><dd>Check exact account, owned subnets, distinct AZ IDs, IPv4 capacity, effective route tables and attached internet gateways. Never report full deployment readiness.</dd><dt>Next action</dt><dd>Run against the approved VPC; verify ACLs, DNS, specific routes and actual provider HTTPS connectivity separately.</dd><dt>Evidence</dt><dd>e8e86fd: four focused network cases plus three infrastructure checks passed. No live account/VPC preflight has run.</dd></dl></details>
-<p>Account and route checks are ready for an approved AWS target.</p></article><article data-card="stored-export">
-<span class="viz-badge">P0</span>
-<details><summary class="cursor-interaction">Stored exports and feeder retirement</summary>
-<dl><dt>Acceptance</dt><dd>Preserve source ages and last-good files, accept finished-match corrections, retain dated scorer totals on incomplete events, and stop the old feeder in stored mode.</dd><dt>Next action</dt><dd>Enable only during approved cutover, after runtime coverage checks and proof old jobs stopped.</dd><dt>Evidence</dt><dd>fc8d905: six focused export/feeder cases and 1,641 root tests passed. No repository variable enabled and no public deployment.</dd></dl></details>
-<p>Static scores and detail can share the collector without provider calls.</p></article><article data-card="storage">
-<span class="viz-badge">P0</span>
-<details><summary class="cursor-interaction">Partitioned storage and read service</summary>
-<dl><dt>Acceptance</dt><dd>Atomic, fenced publication; bounded coherent reads; corrupt data unavailable; scores and quota survive restart. Test mobile and desktop loading, empty, stale and recovery states.</dd><dt>Next action</dt><dd>Validate deployed IAM, cold/warm latency and capacity during the approved trial.</dd><dt>Evidence</dt><dd>bb977b8 · 42 service checks, 1,606 app tests and headless journeys passed. Synthetic 1,000-fixture warm unchanged read: 1,431-byte manifest. Not a cloud latency or browser payload result.</dd></dl></details>
-<p>Viewers read stored scores without provider access.</p></article><article data-card="worker-reads">
-<span class="viz-badge">P0</span>
-<details><summary class="cursor-interaction">Worker score and match-detail reads</summary>
-<dl><dt>Acceptance</dt><dd>No provider fallback in stored mode; preserve source age and versions, retain labelled last-good data, allow downward corrections and keep existing features intact.</dd><dt>Next action</dt><dd>Verify stored-mode switches and actual D1, notification delivery, IAM and matchday freshness during the approved trial.</dd><dt>Evidence</dt><dd>472e286 plus 1d3b15c: headless drawer checks and scheduled-state replay passed. Provisional points survive delayed final detail; settlement retry is atomic and idempotent locally. No provider or legacy detail KV calls in replay. Not enabled or deployed.</dd></dl></details>
-<p>Opt-in stored reads for scoreboards, match drawers and internal detail consumers.</p></article><article data-card="alerts">
+<p>Resolve identity mismatches and remaining navigation and visual gaps.</p></article></section><section aria-label="Waiting"><h3>Waiting <span class="text-muted">0</span></h3><p>No items.</p></section><section aria-label="Validated locally"><h3>Validated locally <span class="text-muted">2</span></h3><article data-card="alerts">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Durable incident and recovery alerts</summary>
 <dl><dt>Acceptance</dt><dd>Persist before send, require matching acknowledgment, deduplicate retries, preserve incident/recovery order and alert when the recorder stops.</dd><dt>Next action</dt><dd>Configure an approved external receiver and verify downstream human delivery, plus a watchdog outside the monitor failure domain.</dd><dt>Evidence</dt><dd>d50aab4 · 1,620 app tests passed; 30 focused checks passed after final checksum change. Real local processes verify stale data, receiver refusal, watcher restart and recorder loss. All three distinct events acknowledged locally within ten seconds of detection.</dd></dl></details>
-<p>Failed or missing checks reach a receiver even after watcher restart.</p></article><article data-card="collector">
-<span class="viz-badge">P0</span>
-<details><summary class="cursor-interaction">Prioritized collector and shared API budget</summary>
-<dl><dt>Acceptance</dt><dd>Prioritize live fixtures, validate discovery completeness, count every attempt, persist cooldowns, reject stale owners and keep stale observation ages honest.</dd><dt>Next action</dt><dd>Complete operational gates and validate the shared production path after approval.</dd><dt>Evidence</dt><dd>4f9d4dd: 80 local service tests passed. Synthetic 151-claim workload used 151 strong ownership reads and two lease writes; takeover and stale-writer rejection passed. Production unchanged.</dd></dl></details>
-<p>Bound provider work and preserve known scores through failures.</p></article><article data-card="recorder">
+<p>Failed or missing checks reach a receiver even after watcher restart.</p></article><article data-card="recorder">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Reliability recorder and read contract</summary>
 <dl><dt>Acceptance</dt><dd>Reject older snapshots without discarding valid mixed-age updates. Record missing checks rather than silently excluding them from reliability reports.</dd><dt>Next action</dt><dd>Deploy independent monitoring with tested alert delivery.</dd><dt>Evidence</dt><dd>4d9b364, 64f7336 · locally verified; not an installed continuous monitor.</dd></dl></details>
-<p>Version-aware recovery with a durable measurement baseline.</p></article></section><section aria-label="Released"><h3>Released <span class="text-muted">3</span></h3><article data-card="tables">
+<p>Version-aware recovery with a durable measurement baseline.</p></article></section><section aria-label="Released"><h3>Released <span class="text-muted">15</span></h3><article data-card="consumers">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Migrate every provider consumer</summary>
+<dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Complete supplementary history and invalid detail diagnostics within the shared allowance.</dd><dt>Evidence</dt><dd>Worker provider key removed; source variable set; feeder run 37219078579 skipped. Fantasy pool publishes 618 unambiguous players with explicit degraded coverage.</dd></dl></details>
+<p>Worker and Pages read stored AWS data; GitHub provider feeder is skipped.</p></article><article data-card="cloud">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Move score collection and reads to AWS</summary>
+<dl><dt>Acceptance</dt><dd>Produce infrastructure, monthly cost assumptions, read-only IAM, throttling, egress constraints and rollback. Exercise multi-zone takeover and cold/warm traffic after approval.</dd><dt>Next action</dt><dd>Measure busy-matchday reliability and public-read capacity; finish independent monitoring.</dd><dt>Evidence</dt><dd>Two AZ collectors; controlled stop observed lease takeover within 15.916s, all 12 public read samples passed. Frontend c488c35 and service bb79bf0 deployed. No achieved nines claim.</dd></dl></details>
+<p>Production score feeds now read the Ireland AWS service.</p></article><article data-card="quiet-day">
+<span class="viz-badge">P1</span>
+<details><summary class="cursor-interaction">Reach the next matchday in one click</summary>
+<dl><dt>Acceptance</dt><dd>Keep competition and Following; reveal scheduled fixtures; Back restores filters. Preserve stale labels, 44px touch target and mobile layout. Malformed league identity cannot crash freshness labels.</dd><dt>Next action</dt><dd>Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.</dd><dt>Evidence</dt><dd>October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json.</dd></dl></details>
+<p>Quiet-day and empty-Live views now link to upcoming matches on mobile and desktop.</p></article><article data-card="cutover">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Approve spending and public cutover</summary>
+<dl><dt>Acceptance</dt><dd>User approves the concrete priced trial before resources or upgrades, and approves public deployment separately after busy-window reliability evidence and rollback are ready.</dd><dt>Next action</dt><dd>Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.</dd><dt>Evidence</dt><dd>October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json.</dd></dl></details>
+<p>Owner approved AWS provisioning, public cutover and the specific provider-key transfer; executed within that scope.</p></article><article data-card="artifacts">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Pinned collector and reader artifacts</summary>
+<dl><dt>Acceptance</dt><dd>Build from an explicit commit, preserve source hashes, pin the image base, run non-root and load the reader from its extracted archive.</dd><dt>Next action</dt><dd>Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.</dd><dt>Evidence</dt><dd>October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json.</dd></dl></details>
+<p>Pinned bb79bf0 collector image and versioned reader ZIP are deployed.</p></article><article data-card="infrastructure">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Trial infrastructure and scoped roles</summary>
+<dl><dt>Acceptance</dt><dd>Declare retained storage, narrow reader/collector roles, two isolated placements, throttled reads and collectors defaulting off. Verify actual IAM after approval.</dd><dt>Next action</dt><dd>Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.</dd><dt>Evidence</dt><dd>October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json.</dd></dl></details>
+<p>Dedicated AWS stack created in Ireland; actual denied-role tests remain a follow-up.</p></article><article data-card="initialization">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Budget-preserving initialization</summary>
+<dl><dt>Acceptance</dt><dd>Preview without network calls; verify exact table, current-day evidence, uncertain requests and stopped-consumer attestation. Refuse existing budgets and competing initialization.</dd><dt>Next action</dt><dd>Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.</dd><dt>Evidence</dt><dd>October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json.</dd></dl></details>
+<p>Shared budget initialized with observed usage 64 plus 300 uncertain requests; no allowance reset.</p></article><article data-card="network">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Read-only network preflight</summary>
+<dl><dt>Acceptance</dt><dd>Check exact account, owned subnets, distinct AZ IDs, IPv4 capacity, effective route tables and attached internet gateways. Never report full deployment readiness.</dd><dt>Next action</dt><dd>Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.</dd><dt>Evidence</dt><dd>October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json.</dd></dl></details>
+<p>Both AZ tasks run and reach the provider and DynamoDB over HTTPS.</p></article><article data-card="stored-export">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Stored exports and feeder retirement</summary>
+<dl><dt>Acceptance</dt><dd>Preserve source ages and last-good files, accept finished-match corrections, retain dated scorer totals on incomplete events, and stop the old feeder in stored mode.</dd><dt>Next action</dt><dd>Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.</dd><dt>Evidence</dt><dd>October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json.</dd></dl></details>
+<p>Pages exports AWS scores, details and player data; provider feeder skipped. Pacing caps export detail starts at four per second.</p></article><article data-card="storage">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Partitioned storage and read service</summary>
+<dl><dt>Acceptance</dt><dd>Atomic, fenced publication; bounded coherent reads; corrupt data unavailable; scores and quota survive restart. Test mobile and desktop loading, empty, stale and recovery states.</dd><dt>Next action</dt><dd>Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.</dd><dt>Evidence</dt><dd>October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json.</dd></dl></details>
+<p>Production viewers read partitioned stored scores; reads never call the provider.</p></article><article data-card="worker-reads">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Worker score and match-detail reads</summary>
+<dl><dt>Acceptance</dt><dd>No provider fallback in stored mode; preserve source age and versions, retain labelled last-good data, allow downward corrections and keep existing features intact.</dd><dt>Next action</dt><dd>Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.</dd><dt>Evidence</dt><dd>October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json.</dd></dl></details>
+<p>Production Worker proxies AWS score and detail reads with its provider key removed.</p></article><article data-card="collector">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Prioritized collector and shared API budget</summary>
+<dl><dt>Acceptance</dt><dd>Prioritize live fixtures, validate discovery completeness, count every attempt, persist cooldowns, reject stale owners and keep stale observation ages honest.</dd><dt>Next action</dt><dd>Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.</dd><dt>Evidence</dt><dd>October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json.</dd></dl></details>
+<p>Two AZ collectors share one fenced lease and provider allowance; controlled takeover observed within 16 seconds.</p></article><article data-card="tables">
 <span class="viz-badge">P1</span>
 <details><summary class="cursor-interaction">League tables on wider screens</summary>
 <dl><dt>Acceptance</dt><dd>Explicit selectable competition, retained date/Live/Following filters, honest stale state and no overflow. Mobile remains usable.</dd><dt>Next action</dt><dd>Keep in desktop regression checks as the data path changes.</dd><dt>Evidence</dt><dd>Repository release record: September 14, 07867e6. Historical release evidence, not a fresh production check.</dd></dl></details>

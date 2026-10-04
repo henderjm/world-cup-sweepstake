@@ -1,17 +1,17 @@
 {
   "date": "2026-10-04",
-  "status": "aws-created-awaiting-credential-transfer",
+  "status": "production-reading-aws",
   "account": "134471064301",
   "region": "eu-west-1",
   "bootstrapStack": "kickoff-draft-score-artifacts",
   "serviceStack": "kickoff-draft-scores",
-  "sourceCommit": "2b9f362ce79c9e7623364d496102c1cc33bebfeb",
-  "image": "134471064301.dkr.ecr.eu-west-1.amazonaws.com/kickoff-draft-scores@sha256:2eb9496e51e05b88322abd848c12e763cf4400feb64000aba2380d711208da0a",
+  "sourceCommit": "bb79bf008172377a216dce2b30537034756f64b8",
+  "image": "134471064301.dkr.ecr.eu-west-1.amazonaws.com/kickoff-draft-scores@sha256:3e02e6dc5a9bb902712a24e009885653ced14c14aba128bd1b81742a1ad06eaf",
   "reader": {
     "bucket": "kickoff-draft-scores-134471064301-eu-west-1",
-    "key": "releases/2b9f362/reader.zip",
-    "version": "5z01TysviyWWHkU1N1oSS_l2ScrpR_6c",
-    "sha256": "1f822a81c5676d6bfe3c43f1a0cc64830755acd4d5a577f3d858c37f2cbd3c37"
+    "key": "releases/bb79bf0/reader.zip",
+    "version": "FLE2E4kVyk8u54soe70rHTAyQQh46ltX",
+    "sha256": "b79c078c71b3b09aa3631c53051f3bf3523dfe84a7b93e4091d01fc25e1697bc"
   },
   "previousWorker": {
     "id": "ddbc7f99-b470-4889-a27a-5051e084e51b",
@@ -35,7 +35,7 @@
     "deploy-worker.yml": "active"
   },
   "sourceVariableBefore": null,
-  "providerCredential": "Transfer not performed; specific authorization requested after automatic review rejected workflow push.",
+  "providerCredential": "Owner specifically approved transfer from GitHub to AWS Secrets Manager. Transfer run 37217611208 succeeded; temporary IAM transfer role removed.",
   "networkPreflight": {
     "accountId": "134471064301",
     "vpcId": "vpc-040315a7fab57c7d5",
@@ -160,22 +160,82 @@
     }
   ],
   "runtimeChecks": {
-    "stack": "CREATE_COMPLETE",
+    "stack": "UPDATE_COMPLETE",
     "collectorA": {
-      "desired": 0,
-      "running": 0,
+      "desired": 1,
+      "running": 1,
       "pending": 0
     },
     "collectorB": {
-      "desired": 0,
-      "running": 0,
+      "desired": 1,
+      "running": 1,
       "pending": 0
     },
     "reader": {
-      "/PL/live": 503,
-      "/CL/live": 503,
+      "/PL/live": 200,
+      "/CL/live": 200,
+      "/PL/players": 200,
       "/invalid": 404
     },
-    "productionSourceChanged": false
+    "productionSourceChanged": true,
+    "publicFeedMatches": {
+      "PL": 380,
+      "CL": 234
+    },
+    "playerPool": {
+      "players": 618,
+      "coverage": "partial; conflicting provider identities excluded; history not fully warmed"
+    },
+    "takeoverObservedMs": 15916,
+    "takeoverEvidence": "2026-10-04-aws-takeover.json",
+    "supplementaryBudget": {
+      "used": 1500,
+      "dailyLimit": 7500,
+      "scoreReserve": 6000,
+      "state": "supplementary work deferred; score requests remain admitted"
+    }
+  },
+  "frontendSourceCommit": "c488c352fb85486f137ce097cf00b9ecaa466929",
+  "frontendRun": 37219238075,
+  "workerVersion": "8c76a000-759e-48ce-95ee-1241879d06f2",
+  "workerSourceCommit": "38a78bf",
+  "oldFeederVerification": {
+    "run": 37219078579,
+    "conclusion": "skipped"
+  },
+  "automation": "paused",
+  "remaining": [
+    "Busy-matchday freshness and provider-to-screen latency are unmeasured; no achieved availability nines.",
+    "Independent monitor supervision, watchdog and human paging remain uninstalled.",
+    "Supplementary provider data has validation gaps and is bounded by the 6000-request score reserve. Finish fantasy history and invalid detail diagnostics without relaxing score admission.",
+    "Reader throttle is 10 RPS / burst 20; production capacity and Worker caching need a measured visitor-load gate.",
+    "Declared IAM policy simulations passed earlier; denied-operation tests in actual deployed task roles remain unverified."
+  ],
+  "pacedExportRun": {
+    "id": 37219360105,
+    "conclusion": "success",
+    "source": "c488c352fb85486f137ce097cf00b9ecaa466929"
+  },
+  "browserChecks": {
+    "headless": true,
+    "widths": [
+      390,
+      1440
+    ],
+    "verified": [
+      "quiet-day empty state",
+      "upcoming matchday link and six matches",
+      "PL and CL table navigation",
+      "completed match 1557411 timeline and lineups",
+      "honest missing-detail message",
+      "no page errors or horizontal overflow"
+    ],
+    "controlledRegression": [
+      "independent loading and live polling",
+      "partial outage and retry",
+      "stale-data disclosure",
+      "back and date navigation"
+    ],
+    "evidence": "2026-10-04-aws-live-browser.json"
   }
 }

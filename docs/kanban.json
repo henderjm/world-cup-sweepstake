@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-04",
-  "revision": "7372c8d + monitoring cadence correction",
+  "revision": "AWS cutover: c488c35 frontend, bb79bf0 service",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -17,7 +17,7 @@
       "status": "In progress",
       "priority": "P0",
       "title": "Make busy matchdays reliable",
-      "summary": "Architecture work underway; production reliability remains unmeasured.",
+      "summary": "AWS cutover and a quiet-day takeover drill are verified; busy-day reliability remains unmeasured.",
       "acceptance": "Measure 99.95% usable scoreboards and 99.9% active observation freshness. Measure provider-visible change to screen separately: p95 \u226430s, p99 \u226460s. Warn after 45s. Missing checks and provider failures count against the user-facing result.",
       "next": "Finish trial costs, independent monitoring and remaining preflight, then seek approval for the concrete trial.",
       "evidence": "Local stored-mode migration, release artifacts, unapplied infrastructure and budget initialization are prepared. Latest service suite: 80 passed. Production reliability and actual AWS behavior remain unmeasured."
@@ -34,23 +34,23 @@
     },
     {
       "id": "consumers",
-      "status": "In progress",
+      "status": "Released",
       "priority": "P0",
       "title": "Migrate every provider consumer",
-      "summary": "Prevent details, stats and background jobs competing with scores.",
+      "summary": "Worker and Pages read stored AWS data; GitHub provider feeder is skipped.",
       "acceptance": "Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.",
-      "next": "Include all stored-mode switches, provider-key removal and rollback in the priced trial; verify runtime traffic and downstream side effects after approval.",
-      "evidence": "cf5787c removes key-only Worker guards. All 1,657 app tests, keyless cron replay and headless mobile/desktop detail journeys pass. Predictions and notification state verified locally; no real messages or provider calls. Cloud runtime census remains; not deployed."
+      "next": "Complete supplementary history and invalid detail diagnostics within the shared allowance.",
+      "evidence": "Worker provider key removed; source variable set; feeder run 37219078579 skipped. Fantasy pool publishes 618 unambiguous players with explicit degraded coverage."
     },
     {
       "id": "cloud",
-      "status": "In progress",
+      "status": "Released",
       "priority": "P0",
-      "title": "Package and price the AWS trial",
-      "summary": "Artifacts and infrastructure are prepared locally; costs and operational gates remain incomplete.",
+      "title": "Move score collection and reads to AWS",
+      "summary": "Production score feeds now read the Ireland AWS service.",
       "acceptance": "Produce infrastructure, monthly cost assumptions, read-only IAM, throttling, egress constraints and rollback. Exercise multi-zone takeover and cold/warm traffic after approval.",
-      "next": "Finish independent monitor/watchdog/receiver proposal and pricing, provider allowance and remaining artifact/runtime checks before approval.",
-      "evidence": "Five-second PL/CL monitoring adds 1,036,800 API reads over 30 days. Existing October 4 Ireland rate snapshot yields AWS subtotals $64.88/$86.96/$307.71 for 100k/1m/10m visitor reads. Browser checks, external hosting/watchdog/paging and provider costs remain excluded."
+      "next": "Measure busy-matchday reliability and public-read capacity; finish independent monitoring.",
+      "evidence": "Two AZ collectors; controlled stop observed lease takeover within 15.916s, all 12 public read samples passed. Frontend c488c35 and service bb79bf0 deployed. No achieved nines claim."
     },
     {
       "id": "latency",
@@ -84,93 +84,93 @@
     },
     {
       "id": "quiet-day",
-      "status": "Validated locally",
+      "status": "Released",
       "priority": "P1",
       "title": "Reach the next matchday in one click",
-      "summary": "Quiet-day and empty-Live views lead directly to upcoming followed fixtures.",
+      "summary": "Quiet-day and empty-Live views now link to upcoming matches on mobile and desktop.",
       "acceptance": "Keep competition and Following; reveal scheduled fixtures; Back restores filters. Preserve stale labels, 44px touch target and mobile layout. Malformed league identity cannot crash freshness labels.",
-      "next": "Include in the next approved release; continue CL table and fixture discovery review.",
-      "evidence": "9694c15: 31 focused tests and headless 390/1440px CL/combined journeys passed; existing date/outage/recovery replay passed. Public LiveScore/FotMob comparison recorded October 4. No deployment."
+      "next": "Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.",
+      "evidence": "October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json."
     },
     {
       "id": "cutover",
-      "status": "Waiting",
+      "status": "Released",
       "priority": "P0",
       "title": "Approve spending and public cutover",
-      "summary": "Future gate: not asking for approval yet.",
+      "summary": "Owner approved AWS provisioning, public cutover and the specific provider-key transfer; executed within that scope.",
       "acceptance": "User approves the concrete priced trial before resources or upgrades, and approves public deployment separately after busy-window reliability evidence and rollback are ready.",
-      "next": "Complete the plan and validation evidence first. No user action needed now.",
-      "evidence": "Local engineering is not blocked by this gate."
+      "next": "Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.",
+      "evidence": "October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json."
     },
     {
       "id": "artifacts",
-      "status": "Validated locally",
+      "status": "Released",
       "priority": "P0",
       "title": "Pinned collector and reader artifacts",
-      "summary": "Release files isolated from unrelated worktree edits.",
+      "summary": "Pinned bb79bf0 collector image and versioned reader ZIP are deployed.",
       "acceptance": "Build from an explicit commit, preserve source hashes, pin the image base, run non-root and load the reader from its extracted archive.",
-      "next": "Rebuild from the approved final revision; verify ECR/S3 identities and retain uploaded digests.",
-      "evidence": "7454850: Linux image passed 75 service tests with read-only filesystem and no capabilities. Extracted reader entrypoint loaded. These artifacts predate later initialization/lease changes."
+      "next": "Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.",
+      "evidence": "October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json."
     },
     {
       "id": "infrastructure",
-      "status": "Validated locally",
+      "status": "Released",
       "priority": "P0",
       "title": "Trial infrastructure and scoped roles",
-      "summary": "A reviewable template exists; no cloud resources created.",
+      "summary": "Dedicated AWS stack created in Ireland; actual denied-role tests remain a follow-up.",
       "acceptance": "Declare retained storage, narrow reader/collector roles, two isolated placements, throttled reads and collectors defaulting off. Verify actual IAM after approval.",
-      "next": "Run AWS denial tests and placement/capacity checks in the approved trial.",
-      "evidence": "920fc3f: CloudFormation lint 1.57.1 and three policy/configuration regression checks passed. Local checks do not prove IAM enforcement."
+      "next": "Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.",
+      "evidence": "October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json."
     },
     {
       "id": "initialization",
-      "status": "Validated locally",
+      "status": "Released",
       "priority": "P0",
       "title": "Budget-preserving initialization",
-      "summary": "Explicit usage evidence prevents a fresh trial from resetting consumed allowance.",
+      "summary": "Shared budget initialized with observed usage 64 plus 300 uncertain requests; no allowance reset.",
       "acceptance": "Preview without network calls; verify exact table, current-day evidence, uncertain requests and stopped-consumer attestation. Refuse existing budgets and competing initialization.",
-      "next": "Use only after runtime shutdown proof and approval; keep the resulting evidence and let the lease expire naturally.",
-      "evidence": "d04d56f: actual CLI preview, wrong-table rejection, apply and reset refusal passed against DynamoDB Local. Four focused cases; full service suite now 80."
+      "next": "Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.",
+      "evidence": "October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json."
     },
     {
       "id": "network",
-      "status": "Validated locally",
+      "status": "Released",
       "priority": "P0",
       "title": "Read-only network preflight",
-      "summary": "Account and route checks are ready for an approved AWS target.",
+      "summary": "Both AZ tasks run and reach the provider and DynamoDB over HTTPS.",
       "acceptance": "Check exact account, owned subnets, distinct AZ IDs, IPv4 capacity, effective route tables and attached internet gateways. Never report full deployment readiness.",
-      "next": "Run against the approved VPC; verify ACLs, DNS, specific routes and actual provider HTTPS connectivity separately.",
-      "evidence": "e8e86fd: four focused network cases plus three infrastructure checks passed. No live account/VPC preflight has run."
+      "next": "Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.",
+      "evidence": "October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json."
     },
     {
       "id": "stored-export",
-      "status": "Validated locally",
+      "status": "Released",
       "priority": "P0",
       "title": "Stored exports and feeder retirement",
-      "summary": "Static scores and detail can share the collector without provider calls.",
+      "summary": "Pages exports AWS scores, details and player data; provider feeder skipped. Pacing caps export detail starts at four per second.",
       "acceptance": "Preserve source ages and last-good files, accept finished-match corrections, retain dated scorer totals on incomplete events, and stop the old feeder in stored mode.",
-      "next": "Enable only during approved cutover, after runtime coverage checks and proof old jobs stopped.",
-      "evidence": "fc8d905: six focused export/feeder cases and 1,641 root tests passed. No repository variable enabled and no public deployment."
+      "next": "Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.",
+      "evidence": "October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json."
     },
     {
       "id": "storage",
-      "status": "Validated locally",
+      "status": "Released",
       "priority": "P0",
       "title": "Partitioned storage and read service",
-      "summary": "Viewers read stored scores without provider access.",
+      "summary": "Production viewers read partitioned stored scores; reads never call the provider.",
       "acceptance": "Atomic, fenced publication; bounded coherent reads; corrupt data unavailable; scores and quota survive restart. Test mobile and desktop loading, empty, stale and recovery states.",
-      "next": "Validate deployed IAM, cold/warm latency and capacity during the approved trial.",
-      "evidence": "bb977b8 \u00b7 42 service checks, 1,606 app tests and headless journeys passed. Synthetic 1,000-fixture warm unchanged read: 1,431-byte manifest. Not a cloud latency or browser payload result."
+      "next": "Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.",
+      "evidence": "October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json."
     },
     {
       "id": "worker-reads",
-      "status": "Validated locally",
+      "status": "Released",
       "priority": "P0",
       "title": "Worker score and match-detail reads",
-      "summary": "Opt-in stored reads for scoreboards, match drawers and internal detail consumers.",
+      "summary": "Production Worker proxies AWS score and detail reads with its provider key removed.",
       "acceptance": "No provider fallback in stored mode; preserve source age and versions, retain labelled last-good data, allow downward corrections and keep existing features intact.",
-      "next": "Verify stored-mode switches and actual D1, notification delivery, IAM and matchday freshness during the approved trial.",
-      "evidence": "472e286 plus 1d3b15c: headless drawer checks and scheduled-state replay passed. Provisional points survive delayed final detail; settlement retry is atomic and idempotent locally. No provider or legacy detail KV calls in replay. Not enabled or deployed."
+      "next": "Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.",
+      "evidence": "October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json."
     },
     {
       "id": "alerts",
@@ -184,13 +184,13 @@
     },
     {
       "id": "collector",
-      "status": "Validated locally",
+      "status": "Released",
       "priority": "P0",
       "title": "Prioritized collector and shared API budget",
-      "summary": "Bound provider work and preserve known scores through failures.",
+      "summary": "Two AZ collectors share one fenced lease and provider allowance; controlled takeover observed within 16 seconds.",
       "acceptance": "Prioritize live fixtures, validate discovery completeness, count every attempt, persist cooldowns, reject stale owners and keep stale observation ages honest.",
-      "next": "Complete operational gates and validate the shared production path after approval.",
-      "evidence": "4f9d4dd: 80 local service tests passed. Synthetic 151-claim workload used 151 strong ownership reads and two lease writes; takeover and stale-writer rejection passed. Production unchanged."
+      "next": "Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.",
+      "evidence": "October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json."
     },
     {
       "id": "recorder",

@@ -1,0 +1,161 @@
+{
+  "startedAt": "2026-10-04T17:07:20.299Z",
+  "stoppedTask": "d87b2847d3a54a12973923160a43dd41",
+  "before": {
+    "epoch": {
+      "N": "5"
+    },
+    "owner": {
+      "S": "81fa418e-6e51-4655-ad80-84625825f777"
+    },
+    "expiresAt": {
+      "N": "1791133654023"
+    },
+    "pk": {
+      "S": "COLLECTOR"
+    }
+  },
+  "after": {
+    "epoch": {
+      "N": "6"
+    },
+    "pk": {
+      "S": "COLLECTOR"
+    },
+    "expiresAt": {
+      "N": "1791133684976"
+    },
+    "owner": {
+      "S": "68a01dab-a282-48c5-92cb-8088f8e39c04"
+    }
+  },
+  "samples": [
+    {
+      "at": "2026-10-04T17:07:21.243Z",
+      "elapsedMs": 944,
+      "epoch": 5,
+      "checks": [
+        {
+          "code": "PL",
+          "status": 200,
+          "source": "stored-score-service",
+          "matches": 380,
+          "stale": false
+        },
+        {
+          "code": "CL",
+          "status": 200,
+          "source": "stored-score-service",
+          "matches": 234,
+          "stale": false
+        }
+      ]
+    },
+    {
+      "at": "2026-10-04T17:07:24.339Z",
+      "elapsedMs": 4040,
+      "epoch": 5,
+      "checks": [
+        {
+          "code": "PL",
+          "status": 200,
+          "source": "stored-score-service",
+          "matches": 380,
+          "stale": false
+        },
+        {
+          "code": "CL",
+          "status": 200,
+          "source": "stored-score-service",
+          "matches": 234,
+          "stale": false
+        }
+      ]
+    },
+    {
+      "at": "2026-10-04T17:07:27.310Z",
+      "elapsedMs": 7011,
+      "epoch": 5,
+      "checks": [
+        {
+          "code": "PL",
+          "status": 200,
+          "source": "stored-score-service",
+          "matches": 380,
+          "stale": false
+        },
+        {
+          "code": "CL",
+          "status": 200,
+          "source": "stored-score-service",
+          "matches": 234,
+          "stale": false
+        }
+      ]
+    },
+    {
+      "at": "2026-10-04T17:07:30.259Z",
+      "elapsedMs": 9960,
+      "epoch": 5,
+      "checks": [
+        {
+          "code": "PL",
+          "status": 200,
+          "source": "stored-score-service",
+          "matches": 380,
+          "stale": false
+        },
+        {
+          "code": "CL",
+          "status": 200,
+          "source": "stored-score-service",
+          "matches": 234,
+          "stale": false
+        }
+      ]
+    },
+    {
+      "at": "2026-10-04T17:07:33.273Z",
+      "elapsedMs": 12974,
+      "epoch": 5,
+      "checks": [
+        {
+          "code": "PL",
+          "status": 200,
+          "source": "stored-score-service",
+          "matches": 380,
+          "stale": false
+        },
+        {
+          "code": "CL",
+          "status": 200,
+          "source": "stored-score-service",
+          "matches": 234,
+          "stale": false
+        }
+      ]
+    },
+    {
+      "at": "2026-10-04T17:07:36.215Z",
+      "elapsedMs": 15916,
+      "epoch": 6,
+      "checks": [
+        {
+          "code": "PL",
+          "status": 200,
+          "source": "stored-score-service",
+          "matches": 380,
+          "stale": false
+        },
+        {
+          "code": "CL",
+          "status": 200,
+          "source": "stored-score-service",
+          "matches": 234,
+          "stale": false
+        }
+      ]
+    }
+  ],
+  "takeoverObservedMs": 15916
+}
