@@ -1,0 +1,18 @@
+name: Transfer score provider key to AWS
+on:
+  push:
+    branches: [codex/aws-credential-transfer]
+    paths: [.github/workflows/transfer-score-key.yml, scripts/transfer-score-key.py]
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Transfer existing provider key
+        run: python3 scripts/transfer-score-key.py
+        env:
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
