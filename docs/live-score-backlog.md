@@ -1624,3 +1624,14 @@ calls or page errors. No real messages sent, public deployment or spending.
 Next: package and price the cloud trial, with explicit cutover/rollback and
 independent monitoring. Local source/fixture evidence is not a production
 runtime census; sustained reliability remains unmeasured.
+
+### 2026-10-04 — grounded AWS trial pricing and cutover draft
+
+Saved seven versioned official Ireland rate records and a reproducible scenario
+calculator. Two proposed collectors are $18.02/month for compute alone. Core
+compute/API/database scenarios range from $27.17 to $94.54; network, monitoring,
+subscription and other exclusions mean these are not total budget quotes.
+Drafted placement/IAM decisions, budget-safe cutover and rollback, failure drills
+and unresolved approval prerequisites in `aws-score-trial.md`. No account access,
+resource creation, spending or deployment. Next: runnable artifacts/infrastructure,
+measured cost inputs and the remaining pricing lines before seeking approval.

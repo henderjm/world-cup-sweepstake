@@ -1,18 +1,15 @@
 # Live-score architecture reset
 
 Decision proposal, 26 September 2026. Scope: Premier League and Champions League.
-Status: local design with the snapshot/read contract implemented in
-`services/scores/` and exercised through the headless UI. A DynamoDB adapter now
-passes local database contention, fencing and restart checks. Shared request
-admission, bounded provider client and runnable priority collector are implemented
-and locally verified, including headless UI states. Active/resting partitions and
-the read-service runtime now pass local sizing and consistency checks. Existing
-provider consumers, cloud capacity/IAM and operational monitoring still require work. No
-infrastructure provisioned, subscription changed or production traffic moved.
-The Worker shared `getLive` boundary now has a locally tested opt-in stored-read
-mode. `provider-consumer-migration.md` inventories direct and indirect callers,
-the remaining detail/player-data work and the cutover gates. The switch remains
-unset in production configuration; the whole Worker is not provider-free yet.
+Status refreshed 4 October 2026: collector, shared budget, stored score/detail
+and fantasy datasets, read/export adapters and Worker operation without a
+provider key are implemented and locally verified. No infrastructure has been
+provisioned, subscription changed or production traffic moved. Cloud capacity,
+IAM, actual downstream side effects and independent monitoring remain unverified.
+`provider-consumer-migration.md` records the evidence and retained legacy paths.
+`aws-score-trial.md` now defines the proposed deployment/cutover and reproducible
+Ireland pricing subtotals; its explicit exclusions prevent treating these as a
+complete budget. Stored-mode switches remain unset in production.
 Supersedes further incremental feeder work as the next major reliability investment.
 
 Reliability requirements: `live-score-reliability.md` defines the match-window

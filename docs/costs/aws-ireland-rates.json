@@ -1,0 +1,84 @@
+{
+  "checked": "2026-10-04",
+  "region": "eu-west-1",
+  "currency": "USD",
+  "rates": [
+    {
+      "service": "AmazonECS",
+      "sku": "K4EXFQ5YFQCP98EN",
+      "usage": "EU-Fargate-vCPU-Hours:perCPU",
+      "unit": "hours",
+      "usd": "0.0404800000",
+      "through": "Inf",
+      "catalogVersion": "20260911124425",
+      "published": "2026-09-11T12:44:25Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/20260911124425/eu-west-1/index.json"
+    },
+    {
+      "service": "AmazonECS",
+      "sku": "UP5ETC3QSW2QZGEY",
+      "usage": "EU-Fargate-GB-Hours",
+      "unit": "hours",
+      "usd": "0.0044450000",
+      "through": "Inf",
+      "catalogVersion": "20260911124425",
+      "published": "2026-09-11T12:44:25Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/20260911124425/eu-west-1/index.json"
+    },
+    {
+      "service": "AmazonDynamoDB",
+      "sku": "3ERQSZWPAMX2JWHN",
+      "usage": "EU-ReadRequestUnits",
+      "unit": "ReadRequestUnits",
+      "usd": "0.0000001415",
+      "through": "Inf",
+      "catalogVersion": "20260911124422",
+      "published": "2026-09-11T12:44:22Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonDynamoDB/20260911124422/eu-west-1/index.json"
+    },
+    {
+      "service": "AmazonDynamoDB",
+      "sku": "F4EZE5SAMS3D49NJ",
+      "usage": "EU-WriteRequestUnits",
+      "unit": "WriteRequestUnits",
+      "usd": "0.0000007050",
+      "through": "Inf",
+      "catalogVersion": "20260911124422",
+      "published": "2026-09-11T12:44:22Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonDynamoDB/20260911124422/eu-west-1/index.json"
+    },
+    {
+      "service": "AWSLambda",
+      "sku": "B5V2RNHAWGVJBZD3",
+      "usage": "EU-Request",
+      "unit": "Request",
+      "usd": "0.0000002000",
+      "through": "Inf",
+      "catalogVersion": "20261001184746",
+      "published": "2026-10-01T18:47:46Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSLambda/20261001184746/eu-west-1/index.json"
+    },
+    {
+      "service": "AWSLambda",
+      "sku": "SGGKTWDV7PGMPPSJ",
+      "usage": "EU-Lambda-GB-Second",
+      "unit": "Lambda-GB-Second",
+      "usd": "0.0000166667",
+      "through": "6000000000",
+      "catalogVersion": "20261001184746",
+      "published": "2026-10-01T18:47:46Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSLambda/20261001184746/eu-west-1/index.json"
+    },
+    {
+      "service": "AmazonApiGateway",
+      "sku": "WPZ6JK7P27W4K4QK",
+      "usage": "EU-ApiGatewayHttpRequest",
+      "unit": "Requests",
+      "usd": "0.0000011100",
+      "through": "300000000",
+      "catalogVersion": "20261002231501",
+      "published": "2026-10-02T23:15:01Z",
+      "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonApiGateway/20261002231501/eu-west-1/index.json"
+    }
+  ]
+}

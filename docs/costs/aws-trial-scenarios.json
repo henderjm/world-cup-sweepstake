@@ -1,0 +1,65 @@
+{
+  "rateDate": "2026-10-04",
+  "region": "eu-west-1",
+  "assumptions": {
+    "hours": 730,
+    "collectors": 2,
+    "vcpuEach": 0.25,
+    "memoryGiBEach": 0.5,
+    "lambdaMemoryGiB": 0.5,
+    "lambdaSecondsPerRequest": 0.15,
+    "dynamoReadUnitsPerApiRequest": 30,
+    "collectorReadUnits": 10000000,
+    "collectorWriteUnits": 10000000,
+    "responseKiB": 200
+  },
+  "scenarios": [
+    {
+      "requests": 100000,
+      "responseGiB": 19.07,
+      "subtotalUsd": 27.17,
+      "componentsUsd": {
+        "collectorCompute": 18.02,
+        "collectorDatabase": 8.47,
+        "readerDatabase": 0.42,
+        "lambda": 0.15,
+        "httpApi": 0.11
+      }
+    },
+    {
+      "requests": 1000000,
+      "responseGiB": 190.73,
+      "subtotalUsd": 33.29,
+      "componentsUsd": {
+        "collectorCompute": 18.02,
+        "collectorDatabase": 8.47,
+        "readerDatabase": 4.25,
+        "lambda": 1.45,
+        "httpApi": 1.11
+      }
+    },
+    {
+      "requests": 10000000,
+      "responseGiB": 1907.35,
+      "subtotalUsd": 94.54,
+      "componentsUsd": {
+        "collectorCompute": 18.02,
+        "collectorDatabase": 8.47,
+        "readerDatabase": 42.45,
+        "lambda": 14.5,
+        "httpApi": 11.1
+      }
+    }
+  ],
+  "excluded": [
+    "network transfer",
+    "public IPv4 or NAT",
+    "logs, metrics and alarms",
+    "independent monitor and paging",
+    "Secrets Manager, ECR and build artifacts",
+    "DynamoDB storage and backups",
+    "data subscription",
+    "tax, support and existing Cloudflare charges"
+  ],
+  "status": "Scenario subtotal only; not a total budget, bill forecast or spending approval. No free-tier or volume discounts applied."
+}
