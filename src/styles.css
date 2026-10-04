@@ -3714,6 +3714,7 @@ button { font-family: inherit; cursor: pointer; }
 @media (min-width: 1200px) {
   .layout--scores, .layout--scores-overview { grid-template-columns: 180px minmax(0, 1fr) 300px; }
   .layout--scores > .aside, .aside--overview { display: block; }
+  .layout--scores.layout--full-table { grid-template-columns: 180px minmax(0, 1fr); }
 }
 .scores-home-heading { margin-bottom: 18px; }
 .score-league__heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }

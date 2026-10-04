@@ -950,8 +950,9 @@ function renderLayoutContent() {
     elements.layout.className = "layout";
     elements.layout.innerHTML = panel;
   } else {
-    elements.layout.className = "layout layout--scores";
-    elements.layout.innerHTML = `${renderCompetitionSidebar(state.competition, true)}${panel}${renderMiniTable(model)}`;
+    const fullTable = state.tab === "tables";
+    elements.layout.className = `layout layout--scores${fullTable ? " layout--full-table" : ""}`;
+    elements.layout.innerHTML = `${renderCompetitionSidebar(state.competition, true)}${panel}${fullTable ? "" : renderMiniTable(model)}`;
   }
 }
 

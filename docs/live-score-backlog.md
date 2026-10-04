@@ -1894,3 +1894,17 @@ Hashes, source manifest and evidence limits are retained in
 7454850 service package for the candidate trial. Local image ID is not an ECR
 manifest digest; image and ZIP remain unuploaded. AWS runtime IAM/egress, external
 monitoring/paging, full operating costs and approved deployment are still gates.
+
+## October 4 — full standings width
+
+Removed the repeated standings sidebar from the full Tables tab. It duplicated
+the main table and compressed club/form columns; the full table now uses that
+space. Scores retains its standings sidebar at 1200px and above. No standings
+data or controls were removed.
+
+Extended the existing CL headless journey at 390, 900, 1200 and 1440px: shared
+ranks, disclosures, absence of duplicate table, reclaimed width, Scores sidebar,
+Back navigation, no overflow and no uncaught page errors all pass. Local PostHog
+configuration warnings remain in the console. Inspected the desktop
+screenshot. Validation uses a mocked live feed in the current worktree, including
+separate mobile edits. Not deployed.

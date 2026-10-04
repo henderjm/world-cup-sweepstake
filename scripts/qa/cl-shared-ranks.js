@@ -1,6 +1,6 @@
 async (browserPage) => {
   const passed = [];
-  for (const width of [390, 1440]) {
+  for (const width of [390, 900, 1200, 1440]) {
     const context = await browserPage.context().browser().newContext({ viewport: { width, height: 900 } });
     const page = await context.newPage(); const errors = [];
     page.on('pageerror', e => errors.push(e.message));
@@ -24,7 +24,23 @@ async (browserPage) => {
       check(await page.getByText('As it stands:', { exact: false }).count() === 1, 'Live projection disclosure missing');
       check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Horizontal overflow');
       check(errors.length === 0, errors.join('; '));
-      await page.screenshot({ path: `/tmp/kickoff-cl-shared-ranks-${width}.png` });
+      check(await page.locator('.aside').count() === 0, 'Full table repeats standings sidebar');
+      const tableWidth = await page.locator('.panelcol').evaluate(el => el.getBoundingClientRect().width);
+      await page.screenshot({ path: `/tmp/kickoff-full-table-${width}.png` });
+      await page.evaluate(() => { location.hash = '#live?competition=CL'; });
+      await page.waitForFunction(() => !document.querySelector('.layout--full-table'));
+      if (width >= 1200) {
+        await page.locator('.aside').waitFor({ state: 'visible' });
+        const scoresWidth = await page.locator('.panelcol').evaluate(el => el.getBoundingClientRect().width);
+        check(tableWidth > scoresWidth + 290, 'Full table did not reclaim sidebar width');
+      } else {
+        check(!await page.locator('.aside').isVisible(), 'Compact scores has visible sidebar');
+      }
+      check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Scores horizontal overflow');
+      await page.goBack();
+      await page.locator('.ltable__posnum').first().waitFor();
+      check(await page.locator('.aside').count() === 0, 'Back navigation duplicates standings');
+      check(errors.length === 0, errors.join('; '));
       passed.push({ width, ranks: [1, 1, 1, 1], errors });
     } finally { await context.close(); }
   }
