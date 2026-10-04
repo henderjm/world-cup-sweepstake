@@ -318,3 +318,28 @@ Verification: 1,641 root tests pass, including six export/feeder cases for sourc
 ages, aliases, corrections, incomplete coverage, regression/outage retention,
 competition isolation, concurrency and a real feeder subprocess with network
 access forbidden. No provider calls, public deployment or spending.
+
+## Fantasy collection validation — 4 October 2026
+
+The migration audit found that empty or mismatched squads could be marked
+complete, while history accepted unchecked pagination and duplicate statistics.
+`services/scores/fantasy-data.mjs` now supplies the shared collection validation
+used by the existing fantasy bake. Squads require the requested club, at least
+11 valid players, known positions and unambiguous player IDs. Any failed club
+uses the existing explicitly incomplete lineup fallback.
+
+Historical pages are fetched and validated sequentially with a 100-page bound,
+consistent totals, exact page/season identity and unique player-club rows.
+Transferred players can contribute separate clubs; repeated player-club rows
+invalidate that season instead of doubling statistics. Historical fixtures must
+match league/season, be unique and have complete single-page coverage. Other
+seasons can still contribute when one fails. Existing tier/xP formulas are
+unchanged. The legacy CLI adapter preserves its 250ms between-request delay.
+`requestCount` counts logical attempts, including failed requests, not hidden Go
+client retries; it is not an account-wide quota metric.
+
+Verification: eight focused cases and all 1,649 root tests pass with synthetic
+responses, including transfer aggregation and existing tier/xP output. No browser
+flow changed. No real provider traffic or deployment. Shared-budget scheduling,
+durable raw history storage and stored player-pool export remain to implement;
+this validation extraction does not complete that migration.

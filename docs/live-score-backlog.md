@@ -1551,3 +1551,18 @@ stored origin is configured. No remote variable has been enabled. All 1,641 root
 tests pass, including six new export/feeder cases; no provider traffic or deploy.
 Next: shared-budget squads/player history, then the priced cloud trial and
 independent monitoring. Account-wide quota ownership remains incomplete.
+
+### 2026-10-04 — reject incomplete fantasy collection before migration
+
+Closed two source-integrity gaps found while auditing the remaining consumer:
+empty/wrong-club squads could be labelled complete, and malformed or repeated
+history pages could silently create missing or doubled statistics. The existing
+bake now uses shared validation with bounded sequential pagination, exact
+league/season/page identity and duplicate player-club checks. Valid transfers
+retain both clubs and existing tier/xP calculations. Legacy request pacing and
+explicitly partial lineup fallback are preserved.
+
+Eight focused synthetic tests and all 1,649 root tests pass. No provider traffic,
+public deployment or spending. Next: integrate this collection into the shared
+collector budget with durable history storage and stored player-pool export.
+The migration card stays in progress; no production reliability claim.
