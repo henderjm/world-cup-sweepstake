@@ -1,8 +1,8 @@
 # Stored score service
 
-Local implementation of the snapshot contract and read-only API for the planned
-collector. No production route uses this service yet. There is no AWS adapter,
-provider polling loop or account-wide request budget in this directory yet.
+Local implementation of the snapshot contract, DynamoDB storage adapter and
+read-only API for the planned collector. No production route uses this service
+yet. The provider polling loop and account-wide request budget are unfinished.
 
 `snapshots.mjs` accepts complete normalized fixture snapshots and returns the
 existing `/PL/live` or `/CL/live` response shape, with additional version and
@@ -37,7 +37,7 @@ standings capped at 64 KiB; larger snapshots fail without replacing last-good
 data. Production storage may need partitioned fixture records and a manifest
 before supporting payloads that exceed this initial bound.
 
-**The future storage adapter must enforce the following atomically.** Calling
+**The storage adapter must enforce the following atomically.** Calling
 `nextSnapshot` in application code alone does not provide concurrency safety:
 
 1. The collector owns the current, unexpired lease and fencing generation.
@@ -53,6 +53,41 @@ before supporting payloads that exceed this initial bound.
 adapter for tests. It models lease expiry and conditional publication. It loses
 all state on process exit and cannot coordinate hosts. Its tests are not evidence
 of durable storage, distributed fencing, provider-call fencing or AWS failover.
+
+## DynamoDB adapter
+
+`DynamoScoreStore` in `dynamodb.mjs` takes an injected AWS SDK v3 DynamoDB client,
+table name and optional clock/request timeout. The table has one string partition
+key, `pk`, and no sort key. It uses a persisted `COLLECTOR` lease plus separate
+`SCORE#competition#season` items. The runtime does not create or delete tables.
+Construct the public API with `readSnapshot: (code, season) => store.read(code, season)`.
+Its deployment role must have only `GetItem`; the collector role additionally
+needs conditional `PutItem` and the permissions required for transaction checks.
+
+`claim(owner)` conditionally acquires or renews a 30-second lease; contention
+returns null. Use a unique process-instance ID as owner, never a shared hostname
+or service name. Renew before expiry and stop work when renewal fails. The epoch
+increases after expiry and survives restart. Never delete or TTL the lease item:
+that would reset its fencing history. Each `publish(lease, input)` transaction
+checks the current owner/epoch/expiry and expected snapshot version together.
+Strongly consistent base-table reads expose whole committed snapshots. See
+[DynamoDB transactions](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html).
+
+Requests have a three-second default timeout, and publication requires that much
+lease headroom. Expiry comparisons use the application clock, not a database
+server clock. Production needs synchronized clocks and verified request/renewal
+timing. Aborting an SDK request does not prove that a submitted write failed:
+after an uncertain outcome, read the lease/snapshot again before deciding what
+to do. SDK retries of the same transaction retain its idempotency token; a new
+publication still checks its original base version. A replacement owner fences
+the previous owner's delayed transaction, but this does not fence provider calls
+already in flight. Account-wide admission remains separate unfinished work.
+
+Install the service's pinned dependency independently of the frontend:
+
+```sh
+npm ci --prefix services/scores
+```
 
 ## Read contract and browser compatibility
 
@@ -104,7 +139,36 @@ loading, unavailable, empty, stale, recovery and mixed-age versions at mobile an
 desktop widths. No provider key is used. Stop the preview and replay processes
 afterwards. See `scripts/qa/README.md` for the headless runner dependency setup.
 
-Next: implement shared durable conditional storage, collector discovery/polling,
-global admission and request budgets, priority scheduling, and independent
-monitoring. Validate process/network failures against the real adapter, then
-price and seek approval for infrastructure and a controlled production cutover.
+### Actual database checks
+
+The service integration suite uses the official SDK against
+[DynamoDB Local](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.DownloadingAndRunning.html).
+It refuses non-loopback endpoints and uses synthetic credentials. It creates and
+deletes only randomly named test tables. Run a disposable database bound to
+localhost (the pinned image used for the October 4 evidence is version 3.3.1):
+
+```sh
+docker run --rm -d --name kickoff-score-dynamodb-test --memory=512m --cpus=2 \
+  -p 127.0.0.1:18043:8000 \
+  amazon/dynamodb-local@sha256:ff89bd48ff32cd8d9be5fee8873b65b8854dc408f1afe881be6eb00247bc0dab \
+  -jar DynamoDBLocal.jar -sharedDb
+npm run test:integration --prefix services/scores
+node services/scores/test/restart.mjs write /tmp/kickoff-score-restart-new.json
+docker restart kickoff-score-dynamodb-test
+# Wait for database initialization before verification.
+node services/scores/test/restart.mjs verify /tmp/kickoff-score-restart-new.json
+docker stop kickoff-score-dynamodb-test
+```
+
+Use a new manifest path for each restart check. The database writes to its
+container filesystem, so restart retains data; stopping this disposable container
+removes it. Nine integration cases cover eight competing Node processes, renewal,
+takeover, a delayed old transaction, concurrent publications, a lost write reply,
+adapter reconnection, invalid writes, unavailable storage and 100 read-only API
+requests. The separate restart check verifies persisted scores and generations
+after an actual database process restart. This is not AWS availability-zone,
+network-partition, IAM, throughput or sustained matchday reliability evidence.
+
+Next: collector discovery/polling, global admission and request budgets, priority
+scheduling, and independent monitoring. Price and seek approval for cloud
+infrastructure before validating AWS failover and a controlled production cutover.

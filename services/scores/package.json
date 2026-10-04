@@ -1,0 +1,11 @@
+{
+  "name": "kickoff-score-service",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:integration": "node --test test/dynamodb.test.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "3.1146.0"
+  }
+}

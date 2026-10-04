@@ -2,8 +2,9 @@
 
 Decision proposal, 26 September 2026. Scope: Premier League and Champions League.
 Status: local design with the snapshot/read contract implemented in
-`services/scores/` and exercised through the headless UI. Shared durable storage,
-the provider collector and request budget are not implemented yet. No
+`services/scores/` and exercised through the headless UI. A DynamoDB adapter now
+passes local database contention, fencing and restart checks. The provider
+collector and request budget are not implemented yet. No
 infrastructure provisioned, subscription changed or production traffic moved.
 Supersedes further incremental feeder work as the next major reliability investment.
 

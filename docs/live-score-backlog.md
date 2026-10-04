@@ -1110,3 +1110,48 @@ Next safe work: shared durable storage with actual conditional-write/fencing
 tests, followed by provider collection and account-wide admission/pacing. Keep
 independent measurement and verified alert delivery as cutover requirements.
 No infrastructure, paid service or production deployment was changed.
+
+## October 4 — DynamoDB storage and process-failure checks
+
+The preceding snapshot/read contract and browser fix were committed as
+`4d9b364`. `services/scores/dynamodb.mjs` now implements shared conditional
+storage using the official AWS SDK, with its own pinned package and lockfile.
+The collector lease persists its generation; publication atomically checks
+ownership, generation, expiry headroom and expected score version. Reads use
+strongly consistent base-table access and never invoke the provider.
+
+Verified against DynamoDB Local 3.3.1 in a disposable, loopback-only Docker
+container, using the immutable image digest documented in the service README:
+
+- Nine integration cases pass. Eight independent Node processes produce exactly
+  one lease winner; takeover rejects an old collector's delayed transaction;
+  concurrent publications produce one winning version. Invalid, incomplete and
+  oversized updates preserve the last valid score.
+- A deliberately lost write acknowledgement leaves the committed version
+  readable, rejects replay of its old base version, and permits reconciled
+  progress. Callers must read after uncertain outcomes; timeout is not proof
+  that a submitted write failed.
+- Restarted the actual database container with filesystem-backed storage. The
+  saved score and generation survived; takeover advanced the generation and
+  the next publication advanced the version. This is separate from merely
+  constructing another adapter in the same process.
+- One hundred API requests issue only strongly consistent reads. A missing
+  table produces 503, never a successful empty feed. This is a correctness
+  check, not a load or latency benchmark.
+- The full working-tree regression suite passes all 1,606 tests. No UI code
+  changed in this step; the previous headless replay evidence remains scoped
+  to the snapshot/browser contract, not the new database adapter.
+
+The local database is not evidence of AWS zone recovery, IAM configuration,
+network partitions or production reliability. Lease expiry uses synchronized
+application clocks and bounded requests; the transaction fences an old owner
+after takeover, but cannot cancel provider calls already in flight. Never TTL
+or delete the lease record, and use unique process-instance owner IDs.
+
+Next P0: implement collector discovery/polling and shared provider admission,
+including retries, priority scheduling, restart reconciliation and account-wide
+daily/minute limits. Then price the active/standby infrastructure, seek spending
+approval, and validate cloud failure recovery before requesting public cutover.
+Independent match-window measurement and delivered alerts remain release gates.
+Current production nines remain unmeasured. No AWS resource, paid plan or public
+deployment was changed. Reproduction: `services/scores/README.md`.
