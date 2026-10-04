@@ -45,6 +45,10 @@ export class DynamoScoreStore {
     const result = await this.send(new GetItemCommand({ TableName: this.tableName, Key: leaseKey, ConsistentRead: true }));
     const previous = leaseFrom(result.Item), now = this.now();
     if (previous?.expiresAt > now && previous.owner !== owner) return null;
+    // Keep the strongly consistent ownership check, but do not rewrite a lease
+    // that still has ample headroom. Publication/admission remain fenced in DynamoDB.
+    if (previous?.owner === owner && previous.expiresAt > now + Math.max(ttl / 2, 2 * this.requestTimeoutMs))
+      return previous;
     const epoch = previous && previous.expiresAt > now ? previous.epoch : (previous?.epoch ?? 0) + 1;
     if (!Number.isSafeInteger(epoch)) throw Error("Collector generation exhausted");
     const lease = { owner, epoch, expiresAt: now + ttl };

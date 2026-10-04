@@ -143,3 +143,32 @@ test("read API uses strongly consistent database reads without any write command
   assert.ok(commands.every(command => command.constructor.name === "GetItemCommand" && command.input.ConsistentRead));
   assert.equal((await store.read("CL", "2026")).version, 1);
 });
+
+test('busy-loop claims keep ownership checks while renewing only at half-life', async t => {
+  const { db, tableName, clock, advance } = await setup(t);
+  const counts = { GetItemCommand: 0, PutItemCommand: 0 };
+  const store = new DynamoScoreStore({ tableName, now: clock, client: { send: (command, options) => {
+    if (command.constructor.name in counts) counts[command.constructor.name]++;
+    return db.send(command, options);
+  } } });
+  const first = await store.claim('active');
+  for (let i = 0; i < 149; i++) {
+    advance(100);
+    assert.deepEqual(await store.claim('active'), first);
+  }
+  assert.deepEqual(counts, { GetItemCommand: 150, PutItemCommand: 1 });
+  advance(100);
+  const renewed = await store.claim('active');
+  assert.equal(renewed.epoch, first.epoch);
+  assert.equal(renewed.expiresAt, clock() + 30000);
+  assert.deepEqual(counts, { GetItemCommand: 151, PutItemCommand: 2 });
+  t.diagnostic(JSON.stringify({ claims: 151, leaseReads: counts.GetItemCommand, leaseWrites: counts.PutItemCommand,
+    workload: '100ms steps through the first 15 seconds' }));
+  const restarted = new DynamoScoreStore({ client: db, tableName, now: clock });
+  assert.equal(await restarted.claim('standby'), null);
+  advance(30001);
+  const replacement = await restarted.claim('standby');
+  assert.equal(replacement.epoch, first.epoch + 1);
+  assert.equal(await store.claim('active'), null);
+  await assert.rejects(store.publish(renewed, input(clock())), /expired/);
+});

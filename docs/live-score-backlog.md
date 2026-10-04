@@ -1724,3 +1724,20 @@ override, blackhole/NAT routes, detached gateways and transitional associations.
 No approved target VPC/subnets have been supplied, so no live AWS preflight was
 run and no infrastructure assertion is made. Next: complete artifact/runtime
 preflight and monitoring/cost proposal before requesting deployment approval.
+
+### 4 October — reduce collector lease write amplification
+
+Found that every collector step wrote its lease, including immediate next-page
+or detail-hydration steps. `DynamoScoreStore.claim` now retains a same-owner lease
+while more than half the requested lifetime (and twice the DB deadline) remains.
+Every call still reads ownership strongly consistently; no local authority cache
+is introduced. Budget admission and publication retain transactional fencing.
+
+All 80 service tests passed. A new real-DynamoDB-Local workload records 151 claims
+at 100ms intervals through 15 seconds: 151 ownership reads and only two lease
+writes. It also checks renewed expiry/generation, standby rejection, expiry
+takeover and rejection of the old publisher. Existing competing-process,
+delayed-write, budget, collector and CLI checks passed. Evidence:
+`/tmp/kickoff-lease-suite.log` and `/tmp/kickoff-lease-measurement.log` (the latter
+separates workload counters from later takeover checks). This is a synthetic
+operation count, not a production cost or latency measurement. No deployment.

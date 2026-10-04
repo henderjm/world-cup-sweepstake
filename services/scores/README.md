@@ -66,7 +66,10 @@ Construct the public API with `readSnapshot: (code, season) => store.read(code, 
 Its deployment role must have only `GetItem`; the collector role additionally
 needs conditional `PutItem` and the permissions required for transaction checks.
 
-`claim(owner)` conditionally acquires or renews a 30-second lease; contention
+`claim(owner)` strongly checks ownership on each call and conditionally acquires
+or renews a 30-second lease. Same-owner leases are reused while more than half
+the requested lifetime and twice the database deadline remain; this avoids
+rewriting the lease on every busy-loop step. Contention
 returns null. Use a unique process-instance ID as owner, never a shared hostname
 or service name. Renew before expiry and stop work when renewal fails. The epoch
 increases after expiry and survives restart. Never delete or TTL the lease item:
