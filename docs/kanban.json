@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-04",
-  "revision": "AWS cutover: c488c35 frontend, bb79bf0 service",
+  "revision": "c488c35 frontend \u00b7 bb79bf0 AWS \u00b7 4026ed8 evidence",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -19,8 +19,8 @@
       "title": "Make busy matchdays reliable",
       "summary": "AWS cutover and a quiet-day takeover drill are verified; busy-day reliability remains unmeasured.",
       "acceptance": "Measure 99.95% usable scoreboards and 99.9% active observation freshness. Measure provider-visible change to screen separately: p95 \u226430s, p99 \u226460s. Warn after 45s. Missing checks and provider failures count against the user-facing result.",
-      "next": "Finish trial costs, independent monitoring and remaining preflight, then seek approval for the concrete trial.",
-      "evidence": "Local stored-mode migration, release artifacts, unapplied infrastructure and budget initialization are prepared. Latest service suite: 80 passed. Production reliability and actual AWS behavior remain unmeasured."
+      "next": "Complete independent monitoring, measure public read capacity, then capture busy-matchday SLO evidence.",
+      "evidence": "AWS production cutover verified October 4. Standby lease takeover in 15.916 seconds; twelve public reads succeeded; PL and CL then published version 5 under epoch 6. Sustained availability and event latency remain unmeasured."
     },
     {
       "id": "monitor",
@@ -50,7 +50,47 @@
       "summary": "Production score feeds now read the Ireland AWS service.",
       "acceptance": "Produce infrastructure, monthly cost assumptions, read-only IAM, throttling, egress constraints and rollback. Exercise multi-zone takeover and cold/warm traffic after approval.",
       "next": "Measure busy-matchday reliability and public-read capacity; finish independent monitoring.",
-      "evidence": "Two AZ collectors; controlled stop observed lease takeover within 15.916s, all 12 public read samples passed. Frontend c488c35 and service bb79bf0 deployed. No achieved nines claim."
+      "evidence": "Two AZ collectors; controlled stop observed lease takeover within 15.916s, all 12 public read samples passed. Frontend c488c35 and service bb79bf0 deployed. No achieved nines claim. Both leagues subsequently published version 5 under standby epoch 6 at 17:17:49/50 UTC."
+    },
+    {
+      "id": "read-capacity",
+      "status": "Up next",
+      "priority": "P0",
+      "title": "Verify public score read capacity",
+      "summary": "Measure visitor load against the AWS 10 RPS / burst 20 ceiling.",
+      "acceptance": "Exercise representative simultaneous clients plus static exports; meet agreed freshness and availability targets without throttling. Record the load level and cache behavior before claiming capacity.",
+      "next": "Define the visitor-load target and run bounded stored-read load tests; tune caching and throttling within approved costs.",
+      "evidence": "Static detail export burst exposed the ceiling during cutover. Export pacing shipped in c488c35; manual export run 37219360105 passed. Visitor-scale load remains unmeasured."
+    },
+    {
+      "id": "supplementary-quality",
+      "status": "Up next",
+      "priority": "P1",
+      "title": "Finish fantasy history and match details",
+      "summary": "Supplementary coverage is incomplete and stopped at the protected score reserve.",
+      "acceptance": "Collect all three fantasy history seasons without spending the 6000-request score reserve. Prevent invalid archived-detail retries starving history. Expose bounded failure reasons and fixture identities; preserve source age and unknown values.",
+      "next": "Fix supplementary scheduling and validation diagnostics, then verify stored data and exported fantasy estimates end to end.",
+      "evidence": "October 4 cutover reached 1500 accounted requests of 7500, reserving 6000 for scores. The 618-player pool reports missing historical coverage; some match details remain partial."
+    },
+    {
+      "id": "squad-conflicts",
+      "status": "Up next",
+      "priority": "P1",
+      "title": "Resolve ambiguous provider squad identities",
+      "summary": "Conflicting player records are excluded instead of inventing a club or position.",
+      "acceptance": "Keep excluded IDs visible in coverage, preserve valid players, and restore excluded players only when source identity and position agree. Keep exports honest during recovery.",
+      "next": "Verify provider corrections and validate recovery of the excluded identities.",
+      "evidence": "Provider player 416250 appeared twice for Aston Villa with conflicting positions. bb79bf0 publishes unambiguous players and records exclusions; regression tests cover within-club and cross-club conflicts."
+    },
+    {
+      "id": "runtime-iam",
+      "status": "Up next",
+      "priority": "P1",
+      "title": "Verify deployed role restrictions",
+      "summary": "Declared IAM simulations passed; actual denied-operation checks remain open.",
+      "acceptance": "Under actual deployed roles, prove the reader cannot write score storage or access the provider secret. Confirm collector permissions are limited to the intended resources without changing production data.",
+      "next": "Prepare bounded, non-mutating runtime permission checks and record explicit denied outcomes.",
+      "evidence": "Actual AWS reads and collector publication work. Previous declared-policy simulations do not prove runtime denials."
     },
     {
       "id": "latency",
@@ -59,7 +99,7 @@
       "title": "Measure real matchday delivery",
       "summary": "Establish busy-window evidence instead of inferring reliability from a build.",
       "acceptance": "Retain timestamped PL/CL observations and p50/p95/p99 delivery reports; disclose coverage gaps. Verify stale warnings and recovery in headless browser journeys.",
-      "next": "Run after independent monitoring and approved shadow deployment are ready.",
+      "next": "Select a busy PL/CL match window after independent monitoring is operational; measure the deployed AWS path.",
       "evidence": "Synthetic recovery passes; sustained production nines are unknown."
     },
     {
@@ -96,9 +136,9 @@
       "id": "cutover",
       "status": "Released",
       "priority": "P0",
-      "title": "Approve spending and public cutover",
+      "title": "Approved AWS provisioning and cutover",
       "summary": "Owner approved AWS provisioning, public cutover and the specific provider-key transfer; executed within that scope.",
-      "acceptance": "User approves the concrete priced trial before resources or upgrades, and approves public deployment separately after busy-window reliability evidence and rollback are ready.",
+      "acceptance": "Record explicit approval for AWS provisioning, cutover and provider-key transfer; preserve the spending boundary and rollback evidence. Provider upgrades and paid external monitoring require separate approval.",
       "next": "Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.",
       "evidence": "October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json."
     },
@@ -118,7 +158,7 @@
       "priority": "P0",
       "title": "Trial infrastructure and scoped roles",
       "summary": "Dedicated AWS stack created in Ireland; actual denied-role tests remain a follow-up.",
-      "acceptance": "Declare retained storage, narrow reader/collector roles, two isolated placements, throttled reads and collectors defaulting off. Verify actual IAM after approval.",
+      "acceptance": "Deploy retained storage, narrow declared reader/collector roles, separate AZ placements and throttled reads. Track actual denied-operation tests separately.",
       "next": "Track remaining operating gates in the current reliability backlog; no additional approval is needed for this completed cutover.",
       "evidence": "October 4 AWS cutover evidence, bb79bf0 service, c488c35 frontend. See docs/live-score-evidence/2026-10-04-aws-cutover.json."
     },
@@ -210,7 +250,7 @@
       "summary": "Relevant table alongside Scores at 1200px and above.",
       "acceptance": "Explicit selectable competition, retained date/Live/Following filters, honest stale state and no overflow. Mobile remains usable.",
       "next": "Keep in desktop regression checks as the data path changes.",
-      "evidence": "Repository release record: September 14, 07867e6. Historical release evidence, not a fresh production check."
+      "evidence": "October 4 release c488c35: wide-screen standings visible at 1440px; mobile/desktop production checks found no horizontal overflow. Full table navigation verified for PL and CL."
     },
     {
       "id": "cl",
@@ -219,8 +259,8 @@
       "title": "Champions League stage and table fixes",
       "summary": "Separate qualification from league points and main knockouts.",
       "acceptance": "Correct stage labels, league-phase points/form, aggregate and penalty handling; preserve qualification history and never invent future draws.",
-      "next": "Replay these cases against the replacement stored feed before cutover.",
-      "evidence": "Repository release records: September 10 and September 14. Historical validation."
+      "next": "Investigate remaining provider ordering and identity discrepancies using the stored feed; keep phase and knockout regression cases.",
+      "evidence": "October 4 c488c35 includes shared-rank fixes. PL/CL table routes checked in production at 390px and 1440px; stage/knockout edge cases retain prior regression evidence."
     },
     {
       "id": "journeys",
@@ -230,7 +270,7 @@
       "summary": "Date and live filters, local follows and match-detail navigation.",
       "acceptance": "Persist date/filter/follows, preserve detail focus and drafts during updates, and expose loading, missing coverage and retry states.",
       "next": "Retest against LiveScore and FotMob after reliability work; preserve these journeys during migration.",
-      "evidence": "September 10/14 release records. Covers local follows, combined PL/CL scores, detail navigation and line-up recovery."
+      "evidence": "October 4 c488c35: headless production upcoming-date, table and completed-match timeline/lineup journeys passed at 390px and 1440px. Controlled regression covered partial outages, stale disclosure and navigation; local-follow persistence retains prior evidence."
     }
   ]
 }
