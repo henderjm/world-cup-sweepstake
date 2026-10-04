@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-04",
-  "revision": "990dfb3",
+  "revision": "6aa525c",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -18,19 +18,19 @@
       "priority": "P0",
       "title": "Make busy matchdays reliable",
       "summary": "Architecture work underway; production reliability remains unmeasured.",
-      "acceptance": "Measure 99.95% usable scoreboards and 99.9% active observation freshness. Measure provider-visible change to screen separately: p95 ≤30s, p99 ≤60s. Warn after 45s. Missing checks and provider failures count against the user-facing result.",
+      "acceptance": "Measure 99.95% usable scoreboards and 99.9% active observation freshness. Measure provider-visible change to screen separately: p95 \u226430s, p99 \u226460s. Warn after 45s. Missing checks and provider failures count against the user-facing result.",
       "next": "Finish trial costs, independent monitoring and remaining preflight, then seek approval for the concrete trial.",
       "evidence": "Local stored-mode migration, release artifacts, unapplied infrastructure and budget initialization are prepared. Latest service suite: 80 passed. Production reliability and actual AWS behavior remain unmeasured."
     },
     {
       "id": "monitor",
       "status": "In progress",
-      "priority": "P0 · first",
+      "priority": "P0 \u00b7 first",
       "title": "External monitoring and approved paging",
       "summary": "Local watcher is verified; continuous hosting and real paging remain open.",
       "acceptance": "Record both PL and CL, missing observations and worst-fixture freshness independently. Inject an incident and verify delivery to the configured alert receiver plus recovery. Preserve dated evidence.",
-      "next": "Implement safe recorder/window resume and rollover plus a durable receiver adapter; choose and price a fast independent watchdog.",
-      "evidence": "990dfb3: candidate host plus daily backup $7.80/month; Pushover $4.99 once per platform. Healthchecks minimum period plus grace is too slow for the sole 60-second watchdog. No purchase or actual delivery. Existing scripts have bounded windows and need supervision."
+      "next": "Implement automatic window rollover, retention and durable receiver delivery; finish independent watchdog choice and pricing.",
+      "evidence": "6aa525c: recorder and watcher recover ownership after process failure. All 34 related tests pass, including real HTTP restart, overlapping watcher rejection and pending alert retry without lock deletion. Hosting, supervision and human paging remain uninstalled; no purchase or deployment."
     },
     {
       "id": "consumers",
@@ -150,7 +150,7 @@
       "summary": "Viewers read stored scores without provider access.",
       "acceptance": "Atomic, fenced publication; bounded coherent reads; corrupt data unavailable; scores and quota survive restart. Test mobile and desktop loading, empty, stale and recovery states.",
       "next": "Validate deployed IAM, cold/warm latency and capacity during the approved trial.",
-      "evidence": "bb977b8 · 42 service checks, 1,606 app tests and headless journeys passed. Synthetic 1,000-fixture warm unchanged read: 1,431-byte manifest. Not a cloud latency or browser payload result."
+      "evidence": "bb977b8 \u00b7 42 service checks, 1,606 app tests and headless journeys passed. Synthetic 1,000-fixture warm unchanged read: 1,431-byte manifest. Not a cloud latency or browser payload result."
     },
     {
       "id": "worker-reads",
@@ -170,7 +170,7 @@
       "summary": "Failed or missing checks reach a receiver even after watcher restart.",
       "acceptance": "Persist before send, require matching acknowledgment, deduplicate retries, preserve incident/recovery order and alert when the recorder stops.",
       "next": "Configure an approved external receiver and verify downstream human delivery, plus a watchdog outside the monitor failure domain.",
-      "evidence": "d50aab4 · 1,620 app tests passed; 30 focused checks passed after final checksum change. Real local processes verify stale data, receiver refusal, watcher restart and recorder loss. All three distinct events acknowledged locally within ten seconds of detection."
+      "evidence": "d50aab4 \u00b7 1,620 app tests passed; 30 focused checks passed after final checksum change. Real local processes verify stale data, receiver refusal, watcher restart and recorder loss. All three distinct events acknowledged locally within ten seconds of detection."
     },
     {
       "id": "collector",
@@ -190,7 +190,7 @@
       "summary": "Version-aware recovery with a durable measurement baseline.",
       "acceptance": "Reject older snapshots without discarding valid mixed-age updates. Record missing checks rather than silently excluding them from reliability reports.",
       "next": "Deploy independent monitoring with tested alert delivery.",
-      "evidence": "4d9b364, 64f7336 · locally verified; not an installed continuous monitor."
+      "evidence": "4d9b364, 64f7336 \u00b7 locally verified; not an installed continuous monitor."
     },
     {
       "id": "tables",
