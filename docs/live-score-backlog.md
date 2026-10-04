@@ -1848,3 +1848,14 @@ fencing scope and execution-role secret scope. Evidence retains the template has
 in `live-score-evidence/2026-10-04-aws-policy-simulation.json`; rerun with
 `scripts/qa/aws-policy-simulation.py`. No AWS resources created. Deployed-role
 trust/permissions, actual task egress and external monitoring remain gates.
+
+## October 4 — Worker source binding and coordinated cutover
+
+Found Worker CI did not consume the source variable used by Pages and feeder
+gating. Added a preview-first deployment helper and wired the same repository
+`SCORE_READ_ORIGIN` into every Worker deployment, including an explicit empty
+binding for approved rollback. Three focused tests verify argument propagation,
+unsafe-origin refusal and CI wiring; Wrangler dry runs verify stored/legacy
+bundles. The runbook records stop/observe/initialize/start and reverse rollback
+ordering, preserving budget evidence and identifying unfilled operational gates.
+No workflow variable, secret, running job or public deployment changed.

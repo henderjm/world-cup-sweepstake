@@ -23,6 +23,7 @@ on:
     branches: [main]
     paths:
       - "worker/**"
+      - "scripts/deploy-score-worker.mjs"
       - "src/**"
       - "package.json"
       - "package-lock.json"
@@ -58,9 +59,10 @@ jobs:
       - name: Deploy Worker
         if: steps.token.outputs.have == 'true'
         working-directory: worker
-        run: npx --yes wrangler@4 deploy
+        run: node ../scripts/deploy-score-worker.mjs --deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          SCORE_READ_ORIGIN: ${{ vars.SCORE_READ_ORIGIN }}
       - name: Skip (no token configured)
         if: steps.token.outputs.have != 'true'
         run: echo "CLOUDFLARE_API_TOKEN repo secret is not set; skipping Worker deploy. Add it to enable auto-deploy, then re-run via workflow_dispatch."
