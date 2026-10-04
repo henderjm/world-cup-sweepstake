@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-04",
-  "revision": "9c619cd",
+  "revision": "b511d37",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -39,8 +39,8 @@
       "title": "Migrate every provider consumer",
       "summary": "Prevent details, stats and background jobs competing with scores.",
       "acceptance": "Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.",
-      "next": "Connect validated squad/history jobs to durable storage and the shared budget, then add stored player-pool export.",
-      "evidence": "9c619cd adds atomic fantasy dataset persistence with source timestamps, version checks and collector fencing. Seven DynamoDB Local cases and all 70 service tests pass. Collection scheduling and export remain pending; not deployed."
+      "next": "Add stored player-pool read/export and retire the direct fantasy bake, then prepare the priced cloud trial.",
+      "evidence": "b511d37 connects PL squads and three historical seasons to the shared scheduler and budget. Five integrated database cases prove score priority, reserve protection, retention and takeover. All 75 service and 1,649 app tests pass. Legacy export still direct; not deployed."
     },
     {
       "id": "cloud",

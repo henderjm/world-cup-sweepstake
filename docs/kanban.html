@@ -10,7 +10,7 @@
 @media(max-width:650px){#kickoff-kanban .lanes{grid-template-columns:1fr}}
 </style>
 <div id="kickoff-kanban">
-<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code 9c619cd</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
+<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code b511d37</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
 <div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">2</span></h3><article data-card="reliability">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Make busy matchdays reliable</summary>
@@ -18,7 +18,7 @@
 <p>Architecture work underway; production reliability remains unmeasured.</p></article><article data-card="consumers">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Migrate every provider consumer</summary>
-<dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Connect validated squad/history jobs to durable storage and the shared budget, then add stored player-pool export.</dd><dt>Evidence</dt><dd>9c619cd adds atomic fantasy dataset persistence with source timestamps, version checks and collector fencing. Seven DynamoDB Local cases and all 70 service tests pass. Collection scheduling and export remain pending; not deployed.</dd></dl></details>
+<dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Add stored player-pool read/export and retire the direct fantasy bake, then prepare the priced cloud trial.</dd><dt>Evidence</dt><dd>b511d37 connects PL squads and three historical seasons to the shared scheduler and budget. Five integrated database cases prove score priority, reserve protection, retention and takeover. All 75 service and 1,649 app tests pass. Legacy export still direct; not deployed.</dd></dl></details>
 <p>Prevent details, stats and background jobs competing with scores.</p></article></section><section aria-label="Up next"><h3>Up next <span class="text-muted">5</span></h3><article data-card="monitor">
 <span class="viz-badge">P0 · first</span>
 <details><summary class="cursor-interaction">External monitoring and approved paging</summary>
