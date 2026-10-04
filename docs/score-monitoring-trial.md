@@ -109,5 +109,44 @@ Four new process/file recovery cases plus existing recorder/alert tests passed
 also covers watcher crash recovery via
 `python3 scripts/run-score-monitor.py watch LEDGER.jsonl STATE.json`.
 Overlapping watchers are rejected and pending alerts retry after process-group
-termination without lock deletion. No unattended next-window rollover, retention,
-supervisor installation or deployment is implemented yet.
+termination without lock deletion. The explicit schedule runner below now handles next-window handover. Retention,
+external supervisor installation and deployment remain open.
+
+## Explicit schedule runner
+
+`python3 scripts/run-score-monitor.py schedule MANIFEST.json EVIDENCE_DIRECTORY`
+runs a finite, approved schedule. The manifest is `{ "windows": [PLAN, PLAN] }`,
+using the recorder plan shape. Supply 1–31 contiguous windows, each no longer
+than 24 hours, with aligned observation slots, the same origin/cadence/competition
+list and nonempty `fixtureReference` provenance. Reconcile each window's fixture
+list independently, including matches still underway across the boundary. The
+runner does not discover fixtures, infer a finished match or generate future plans.
+Use an existing parent directory on durable local POSIX storage.
+
+The runner freezes the normalized schedule and destination before any probes.
+Restart requires exactly the same schedule and receiver. Each window has its own
+immutable plan, append-only ledger and durable alert state. Recorders start up to
+five seconds early; a previous window's refused alerts drain separately while
+new probes continue. Receiver exit code 2 retries after five seconds, preserving
+per-event backoff. A corrupt ledger, changed plan or unexpected child failure
+stops the runner and terminates its children. Missed slots remain missing.
+
+Concurrency is bounded to two recorders and four watchers. Current measurement
+windows take priority over historical recovery; a backlog can delay historical
+alerts. This is not a guarantee of the 60-second paging objective. Incidents are
+scoped to each window: an unresolved incident at a boundary is not fabricated into
+a recovery, and the next window may create a separate incident. Receiver display
+must retain window/event time and must not infer cross-window recovery.
+
+The schedule lock is inherited from the wrapper. Use supervisor process-group
+or cgroup termination to stop all descendants after a crash. On orderly stop,
+children are signalled and awaited. Re-run the same command to recover evidence.
+The runner exits after all windows and pending deliveries finish; it does not
+silently extend the schedule. A receiver that never accepts leaves it running.
+No evidence is automatically deleted. Retention, external process supervision,
+heartbeat-loss detection, schedule renewal and actual paging remain required.
+
+Local verification: `node --test test/score-schedule.test.js` exercises adjacent
+PL/CL windows with active fixtures, refused alerts across handover, original-ID
+retry, concurrent-runner exclusion, restart without duplicate probes or delivery,
+and refusal to rewrite an existing schedule. It uses local HTTP only.

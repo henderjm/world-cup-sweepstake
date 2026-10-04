@@ -7,13 +7,13 @@ import signal
 import subprocess
 import sys
 
-if len(sys.argv) != 4 or sys.argv[1] not in ('record', 'watch'):
-    raise SystemExit('Usage: python3 scripts/run-score-monitor.py record PLAN LEDGER | watch LEDGER STATE')
+if len(sys.argv) != 4 or sys.argv[1] not in ('record', 'watch', 'schedule'):
+    raise SystemExit('Usage: python3 scripts/run-score-monitor.py record PLAN LEDGER | watch LEDGER STATE | schedule MANIFEST DIRECTORY')
 mode = sys.argv[1]
 first, second = map(lambda value: str(Path(value).resolve()), sys.argv[2:])
 if mode == 'watch' and Path(second + '.lock').exists():
     raise SystemExit('Legacy watcher lock exists; verify the old watcher stopped before removing it')
-lock_path = second + ('.recorder.lock' if mode == 'record' else '.watcher.lock')
+lock_path = second + {'record': '.recorder.lock', 'watch': '.watcher.lock', 'schedule': '.schedule.lock'}[mode]
 # Keep the inode: unlinking a lock can let another process lock a different file.
 with open(lock_path, 'a+') as lock:
     try:
@@ -21,7 +21,7 @@ with open(lock_path, 'a+') as lock:
     except BlockingIOError:
         raise SystemExit('Another monitor process owns this output')
     env = dict(os.environ, SCORE_MONITOR_LOCK_FD=str(lock.fileno()))
-    script = Path(__file__).resolve().with_name('measure-score-reliability.mjs' if mode == 'record' else 'watch-score-reliability.mjs')
+    script = Path(__file__).resolve().with_name({'record': 'measure-score-reliability.mjs', 'watch': 'watch-score-reliability.mjs', 'schedule': 'run-score-schedule.mjs'}[mode])
     args = ['resume', first, second] if mode == 'record' else [first, second]
     child = subprocess.Popen([os.environ.get('NODE_BINARY', 'node'), str(script), *args],
                              env=env, pass_fds=(lock.fileno(),))

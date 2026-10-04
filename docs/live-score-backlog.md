@@ -1801,3 +1801,14 @@ The real receiver test rejects an overlapping watcher, kills the process group
 and retries the original pending event without deleting locks or alert state.
 All 34 related tests pass. Continuous rollover, retention, an independent
 supervisor and a durable paging adapter remain open. No deployment or spending.
+
+## October 4 — explicit monitoring schedule handover
+
+Added a bounded schedule runner for 1–31 reconciled contiguous windows. It freezes
+schedule/destination, starts the next recorder independently of pending previous
+alerts, bounds child concurrency and resumes per-window evidence. Real local PL
+and CL fixtures verify handover during receiver refusal, retry, concurrent-runner
+exclusion and completed-run restart without duplicate probes or delivery.
+All 36 schedule/recorder/watcher/reliability tests pass. Independent hosting,
+retention, heartbeat loss, schedule renewal and actual paging remain open. No
+production reliability claim, provider traffic, purchase or deployment.
