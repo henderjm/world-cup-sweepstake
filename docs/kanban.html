@@ -10,7 +10,7 @@
 @media(max-width:650px){#kickoff-kanban .lanes{grid-template-columns:1fr}}
 </style>
 <div id="kickoff-kanban">
-<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code 1d3b15c</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
+<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code fc8d905</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
 <div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">2</span></h3><article data-card="reliability">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Make busy matchdays reliable</summary>
@@ -18,7 +18,7 @@
 <p>Architecture work underway; production reliability remains unmeasured.</p></article><article data-card="consumers">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Migrate every provider consumer</summary>
-<dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Migrate remaining feeder, static export and player-history consumers; prepare the priced cloud trial and independent monitoring.</dd><dt>Evidence</dt><dd>1d3b15c verifies the scheduled handler on local SQLite: live/outage/final transitions, atomic failure/retry, 22-player settlement and 50-22 H2H totals. Fixed full-time provisional-point loss. 1,635 app tests pass. Other consumers and cloud validation remain; not deployed.</dd></dl></details>
+<dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Migrate squads and historical player data into the shared budget, then package the priced cloud trial and independent monitoring.</dd><dt>Evidence</dt><dd>fc8d905 adds stored live-data exports and a legacy feeder retirement gate. Corrections and incomplete event coverage preserve honest scorer totals. All 1,641 root tests pass. Player-history remains direct; no remote switch or deployment.</dd></dl></details>
 <p>Prevent details, stats and background jobs competing with scores.</p></article></section><section aria-label="Up next"><h3>Up next <span class="text-muted">5</span></h3><article data-card="monitor">
 <span class="viz-badge">P0 · first</span>
 <details><summary class="cursor-interaction">External monitoring and approved paging</summary>
@@ -43,7 +43,11 @@
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Approve spending and public cutover</summary>
 <dl><dt>Acceptance</dt><dd>User approves the concrete priced trial before resources or upgrades, and approves public deployment separately after busy-window reliability evidence and rollback are ready.</dd><dt>Next action</dt><dd>Complete the plan and validation evidence first. No user action needed now.</dd><dt>Evidence</dt><dd>Local engineering is not blocked by this gate.</dd></dl></details>
-<p>Future gate: not asking for approval yet.</p></article></section><section aria-label="Validated locally"><h3>Validated locally <span class="text-muted">5</span></h3><article data-card="storage">
+<p>Future gate: not asking for approval yet.</p></article></section><section aria-label="Validated locally"><h3>Validated locally <span class="text-muted">6</span></h3><article data-card="stored-export">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Stored exports and feeder retirement</summary>
+<dl><dt>Acceptance</dt><dd>Preserve source ages and last-good files, accept finished-match corrections, retain dated scorer totals on incomplete events, and stop the old feeder in stored mode.</dd><dt>Next action</dt><dd>Enable only during approved cutover, after player-history migration and runtime coverage checks.</dd><dt>Evidence</dt><dd>fc8d905: six focused export/feeder cases and 1,641 root tests passed. No repository variable enabled and no public deployment.</dd></dl></details>
+<p>Static scores and detail can share the collector without provider calls.</p></article><article data-card="storage">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Partitioned storage and read service</summary>
 <dl><dt>Acceptance</dt><dd>Atomic, fenced publication; bounded coherent reads; corrupt data unavailable; scores and quota survive restart. Test mobile and desktop loading, empty, stale and recovery states.</dd><dt>Next action</dt><dd>Package for cloud trial and validate actual IAM, latency and capacity.</dd><dt>Evidence</dt><dd>bb977b8 · 42 service checks, 1,606 app tests and headless journeys passed. Synthetic 1,000-fixture warm unchanged read: 1,431-byte manifest. Not a cloud latency or browser payload result.</dd></dl></details>
