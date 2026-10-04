@@ -83,3 +83,31 @@ test("the standings mapper distinguishes unknown away totals from zero", () => {
   assert.equal(map({ goals: { for: 0 }, win: 0 }).awayGoals, 0);
   assert.equal(map({ goals: { for: 3 }, win: 1 }).awayWins, 1);
 });
+
+test('known interim ties share ranks and skip the occupied places without claiming missing criteria', () => {
+  const result = rankChampionsLeagueRows([
+    row('Zulu', 1), row('Alpha', 2), row('Third', 3, { points: 0 }),
+  ]);
+  assert.deepEqual(result.rows.map(r => r.position), [1, 1, 3]);
+  assert.deepEqual(names(result), ['Zulu', 'Alpha', 'Third'], 'provider display order retained without UEFA abbreviations');
+  assert.equal(result.incomplete, false);
+  const unknown = rankChampionsLeagueRows([row('Zulu', 1, { awayWins: null }), row('Alpha', 2)]);
+  assert.equal(unknown.incomplete, true);
+  assert.deepEqual(unknown.rows.map(r => r.position), [1, 2]);
+  const finalDay = rankChampionsLeagueRows([row('Zulu', 1, { played: 8 }), row('Alpha', 2, { played: 7 })]);
+  assert.equal(finalDay.incomplete, true);
+  assert.deepEqual(finalDay.rows.map(r => r.position), [1, 2]);
+});
+
+test('live CL table preserves shared ranks and qualification bands through result folding', () => {
+  const rows = ['Home', 'Away', 'Other', 'Fourth'].map((team, i) => row(team, i + 1, {
+    played: 0, won: 0, points: 0, goalsFor: 0, goalDifference: 0,
+  }));
+  const result = applyLiveResults({ competitionCode: 'CL', rows, zones: [{ from: 1, to: 1, tone: 'safe' }], matches: [
+    { homeTeam: 'Home', awayTeam: 'Away', status: 'IN_PLAY', stage: 'LEAGUE_STAGE', score: { home: 0, away: 0 } },
+    { homeTeam: 'Other', awayTeam: 'Fourth', status: 'IN_PLAY', stage: 'LEAGUE_STAGE', score: { home: 0, away: 0 } },
+  ] });
+  assert.deepEqual(result.rows.map(r => r.position), [1, 1, 1, 1]);
+  assert.ok(result.rows.every(r => r.zone?.tone === 'safe'));
+  assert.equal(result.rankingIncomplete, false);
+});

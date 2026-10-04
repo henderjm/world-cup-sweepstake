@@ -381,6 +381,7 @@ export function renderTable(model) {
               ? `<p class="note ltable__livenote">As it stands: includes today's results and matches still in play, so these figures can still change.</p>`
               : ""
           }
+          ${model.competition?.code === "CL" && table.rows.some((row, index) => index > 0 && row.position === table.rows[index - 1].position) ? '<p class="note">Shared ranks: teams are level on the league-phase tie-breaks.</p>' : ""}
           ${table.rankingIncomplete ? '<p class="note">Some tied positions remain in the published order until all tie-break information is available.</p>' : ""}
           <div class="ltable__row ltable__head">
             <span>#</span><span>Club</span><span class="ltable__num">P</span>

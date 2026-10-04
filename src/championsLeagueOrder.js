@@ -9,6 +9,8 @@ export function rankChampionsLeagueRows(rows, matches = []) {
     opponents.get(match.homeTeam).add(match.awayTeam);
     opponents.get(match.awayTeam).add(match.homeTeam);
   }
+  const interim = rows.every(row => Number.isInteger(row.played) && row.played >= 0 && row.played < 8);
+  const shared = new Map();
   const complete = rows.every(row => row.played === 8 && opponents.get(row.team).size === 8);
   const opponentTotal = (row, field) => complete
     ? [...opponents.get(row.team)].reduce((sum, team) => sum + byTeam.get(team)[field], 0)
@@ -29,6 +31,12 @@ export function rankChampionsLeagueRows(rows, matches = []) {
   // non-transitive comparator and arbitrarily reorder three or more clubs.
   const refine = (group, index) => {
     if (group.length < 2) return group;
+    if (interim && index === 6) {
+      // UEFA gives fully tied clubs equal rank before MD8. Keep the published
+      // display order: provider names are not necessarily UEFA abbreviations.
+      for (const row of group) shared.set(row.team, group[0].team);
+      return group;
+    }
     if (index === criteria.length || group.some(row => !Number.isFinite(criteria[index](row)))) {
       incomplete = true;
       return group;
@@ -44,8 +52,15 @@ export function rankChampionsLeagueRows(rows, matches = []) {
     }
     return result;
   };
+  const ranked = refine([...rows].sort((a, b) => a.position - b.position), 0);
+  const positions = new Map();
   return {
-    rows: refine([...rows].sort((a, b) => a.position - b.position), 0),
+    rows: ranked.map((row, index) => {
+      const leader = shared.get(row.team);
+      const position = leader ? (positions.get(leader) ?? index + 1) : index + 1;
+      positions.set(row.team, position);
+      return { ...row, position };
+    }),
     incomplete,
   };
 }

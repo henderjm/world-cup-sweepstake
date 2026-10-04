@@ -179,8 +179,8 @@ export function applyLiveResults({ rows, matches, zones = [], competitionCode } 
     : { rows: [...byTeam.values()].sort(compareRows), incomplete: false };
   const sorted = ranking.rows.map((row, index) => ({
     ...row,
-    position: index + 1,
-    zone: zoneFor(index + 1, zones),
+    position: competitionCode === "CL" ? row.position : index + 1,
+    zone: zoneFor(competitionCode === "CL" ? row.position : index + 1, zones),
     live: liveTeams.has(row.team),
   }));
 

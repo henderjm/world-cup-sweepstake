@@ -92,3 +92,7 @@ Quiet matchdays: with Vite on port 8731, run `next-matchday.js` using
 `run-headless.mjs`. Checks 390/1440px, CL/combined routes, Following, stale
 schedule disclosure, 44px navigation target, match-detail return and Back. The
 malformed fallback fixture must remain isolated without page errors.
+
+Champions League shared positions: run `cl-shared-ranks.js` against Vite on 8731.
+Synthetic simultaneous draws verify repeated rank 1, live/shared-rank disclosures,
+no false incomplete-data warning, no overflow and no page errors at 390/1440px.

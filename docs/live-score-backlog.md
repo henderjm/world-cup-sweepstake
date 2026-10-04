@@ -1859,3 +1859,20 @@ unsafe-origin refusal and CI wiring; Wrangler dry runs verify stored/legacy
 bundles. The runbook records stop/observe/initialize/start and reverse rollback
 ordering, preserving budget evidence and identifying unfilled operational gates.
 No workflow variable, secret, running job or public deployment changed.
+
+## October 4 — CL interim shared ranks
+
+UEFA's September 11, 2026 explanation confirms that before the final matchday,
+teams tied on points and all five interim criteria share a rank. The live-table
+projection previously assigned distinct positions and treated such fully known
+ties as incomplete. It now shares ranks, skips occupied positions and uses that
+rank for qualification bands. A short table note explains shared ranks.
+
+Missing criteria and final-matchday ties still preserve the published order and
+incomplete-data warning. Display order within shared ranks remains the provider's:
+we do not have authoritative UEFA abbreviated names to implement their alphabetical
+display convention. Settled provider tables remain unchanged. This does not claim
+to correct all provider ranking discrepancies observed in the competitor review.
+
+30 focused tests and headless 390/1440px live-table journeys passed. No deployment.
+Source: https://www.uefa.com/uefachampionsleague/news/0291-1bd88ae04870-e1e038c319e3-1000--champions-league-league-phase-standings-how-teams-level-on-/
