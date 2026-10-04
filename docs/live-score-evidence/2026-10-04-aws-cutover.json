@@ -1,6 +1,6 @@
 {
   "date": "2026-10-04",
-  "status": "provisioning-collectors-disabled",
+  "status": "aws-created-awaiting-credential-transfer",
   "account": "134471064301",
   "region": "eu-west-1",
   "bootstrapStack": "kickoff-draft-score-artifacts",
@@ -70,5 +70,112 @@
     ],
     "deploymentReady": false
   },
-  "approval": "Owner explicitly approved AWS provisioning and cutover, modeled $65-$87/month for 100k-1m visitor reads, and brief score-data interruption. No provider upgrade or external monitoring purchase approved."
+  "approval": "Owner explicitly approved AWS provisioning and cutover, modeled $65-$87/month for 100k-1m visitor reads, and brief score-data interruption. No provider upgrade or external monitoring purchase approved.",
+  "readerOrigin": "https://74e2edihli.execute-api.eu-west-1.amazonaws.com",
+  "resources": [
+    {
+      "Id": "Cluster",
+      "Physical": "kickoff-draft-scores-Cluster-HN55jl3ipSEc",
+      "Status": "CREATE_COMPLETE"
+    },
+    {
+      "Id": "CollectorA",
+      "Physical": "arn:aws:ecs:eu-west-1:134471064301:service/kickoff-draft-scores-Cluster-HN55jl3ipSEc/kickoff-draft-scores-CollectorA-8Nq8Irox1xk6",
+      "Status": "CREATE_COMPLETE"
+    },
+    {
+      "Id": "CollectorB",
+      "Physical": "arn:aws:ecs:eu-west-1:134471064301:service/kickoff-draft-scores-Cluster-HN55jl3ipSEc/kickoff-draft-scores-CollectorB-Nzf3PHKpjhJl",
+      "Status": "CREATE_COMPLETE"
+    },
+    {
+      "Id": "CollectorLogs",
+      "Physical": "kickoff-draft-scores-CollectorLogs-F89eVJvmwjEV",
+      "Status": "CREATE_COMPLETE"
+    },
+    {
+      "Id": "CollectorNetwork",
+      "Physical": "sg-03f11940c6eb79bca",
+      "Status": "CREATE_COMPLETE"
+    },
+    {
+      "Id": "CollectorRole",
+      "Physical": "kickoff-draft-scores-CollectorRole-7YmN496U35A8",
+      "Status": "CREATE_COMPLETE"
+    },
+    {
+      "Id": "CollectorTask",
+      "Physical": "arn:aws:ecs:eu-west-1:134471064301:task-definition/kickoff-draft-scores-CollectorTask-skxK6ccMYrp5:1",
+      "Status": "CREATE_COMPLETE"
+    },
+    {
+      "Id": "ExecutionRole",
+      "Physical": "kickoff-draft-scores-ExecutionRole-NpNuMdGiNMMc",
+      "Status": "CREATE_COMPLETE"
+    },
+    {
+      "Id": "ReadApi",
+      "Physical": "74e2edihli",
+      "Status": "CREATE_COMPLETE"
+    },
+    {
+      "Id": "ReadIntegration",
+      "Physical": "fubf45u",
+      "Status": "CREATE_COMPLETE"
+    },
+    {
+      "Id": "ReadPermission",
+      "Physical": "kickoff-draft-scores-ReadPermission-wg2f7kvmu68f",
+      "Status": "CREATE_COMPLETE"
+    },
+    {
+      "Id": "ReadRoute",
+      "Physical": "l1bt791",
+      "Status": "CREATE_COMPLETE"
+    },
+    {
+      "Id": "ReadStage",
+      "Physical": "$default",
+      "Status": "CREATE_COMPLETE"
+    },
+    {
+      "Id": "Reader",
+      "Physical": "kickoff-draft-scores-Reader-nHU1aN4yZKeS",
+      "Status": "CREATE_COMPLETE"
+    },
+    {
+      "Id": "ReaderLogs",
+      "Physical": "kickoff-draft-scores-ReaderLogs-X8Kq112yWpF9",
+      "Status": "CREATE_COMPLETE"
+    },
+    {
+      "Id": "ReaderRole",
+      "Physical": "kickoff-draft-scores-ReaderRole-0wp2nysdJVh9",
+      "Status": "CREATE_COMPLETE"
+    },
+    {
+      "Id": "Scores",
+      "Physical": "kickoff-draft-scores-Scores-6U0100YCH5AF",
+      "Status": "CREATE_COMPLETE"
+    }
+  ],
+  "runtimeChecks": {
+    "stack": "CREATE_COMPLETE",
+    "collectorA": {
+      "desired": 0,
+      "running": 0,
+      "pending": 0
+    },
+    "collectorB": {
+      "desired": 0,
+      "running": 0,
+      "pending": 0
+    },
+    "reader": {
+      "/PL/live": 503,
+      "/CL/live": 503,
+      "/invalid": 404
+    },
+    "productionSourceChanged": false
+  }
 }
