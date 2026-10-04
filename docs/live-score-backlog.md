@@ -1812,3 +1812,17 @@ exclusion and completed-run restart without duplicate probes or delivery.
 All 36 schedule/recorder/watcher/reliability tests pass. Independent hosting,
 retention, heartbeat loss, schedule renewal and actual paging remain open. No
 production reliability claim, provider traffic, purchase or deployment.
+
+## October 4 — quiet-day discovery and feed identity
+
+Refreshed public desktop/mobile competitor journeys; details in
+`live-score-evidence/2026-10-04-matchday-review.md`. Added a next-matchday shortcut
+from empty scores, preserving Following and competition and deliberately clearing
+Live to reveal scheduled matches. Match detail return and Back retain route state.
+Fixed missing/wrong competition identity crashing freshness rendering: isolate
+that league's failure and preserve its last good data. 31 focused tests and
+headless mobile/desktop journeys pass. No deployment.
+
+Next product checks: independently verify CL tie ordering before changing provider
+rank; remove redundant mini-table from the full-table page only if replaced by
+useful context (retain it on Scores); assess fixture discovery from league header.

@@ -73,3 +73,19 @@ test("league-scoped dates survive reload routes and unknown competition codes fa
   for (const code of ["unsupported", "toString", "__proto__"]) assert.equal(readScoreRoute(`live?competition=${code}`).competition, null);
   assert.equal(readScoreRoute(scoreRouteHash({ competition: "CL", tab: "tables" })).tab, "tables");
 });
+
+test('missing or wrong competition identity cannot replace a league or break its freshness label', async () => {
+  for (const malformed of [undefined, null, {}, { hasData: false, competition: { code: '' } }, feed('CL')]) {
+    let next = malformed;
+    const scores = createScoreFeeds(() => next);
+    const cold = await scores.refresh('PL');
+    assert.equal(cold.competition.code, 'PL');
+    assert.equal(cold.hasData, false); assert.ok(cold.error);
+    assert.doesNotThrow(() => renderScoresHome(scores.values()));
+    next = feed('PL'); const good = await scores.refresh('PL');
+    next = malformed; const saved = await scores.refresh('PL');
+    assert.equal(saved.competition.code, 'PL');
+    assert.deepEqual(saved.matches, good.matches);
+    assert.equal(saved.lastUpdated, good.lastUpdated); assert.equal(saved.stale, true);
+  }
+});

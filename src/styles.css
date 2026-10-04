@@ -528,6 +528,7 @@ button { font-family: inherit; cursor: pointer; }
 .score-controls__date { flex: 1; min-width: 130px; max-width: 240px; }
 .score-controls input { width: 100%; min-height: 40px; padding: 8px; background: var(--surface); color: var(--text); border: 1px solid var(--line-2); border-radius: 8px; color-scheme: dark; font: inherit; }
 .score-day { margin-bottom: 16px; }
+.score-upcoming { display: inline-flex; align-items: center; min-height: 44px; margin-top: 8px; color: var(--accent); text-decoration: none; }
 @media (max-width: 760px) {
   .score-controls { gap: 4px; }
   .score-controls .seg { padding: 6px 8px; }

@@ -87,3 +87,8 @@ server after the run. The harness blocks unexpected outbound requests and uses
 a synthetic stored-service response; it does not exercise DynamoDB. Local
 preview CORS is adapted in the browser route; unit tests separately verify the
 Worker's production-origin CORS response.
+
+Quiet matchdays: with Vite on port 8731, run `next-matchday.js` using
+`run-headless.mjs`. Checks 390/1440px, CL/combined routes, Following, stale
+schedule disclosure, 44px navigation target, match-detail return and Back. The
+malformed fallback fixture must remain isolated without page errors.

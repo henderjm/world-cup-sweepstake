@@ -6,7 +6,7 @@ import { dateLabel, dayLabel, formatStage, isFinished, isLive, statusLabel } fro
 import { feedDelayNotice, isOverdueFixture } from "./fixtureFreshness.js";
 import { learnPages } from "./learnSeo.js";
 import { TUTORIALS } from "./tutorials.js";
-import { localDateKey, shiftScoreDate, validScoreDate } from "./scoreDates.js";
+import { localDateKey, scoreRouteHash, shiftScoreDate, validScoreDate } from "./scoreDates.js";
 import { followsTeam, followedMatches } from "./teamFollows.js";
 import { knockoutMatches, knockoutRounds, selectedKnockoutRound } from "./knockout.js";
 export { knockoutMatches } from "./knockout.js";
@@ -285,16 +285,16 @@ function scoreDateControls(selectedDate, liveOnly, liveCount) {
   </div>`;
 }
 
-function scoreDayRows(model, selectedDate, liveOnly, follows = [], followingOnly = false) {
+function scoreDayRows(model, selectedDate, liveOnly, follows = [], followingOnly = false, routeCompetition = model.competition?.code) {
   const dayMatches = matchesOnDate(model, selectedDate);
   const matches = liveOnly ? dayMatches.filter(match => isLive(match.status)) : dayMatches;
   const next = (model.matches ?? [])
-    .filter(match => ["TIMED", "SCHEDULED"].includes(match.status) && localDateKey(match.utcDate) > selectedDate)
+    .filter(match => ["TIMED", "SCHEDULED"].includes(match.status) && localDateKey(match.utcDate) >= selectedDate)
     .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))[0];
   const empty = followingOnly ? (liveOnly ? "No followed teams are live on this date." : "No followed teams play on this date.") : liveOnly ? "No live matches on this date." : selectedDate === localDateKey() ? "No kick-offs today." : "No matches on this date.";
   return `${matches.some(match => localDateKey(match.utcDate) !== selectedDate) ? '<p class="note">Includes matches still live from yesterday.</p>' : ''}
     ${matches.length ? matches.map(match => matchLine(match, model.competition?.code, follows)).join("") : `<p class="note">${empty}</p>`}
-    ${!dayMatches.length && next ? `<p class="note">Next: ${esc(displayTeamName(next.homeTeam))} v ${esc(displayTeamName(next.awayTeam))} · ${esc(dayLabel(next.utcDate))}</p>` : ""}`;
+    ${!matches.length && next ? `<p class="note">Next: ${esc(displayTeamName(next.homeTeam))} v ${esc(displayTeamName(next.awayTeam))} · ${esc(dayLabel(next.utcDate))}</p><a class="seg score-upcoming" href="#${esc(scoreRouteHash({ date: localDateKey(next.utcDate), competition: routeCompetition, followingOnly }))}">View upcoming matches</a>` : ""}`;
 }
 
 export function renderLive(model, options = {}) {
@@ -338,7 +338,7 @@ export function renderScoresHome(feeds, options = {}) {
       ${feed.loading ? '<p class="note" role="status">Loading matches…</p>'
         : feed.error ? `<p class="note" role="status">Scores unavailable.</p><button class="seg" data-score-feed-retry="${code}">Try again</button>`
         : !feed.hasData ? '<p class="note">No fixtures published.</p>'
-        : `${feed.stale ? `<p class="note" role="status">Live updates delayed. Showing the last available scores. <button class="score-league__table" data-score-feed-retry="${code}">Retry</button></p>` : ""}${scoreDayRows(feed, selectedDate, liveOnly, follows, followingOnly)}`}
+        : `${feed.stale ? `<p class="note" role="status">Live updates delayed. Showing the last available scores. <button class="score-league__table" data-score-feed-retry="${code}">Retry</button></p>` : ""}${scoreDayRows(feed, selectedDate, liveOnly, follows, followingOnly, null)}`}
     </section>`;
   }).join("");
   return `${scoreDateControls(selectedDate, liveOnly, liveCount)}${options.follows ? renderFollowControls(original, options) : ""}

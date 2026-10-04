@@ -12,7 +12,10 @@ export function createScoreFeeds(load) {
     values: () => [...feeds.values()],
     refresh(code) {
       if (pending.has(code)) return pending.get(code);
-      const request = Promise.resolve().then(() => load(code)).catch(() => ({
+      const request = Promise.resolve().then(() => load(code)).then(fresh => {
+        if (fresh?.competition?.code !== code) throw Error("Score feed competition mismatch");
+        return fresh;
+      }).catch(() => ({
         competition: competitionFor(code), hasData: false, error: "Scores are unavailable.",
       })).then(fresh => {
         const previous = feeds.get(code);

@@ -62,3 +62,23 @@ test("selected date and live filter show only matching fixtures, without duplica
   assert.match(live, /data-match-id="1"/);
   assert.doesNotMatch(live, /data-match-id="2"/);
 });
+
+test('empty-day shortcuts preserve competition and Following while showing upcoming fixtures outside Live', () => {
+  const model = { competition: { code: 'CL', shortName: 'Champions League' }, hasData: true, matches: [
+    { id: 30, homeTeam: 'Lens', awayTeam: 'Sporting CP', utcDate: '2026-10-13T17:45:00Z', status: 'TIMED' },
+    { id: 31, homeTeam: 'Arsenal', awayTeam: 'Lille', utcDate: '2026-10-13T20:00:00Z', status: 'TIMED' },
+  ] };
+  const options = { date: '2026-10-04', liveOnly: true, followingOnly: true, follows: [{ competition: 'CL', team: 'Arsenal' }] };
+  const html = renderLive(model, options);
+  assert.match(html, /Next: Arsenal v Lille/);
+  assert.doesNotMatch(html, /Next: Lens/);
+  const href = html.match(/href="#([^"]+)">View upcoming matches/)[1].replaceAll('&amp;', '&');
+  assert.deepEqual(readScoreRoute(href), { tab: 'live', competition: 'CL', date: '2026-10-13', followingOnly: true, liveOnly: false, phase: null, round: null });
+  const combined = renderScoresHome([model], options);
+  const combinedRoute = combined.match(/href="#([^"]+)">View upcoming matches/)[1].replaceAll('&amp;', '&');
+  assert.equal(readScoreRoute(combinedRoute).competition, null);
+  const sameDay = renderLive(model, { date: '2026-10-13', liveOnly: true });
+  assert.match(sameDay, /View upcoming matches/);
+  assert.doesNotMatch(renderLive(model, { date: '2026-10-13' }), /View upcoming matches/);
+  assert.doesNotMatch(renderLive(model, { date: '2026-10-14' }), /View upcoming matches/);
+});
