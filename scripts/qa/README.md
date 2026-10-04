@@ -62,3 +62,10 @@ For the midnight journey, use `FEEDER_TEST_SCENARIO=overnight`,
 server and headless replay for CL. It checks that the ongoing match remains on
 Today after midnight and that the overnight explanation appears. The browser
 uses UTC for this reproducible boundary; unit tests cover the viewer's local day.
+
+The proposed stored-score service has a separate replay on ports 8742 (site
+preview) and 8743 (`node scripts/qa/score-service-server.mjs`). Run
+`score-service.js` through this headless runner to check loading, unavailable,
+empty, delayed and recovered scores, including new versions with mixed fixture
+ages. The replay has no provider credentials or production storage; its scope
+and remaining infrastructure work are documented in `services/scores/README.md`.

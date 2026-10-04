@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { loadModel } from "../src/data.js";
 import { retainNewestScores } from "../src/scoreSnapshot.js";
+import { nextSnapshot, scoreFeed } from "../services/scores/snapshots.mjs";
 
 const now = Date.parse("2026-09-10T21:10:00Z");
 const final = { competition: "CL", lastUpdated: "2026-09-10T21:09:00Z", standings: [],
@@ -61,4 +62,51 @@ test("blocked storage cannot prevent live scores loading", t => {
   storage(t);
   globalThis.localStorage = { getItem() { throw Error("blocked"); }, setItem() { throw Error("quota"); } };
   assert.equal(retainNewestScores(final, "CL"), final);
+});
+
+function stored(version, score, secondObservedAt = now) {
+  const fixtures = [1, 2].map(id => ({ observedAt: id === 2 ? secondObservedAt : now,
+    match: { id, utcDate: new Date(now - 1800000).toISOString(), status: "IN_PLAY", homeTeam: `Home ${id}`, awayTeam: `Away ${id}`, score: { home: score, away: 0 } } }));
+  const snapshot = nextSnapshot(null, { competition: "CL", season: "2026", baseVersion: 0, fixtures, scheduleObservedAt: now }, { epoch: 1, now });
+  return scoreFeed({ ...snapshot, version }, now);
+}
+
+test("a newer stored version preserves updated scores even when another game's older age lowers lastUpdated", t => {
+  storage(t);
+  retainNewestScores(stored(1, 1), "CL");
+  const mixed = stored(2, 2, now - 120000);
+  assert.equal(retainNewestScores(mixed, "CL"), mixed);
+  assert.equal(mixed.staleAgeMs, 120000);
+  const rolledBack = retainNewestScores(stored(1, 1), "CL");
+  assert.equal(rolledBack.matches[0].score.home, 2);
+  assert.equal(rolledBack.staleAgeMs, 120000);
+});
+
+test("an old unresolved fixture cannot discard newer observations for other games", t => {
+  storage(t);
+  retainNewestScores(stored(1, 1), "CL");
+  const mixed = stored(2, 2, now - 2 * 86400000);
+  assert.equal(retainNewestScores(mixed, "CL"), mixed);
+  assert.equal(retainNewestScores({ error: "offline" }, "CL").matches[0].score.home, 2);
+});
+
+test("same-version offline recovery recomputes age when a scheduled match reaches kickoff", t => {
+  const cache = storage(t);
+  const feed = stored(1, 1);
+  feed.matches[1].status = "TIMED";
+  feed.matches[1].utcDate = new Date(now).toISOString();
+  feed.snapshot.observations[1].observedAt = now - 300000;
+  cache.set("gs-score-snapshot-CL", JSON.stringify(feed));
+  assert.equal(retainNewestScores({ error: "offline" }, "CL").staleAgeMs, 300000);
+});
+
+test("corrupt stored-service metadata cannot break cache recovery", t => {
+  storage(t);
+  retainNewestScores(stored(1, 1), "CL");
+  for (const corrupt of [feed => { feed.snapshot.observations = [null]; },
+    feed => { feed.matches[0] = null; }, feed => { feed.snapshot.observations.pop(); }]) {
+    const malformed = stored(2, 2);
+    corrupt(malformed);
+    assert.equal(retainNewestScores(malformed, "CL").matches[0].score.home, 1);
+  }
 });

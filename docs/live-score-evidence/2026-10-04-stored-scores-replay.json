@@ -1,0 +1,18 @@
+{
+  "file": "scripts/qa/score-service.js",
+  "headless": true,
+  "result": {
+    "passed": [
+      "not-yet-collected scores remain an error with retry",
+      "validated empty discovery differs from collection failure",
+      "loading transitions to stored scores",
+      "collector stall preserves score and exposes original data age",
+      "new collector observation updates scores and clears stale warning",
+      "new snapshot version keeps fresh scores while exposing another game's older age",
+      "mobile and desktop layouts",
+      "reads never publish"
+    ],
+    "errors": [],
+    "publications": 4
+  }
+}

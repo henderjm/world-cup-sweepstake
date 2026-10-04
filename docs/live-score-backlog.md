@@ -1068,3 +1068,45 @@ implement the dedicated collector, fenced takeover and stored-data read adapter
 locally; price the infrastructure and provider options before requesting spend
 approval. The new recorder is a bounded local command, not an installed service.
 No public deployment, paid provisioning or subscription change was performed.
+
+## October 4 — versioned stored-score read path and browser compatibility
+
+The previous goal turn was progress: `64f7336` committed the recorder, tests and
+production evidence. This continuation moves into the replacement score path.
+`services/scores/snapshots.mjs` now defines validated, versioned publications and
+a read-only API compatible with the existing score views. It preserves fixture
+observation times, rejects incomplete/backward updates, permits newer downward
+score corrections, and keeps optional table failures separate from score writes.
+A snapshot cannot erase known fixtures or silently switch competition/season.
+
+A single-process reference store exercises unexpired lease ownership, monotonically
+increasing generations and version-conditional publication. It is deliberately
+kept under test helpers: it is not durable storage or evidence of multi-host
+failover. The production collector, shared budget, DynamoDB adapter, deployment
+and operational monitoring remain unfinished. No provider polling was added.
+
+The real browser cache exposed an integration bug: it compared only the feed's
+aggregate timestamp. A newer version with a fresh score and an older second
+fixture could therefore be replaced by the cached older score. Running the
+previous code retained 1–0 and a near-zero age; the new version-aware path kept
+2–0 with a 120-second delay. Legacy feed comparisons remain timestamp-based.
+Versioned snapshots use publication time for cache lifetime, retain observation
+time for displayed freshness, and recalculate offline age across kickoffs.
+
+Evidence:
+- Fourteen service checks and the score-cache suite cover failed/partial writes,
+  replayed takeover, corrections, midnight, wrong identities and table failures.
+  A 1,000-reader in-process test makes no provider call and changes no version;
+  it is not a deployed load/latency certification.
+- The full working-tree suite passes 1,606 tests, including separate existing
+  native work. Final focused cache/service checks pass after metadata validation.
+- An isolated production build excludes the unrelated mobile edits. Headless UI
+  replay passes initial failure/retry, empty discovery, loading, 1–0 retained on
+  collector stall, recovery to 2–0, and 3–0 from a newer mixed-age version with
+  the delay warning preserved. No browser errors or 390/1440px overflow occurred.
+  Reproduction: `services/scores/README.md`, `scripts/qa/score-service.js`.
+
+Next safe work: shared durable storage with actual conditional-write/fencing
+tests, followed by provider collection and account-wide admission/pacing. Keep
+independent measurement and verified alert delivery as cutover requirements.
+No infrastructure, paid service or production deployment was changed.
