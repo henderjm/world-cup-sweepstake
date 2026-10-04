@@ -1,0 +1,71 @@
+<style>
+#kickoff-kanban {color:var(--foreground);overflow-wrap:anywhere}
+#kickoff-kanban .lanes {display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:20px;align-items:start}
+#kickoff-kanban article {padding:16px 0;border-top:1px solid var(--border)}
+#kickoff-kanban summary {font-weight:500;padding:10px 0;min-height:44px;box-sizing:border-box}
+#kickoff-kanban dd {margin:4px 0 14px}
+#kickoff-kanban dt {font-weight:500}
+#kickoff-kanban p {margin:8px 0}
+@media(max-width:1000px){#kickoff-kanban .lanes{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:650px){#kickoff-kanban .lanes{grid-template-columns:1fr}}
+</style>
+<div id="kickoff-kanban">
+<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code bb977b8</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
+<div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">1</span></h3><article data-card="reliability">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Make busy matchdays reliable</summary>
+<dl><dt>Acceptance</dt><dd>Measure 99.95% usable scoreboards and 99.9% active observation freshness. Measure provider-visible change to screen separately: p95 ≤30s, p99 ≤60s. Warn after 45s. Missing checks and provider failures count against the user-facing result.</dd><dt>Next action</dt><dd>Install independent monitoring and prove alert delivery, then complete consumer migration and a priced cloud trial.</dd><dt>Evidence</dt><dd>Local foundation through bb977b8. This is the ongoing programme, not a claim that an unattended process is running.</dd></dl></details>
+<p>Architecture work underway; production reliability remains unmeasured.</p></article></section><section aria-label="Up next"><h3>Up next <span class="text-muted">6</span></h3><article data-card="monitor">
+<span class="viz-badge">P0 · first</span>
+<details><summary class="cursor-interaction">Independent monitoring and alerts</summary>
+<dl><dt>Acceptance</dt><dd>Record both PL and CL, missing observations and worst-fixture freshness independently. Inject an incident and verify delivery to the configured alert receiver plus recovery. Preserve dated evidence.</dd><dt>Next action</dt><dd>Choose and package the monitor and receiver; prepare any spending or external setup for approval.</dd><dt>Evidence</dt><dd>Recorder exists in 64f7336; continuous operation and delivered alerts are unverified.</dd></dl></details>
+<p>Turn the local recorder into an operational monitor.</p></article><article data-card="consumers">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Migrate every provider consumer</summary>
+<dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Map each direct provider call to its replacement and verification scenario.</dd><dt>Evidence</dt><dd>Shared admission tested locally in 8468ca6; account-wide production control is not established.</dd></dl></details>
+<p>Prevent details, stats and background jobs competing with scores.</p></article><article data-card="cloud">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Package and price the AWS trial</summary>
+<dl><dt>Acceptance</dt><dd>Produce infrastructure, monthly cost assumptions, read-only IAM, throttling, egress constraints and rollback. Exercise multi-zone takeover and cold/warm traffic after approval.</dd><dt>Next action</dt><dd>Prepare deployment artifacts and a costed plan before asking to spend.</dd><dt>Evidence</dt><dd>No AWS resources or subscription upgrades created.</dd></dl></details>
+<p>Prepare a reviewable active and standby deployment.</p></article><article data-card="latency">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Measure real matchday delivery</summary>
+<dl><dt>Acceptance</dt><dd>Retain timestamped PL/CL observations and p50/p95/p99 delivery reports; disclose coverage gaps. Verify stale warnings and recovery in headless browser journeys.</dd><dt>Next action</dt><dd>Run after independent monitoring and approved shadow deployment are ready.</dd><dt>Evidence</dt><dd>Synthetic recovery passes; sustained production nines are unknown.</dd></dl></details>
+<p>Establish busy-window evidence instead of inferring reliability from a build.</p></article><article data-card="referee">
+<span class="viz-badge">P1</span>
+<details><summary class="cursor-interaction">Referee context and match statistics</summary>
+<dl><dt>Acceptance</dt><dd>Verify referee identity, period, competition and sample size. Preserve unknown statistics. Reuse stored data without per-visit provider calls; validate endpoint budget before adding statistics.</dd><dt>Next action</dt><dd>Refresh the PL/CL competitor audit headlessly and review supported source coverage.</dd><dt>Evidence</dt><dd>Scoped in the September 19 backlog. New leagues remain deprioritized.</dd></dl></details>
+<p>Refresh the FotMob benchmark once reliability is under control.</p></article><article data-card="polish">
+<span class="viz-badge">P2</span>
+<details><summary class="cursor-interaction">Team labels and score-first polish</summary>
+<dl><dt>Acceptance</dt><dd>Verify Sabah identity before changing labels or follow keys. Align hero/date and metadata, retain calendar state during polling, measure rendering budgets and keep existing features reachable.</dd><dt>Next action</dt><dd>Take the highest-impact bounded product fix after the reliability critical path.</dd><dt>Evidence</dt><dd>Initial mobile and desktop benchmark recorded September 10; targeted refresh September 19.</dd></dl></details>
+<p>Resolve identity mismatches and remaining navigation and visual gaps.</p></article></section><section aria-label="Waiting"><h3>Waiting <span class="text-muted">1</span></h3><article data-card="cutover">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Approve spending and public cutover</summary>
+<dl><dt>Acceptance</dt><dd>User approves the concrete priced trial before resources or upgrades, and approves public deployment separately after busy-window reliability evidence and rollback are ready.</dd><dt>Next action</dt><dd>Complete the plan and validation evidence first. No user action needed now.</dd><dt>Evidence</dt><dd>Local engineering is not blocked by this gate.</dd></dl></details>
+<p>Future gate: not asking for approval yet.</p></article></section><section aria-label="Validated locally"><h3>Validated locally <span class="text-muted">3</span></h3><article data-card="storage">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Partitioned storage and read service</summary>
+<dl><dt>Acceptance</dt><dd>Atomic, fenced publication; bounded coherent reads; corrupt data unavailable; scores and quota survive restart. Test mobile and desktop loading, empty, stale and recovery states.</dd><dt>Next action</dt><dd>Package for cloud trial and validate actual IAM, latency and capacity.</dd><dt>Evidence</dt><dd>bb977b8 · 42 service checks, 1,606 app tests and headless journeys passed. Synthetic 1,000-fixture warm unchanged read: 1,431-byte manifest. Not a cloud latency or browser payload result.</dd></dl></details>
+<p>Viewers read stored scores without provider access.</p></article><article data-card="collector">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Prioritized collector and shared API budget</summary>
+<dl><dt>Acceptance</dt><dd>Prioritize live fixtures, validate discovery completeness, count every attempt, persist cooldowns, reject stale owners and keep stale observation ages honest.</dd><dt>Next action</dt><dd>Migrate remaining consumers and validate the shared production path.</dd><dt>Evidence</dt><dd>1f57fe8, 8468ca6, a9e2647 · local database, synthetic provider and restart tests. No production cutover.</dd></dl></details>
+<p>Bound provider work and preserve known scores through failures.</p></article><article data-card="recorder">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Reliability recorder and read contract</summary>
+<dl><dt>Acceptance</dt><dd>Reject older snapshots without discarding valid mixed-age updates. Record missing checks rather than silently excluding them from reliability reports.</dd><dt>Next action</dt><dd>Deploy independent monitoring with tested alert delivery.</dd><dt>Evidence</dt><dd>4d9b364, 64f7336 · locally verified; not an installed continuous monitor.</dd></dl></details>
+<p>Version-aware recovery with a durable measurement baseline.</p></article></section><section aria-label="Released"><h3>Released <span class="text-muted">3</span></h3><article data-card="tables">
+<span class="viz-badge">P1</span>
+<details><summary class="cursor-interaction">League tables on wider screens</summary>
+<dl><dt>Acceptance</dt><dd>Explicit selectable competition, retained date/Live/Following filters, honest stale state and no overflow. Mobile remains usable.</dd><dt>Next action</dt><dd>Keep in desktop regression checks as the data path changes.</dd><dt>Evidence</dt><dd>Repository release record: September 14, 07867e6. Historical release evidence, not a fresh production check.</dd></dl></details>
+<p>Relevant table alongside Scores at 1200px and above.</p></article><article data-card="cl">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Champions League stage and table fixes</summary>
+<dl><dt>Acceptance</dt><dd>Correct stage labels, league-phase points/form, aggregate and penalty handling; preserve qualification history and never invent future draws.</dd><dt>Next action</dt><dd>Replay these cases against the replacement stored feed before cutover.</dd><dt>Evidence</dt><dd>Repository release records: September 10 and September 14. Historical validation.</dd></dl></details>
+<p>Separate qualification from league points and main knockouts.</p></article><article data-card="journeys">
+<span class="viz-badge">P1</span>
+<details><summary class="cursor-interaction">Find matches, follow teams and open details</summary>
+<dl><dt>Acceptance</dt><dd>Persist date/filter/follows, preserve detail focus and drafts during updates, and expose loading, missing coverage and retry states.</dd><dt>Next action</dt><dd>Retest against LiveScore and FotMob after reliability work; preserve these journeys during migration.</dd><dt>Evidence</dt><dd>September 10/14 release records. Covers local follows, combined PL/CL scores, detail navigation and line-up recovery.</dd></dl></details>
+<p>Date and live filters, local follows and match-detail navigation.</p></article></section></div>
+</div>

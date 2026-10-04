@@ -39,7 +39,13 @@ live-score improvements through `ff9b411`. This release excludes unfinished
 knockout presentation and separate native-app changes. Future public deployments
 still require approval.
 
-An active hourly task automation, `improve-live-scores`, resumes this backlog.
+The hourly task automation, `improve-live-scores`, is paused as verified October 4.
+Its prompt now includes maintaining the user-facing
+[Kickoff Draft Kanban](https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e).
+Read `docs/kanban.md` each session and update the board at the start of work and
+after completion, blockers or priority changes. Keep locally validated changes
+separate from deployed releases. Resumption is awaiting the user's preference;
+do not claim unattended work is running while the automation is paused.
 Notify only for substantial completed improvements, meaningful blockers, or a
 decision requiring user input. Read the working diff first and preserve it. Do
 not redo the full competitor audit each hour: use the evidence below, take the
@@ -1330,3 +1336,24 @@ trial. Include cold/warm read volume, whole-season response size, gateway
 throttling, IAM and multi-zone takeover in the review. Require real busy-window
 freshness and latency evidence before production cutover. No real score-provider
 request, AWS resource, subscription change or public deployment was performed.
+
+## October 4 — user-facing Kanban space
+
+Created the Kickoff Draft Space with a full-width expandable work board: 14
+cards across In progress, Up next, Waiting, Validated locally and Released.
+Each card carries priority, acceptance criteria, next action and evidence.
+The board preserves the distinction between the ongoing reliability programme,
+the next bounded task, local verification and historical production releases.
+The wider-screen tables request is recorded as released September 14.
+
+`docs/kanban.json` and `scripts/render-kanban.mjs` reproduce the visualization;
+`docs/kanban.md` records its canonical Page and maintenance workflow. Updated
+the existing hourly automation prompt to maintain that same board and enforce
+headless testing. Its actual status was PAUSED, contrary to the old backlog
+description; preserved that status pending the user's answer about resumption.
+
+Read back the saved Page and visualization reference. The rendered local
+sandbox preview passes headless checks at 320, 390, 736 and 1440 pixels: all
+14 cards present, details expand, no horizontal overflow or page errors.
+Inspected the desktop screenshot. The authenticated Page viewer itself was
+not browser-inspected. No app deployment or new infrastructure was performed.
