@@ -5,6 +5,7 @@ import { nextSnapshot } from "./snapshots.mjs";
 import { initialBudget, reserveRequest, finishRequest } from "./budget.mjs";
 import { snapshotLayout, validateManifest, assembleSnapshot, digest, MAX_PART_BYTES } from "./layout.mjs";
 import { detailKey, validateDetailManifest, detailPublication } from "./details.mjs";
+import { fantasyKey, validateFantasyManifest, fantasyPublication, assembleFantasy } from "./fantasy-store.mjs";
 
 const leaseKey = { pk: { S: "COLLECTOR" } };
 const budgetKey = { pk: { S: "PROVIDER_BUDGET" } };
@@ -138,6 +139,35 @@ export class DynamoScoreStore {
     await this.commit(lease, { pk: { S: key }, manifest: { S: JSON.stringify(manifest) } }, input.baseVersion, undefined,
       [{ Put: { TableName: this.tableName, Item: { pk: { S: `${key}#${input.section}` },
         digest: { S: part.digest }, data: { S: part.data } } } }]);
+    return manifest;
+  }
+
+  async readFantasyManifest(competition, season, kind, signal) {
+    const result = await this.send(new GetItemCommand({ TableName: this.tableName,
+      Key: { pk: { S: fantasyKey(competition, season, kind) } }, ConsistentRead: true }), signal);
+    if (!result.Item) return null;
+    return validateFantasyManifest(JSON.parse(result.Item.manifest.S), competition, season, kind, Number(result.Item.version.N));
+  }
+
+  async readFantasy(competition, season, kind) {
+    const key = fantasyKey(competition, season, kind), deadline = AbortSignal.timeout(this.requestTimeoutMs);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const manifest = await this.readFantasyManifest(competition, season, kind, deadline);
+      if (!manifest) return null;
+      const parts = await Promise.all(manifest.parts.map((hash, index) => this.readPart(`${key}#${index}`, hash, deadline)));
+      if (parts.every(part => part !== null)) return assembleFantasy(manifest, parts);
+    }
+    throw Error("Fantasy publication changed during read or a partition is unavailable");
+  }
+
+  async publishFantasy(lease, input) {
+    const previous = await this.readFantasyManifest(input.competition, input.season, input.kind);
+    const { manifest, parts } = fantasyPublication(previous, input, lease, this.now());
+    const key = fantasyKey(input.competition, input.season, input.kind);
+    const changed = parts.flatMap((part, index) => previous?.parts[index] === part.digest ? [] : [{ Put: {
+      TableName: this.tableName, Item: { pk: { S: `${key}#${index}` }, digest: { S: part.digest }, data: { S: part.data } },
+    } }]);
+    await this.commit(lease, { pk: { S: key }, manifest: { S: JSON.stringify(manifest) } }, input.baseVersion, undefined, changed);
     return manifest;
   }
 

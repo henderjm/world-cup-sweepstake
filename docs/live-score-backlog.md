@@ -1566,3 +1566,15 @@ Eight focused synthetic tests and all 1,649 root tests pass. No provider traffic
 public deployment or spending. Next: integrate this collection into the shared
 collector budget with durable history storage and stored player-pool export.
 The migration card stays in progress; no production reliability claim.
+
+### 2026-10-04 — durable squad and history publications
+
+Added versioned, partitioned fantasy datasets to the existing shared store.
+Atomic publication uses the same collector lease and version fence as scores;
+read-only consumers retain source ages and reject corrupt or mixed snapshots.
+Seven real DynamoDB Local cases include takeover and maximum-size/shrinking
+publications; all 70 service tests pass. No provider calls, cloud spend or deploy.
+
+Next: connect validated collection jobs to this store and the shared provider
+budget, then replace the direct player-pool bake with stored reads. Storage alone
+does not finish the migration or prove provider coverage.

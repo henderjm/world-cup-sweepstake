@@ -365,3 +365,32 @@ Next: migration of every existing provider consumer and independent monitoring.
 Validate cold/warm capacity, actual IAM and read latency in a cloud trial before
 claiming scalable infrastructure. Price and seek approval for cloud
 infrastructure before validating AWS failover and a controlled production cutover.
+
+## Fantasy dataset storage
+
+`readFantasyManifest`, `readFantasy` and `publishFantasy` store complete dataset
+publications under `FANTASY#competition#season#squads|history`. History uses the
+historical season in its key; squads use the current season. This storage layer
+checks identity, versions, source time, bounded JSON and content integrity.
+Provider coverage/identity validation belongs to the collection layer; storing
+an object does not establish complete football coverage.
+
+A dataset is limited to 2 MiB of UTF-8 JSON, divided into at most sixteen 128 KiB
+byte chunks encoded as base64. Including encoding overhead, the transaction
+remains below 4 MiB. Every publication atomically writes changed parts and the
+manifest with the existing collector lease and version conditions. Shorter
+replacements can leave old bounded part keys, which the new manifest ignores.
+No immutable per-version records accumulate. The existing 8 MiB digest cache is
+shared with scores/detail; parsed results are never reused between callers.
+
+Reads use strongly consistent GetItem calls only and retry the whole snapshot
+once if mutable parts changed during the read, within the store deadline.
+Corrupted or missing parts fail closed. Source `observedAt` is supplied by the
+collector and must never be reset to a read time; a multi-request collection must
+use its oldest observation. Collection jobs, stored export and cadence remain
+separate work. No provider request or public API is added by this module.
+
+Seven DynamoDB Local cases verify restart/source-time retention, Unicode/nulls,
+concurrent publication, late-writer fencing, whole-read retry, corruption, and a
+maximum-size publication followed by a smaller correction. The full service
+suite passes 70 tests. Cloud IAM and multi-zone behavior remain unverified.

@@ -343,3 +343,19 @@ responses, including transfer aggregation and existing tier/xP output. No browse
 flow changed. No real provider traffic or deployment. Shared-budget scheduling,
 durable raw history storage and stored player-pool export remain to implement;
 this validation extraction does not complete that migration.
+
+## Durable fantasy dataset storage — 4 October 2026
+
+The shared store can now atomically publish and read versioned squad/history
+JSON datasets, isolated by competition, season and kind. Collector lease fencing,
+version checks and content digests prevent old writers or mixed-version reads.
+Two MiB datasets are partitioned into at most sixteen bounded chunks within one
+transaction; reads preserve original source timestamps, Unicode and nulls.
+
+Seven DynamoDB Local cases cover restart, competing writers, takeover, concurrent
+read replacement, corruption and maximum-size/shrinking datasets. All 70 service
+tests pass. This establishes a persistence contract, not collection completeness
+or quota ownership. Next: collector jobs must validate complete squads/history,
+publish their oldest observation time, and schedule one supplementary provider
+request per step behind score work. Stored player-pool export remains pending.
+No production resources, provider calls, public API changes or deployment.
