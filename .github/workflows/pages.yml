@@ -151,6 +151,7 @@ jobs:
           fi
           npm run fetch:fantasy-players
         env:
+          SCORE_READ_ORIGIN: ${{ vars.SCORE_READ_ORIGIN }}
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           API_FOOTBALL_CLI: /tmp/squad-goals-api
           # The pool is cached across runs and guarded to one upstream refresh a

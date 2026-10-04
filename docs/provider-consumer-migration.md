@@ -97,8 +97,8 @@ checks. Rollback must explicitly account for which collector owns the quota.
 
 ## Next implementation order
 
-1. Serve the collected squad/history datasets through stored export readers and
-   switch the fantasy bake, preserving player identity and existing estimates.
+1. Audit all stored-mode entry points with provider credentials absent, including
+   Worker key guards and scheduled side effects; verify the final consumer census.
 2. Prepare the priced cloud trial with independent monitoring, watchdog and an
    approved alert receiver. Shadow reads must share the same provider budget.
 3. After approval and busy-window evidence, activate the Worker and GitHub
@@ -392,3 +392,36 @@ Remaining: the stored read/export path and legacy fantasy-bake retirement,
 followed by priced cloud trial, IAM/runtime verification and independent
 monitoring. The legacy bake still calls the provider, so account-wide quota
 ownership is not yet established. No real provider traffic or deployment.
+
+## Stored player-pool read and export — 4 October 2026
+
+The read service now provides `GET /PL/players` using four stored datasets and no
+provider client. It reconstructs the existing tier and expected-points inputs,
+checks unique identities and bounded typed history rows, and reports each
+historical season as complete, missing, unavailable, stale or invalid. Squad
+observations older than two days and historical observations older than fourteen
+days are labelled stale. History is optional for the read response; unknown xP
+remains null. The existing formulas and 38-gameweek denominator are unchanged.
+
+The fantasy bake now selects the stored export before its provider-key and mtime
+guards when SCORE_READ_ORIGIN is configured. The Pages workflow passes the same
+repository variable used by score export and feeder retirement. A bounded read
+validates identity, source age, coverage and player IDs. Writes are atomic. A
+failed, stale, regressing or incomplete-history refresh preserves an existing
+same-season file; a first export may honestly publish a pool without history.
+No fallback to a provider request occurs in stored mode. No remote variable was
+changed, and legacy paths remain for the approved cutover/rollback decision.
+
+Seven new tests cover endpoint routing, tier/xP identity, missing data, source
+age, export retention, partial initial export and the real script selecting
+stored mode without a provider key. The existing local collector integration
+now reads all four real database datasets through the API handler and verifies
+draftable IDs, tiers, xP and zero extra provider calls. All 75 service tests and
+1,656 root tests pass. No frontend code changed or browser-quality claim added.
+A mistaken test expectation was corrected using the existing formula: the
+sample's 92 seasonal points divided by 38 gameweeks rounds to 2.4, not 4.6.
+
+Next: remove obsolete provider-key prerequisites from stored-mode Worker paths
+and prove their scheduled behavior without credentials. Then finish the runtime
+consumer census and priced cloud trial. Source gates are not proof of deployed
+account-wide quota ownership or sustained matchday reliability.

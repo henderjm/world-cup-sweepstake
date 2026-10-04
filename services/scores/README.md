@@ -410,3 +410,19 @@ validation defers the job five minutes; shared budget denial keeps its page
 pending. Tests exercise the actual scheduler, budget and DynamoDB adapter with
 synthetic responses. The legacy fantasy bake still needs the stored export
 adapter before the direct provider path can be retired.
+
+## Stored player pool
+
+`GET /PL/players` reconstructs the existing draft pool from the current squad
+and three historical datasets. It retains player IDs, tier and xP formulas and
+reports per-season coverage separately. Missing initial squads return 503;
+missing/invalid history produces null/partial enrichment rather than invented
+history. The route is read-only and uses no provider key. Both the local HTTP
+process and API Gateway handler route it through `createReadHandler`.
+
+The fantasy bake can read this route through SCORE_READ_ORIGIN, atomically
+retaining its previous output on outage, stale data or regression. Complete
+same-season files are not replaced by incomplete-history refreshes. Initial
+partial exports are explicitly marked. Source timestamps survive the export.
+Workflow switches and Worker provider-key removal still need an approved
+cutover; nothing in this path configures production automatically.

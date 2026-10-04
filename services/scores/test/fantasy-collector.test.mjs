@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createReadHandler } from '../read-handler.mjs';
 import { ScoreCollector } from '../collector.mjs';
 import { ScoreProvider } from '../provider.mjs';
 import { DynamoScoreStore } from '../dynamodb.mjs';
@@ -22,7 +23,7 @@ async function setup(t, limit = 1000) {
       response = [{ team, players: Array.from({ length: 11 }, (_, i) => ({ id: team.id * 100 + i, name: `Player ${i}`, position: 'Defence' })) }];
     } else if (url.pathname === '/players') {
       total = 2;
-      response = [{ player: { id: page, name: `Player ${page}` }, statistics: [{ team: teams[0], league: { id: 39, season: year },
+      response = [{ player: { id: 4199 + page, name: `Player ${page}` }, statistics: [{ team: teams[0], league: { id: 39, season: year },
         games: { appearences: 10, minutes: 900 }, goals: { total: 2, assists: 1 } }] }];
     } else if (url.pathname === '/fixtures') response = [{ fixture: { id: 900001,
       date: new Date(now - 60000).toISOString(), status: { short: url.searchParams.has('ids') ? '1H' : 'FT', elapsed: 1 } },
@@ -56,7 +57,7 @@ async function setup(t, limit = 1000) {
 }
 
 test('squads and three complete historical seasons share the durable budget and preserve oldest observation time', async t => {
-  const { store, calls, until, restart, step } = await setup(t);
+  const { store, calls, until, restart, step, clock } = await setup(t);
   await until(event => event.state === 'published' && event.kind === 'fantasy' && event.season === '2023');
   const squads = await store.readFantasy('PL', '2026', 'squads');
   assert.equal(squads.data.players.length, 22); assert.equal(squads.data.complete, true);
@@ -64,6 +65,14 @@ test('squads and three complete historical seasons share the durable budget and 
   assert.equal(history.data.stats.length, 2); assert.equal(history.data.stats[0][1].minutes, 900);
   assert.equal(history.observedAt, calls.find(call => call.path.includes('season=2025')).at);
   assert.equal((await store.readBudget()).used, calls.length); assert.equal(calls.length, 11);
+  const handler = createReadHandler({ store, seasons: { PL: '2026' }, now: clock });
+  const response = await handler({ version: '2.0', rawPath: '/PL/players', requestContext: { http: { method: 'GET' } } });
+  assert.equal(response.statusCode, 200);
+  const pool = JSON.parse(response.body);
+  assert.deepEqual(pool.degraded, []);
+  assert.equal(pool.players.length, 22); assert.equal(pool.players[0].tier, 'starter');
+  assert.equal(pool.players[0].xpBasis, 'history'); assert.equal(pool.players[0].id, 4200);
+  assert.equal(calls.length, 11, 'reading the player pool never calls the provider');
   restart(); const count = calls.length;
   for (let i = 0; i < 6; i++) await step();
   assert.equal(calls.length, count, 'fresh datasets hydrate without recollecting');

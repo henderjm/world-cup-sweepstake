@@ -1,6 +1,8 @@
 // Squads refresh daily; incomplete squads fall back to the explicitly partial
 // lineup pool. Historical data is independent and never makes the pool complete.
 
+import { fileURLToPath } from "node:url";
+import { exportStoredPlayerPool } from "./lib/stored-player-export.mjs";
 import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -20,6 +22,11 @@ const leagueId = COMPETITIONS[competition]?.apiFootballLeagueId;
 const dataDir = new URL(`../data/${competition}/`, import.meta.url);
 const matchesDir = new URL("matches/", dataDir);
 const playersFile = new URL("players.json", dataDir);
+
+if (process.env.SCORE_READ_ORIGIN) {
+  console.log(await exportStoredPlayerPool({ origin: process.env.SCORE_READ_ORIGIN, competition, season, path: fileURLToPath(playersFile) }));
+  process.exit(0);
+}
 
 if (!token) {
   console.log("API_FOOTBALL_KEY is not set; no player pool generated.");

@@ -1592,3 +1592,17 @@ and the app suite is 1,649 tests. No real provider traffic or deployment.
 Next: stored player-pool read/export and retirement of the direct fantasy bake,
 then the priced cloud trial and independent monitoring. Account-wide quota
 ownership remains incomplete until that final consumer switches.
+
+### 2026-10-04 — stored fantasy player-pool export
+
+Added the read-only PL player-pool endpoint and switched the fantasy bake to
+stored reads when the existing origin flag is set. Preserves draft IDs, tiers,
+xP formulas, real source ages and explicit missing-history states. Atomic
+exports preserve prior same-season files on failures, staleness or regression.
+The workflow now passes the stored origin to both bakes; no remote flag changed.
+
+Seven new root tests plus the actual collector/store/read-handler integration
+pass: 75 service and 1,656 app tests total. No frontend code changed, provider
+traffic, spending or public deployment. Next: stored-mode Worker credential
+prerequisite audit and keyless scheduled-state verification, then the priced
+cloud trial and independent monitoring. Production reliability is unmeasured.
