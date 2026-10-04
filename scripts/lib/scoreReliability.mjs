@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { TERMINAL_MATCH_STATUSES } from "../../src/mapApiFootball.js";
 
 const LIVE = new Set(["IN_PLAY", "PAUSED", "EXTRA_TIME", "PENALTY_SHOOTOUT", "BREAK"]);
@@ -58,6 +59,11 @@ export function observeFeed(body, competition, expected, at) {
         terminal: terminal && valid && !reason };
     }),
   };
+}
+
+export async function waitForSlot(at, { now = Date.now, wait = sleep } = {}) {
+  // Timers can wake before the wall-clock slot; those probes are invalid evidence.
+  for (let remaining = at - now(); remaining > 0; remaining = at - now()) await wait(remaining);
 }
 
 export async function probe(plan, competition, scheduledAt, { fetcher = fetch, now = Date.now } = {}) {

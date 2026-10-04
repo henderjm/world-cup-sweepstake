@@ -2,8 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import { requireMonitorLock } from "./lib/scoreMonitorLock.mjs";
 import { readLedger } from "./lib/scoreAlerts.mjs";
 import { open, readFile } from "node:fs/promises";
-import { setTimeout as sleep } from "node:timers/promises";
-import { validatePlan, probe, summarize } from "./lib/scoreReliability.mjs";
+import { validatePlan, probe, summarize, waitForSlot } from "./lib/scoreReliability.mjs";
 
 const [mode, input, output, ...extra] = process.argv.slice(2);
 if (extra.length || !input || !["record", "resume", "report"].includes(mode) || (mode !== "report" ? !output : output))
@@ -47,7 +46,7 @@ if (mode === "report") {
     const seen = new Set(records.map(row => `${row.competition}:${row.scheduledAt}`));
     for (let at = Date.parse(plan.start); at < Date.parse(plan.end); at += plan.intervalMs) {
       if (Date.now() >= at + plan.intervalMs) continue;
-      await sleep(Math.max(0, at - Date.now()));
+      await waitForSlot(at);
       if (Date.now() >= at + plan.intervalMs || Date.now() >= Date.parse(plan.end)) continue;
       const rows = await Promise.all(plan.competitions.filter(code => !seen.has(`${code}:${at}`)).map(code => probe(plan, code, at)));
       for (const row of rows) { await write(row); records.push(row); }

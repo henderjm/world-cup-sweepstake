@@ -1908,3 +1908,22 @@ Back navigation, no overflow and no uncaught page errors all pass. Local PostHog
 configuration warnings remain in the console. Inspected the desktop
 screenshot. Validation uses a mocked live feed in the current worktree, including
 separate mobile edits. Not deployed.
+
+## October 4 — disk-full alert persistence
+
+Reproduced an alert-state temporary-file leak on actual ENOSPC in a disposable
+64 KiB Linux tmpfs. Cleanup now covers write and sync failures. Three repeated
+failures retain the exact last committed state and prevent network dispatch;
+after space is restored, PL/CL events keep their IDs and persist acknowledgments.
+Reproduction and limits are recorded in `score-monitoring-trial.md`. Recorder disk
+exhaustion, retention, independent supervision/watchdog and human paging remain
+open; this is not production reliability evidence. No resources deployed.
+
+The recorder also rechecks wall time after every timer wake-up so an early wake
+cannot produce a pre-slot observation that the evaluator rejects. A deterministic
+early-wake test covers the wait; schedule integration now checks both early and
+late starts and includes event diagnostics on failure. Final related suite:
+33 passed, plus the separately enabled real ENOSPC test. One earlier schedule
+run emitted four accepted events instead of two; three subsequent repetitions
+passed before the timing change, so its root cause is unconfirmed. Do not claim
+that intermittent failure is conclusively fixed; retain diagnostics on recurrence.

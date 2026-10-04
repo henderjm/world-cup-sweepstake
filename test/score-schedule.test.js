@@ -65,9 +65,9 @@ test('real adjacent windows keep recording while previous alerts are refused, th
     const text = await readFile(join(output, `${i}-observations.jsonl`), 'utf8'); snapshots.push(text);
     const rows = text.trim().split('\n').map(JSON.parse).slice(1);
     assert.equal(rows.length, 6);
-    assert.ok(rows.every(row => row.startedAt - row.scheduledAt < 100), 'handover probes must be timely');
+    assert.ok(rows.every(row => row.startedAt >= row.scheduledAt && row.startedAt - row.scheduledAt < 100), JSON.stringify(rows));
   }
-  assert.equal(accepted.size, 2);
+  assert.equal(accepted.size, 2, JSON.stringify(deliveries));
   assert.ok(deliveries.length > accepted.size, 'receiver refusal was retried');
   const delivered = deliveries.length;
   await exec('python3', args, { env });

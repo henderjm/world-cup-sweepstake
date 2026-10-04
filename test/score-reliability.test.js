@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { validatePlan, observeFeed, probe, summarize } from "../scripts/lib/scoreReliability.mjs";
+import { validatePlan, observeFeed, probe, summarize, waitForSlot } from "../scripts/lib/scoreReliability.mjs";
 
 const start = Date.parse("2026-10-04T14:00:00Z");
 const iso = value => new Date(value).toISOString();
@@ -202,4 +202,13 @@ test("CLI records real HTTP reads, retains the plan and reconstructs missing obs
   const unsafe = await command(["record", planPath, join(dir, "unsafe.jsonl")]);
   assert.equal(unsafe.code, 1);
   assert.match(unsafe.stderr, /protect provider quota/);
+});
+
+test("early timer wake-ups cannot start a probe before its wall-clock slot", async () => {
+  let clock = start - 3;
+  const waits = [];
+  await waitForSlot(start, { now: () => clock, wait: async duration => { waits.push(duration); clock++; } });
+  assert.deepEqual(waits, [3, 2, 1]);
+  assert.equal(clock, start);
+  await waitForSlot(start - 1, { now: () => clock, wait: async () => assert.fail("Past slot must not sleep") });
 });

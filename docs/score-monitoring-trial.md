@@ -34,15 +34,13 @@ A 200 response and recently collected timestamp do not prove the provider has
 reported every on-field change. Keep provider-visible-to-screen measurement and
 headless browser usability checks separate from API observation freshness.
 
-The current scripts accept plans of at most 24 hours. Recording opens a new
-ledger exclusively, and the watcher rereads a ledger capped at 64 MiB. They do
-not yet supply unattended window rollover, bounded historical retention or a
-safe resume coordinator. A systemd Restart=always wrapper alone is insufficient:
-it can collide with an existing evidence file or stale lock. Implement a durable
-supervisor that resumes the same planned window, preserves missing slots and
-pending alerts, and starts the next window without silently dropping coverage.
-Benchmark its disk, memory and CPU before selecting the VM size. Preserve at
-least 30 days and three busy windows for the reliability report.
+Plans cover at most 24 hours each and the watcher caps each ledger at 64 MiB.
+The explicit schedule runner below now resumes those windows and hands over to
+the next planned window while retaining pending alerts. Continuous external
+supervision, bounded historical retention and schedule renewal remain open.
+A service manager must terminate the entire process group after a crash before
+restarting the locked wrapper. Benchmark disk, memory and CPU before selecting
+the VM size. Preserve at least 30 days and three busy windows for the report.
 
 ## Receiver and watchdog decision
 
@@ -150,3 +148,38 @@ Local verification: `node --test test/score-schedule.test.js` exercises adjacent
 PL/CL windows with active fixtures, refused alerts across handover, original-ID
 retry, concurrent-runner exclusion, restart without duplicate probes or delivery,
 and refusal to rewrite an existing schedule. It uses local HTTP only.
+
+## Disk-full alert-state recovery
+
+The alert writer now removes its temporary file when writing or syncing fails,
+as well as after rename. Previously an ENOSPC failure skipped that cleanup.
+A real 64 KiB Linux tmpfs reproduced the leak before the fix. Three consecutive
+failed attempt writes now preserve the exact committed state, leave no temporary
+files and send no events before the attempt is durable. After freeing test space,
+both pending competition alerts retry with their original IDs and persist their
+acknowledgments. This verifies alert-state persistence; it does not prove recorder
+append recovery under ENOSPC, host-loss detection or delivery to a human device.
+
+Reproduce using an existing local Node 24 image (no network). The test refuses
+non-tmpfs filesystems and volumes larger than 1 MiB, and is skipped in the ordinary
+suite unless the explicit disposable directory is supplied:
+
+```sh
+docker run --rm --platform linux/amd64 --network none --read-only \
+  --cap-drop ALL --security-opt no-new-privileges --user 1000:1000 \
+  --tmpfs /evidence:rw,size=64k,uid=1000,gid=1000,mode=700 \
+  --mount type=bind,src="$PWD/scripts",dst=/work/scripts,readonly \
+  --mount type=bind,src="$PWD/src",dst=/work/src,readonly \
+  --mount type=bind,src="$PWD/test",dst=/work/test,readonly \
+  -e SCORE_ALERT_DISK_TEST_DIR=/evidence \
+  node:24-bookworm-slim node --test /work/test/score-alert-disk.test.js
+```
+
+The recorder also rechecks wall time after every timer wake-up so an early wake
+cannot produce a pre-slot observation that the evaluator rejects. A deterministic
+early-wake test covers the wait; schedule integration now checks both early and
+late starts and includes event diagnostics on failure. Final related suite:
+33 passed, plus the separately enabled real ENOSPC test. One earlier schedule
+run emitted four accepted events instead of two; three subsequent repetitions
+passed before the timing change, so its root cause is unconfirmed. Do not claim
+that intermittent failure is conclusively fixed; retain diagnostics on recurrence.
