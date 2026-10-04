@@ -1578,3 +1578,17 @@ publications; all 70 service tests pass. No provider calls, cloud spend or deplo
 Next: connect validated collection jobs to this store and the shared provider
 budget, then replace the direct player-pool bake with stored reads. Storage alone
 does not finish the migration or prove provider coverage.
+
+### 2026-10-04 — squad/history jobs share the collector budget
+
+Connected PL squads and three historical seasons to the common scheduler and
+durable provider budget. One request per step allows due live scores to take
+priority between pages. Optional jobs stop at the score reserve. Complete
+datasets retain their oldest observation time; bad refreshes preserve last-good
+values, and takeover restarts unfinished collection without mixing pages.
+
+Five integrated local database cases pass; the full service suite is 75 tests
+and the app suite is 1,649 tests. No real provider traffic or deployment.
+Next: stored player-pool read/export and retirement of the direct fantasy bake,
+then the priced cloud trial and independent monitoring. Account-wide quota
+ownership remains incomplete until that final consumer switches.

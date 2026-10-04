@@ -387,10 +387,26 @@ Reads use strongly consistent GetItem calls only and retry the whole snapshot
 once if mutable parts changed during the read, within the store deadline.
 Corrupted or missing parts fail closed. Source `observedAt` is supplied by the
 collector and must never be reset to a read time; a multi-request collection must
-use its oldest observation. Collection jobs, stored export and cadence remain
-separate work. No provider request or public API is added by this module.
+use its oldest observation. Collection jobs enforce source validation; the stored export remains separate
+work. No provider request or public API is added by this module.
 
 Seven DynamoDB Local cases verify restart/source-time retention, Unicode/nulls,
 concurrent publication, late-writer fencing, whole-read retry, corruption, and a
 maximum-size publication followed by a smaller correction. The full service
 suite passes 70 tests. Cloud IAM and multi-zone behavior remain unverified.
+
+## Fantasy collection scheduling
+
+PL squad and historical enrichment jobs now share `ScoreCollector` and
+`ScoreProvider`. They issue one supplementary request per step, after due score,
+standings and active-detail work. Squads refresh daily; three previous seasons
+refresh weekly, newest first. The initial history backfill is bounded by the
+same account budget and score reserve. No CL fantasy jobs are scheduled.
+
+Only complete datasets are published. Intermediate pages stay in bounded memory
+for at most 30 minutes; takeover discards them and restarts collection, retaining
+any prior complete dataset. Source time is the oldest response used. Failed
+validation defers the job five minutes; shared budget denial keeps its page
+pending. Tests exercise the actual scheduler, budget and DynamoDB adapter with
+synthetic responses. The legacy fantasy bake still needs the stored export
+adapter before the direct provider path can be retired.

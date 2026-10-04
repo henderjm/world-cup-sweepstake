@@ -8,6 +8,7 @@ import { hasStandings } from "../../src/standingsRecovery.js";
 import { nextSnapshot } from "./snapshots.mjs";
 import { detailJobs, validateDetailPayload } from "./detail-collector.mjs";
 import { detailSubject } from "./details.mjs";
+import { FantasyCollector } from "./fantasy-collector.mjs";
 import { normalizeSeasons } from "./config.mjs";
 
 const DISCOVERY_MS = 15 * 60000;
@@ -70,24 +71,33 @@ export class ScoreCollector {
     this.discovery = new Map();
     this.details = new Map();
     this.epoch = null;
+    this.fantasy = new FantasyCollector({ store, provider, now });
   }
 
   async step() {
     const lease = await this.store.claim(this.owner);
     if (!lease) return { state: "standby", retryAt: this.now() + 1000 };
     if (this.epoch !== lease.epoch) {
+      this.fantasy.reset();
       this.details.clear(); this.discovery.clear(); this.retryAt.clear(); this.epoch = lease.epoch;
     }
     const snapshots = Object.fromEntries(await Promise.all(Object.entries(this.seasons)
       .map(async ([code, season]) => [code, await this.store.read(code, season)])));
     const now = this.now();
-    const jobs = [...scoreJobs(snapshots, this.seasons, now), ...detailJobs(snapshots, this.seasons, this.details, now)];
+    const jobs = [...scoreJobs(snapshots, this.seasons, now), ...detailJobs(snapshots, this.seasons, this.details, now),
+      ...this.fantasy.jobs(snapshots, this.seasons)];
     const keys = new Set(jobs.map(job => job.key));
     for (const key of this.retryAt.keys()) if (!keys.has(key)) this.retryAt.delete(key);
     for (const job of jobs) job.due = Math.max(job.due, this.retryAt.get(job.key) ?? 0);
     const job = jobs.filter(candidate => candidate.due <= now).sort((a, b) => a.priority - b.priority || a.due - b.due
       || a.key.localeCompare(b.key))[0];
     if (!job) return { state: "idle", retryAt: Math.min(...jobs.map(candidate => candidate.due)) };
+    if (job.kind === "fantasy") {
+      const event = await this.fantasy.collect(lease, job);
+      if (event.retryAt) this.retryAt.set(job.key, event.retryAt);
+      else this.retryAt.delete(job.key);
+      return event;
+    }
     if (job.kind === "detail") return this.collectDetail(lease, job);
     const previous = snapshots[job.competition];
     let discovery = this.discovery.get(job.competition);

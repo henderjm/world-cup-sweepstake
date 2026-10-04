@@ -97,8 +97,8 @@ checks. Rollback must explicitly account for which collector owns the quota.
 
 ## Next implementation order
 
-1. Migrate squads and historical player/xP collection into the shared budget,
-   with stored export readers preserving player identity and existing estimates.
+1. Serve the collected squad/history datasets through stored export readers and
+   switch the fantasy bake, preserving player identity and existing estimates.
 2. Prepare the priced cloud trial with independent monitoring, watchdog and an
    approved alert receiver. Shadow reads must share the same provider budget.
 3. After approval and busy-window evidence, activate the Worker and GitHub
@@ -359,3 +359,36 @@ or quota ownership. Next: collector jobs must validate complete squads/history,
 publish their oldest observation time, and schedule one supplementary provider
 request per step behind score work. Stored player-pool export remains pending.
 No production resources, provider calls, public API changes or deployment.
+
+## Shared-budget fantasy collection — 4 October 2026
+
+`ScoreCollector` now schedules `FantasyCollector` jobs for PL, the existing
+fantasy bake competition. Each step hydrates metadata or makes one supplementary
+provider request. Due score jobs, standings and active match detail keep higher
+priority. Squads refresh daily; the three previous seasons refresh weekly,
+newest first. These are collection cadences, not claims of provider freshness.
+
+Club IDs come from stored standings. Squad publication requires every requested
+club and unambiguous players. History validates each page before requesting the
+next, then validates historical fixtures before atomically publishing normalized
+stats, club appearances and clean-sheet rates. All request attempts reserve the
+existing durable budget; denial never advances the page. The dataset timestamp
+is the oldest successful response observation, not publication time.
+
+Unfinished collections remain in bounded process memory (8 MiB per dataset,
+30-minute expiry); a collector generation change discards them. Completed data
+survives process restart and takeover. Malformed responses retain the previous
+complete dataset and defer that job five minutes. Partial pages are never
+published as complete history. Shared provider cooldowns and score reserves also
+apply. No new CL fantasy collection is introduced.
+
+Five integrated DynamoDB Local cases prove full collection with matching budget
+usage, live-score preemption, reserve protection, last-good retention and takeover
+restarting incomplete pages. All 75 service tests and 1,649 app tests pass. One
+initial priority-test fixture used a regressing observation time; the storage
+check rejected it. The test now advances time before making the score due.
+
+Remaining: the stored read/export path and legacy fantasy-bake retirement,
+followed by priced cloud trial, IAM/runtime verification and independent
+monitoring. The legacy bake still calls the provider, so account-wide quota
+ownership is not yet established. No real provider traffic or deployment.

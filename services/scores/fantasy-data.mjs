@@ -38,6 +38,32 @@ export function squadPlayers(payloads, clubs) {
   return players;
 }
 
+export function validateHistoryPage(payload, leagueId, season, current, total, identities) {
+  page(payload, current, total);
+  for (const row of payload.response) {
+    if (!positive(row.player?.id) || !Array.isArray(row.statistics)) throw Error('Invalid historical player');
+    const stats = row.statistics.filter(stat => stat.league?.id === leagueId);
+    if (!stats.length) throw Error('Missing requested league statistics');
+    for (const stat of stats) {
+      const identity = `${row.player.id}:${stat.team?.id}`;
+      if (String(stat.league.season) !== String(season) || !positive(stat.team?.id) || identities.has(identity))
+        throw Error('Wrong season or repeated player club statistics');
+      identities.add(identity);
+    }
+  }
+}
+
+export function historyCleanSheetRates(payload, leagueId, season) {
+  page(payload, 1, 1);
+  const ids = new Set();
+  for (const row of payload.response) {
+    if (!positive(row.fixture?.id) || ids.has(row.fixture.id) || row.league?.id !== leagueId
+      || String(row.league.season) !== String(season)) throw Error('Wrong season, league or duplicate historical fixture');
+    ids.add(row.fixture.id);
+  }
+  return clubCleanSheetRates(mapApiFootballMatches(payload));
+}
+
 export async function fetchFantasyHistory({ leagueId, season, request, log = console.warn, unexpected = () => false }) {
   if (!positive(leagueId) || !/^\d{4}$/.test(String(season))) throw Error('Invalid fantasy history identity');
   const seasons = previousSeasonsFor(season, 3), perSeason = [];
@@ -50,18 +76,8 @@ export async function fetchFantasyHistory({ leagueId, season, request, log = con
       let total;
       for (let current = 1; current <= (total ?? 1); current++) {
         const payload = await read(`/players?league=${leagueId}&season=${year}&page=${current}`);
-        page(payload, current, total); total ??= payload.paging.total;
-        for (const row of payload.response) {
-          if (!positive(row.player?.id) || !Array.isArray(row.statistics)) throw Error('Invalid historical player');
-          const stats = row.statistics.filter(stat => stat.league?.id === leagueId);
-          if (!stats.length) throw Error('Missing requested league statistics');
-          for (const stat of stats) {
-            const identity = `${row.player.id}:${stat.team?.id}`;
-            if (String(stat.league.season) !== year || !positive(stat.team?.id) || identities.has(identity))
-              throw Error('Wrong season or repeated player club statistics');
-            identities.add(identity);
-          }
-        }
+        validateHistoryPage(payload, leagueId, year, current, total, identities);
+        total ??= payload.paging.total;
         pages.push(payload);
       }
       statsIndex = buildPriorSeasonStatsIndex(pages, leagueId);
@@ -72,14 +88,7 @@ export async function fetchFantasyHistory({ leagueId, season, request, log = con
     }
     try {
       const payload = await read(`/fixtures?league=${leagueId}&season=${year}`);
-      page(payload, 1, 1);
-      const ids = new Set();
-      for (const row of payload.response) {
-        if (!positive(row.fixture?.id) || ids.has(row.fixture.id) || row.league?.id !== leagueId
-          || String(row.league.season) !== year) throw Error('Wrong season, league or duplicate historical fixture');
-        ids.add(row.fixture.id);
-      }
-      cleanSheetRates = clubCleanSheetRates(mapApiFootballMatches(payload));
+      cleanSheetRates = historyCleanSheetRates(payload, leagueId, year);
     } catch (error) {
       if (unexpected(error)) throw error;
       log(`${year} fixtures unavailable (${error.message}); no observed clean-sheet rates available.`);
