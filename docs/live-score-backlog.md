@@ -1515,3 +1515,24 @@ Next: verify cron side effects with representative D1 state, migrate remaining
 feeder/static/player-history consumers, and package the priced cloud trial with
 independent monitoring. Production remains unchanged and sustained reliability
 is still unmeasured. No real browser windows, provider traffic or deployments.
+
+### 2026-10-04 — retain fantasy points through delayed final settlement
+
+The scheduled-state replay found that cleanup removed provisional points as soon
+as a match became finished, even when incomplete final detail deferred settlement.
+Retain finished-but-unsettled rows until a completion marker exists; the existing
+read merge prefers settled rows, avoiding double-counting. Remove obsolete rows
+in bounded 50-ID batches. A shared guard also prevents the final-settlement path
+from writing the legacy detail KV in stored mode.
+
+Verification: 1,635 regression tests plus the real scheduled handler on local
+SQLite using the repository schema and a D1-compatible adapter. Two managers,
+22 players, rosters, lineups and a head-to-head fixture cover live/partial/outage/
+final transitions. Injected mid-batch failure rolls back every score and leaves
+no settlement marker; retry produces 50–22 totals, and a repeated tick is
+idempotent. All 120 obsolete rows clear without exceeding binding limits.
+Thirty-eight synthetic stored reads, zero provider/legacy KV calls and no
+unexpected SQL errors. This is local state verification, not cloud D1 evidence.
+
+Next: remaining feeder/static/player-history migration and priced trial with
+independent monitoring. No deployment, spending or production schema change.

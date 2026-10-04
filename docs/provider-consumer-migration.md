@@ -262,3 +262,37 @@ switch remains unset; no public deployment, paid resources or real notifications
 were triggered. Full cron side-effect verification against representative D1
 state and real provider coverage remains required before cutover, alongside
 remaining feeder/static/player-history consumers and the priced cloud trial.
+
+## Scheduled fantasy state replay — 4 October 2026
+
+`scripts/qa/stored-cron.mjs` runs the real Worker scheduled handler against the
+repository schema in an in-memory SQLite database, using a small D1-compatible
+adapter and the installed Node 24 runtime (`node:sqlite` needs Node 22.13+).
+It enforces D1's 100-binding limit and transactional batches. It uses synthetic
+stored-service responses; no external provider, notifications or production
+bindings are available. This is not a Cloudflare D1 runtime/capacity test.
+
+The seeded state includes two managers, a completed league, 22 players, rosters,
+lineups, a head-to-head fixture and 120 obsolete provisional rows. The replay
+verifies live writes, incomplete-detail retention, read-outage retention, final
+whistle with incomplete detail, a mid-batch database failure and retry, exact
+22-player settlement, 50–22 league/H2H totals, idempotence and eventual cleanup.
+The failed final batch leaves zero settled player rows and no completion marker.
+The 50-point home total is 22 appearance + 24 clean-sheet + 4 goal points; the
+away total is 22 appearance points. All 38 network reads remain on the synthetic
+stored service; no legacy detail KV access or unexpected SQL errors occur.
+
+This exposed two fixes. Provisional cleanup used to remove a match immediately
+at full time, creating a zero-points gap while final detail was incomplete. It
+now retains final-but-unsettled rows until the completion marker exists, while
+removing obsolete rows in 50-ID batches. Settled rows already win in the read
+merge, so retained provisional rows cannot double-count. The final settlement
+pass also still called the legacy detail-cache writer; its shared guard now
+refuses stored mode, closing that remaining write path.
+
+All 1,635 application regression checks and the final database replay passed.
+The first exact-total assertion exposed incorrect synthetic position codes;
+corrected the fixture to provider G/D/M/F codes and database GK/DEF/MID/FWD codes,
+keeping the independently calculated 50–22 expectation. Production and schema
+are unchanged. Cloud D1 behavior, multi-zone resilience and matchday freshness
+still need the approved trial; remaining provider consumers are next.

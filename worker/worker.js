@@ -3072,22 +3072,15 @@ async function runScheduledLivePoints(env) {
   const matches = assignGameweeks(live.matches ?? []);
   const inPlay = matches.filter((match) => isLive(match.status) && Number.isInteger(gameweekOf(match)));
 
-  const statements = [];
-  // Clear whatever is no longer live. The merge treats settled as the winner
-  // regardless, so a lingering row is stale rather than wrong, but keeping the
-  // table to "what is on right now" means the read never has to filter by age.
-  // Bounded either way: live matches are a handful, so the NOT IN list cannot
-  // grow the way an unchunked ledger IN clause did (see fantasyScoredMatchIds).
-  if (inPlay.length) {
-    const placeholders = inPlay.map((_, index) => `?${index + 1}`).join(", ");
-    statements.push(
-      env.DB.prepare(`DELETE FROM fantasy_live_match_points WHERE match_id NOT IN (${placeholders})`).bind(
-        ...inPlay.map((match) => match.id),
-      ),
-    );
-  } else {
-    // NOT IN () is not valid SQL, and with nothing live the whole table is stale.
-    statements.push(env.DB.prepare(`DELETE FROM fantasy_live_match_points`));
+  // Keep final-but-unsettled points through delayed detail. The read merge
+  // already prefers settled rows; cleanup must not create a full-time gap.
+  const retained = new Set(matches.filter(match => isLive(match.status) || isMatchFinished(match)).map(match => match.id));
+  const existing = await env.DB.prepare(`SELECT match_id FROM fantasy_live_match_points`).all();
+  const obsolete = (existing.results ?? []).map(row => row.match_id).filter(id => !retained.has(id));
+  const statements = [env.DB.prepare(`DELETE FROM fantasy_live_match_points WHERE match_id IN (SELECT match_id FROM fantasy_scored_matches)`)];
+  for (let i = 0; i < obsolete.length; i += 50) {
+    const ids = obsolete.slice(i, i + 50);
+    statements.push(env.DB.prepare(`DELETE FROM fantasy_live_match_points WHERE match_id IN (${ids.map((_, j) => `?${j + 1}`).join(",")})`).bind(...ids));
   }
 
   for (const [index, match] of inPlay.entries()) {
@@ -7013,7 +7006,7 @@ const lastDetailKey = (id) => `detail:last:${id}`;
 
 async function storeLastGoodDetail(env, detail) {
   try {
-    if (!env?.ANALYSIS_CACHE || !detail || detail.id == null) return false;
+    if (env?.SCORE_READ_ORIGIN || !env?.ANALYSIS_CACHE || !detail || detail.id == null) return false;
     if (Array.isArray(detail.degraded) && detail.degraded.length) return false;
     const score = detailSubstanceScore(detail);
     if (score === 0) return false; // an empty snapshot preserves nothing and can only mask a good one
