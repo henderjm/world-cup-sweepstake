@@ -49,8 +49,8 @@
       "title": "Package and price the AWS trial",
       "summary": "Prepare a reviewable active and standby deployment.",
       "acceptance": "Produce infrastructure, monthly cost assumptions, read-only IAM, throttling, egress constraints and rollback. Exercise multi-zone takeover and cold/warm traffic after approval.",
-      "next": "Prepare runnable deployment artifacts and infrastructure, measure cost inputs, and finish network/monitoring pricing before approval.",
-      "evidence": "63aa3d7 preserves seven official Ireland price records and reproducible scenario subtotals. Trial/cutover/rollback draft saved. Compute alone is $18.02/month; full budget and cloud validation remain incomplete. No resources created."
+      "next": "Build immutable container and Lambda archive, infrastructure/IAM plan, and complete network/monitoring costs before approval.",
+      "evidence": "63aa3d7 preserves seven official Ireland price records and reproducible scenario subtotals. Trial/cutover/rollback draft saved. Compute alone is $18.02/month; full budget and cloud validation remain incomplete. No resources created. Standalone package from committed sources passed 75 local service checks, including actual collector/reader processes; existing destination rejected."
     },
     {
       "id": "latency",

@@ -1635,3 +1635,21 @@ Drafted placement/IAM decisions, budget-safe cutover and rollback, failure drill
 and unresolved approval prerequisites in `aws-score-trial.md`. No account access,
 resource creation, spending or deployment. Next: runnable artifacts/infrastructure,
 measured cost inputs and the remaining pricing lines before seeking approval.
+
+### 4 October — standalone score-service package
+
+Added `scripts/package-score-service.mjs`: creates a new release directory from
+an explicit Git commit, installs only the pinned service dependencies without
+lifecycle scripts, and records source hashes. It excludes worktree edits and
+local secrets by selecting committed service modules and shared-domain files.
+Existing output directories fail closed. The next cloud packaging step remains
+an immutable container and Lambda archive plus infrastructure/IAM validation;
+nothing has been provisioned or deployed.
+
+Validation: packaged runtime sources from `92f56175de3fdc52c37d4f750f7a4eed11282ec3`
+passed all 75 service checks on Node 24 against disposable DynamoDB Local,
+including actual collector/read-process startup and shutdown. Test files and the
+test-only fantasyScoring helper were added separately to the temporary test copy.
+The packaged Lambda entrypoint also loaded and rejected an unknown route without
+provider credentials. Reusing the output directory was rejected. Evidence:
+`/tmp/kickoff-package-tests.log`. No cloud/runtime capacity claim follows.

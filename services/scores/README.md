@@ -426,3 +426,20 @@ same-season files are not replaced by incomplete-history refreshes. Initial
 partial exports are explicitly marked. Source timestamps survive the export.
 Workflow switches and Worker provider-key removal still need an approved
 cutover; nothing in this path configures production automatically.
+
+## Standalone release staging
+
+From the repository root, run `node scripts/package-score-service.mjs REVISION NEW_DIRECTORY`.
+Use an explicit reviewed commit and Node 24 for trial validation. The packager
+reads source bytes from Git, not the worktree, and installs the service lockfile
+with lifecycle scripts disabled. It copies only service modules and the explicit
+shared-domain allowlist; no frontend assets, local environment files, mobile
+work or existing node_modules are copied. An existing destination is rejected.
+
+`release.json` records the full commit, packaging Node version and source hashes.
+From that directory, run `node services/scores/run-collector.mjs` with the approved
+runtime configuration. The Lambda handler is `services/scores/lambda.handler`;
+its archive must preserve this directory structure, including the root package.json
+and installed service dependencies. This stages runnable files, not a container,
+Lambda upload, infrastructure plan or deployment. Container base-image pinning,
+artifact signing/upload and runtime/IAM validation remain required.
