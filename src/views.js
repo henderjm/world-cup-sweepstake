@@ -455,7 +455,7 @@ export function renderMiniTable(model, { competitions = [] } = {}) {
       ${model.loading ? '<p class="note" role="status">Loading standings…</p>'
         : model.error ? `<p class="note" role="status">Standings unavailable.</p><button class="seg" data-score-feed-retry="${code}">Retry standings</button>`
         : `${renderStandingsNotice(model)}
-          ${model.standingsDelayed || model.standingsUnavailable ? "" : `<p class="score-league__freshness">Updated <span data-feed-age="${code}"></span></p>`}
+          ${model.standingsDelayed || model.standingsUnavailable ? "" : `<p class="score-league__freshness">Updated <span data-standings-age="${code}"></span></p>`}
           ${rows ? `<table class="mini-table" aria-label="${esc(model.competition.shortName)} standings"><thead><tr><th scope="col" aria-label="Position">#</th><th scope="col">Club</th><th scope="col" aria-label="Played">P</th><th scope="col" aria-label="Points">Pts</th></tr></thead><tbody>${rows}</tbody></table>` : model.standingsUnavailable ? "" : '<p class="note">No standings published yet.</p>'}
           ${model.tablesLive ? '<p class="note">As it stands, including live matches.</p>' : ""}
           ${rows && legend ? `<div class="aside__legend">${legend}</div>` : ""}`}

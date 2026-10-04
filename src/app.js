@@ -772,6 +772,12 @@ function setUpdatedLabel() {
   for (const element of elements.layout.querySelectorAll("[data-feed-age]")) {
     element.textContent = feedLabel(scoreFeeds.get(element.dataset.feedAge)).text;
   }
+  for (const element of elements.layout.querySelectorAll("[data-standings-age]")) {
+    const feed = scoreFeeds.get(element.dataset.standingsAge);
+    const updatedAt = Date.parse(feed.standingsUpdatedAt);
+    element.textContent = Number.isFinite(updatedAt)
+      ? updatedLabel({ fetchedAt: feed.fetchedAt, updatedAt, stale: feed.standingsDelayed }).text : "unknown";
+  }
 }
 
 function startPolling() {

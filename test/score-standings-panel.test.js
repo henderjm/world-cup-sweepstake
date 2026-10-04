@@ -39,5 +39,5 @@ test("loading, missing tables and failed feeds have distinct states; delayed tab
   assert.match(delayed, /Standings updates delayed/);
   assert.match(delayed, /CL Home/);
   assert.match(delayed, /As it stands, including live matches/);
-  assert.match(delayed, /data-feed-age="CL"/);
+  assert.match(delayed, /data-standings-age="CL"/);
 });

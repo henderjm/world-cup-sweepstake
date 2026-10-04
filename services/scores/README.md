@@ -146,7 +146,11 @@ does not yet establish account-wide control of the deployed app.
 
 `ScoreProvider.request(lease, path, { priority })` reserves an attempt before
 dispatch. Only explicit `priority: "scores"` can consume the score reserve;
-unclassified requests default to supplementary. Every retry requires a new
+unclassified requests default to supplementary. Fixture discovery, live/upcoming
+score batches and standings use this protected allowance. Standings stay below
+due live scores in the job queue; details and fantasy history remain supplementary.
+At the current 15-minute cadence, two league tables use at most 192 scheduled
+requests per day before retries. Every retry requires a new
 reservation. Denial returns `{ allowed: false, reason, retryAt }` without making
 an HTTP request; the future scheduler must return to its priority queue rather
 than sleeping inside an optional request. The client performs no hidden retries.
