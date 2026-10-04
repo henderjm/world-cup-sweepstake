@@ -115,7 +115,7 @@ test("Worker score routes use only stored reads, recover in place and preserve t
     return Response.json(feed({ code, version: mode === "recovery" ? 3 : mode === "old" ? 2 : 1,
       observedAt: mode === "old" ? at - 700000 : Date.now() }));
   };
-  const env = { API_FOOTBALL_KEY: "must-never-be-sent", API_FOOTBALL_COMPETITIONS: "PL:2026,CL:2026", SCORE_READ_ORIGIN: origin };
+  const env = { API_FOOTBALL_COMPETITIONS: "PL:2026,CL:2026", SCORE_READ_ORIGIN: origin };
   const request = path => worker.fetch(new Request("https://worker.example.test" + path, { headers: { Origin: "https://kickoffdraft.com" } }), env, { waitUntil() {} });
   for (const path of ["/live", "/PL/live", "/CL/live"]) {
     const response = await request(path); assert.equal(response.status, 200);
@@ -131,4 +131,17 @@ test("Worker score routes use only stored reads, recover in place and preserve t
   const recovered = await (await request("/PL/live")).json();
   assert.equal(recovered.snapshot.version, 3); assert.equal(recovered.stale, false);
   assert.equal(calls, 6);
+});
+
+test("missing configuration and invalid stored origins cannot trigger a direct-provider fallback", async t => {
+  const oldFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = oldFetch; });
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; throw Error("Unexpected network request"); };
+  const request = env => worker.fetch(new Request("https://worker.example.test/PL/live", {
+    headers: { Origin: "https://kickoffdraft.com" },
+  }), { API_FOOTBALL_COMPETITIONS: "PL:2026", ...env }, { waitUntil() {} });
+  assert.equal((await request({})).status, 500);
+  assert.equal((await request({ SCORE_READ_ORIGIN: "http://untrusted.invalid", API_FOOTBALL_KEY: "must-not-fallback" })).status, 502);
+  assert.equal(calls, 0);
 });

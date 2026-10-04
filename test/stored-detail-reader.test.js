@@ -83,7 +83,7 @@ test("public Worker detail reads stay on stored service and never replace degrad
       publishedAt: at, scheduleObservedAt: at, fixtures: [{ match, observedAt: at }], standings: { rows: [], observedAt: null, delayed: true } }, at));
     return failed ? new Response("offline", { status: 503 }) : Response.json(detail());
   };
-  const env = { API_FOOTBALL_KEY: "not-for-forwarding", API_FOOTBALL_COMPETITIONS: "CL:2026", SCORE_READ_ORIGIN: origin,
+  const env = { API_FOOTBALL_COMPETITIONS: "CL:2026", SCORE_READ_ORIGIN: origin,
     ANALYSIS_CACHE: { get: async () => { legacyReads++; return null; }, put: async () => { throw Error("Legacy write"); } } };
   const request = () => worker.fetch(new Request("https://worker.invalid/match/900001", { headers: { Origin: "https://kickoffdraft.com" } }), env, { waitUntil() {} });
   const first = await request(); assert.equal(first.status, 200); assert.equal(first.headers.get("Cache-Control"), "no-store");

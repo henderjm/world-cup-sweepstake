@@ -50,7 +50,7 @@ const server = createServer(async (req, res) => {
       res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({ now, mode, reads, forbiddenCalls })); return;
     }
     const result = await worker.fetch(new Request("https://worker-fixture.invalid" + req.url, { headers: { Origin: "https://kickoffdraft.com" } }),
-      { API_FOOTBALL_KEY: "synthetic", API_FOOTBALL_COMPETITIONS: "CL:2026", SCORE_READ_ORIGIN: "https://stored-detail-fixture.invalid" }, { waitUntil() {} });
+      { API_FOOTBALL_COMPETITIONS: "CL:2026", SCORE_READ_ORIGIN: "https://stored-detail-fixture.invalid" }, { waitUntil() {} });
     res.writeHead(result.status, Object.fromEntries(result.headers)); res.end(await result.text());
   } catch (error) { res.writeHead(500); res.end(error.message); }
 });

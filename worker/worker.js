@@ -234,6 +234,10 @@ const readStoredDetail = createStoredDetailReader();
 const MATCH_DETAIL_PACING_MS = 150;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function scoreSourceConfigured(env) {
+  return Boolean(env.SCORE_READ_ORIGIN || env.API_FOOTBALL_KEY);
+}
+
 // The configured competitions, as "CODE:season" pairs: "PL:2026,CL:2026". The first
 // entry is the default for legacy unprefixed routes.
 function parseCompetitions(env) {
@@ -521,7 +525,7 @@ export default {
       return handleFantasyPlayersXp(env, cors);
     }
 
-    // Deliberately above the API_FOOTBALL_KEY guard below. This answers the
+    // Deliberately above the score-source configuration guard below. This answers the
     // one question that decides whether a draft can run, and it is worth the
     // most exactly when the Worker is misconfigured, so it must not be gated
     // behind a config check that a broken deployment would fail first.
@@ -561,7 +565,7 @@ export default {
     }
 
     const token = env.API_FOOTBALL_KEY;
-    if (!token) return json({ error: "service not configured" }, 500, cors);
+    if (!scoreSourceConfigured(env)) return json({ error: "service not configured" }, 500, cors);
     const competitions = parseCompetitions(env);
     if (!competitions.length) return json({ error: "service not configured" }, 500, cors);
 
@@ -1043,7 +1047,7 @@ async function handleAnalysis(env, id, cors) {
 }
 
 async function runScheduledAnalysis(env) {
-  if (!env.ANTHROPIC_API_KEY || !env.ANALYSIS_CACHE || !env.API_FOOTBALL_KEY) return;
+  if (!env.ANTHROPIC_API_KEY || !env.ANALYSIS_CACHE || !scoreSourceConfigured(env)) return;
   // First pass to be shed when the allowance runs low, and by a distance. It
   // is the most expensive per live match (three upstream payloads every tick
   // just to compute a signature, plus an Anthropic call when it regenerates)
@@ -2583,7 +2587,7 @@ async function currentFantasyGameweek(env) {
     if (Number.isInteger(override) && override > 0) return override;
 
     const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
-    if (!comp || !env.API_FOOTBALL_KEY) return 1;
+    if (!comp || !scoreSourceConfigured(env)) return 1;
     const live = await getLive(comp, env.API_FOOTBALL_KEY, env);
     return currentGameweekFromMatches(live.matches, Date.now());
   } catch {
@@ -2605,7 +2609,7 @@ async function currentFantasyGameweek(env) {
 // would be one postponement away from disagreeing with the others.
 async function currentFantasyMatches(env) {
   try {
-    if (!env.API_FOOTBALL_KEY) return null;
+    if (!scoreSourceConfigured(env)) return null;
     const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
     if (!comp) return null;
     const live = await getLive(comp, env.API_FOOTBALL_KEY, env);
@@ -3051,7 +3055,7 @@ async function handleFantasyDraftQueueSet(request, env, leagueId, cors) {
 // already say that match was handled, so no later tick corrects it). See
 // src/fantasyLivePoints.js.
 async function runScheduledLivePoints(env) {
-  if (!env.DB || !env.API_FOOTBALL_KEY) return;
+  if (!env.DB || !scoreSourceConfigured(env)) return;
   const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
   if (!comp) return; // fantasy is PL-only
 
@@ -3165,7 +3169,7 @@ async function fantasyLivePointsForGameweek(env, gameweek) {
 }
 
 async function runScheduledFantasyScoring(env) {
-  if (!env.DB || !env.API_FOOTBALL_KEY) return;
+  if (!env.DB || !scoreSourceConfigured(env)) return;
   const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
   if (!comp) return; // fantasy is PL-only; nothing to score without PL configured
 
@@ -3424,7 +3428,7 @@ async function recomputeLeagueGameweek(env, leagueId, gameweek, playerPoints) {
 // minute for a figure that only changes once a gameweek finishes would be
 // pure waste.
 async function runScheduledFantasyXpBlend(env) {
-  if (!env.DB || !env.API_FOOTBALL_KEY) return;
+  if (!env.DB || !scoreSourceConfigured(env)) return;
   try {
     const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
     if (!comp) return; // fantasy is PL-only; nothing to blend without PL configured
@@ -4883,7 +4887,7 @@ async function handleFantasyWaiverSettings(request, env, leagueId, cors) {
 // getLive(); folding this into runScheduledFantasyScoring would tangle two
 // unrelated failure/retry stories together.
 async function runScheduledWaiverRuns(env) {
-  if (!env.DB || !env.API_FOOTBALL_KEY) return;
+  if (!env.DB || !scoreSourceConfigured(env)) return;
   const currentGameweek = await currentFantasyGameweek(env);
   const settledGameweek = currentGameweek - 1;
   if (settledGameweek < 1) return; // nothing has settled yet this season
@@ -6182,7 +6186,7 @@ async function handlePushTest(request, env, cors) {
 }
 
 async function runScheduledNotifications(env) {
-  if (!pushConfigured(env) || !env.API_FOOTBALL_KEY) return;
+  if (!pushConfigured(env) || !scoreSourceConfigured(env)) return;
   for (const comp of parseCompetitions(env)) {
     try {
       await notifyCompetition(env, comp);
@@ -6590,7 +6594,7 @@ async function handlePredictionSet(request, env, competitions, token, cors) {
 // this was the gameweek's last settle and no later fantasy tick would have
 // recomputed it (fantasy scoring only recomputes on ITS OWN new settles).
 async function runScheduledPredictionScoring(env) {
-  if (!env.DB || !env.API_FOOTBALL_KEY) return;
+  if (!env.DB || !scoreSourceConfigured(env)) return;
   const unscored = await env.DB.prepare(`SELECT DISTINCT match_id FROM prediction_entries WHERE points IS NULL`).all();
   const wanted = new Set((unscored.results ?? []).map((row) => row.match_id));
   if (!wanted.size) return;

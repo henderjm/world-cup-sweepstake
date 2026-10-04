@@ -1606,3 +1606,21 @@ pass: 75 service and 1,656 app tests total. No frontend code changed, provider
 traffic, spending or public deployment. Next: stored-mode Worker credential
 prerequisite audit and keyless scheduled-state verification, then the priced
 cloud trial and independent monitoring. Production reliability is unmeasured.
+
+### 2026-10-04 — Worker no longer needs the provider key in stored mode
+
+Removed obsolete provider-key-only gates while preserving authentication and
+other service prerequisites. Missing source configuration still rejects score
+routes; invalid stored origins make zero network calls rather than falling back.
+
+All 1,657 app tests pass, plus sixteen focused reader checks and a Worker dry-run
+bundle. Local scheduled-state replay without a provider key verifies settlement
+retry, 22 player scores, prediction scoring/+1 fantasy bonus, and notification
+state with no subscribers. Fifty-five stored reads and zero provider/legacy KV
+calls. Headless 390px/1440px detail journeys pass through the real keyless Worker:
+loading/retry/missing/stale/correction, thirteen stored reads and zero provider
+calls or page errors. No real messages sent, public deployment or spending.
+
+Next: package and price the cloud trial, with explicit cutover/rollback and
+independent monitoring. Local source/fixture evidence is not a production
+runtime census; sustained reliability remains unmeasured.

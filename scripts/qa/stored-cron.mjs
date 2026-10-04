@@ -62,7 +62,7 @@ globalThis.fetch = async url => {
   if (String(url) === "https://cron-stored.invalid/PL/match/900001") return mode === "outage" ? new Response("offline", { status: 503 }) : Response.json(detail());
   throw Error("Unexpected external request: " + url);
 };
-const env = { DB: database, API_FOOTBALL_KEY: "synthetic", API_FOOTBALL_COMPETITIONS: "PL:2026", SCORE_READ_ORIGIN: "https://cron-stored.invalid",
+const env = { DB: database, VAPID_PRIVATE_JWK: "synthetic-unused", VAPID_PUBLIC_KEY: "synthetic-unused", API_FOOTBALL_COMPETITIONS: "PL:2026", SCORE_READ_ORIGIN: "https://cron-stored.invalid",
   ANALYSIS_CACHE: { async get(key) { kv.push(key); return null; }, async put(key) { kv.push(key); } } };
 console.warn = message => warnings.push(message);
 async function tick(next) {
@@ -73,6 +73,7 @@ async function tick(next) {
 const row = sql => db.prepare(sql).get();
 try {
   await tick("live");
+  assert.ok(row("SELECT signature FROM notify_state WHERE match_id = 900001"), "Keyless notifications did not record a baseline");
   const original = row("SELECT scores FROM fantasy_live_match_points WHERE match_id = 900001")?.scores;
   assert.ok(original, "Complete live detail did not produce provisional scores");
   assert.equal(row("SELECT COUNT(*) AS count FROM fantasy_live_match_points").count, 1, "Obsolete rows were not cleaned in bounded batches");
@@ -100,10 +101,16 @@ try {
   await tick("final");
   assert.deepEqual(db.prepare("SELECT player_id, points, breakdown FROM fantasy_player_match_scores ORDER BY player_id").all(), settled);
   assert.equal(row("SELECT COUNT(*) AS count FROM fantasy_live_match_points").count, 0);
+  db.exec("INSERT INTO prediction_entries (user_id, match_id, competition, home_goals, away_goals) VALUES (1, 900001, 'PL', 1, 0)");
+  await tick("final");
+  assert.equal(row("SELECT points FROM prediction_entries WHERE user_id = 1").points, 3);
+  assert.equal(row("SELECT exact FROM prediction_entries WHERE user_id = 1").exact, 1);
+  assert.equal(row("SELECT home_score FROM fantasy_h2h_fixtures").home_score, 51);
+  assert.equal(JSON.parse(row("SELECT signature FROM notify_state WHERE match_id = 900001").signature).status, "FINISHED");
   assert.equal(kv.length, 0, "Stored scoring touched legacy detail KV");
   assert.deepEqual(sqlErrors, []);
   assert.ok(warnings.every(message => message.includes("detail degraded")), "Unexpected cron warning");
   assert.ok(requests.every(url => url.startsWith("https://cron-stored.invalid/")));
-  console.log(JSON.stringify({ passed: ["live points", "partial and outage retention", "full-time retention until settlement", "atomic score-batch failure and retry", "22 player scores", "50-22 league and H2H rollup", "idempotent settlement", "post-settlement cleanup", "no legacy KV/provider calls"],
+  console.log(JSON.stringify({ passed: ["live points", "partial and outage retention", "full-time retention until settlement", "atomic score-batch failure and retry", "22 player scores", "50-22 league and H2H rollup", "idempotent settlement", "post-settlement cleanup", "keyless prediction settlement and +1 fantasy bonus", "keyless notification state without subscribers", "provider credentials absent", "no legacy KV/provider calls"],
     storedReads: requests.length, injectedFailures, warnings, sqlErrors }, null, 2));
 } finally { db.close(); }

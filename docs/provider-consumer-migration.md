@@ -97,8 +97,8 @@ checks. Rollback must explicitly account for which collector owns the quota.
 
 ## Next implementation order
 
-1. Audit all stored-mode entry points with provider credentials absent, including
-   Worker key guards and scheduled side effects; verify the final consumer census.
+1. Package the approved-trial candidate with explicit Worker/GitHub cutover
+   configuration, least-privilege IAM, rollback and measured capacity gates.
 2. Prepare the priced cloud trial with independent monitoring, watchdog and an
    approved alert receiver. Shadow reads must share the same provider budget.
 3. After approval and busy-window evidence, activate the Worker and GitHub
@@ -425,3 +425,35 @@ Next: remove obsolete provider-key prerequisites from stored-mode Worker paths
 and prove their scheduled behavior without credentials. Then finish the runtime
 consumer census and priced cloud trial. Source gates are not proof of deployed
 account-wide quota ownership or sustained matchday reliability.
+
+## Stored Worker operation without provider credentials — 4 October 2026
+
+A shared score-source configuration predicate replaces the obsolete key-only
+prerequisite on public score/detail and fixture-validation routes, gameweek and
+lock helpers, scheduled live/final fantasy scoring, xP blending, waiver runs,
+analysis, notifications and prediction settlement. Stored origin selection does
+not alter authentication, D1 or model/push credential requirements. With neither
+source configured, the Worker still rejects score routes. An invalid stored
+origin fails closed, even if a legacy provider key is present.
+
+Verification: 1,657 root tests and sixteen focused reader checks pass. The
+scheduled replay now omits API_FOOTBALL_KEY and verifies provisional/final
+scoring, atomic retry, 22 player rows and 50–22 H2H totals. An additional exact
+prediction settles for three predictor points and adds one fantasy point,
+producing 51–22. Synthetic push configuration with no subscribers verifies
+notification baseline/final-state writes without sending messages. Fifty-five
+stored reads, zero provider/legacy KV calls and no SQL errors. This does not
+verify actual notification delivery, Anthropic generation or cloud D1 behavior.
+
+Headless mobile (390px) and desktop (1440px) detail journeys run through the real
+Worker without a provider key: cold retry, loading, missing data, stale retention
+and downward score/timeline correction pass. Thirteen stored reads, zero
+provider calls or page errors. The unchanged frontend preview is isolated from
+unrelated mobile work. Worker dry-run bundling passes; nothing is deployed.
+
+The direct-endpoint source scan still finds four legacy/active entry points:
+Worker fetch helper, Go client, detail feeder and the shared provider adapter.
+Stored-mode paths bypass the first three; the collector owns the fourth. This
+is source and local replay evidence, not a runtime census of production or other
+subscription-key users. Next: concrete cloud trial/cutover artifacts, cost and
+independent monitoring, followed by approved busy-window validation.
