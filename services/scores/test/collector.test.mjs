@@ -16,12 +16,12 @@ function fixture(id, league = 2, now = start) {
     teams: { home: { name: "Arsenal" }, away: { name: "Real Madrid" } }, goals: { home: 1, away: 0 } };
 }
 
-async function setup(t, records = [fixture(900001)], { at = start, bootstrapAt = at - 61000 } = {}) {
+async function setup(t, records = [fixture(900001)], { at = start, bootstrapAt = at - 61000, used = 0 } = {}) {
   const db = client(), tableName = await createTable(db);
   let now = bootstrapAt;
   const clock = () => now, calls = [], state = { records, alter: body => body };
   const store = new DynamoScoreStore({ client: db, tableName, now: clock });
-  await store.initializeBudget(await store.claim("bootstrap"), { dailyLimit: 1000, minuteLimit: 300, scoreReserve: 100 }, 0);
+  await store.initializeBudget(await store.claim("bootstrap"), { dailyLimit: 1000, minuteLimit: 300, scoreReserve: 100 }, used);
   now = at;
   const server = createServer((req, res) => {
     const url = new URL(req.url, "http://localhost"); calls.push(url.pathname + url.search);
@@ -158,7 +158,7 @@ test("halftime, extra time and penalties keep polling; terminal scores stop live
   assert.equal((await store.read("CL", "2026")).fixtures[0].match.score.home, 0);
 });
 
-test("supplementary standings preserve score ages and reject incomplete tables", async t => {
+test("standings preserve score ages and reject incomplete tables", async t => {
   const finished = fixture(900001); finished.fixture.status.short = "FT";
   const { collector, store, state, advance } = await setup(t, [finished]);
   await collector.step();
@@ -202,4 +202,37 @@ test("the collector CLI runs real collection and exits cleanly on SIGTERM", asyn
   const [code] = await exit;
   assert.equal(code, 0);
   assert.equal((await store.read("CL", "2026")).fixtures[0].match.score.home, 1);
+});
+
+test("standings keep refreshing after supplementary admission closes, behind due live scores", async t => {
+  const { collector, store, provider, state, advance, calls } = await setup(t, [fixture(900001)], { used: 899 });
+  await collector.step();
+  const table = [1, 2].map(id => ({ rank: id, team: { id, name: `Team ${id}` }, points: 0, goalsDiff: 0,
+    all: { played: 0, win: 0, draw: 0, lose: 0, goals: { for: 0, against: 0 } } }));
+  state.alter = (body, url) => url.pathname === "/standings"
+    ? { ...body, results: 1, response: [{ league: { id: 2, season: 2026, standings: [table] } }] } : body;
+  advance(16000);
+  const live = await collector.step();
+  assert.equal(live.kind, "live"); assert.equal(live.state, "published");
+  const before = await store.read("CL", "2026");
+  advance(1000);
+  const optional = await provider.request(await store.claim("collector"), "/players/squads?team=42");
+  assert.equal(optional.allowed, false); assert.equal(optional.reason, "score-reserve");
+  const standings = await collector.step();
+  assert.equal(standings.kind, "standings"); assert.equal(standings.state, "published");
+  const after = await store.read("CL", "2026");
+  assert.deepEqual(after.fixtures, before.fixtures);
+  assert.equal(after.standings.rows[0].table.length, 2);
+  assert.equal((await store.readBudget()).used, 902);
+  assert.equal(calls.length, 3);
+});
+
+test("standings still respect the absolute daily provider limit", async t => {
+  const finished = fixture(900001); finished.fixture.status.short = "FT";
+  const { collector, store, advance, calls } = await setup(t, [finished], { used: 999 });
+  await collector.step(); advance(1000);
+  const event = await collector.step();
+  assert.equal(event.kind, "standings"); assert.equal(event.state, "deferred");
+  assert.equal(event.reason, "daily-limit"); assert.equal(calls.length, 1);
+  assert.equal((await store.readBudget()).used, 1000);
 });

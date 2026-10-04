@@ -109,7 +109,8 @@ export class ScoreCollector {
         : `/fixtures?ids=${job.ids.join("-")}`;
     let phase = "request";
     try {
-      const result = await this.provider.request(lease, path, { priority: job.kind === "standings" ? "supplementary" : "scores" });
+      // The supplementary cap must not freeze the table shown beside live scores.
+      const result = await this.provider.request(lease, path, { priority: "scores" });
       if (!result.allowed) {
         this.retryAt.set(job.key, result.retryAt);
         return { state: "deferred", competition: job.competition, kind: job.kind, reason: result.reason, retryAt: result.retryAt };
