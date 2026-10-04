@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-04",
-  "revision": "c488c35 frontend \u00b7 bb79bf0 AWS \u00b7 4026ed8 evidence",
+  "revision": "56309fb frontend \u00b7 1a7527e collector \u00b7 bb79bf0 reader",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -271,6 +271,16 @@
       "acceptance": "Persist date/filter/follows, preserve detail focus and drafts during updates, and expose loading, missing coverage and retry states.",
       "next": "Retest against LiveScore and FotMob after reliability work; preserve these journeys during migration.",
       "evidence": "October 4 c488c35: headless production upcoming-date, table and completed-match timeline/lineup journeys passed at 390px and 1440px. Controlled regression covered partial outages, stale disclosure and navigation; local-follow persistence retains prior evidence."
+    },
+    {
+      "id": "standings-reserve-repair",
+      "status": "Released",
+      "priority": "P0",
+      "title": "Keep tables refreshing after optional quota is used",
+      "summary": "Fixed the post-cutover table stall and the sidebar timestamp showing score age.",
+      "acceptance": "Tables continue under protected admission after supplementary work stops; due live scores run first and hard daily limits remain enforced. Show the table observation age. Verify automatic recovery on the live page.",
+      "next": "Keep quota-boundary and independent source-age regressions in release checks.",
+      "evidence": "Collector 1a7527e: 82 service tests passed. Both leagues refreshed at 17:41:55 UTC and cleared warnings without reload. Frontend 56309fb: 17 related tests and headless age/polling checks passed; deployed via Pages run 37221760923."
     }
   ]
 }

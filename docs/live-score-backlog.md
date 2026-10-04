@@ -9,7 +9,7 @@ October 4: the owner approved provisioning, cutover and the provider-key transfe
 Production PL/CL score reads now use AWS in account 134471064301, eu-west-1.
 Two collectors share the fenced lease and provider budget. The Cloudflare Worker
 has no provider key; the GitHub detail feeder skips when the AWS origin is set.
-Frontend c488c35 is deployed; service image/reader are built from bb79bf0.
+Frontend 56309fb and collector 1a7527e are deployed; the reader remains bb79bf0.
 Evidence: `live-score-evidence/2026-10-04-aws-cutover.json` and
 `live-score-evidence/2026-10-04-aws-takeover.json`. The controlled stop observed
 standby lease takeover within 15.916 seconds and twelve successful public feed
@@ -1977,3 +1977,12 @@ records. Uses inherited `flock` in the stock Node container; Python wrapper
 recovery remains separately tested. See `score-monitoring-trial.md` for the
 serial two-test command and limits. No production writes or provider requests.
 Retention, external supervision, watchdog and human paging remain next gates.
+
+## October 4 — repair post-cutover standings delay
+
+Released collector 1a7527e and frontend 56309fb after the reported delayed-table
+warning. Standings admission now survives supplementary exhaustion while live
+scores retain scheduling priority; hard provider caps are unchanged. Sidebar
+age now uses the table observation instead of the score observation. PL and CL
+recovered automatically in open headless production pages. Regression and
+runtime evidence: `live-score-evidence/2026-10-04-standings-delay.json`.

@@ -10,7 +10,7 @@
 @media(max-width:650px){#kickoff-kanban .lanes{grid-template-columns:1fr}}
 </style>
 <div id="kickoff-kanban">
-<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code c488c35 frontend · bb79bf0 AWS · 4026ed8 evidence</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
+<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code 56309fb frontend · 1a7527e collector · bb79bf0 reader</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
 <div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">2</span></h3><article data-card="reliability">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Make busy matchdays reliable</summary>
@@ -55,7 +55,7 @@
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Reliability recorder and read contract</summary>
 <dl><dt>Acceptance</dt><dd>Reject older snapshots without discarding valid mixed-age updates. Record missing checks rather than silently excluding them from reliability reports.</dd><dt>Next action</dt><dd>Deploy independent monitoring with tested alert delivery.</dd><dt>Evidence</dt><dd>4d9b364, 64f7336 · locally verified; not an installed continuous monitor.</dd></dl></details>
-<p>Version-aware recovery with a durable measurement baseline.</p></article></section><section aria-label="Released"><h3>Released <span class="text-muted">15</span></h3><article data-card="consumers">
+<p>Version-aware recovery with a durable measurement baseline.</p></article></section><section aria-label="Released"><h3>Released <span class="text-muted">16</span></h3><article data-card="consumers">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Migrate every provider consumer</summary>
 <dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Complete supplementary history and invalid detail diagnostics within the shared allowance.</dd><dt>Evidence</dt><dd>Worker provider key removed; source variable set; feeder run 37219078579 skipped. Fantasy pool publishes 618 unambiguous players with explicit degraded coverage.</dd></dl></details>
@@ -115,5 +115,9 @@
 <span class="viz-badge">P1</span>
 <details><summary class="cursor-interaction">Find matches, follow teams and open details</summary>
 <dl><dt>Acceptance</dt><dd>Persist date/filter/follows, preserve detail focus and drafts during updates, and expose loading, missing coverage and retry states.</dd><dt>Next action</dt><dd>Retest against LiveScore and FotMob after reliability work; preserve these journeys during migration.</dd><dt>Evidence</dt><dd>October 4 c488c35: headless production upcoming-date, table and completed-match timeline/lineup journeys passed at 390px and 1440px. Controlled regression covered partial outages, stale disclosure and navigation; local-follow persistence retains prior evidence.</dd></dl></details>
-<p>Date and live filters, local follows and match-detail navigation.</p></article></section></div>
+<p>Date and live filters, local follows and match-detail navigation.</p></article><article data-card="standings-reserve-repair">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Keep tables refreshing after optional quota is used</summary>
+<dl><dt>Acceptance</dt><dd>Tables continue under protected admission after supplementary work stops; due live scores run first and hard daily limits remain enforced. Show the table observation age. Verify automatic recovery on the live page.</dd><dt>Next action</dt><dd>Keep quota-boundary and independent source-age regressions in release checks.</dd><dt>Evidence</dt><dd>Collector 1a7527e: 82 service tests passed. Both leagues refreshed at 17:41:55 UTC and cleared warnings without reload. Frontend 56309fb: 17 related tests and headless age/polling checks passed; deployed via Pages run 37221760923.</dd></dl></details>
+<p>Fixed the post-cutover table stall and the sidebar timestamp showing score age.</p></article></section></div>
 </div>

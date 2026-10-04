@@ -3,8 +3,8 @@
 ## AWS cutover completed after later owner approval
 
 The later AWS instruction superseded the initial wrap-up below. Production score
-reads now use the Ireland AWS stack; frontend c488c35 is deployed, service
-artifacts are bb79bf0, and Worker version 8c76a000-759e-48ce-95ee-1241879d06f2
+reads now use the Ireland AWS stack; frontend 56309fb and collector 1a7527e
+are deployed, with the reader still on bb79bf0, and Worker version 8c76a000-759e-48ce-95ee-1241879d06f2
 uses the AWS origin with its provider key removed. Both ECS services target one
 task in separate AZs. The standby acquired epoch 6 within 15.916 seconds during
 a controlled stop; all twelve sampled public league reads succeeded. Both
@@ -87,3 +87,17 @@ https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e
 
 Resume the ongoing goal only when the user asks; do not restart hourly automation
 without authorization. The goal is paused for the day, not completed.
+
+## Standings delay repaired after user report
+
+Standings incorrectly used supplementary admission, freezing table updates once
+accounted use reached 1500 while score reads remained current. Collector 1a7527e
+moves standings into protected admission, still below due live jobs and subject
+to the same absolute limits. Both tables refreshed at 17:41:55 UTC under epoch 7;
+headless PL/CL pages cleared the warning without a reload. All 82 service tests
+passed, including the reproduced reserve boundary and absolute daily cap.
+
+Frontend 56309fb corrects the sidebar age to use standingsUpdatedAt instead of
+the score timestamp. Seventeen related tests and a headless polling/league-switch
+regression passed; Pages run 37221760923 deployed and both live labels were checked
+against source timestamps. See live-score-evidence/2026-10-04-standings-delay.json.

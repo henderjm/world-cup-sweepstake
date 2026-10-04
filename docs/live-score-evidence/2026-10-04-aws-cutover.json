@@ -6,7 +6,7 @@
   "bootstrapStack": "kickoff-draft-score-artifacts",
   "serviceStack": "kickoff-draft-scores",
   "sourceCommit": "bb79bf008172377a216dce2b30537034756f64b8",
-  "image": "134471064301.dkr.ecr.eu-west-1.amazonaws.com/kickoff-draft-scores@sha256:3e02e6dc5a9bb902712a24e009885653ced14c14aba128bd1b81742a1ad06eaf",
+  "image": "134471064301.dkr.ecr.eu-west-1.amazonaws.com/kickoff-draft-scores@sha256:2c7e8b9e0576133ea0656285e26b721b1dc4d124e3b6ffaa5512a05439cc2f0d",
   "reader": {
     "bucket": "kickoff-draft-scores-134471064301-eu-west-1",
     "key": "releases/bb79bf0/reader.zip",
@@ -216,8 +216,8 @@
       ]
     }
   },
-  "frontendSourceCommit": "c488c352fb85486f137ce097cf00b9ecaa466929",
-  "frontendRun": 37219238075,
+  "frontendSourceCommit": "56309fb911e7d55fb85699bbd135529477cc45f6",
+  "frontendRun": 37221760923,
   "workerVersion": "8c76a000-759e-48ce-95ee-1241879d06f2",
   "workerSourceCommit": "38a78bf",
   "oldFeederVerification": {
@@ -258,5 +258,7 @@
       "back and date navigation"
     ],
     "evidence": "2026-10-04-aws-live-browser.json"
-  }
+  },
+  "collectorSourceCommit": "1a7527e263fc2767d5cd2711196c2739da4d7079",
+  "standingsRepair": "2026-10-04-standings-delay.json"
 }
