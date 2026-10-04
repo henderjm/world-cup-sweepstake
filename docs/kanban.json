@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-04",
-  "revision": "fc8d905",
+  "revision": "71cb3a9",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -39,8 +39,8 @@
       "title": "Migrate every provider consumer",
       "summary": "Prevent details, stats and background jobs competing with scores.",
       "acceptance": "Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.",
-      "next": "Migrate squads and historical player data into the shared budget, then package the priced cloud trial and independent monitoring.",
-      "evidence": "fc8d905 adds stored live-data exports and a legacy feeder retirement gate. Corrections and incomplete event coverage preserve honest scorer totals. All 1,641 root tests pass. Player-history remains direct; no remote switch or deployment."
+      "next": "Integrate validated squads and history into shared-budget collector jobs with durable storage, then add stored player-pool export.",
+      "evidence": "71cb3a9 rejects incomplete squads, repeated or mismatched historical pages and duplicate player-club statistics. Valid transfers retain tier/xP behavior. All 1,649 tests pass. Stored exports are ready locally; shared-budget player history and cloud validation remain. Not deployed."
     },
     {
       "id": "cloud",
