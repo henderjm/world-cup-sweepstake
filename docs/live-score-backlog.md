@@ -1536,3 +1536,18 @@ unexpected SQL errors. This is local state verification, not cloud D1 evidence.
 
 Next: remaining feeder/static/player-history migration and priced trial with
 independent monitoring. No deployment, spending or production schema change.
+
+### 2026-10-04 — stored exports and feeder retirement gate
+
+Live-data baking can now read stored scores/detail without a provider key.
+Finished-match corrections update exported detail and Golden Boot totals;
+partial event coverage retains the previous tally and its real timestamp.
+Exports reject score regressions and stale feeds, preserve per-file last-good
+values on failure and isolate competitions. Four concurrent detail reads bound
+fan-out. Writes are atomic per file, not across the entire export.
+
+The feeder workflow and direct invocation stop upstream collection when the
+stored origin is configured. No remote variable has been enabled. All 1,641 root
+tests pass, including six new export/feeder cases; no provider traffic or deploy.
+Next: shared-budget squads/player history, then the priced cloud trial and
+independent monitoring. Account-wide quota ownership remains incomplete.

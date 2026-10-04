@@ -119,6 +119,7 @@ jobs:
         if: github.event_name != 'push'
         run: npm run fetch:live
         env:
+          SCORE_READ_ORIGIN: ${{ vars.SCORE_READ_ORIGIN }}
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           API_FOOTBALL_CLI: /tmp/squad-goals-api
           API_FOOTBALL_COMPETITIONS: "PL:2026,CL:2026"

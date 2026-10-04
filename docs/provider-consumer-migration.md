@@ -9,10 +9,10 @@ or migrated and runtime evidence confirms no bypass.
 
 | Entry point | Consumers and data | Current control | Migration and acceptance |
 | --- | --- | --- | --- |
-| `services/scores/provider.mjs` | New collector: complete season discovery, live/overdue batches, upcoming fixtures and standings | Fenced DynamoDB lease, durable shared daily/minute budget, score reserve, bounded body/deadline and recorded cooldowns | Retain as the single upstream entry point. Add supplementary collection here without changing score priority; verify each endpoint's complete-data rules. |
-| `worker/worker.js` `fetchJson` → `fetchWithColoCache` | Shared `getLive`; fixture validation; match detail; live/final fantasy points; notification events; analysis context | Per-isolate pacer, memo and colo cache; quota estimates are not account-wide admission | Score/schedule reads now have an opt-in stored-service path. Detail reads remain direct. Implement stored supplementary data before enabling the full migration and removing the Worker provider key. |
-| `scripts/feed-live-details.mjs` `apiGet` | Date discovery and Worker live ingestion; fixture lineups, events and player details for ingestion | Its own pacing/cooldown and optional-detail shedding; GitHub concurrency is separate from the Worker and new collector | Replace with collector publication plus a stored detail adapter; disable the old workflow only after scoreboard, details and notification coverage are verified. Do not run two unbudgeted collectors during shadow/cutover. |
-| `internal/apifootball/client.go` through `cmd/api-football` and `scripts/lib/apiFootball.mjs` | `fetch-live-data.mjs` static season/standings/detail/scorer bake; `fetch-fantasy-players.mjs` squads, paginated historical players and historical fixtures | CLI pacing; Go client retries 429 up to four times and has its own HTTP timeout. No shared reservation | Replace provider reads with stored export APIs/jobs. Preserve historical xP, player IDs, final match data and Golden Boot aggregation. Every retry must eventually belong to the shared budget. |
+| `services/scores/provider.mjs` | New collector: complete season discovery, live/overdue batches, upcoming fixtures and standings | Fenced DynamoDB lease, durable shared daily/minute budget, score reserve, bounded body/deadline and recorded cooldowns | Retain as the single upstream entry point. Supplementary detail collection is implemented with score priority preserved; validate real provider coverage in the approved trial. |
+| `worker/worker.js` `fetchJson` → `fetchWithColoCache` | Shared `getLive`; fixture validation; match detail; live/final fantasy points; notification events; analysis context | Per-isolate pacer, memo and colo cache; quota estimates are not account-wide admission | Score, schedule and detail reads have opt-in stored-service paths, including fantasy, notifications and analysis context. Legacy direct paths remain when the switch is unset. Verify cloud side effects before cutover and key removal. |
+| `scripts/feed-live-details.mjs` `apiGet` | Date discovery and Worker live ingestion; fixture lineups, events and player details for ingestion | Its own pacing/cooldown and optional-detail shedding; GitHub concurrency is separate from the Worker and new collector | With SCORE_READ_ORIGIN set, direct execution exits before network work and the workflow job is skipped. Activation remains gated on approved cutover and coverage verification. |
+| `internal/apifootball/client.go` through `cmd/api-football` and `scripts/lib/apiFootball.mjs` | `fetch-live-data.mjs` static season/standings/detail/scorer bake; `fetch-fantasy-players.mjs` squads, paginated historical players and historical fixtures | CLI pacing; Go client retries 429 up to four times and has its own HTTP timeout. No shared reservation | Live-data export now has an opt-in stored path, preserving source ages and complete Golden Boot coverage. Squads and historical xP remain unmigrated; their requests and retries must join the shared budget. |
 
 The direct endpoint/key search found those four production entry points. Tests
 and QA replay code contain synthetic endpoints and keys; crest URLs are media
@@ -26,14 +26,15 @@ boundary rather than adding different data-selection rules to each feature:
 
 - Public `/PL/live`, `/CL/live` and legacy `/live`.
 - `findKnownMatch`: match detail and banter fixture validation.
-- `analyseCompetition`: score/status and schedule selection. Its detail reads
-  and `generateAnalysis` remain direct-provider consumers.
+- `analyseCompetition`: score/status, schedule and detail context use stored reads.
+  External model generation remains a separate dependency.
 - `currentFantasyGameweek` and `currentFantasyMatches`: gameweek calculation,
   kickoff locks, waiver scheduling and callers that use these helpers.
 - `runScheduledLivePoints` and `runScheduledFantasyScoring`: fixture selection;
-  player/event detail required for scoring remains direct.
+  player/event detail also uses stored reads. Local scheduled-state replay covers
+  provisional retention, atomic settlement retry and head-to-head totals.
 - `runScheduledFantasyXpBlend`: schedule inputs.
-- `notifyCompetition`: fixture selection; event detail remains direct.
+- `notifyCompetition`: fixture selection and stored event detail.
 - `handlePredictionSet` and `runScheduledPredictionScoring`: prediction fixture
   validation and settlement.
 
@@ -45,14 +46,16 @@ when moving supplementary data and before a public cutover.
 ## Indirect callers and schedules
 
 - `.github/workflows/live-detail-feeder.yml` runs the feeder and may rearm a new
-  run. Both scheduled and manual entry points must be accounted for at cutover.
+  run in legacy mode. SCORE_READ_ORIGIN skips the job, and direct script
+  execution exits without network calls or requesting a follow-up run.
 - `.github/workflows/pages.yml` runs live-data and player-pool bakes under its
   conditions, and `scripts/refresh-score-fallback.mjs` reads the public Worker.
   The latter is an indirect provider consumer today; stored mode removes its
-  score read's upstream fan-out but does not migrate the full bake.
+  score read's upstream fan-out. The live-data bake has a stored mode; the
+  separate fantasy player-pool bake still calls the provider.
 - Browser/mobile score polls and the bounded reliability recorder use the public
   Worker. Stored mode removes their score-triggered provider calls. Browser
-  `/match/:id` requests still need the supplementary migration.
+  `/match/:id` requests also use stored detail when the switch is set.
 - Worker scheduled jobs can invoke several of the helpers above per tick. A
   single collector account budget must include their replacement jobs, not just
   the public score endpoint. Health probes and manual scripts must follow the
@@ -86,27 +89,21 @@ There is no fallback to provider calls, feeder overlays or legacy `lastLive`
 when stored mode is selected. Isolate loss can lose the memo: the durable score
 service remains the authoritative source. This is not multi-region failover.
 
-The Worker still requires its existing provider key because details and other
-consumers have not migrated. This switch is a staged migration boundary, not a
-claim that the whole Worker is provider-free. Do not enable it publicly before
+Legacy paths and credential guards remain for the approved cutover/rollback
+decision. Stored score and detail replay makes no provider calls, but that does
+not establish account-wide isolation: player-history scripts remain direct. Do not enable it publicly before
 approved deployment, cloud-read capacity/IAM testing and the remaining product
 checks. Rollback must explicitly account for which collector owns the quota.
 
 ## Next implementation order
 
-1. Persist and serve lineups/events/player details from collector jobs using the
-   supplementary budget. Define separate freshness and missing-coverage fields;
-   failed detail must not delay scores or turn unknown statistics into zero.
-2. Redirect Worker detail readers, fantasy scoring and notification/analysis
-   context to those stored records. Validate live points and terminal settlement
-   separately; stale detail must not settle a match as final.
-3. Provide stored exports for season/static data, squads and historical xP.
-   Migrate scheduled and manually invoked scripts; remove obsolete direct code
-   only after equivalent coverage is proven.
-4. Prepare the priced cloud trial with independent monitoring, watchdog and an
+1. Migrate squads and historical player/xP collection into the shared budget,
+   with stored export readers preserving player identity and existing estimates.
+2. Prepare the priced cloud trial with independent monitoring, watchdog and an
    approved alert receiver. Shadow reads must share the same provider budget.
-5. After approval and busy-window evidence, cut over, verify runtime call counts,
-   disable the old feeder/bakes as appropriate and remove unused provider keys.
+3. After approval and busy-window evidence, activate the Worker and GitHub
+   switches together, verify runtime call counts, and remove obsolete direct
+   paths and credentials. Validate actual D1 and notification side effects.
 
 ## Reproducible local checks
 
@@ -296,3 +293,28 @@ corrected the fixture to provider G/D/M/F codes and database GK/DEF/MID/FWD code
 keeping the independently calculated 50–22 expectation. Production and schema
 are unchanged. Cloud D1 behavior, multi-zone resilience and matchday freshness
 still need the approved trial; remaining provider consumers are next.
+
+## Stored static export and feeder retirement gate — 4 October 2026
+
+`fetch-live-data.mjs` uses `exportStoredScores` before its provider-key guard when
+SCORE_READ_ORIGIN is set. It exports stored live feeds and played/imminent match
+details with four concurrent reads. Finished fixtures are revisited for later
+corrections. Source timestamps and versions survive export; stale score feeds
+and regressions cannot replace existing files. Writes are atomic per file,
+not a transaction across the competition, aliases and details.
+
+Golden Boot totals use only current-season fixtures with complete, nondegraded
+event coverage matching the feed's status and score. Incomplete detail preserves
+the previous dated tally; a complete tally uses its oldest event observation.
+One competition failing does not prevent the other exporting. Individual failed
+detail reads preserve previous files and are reported in export output.
+
+The Pages workflow passes the repository variable only to live-data export.
+The feeder workflow skips its job when that variable is set; direct invocation
+also exits before provider or ingestion calls and disables rearming. No remote
+variable was changed. The fantasy player-pool bake remains provider-backed.
+
+Verification: 1,641 root tests pass, including six export/feeder cases for source
+ages, aliases, corrections, incomplete coverage, regression/outage retention,
+competition isolation, concurrency and a real feeder subprocess with network
+access forbidden. No provider calls, public deployment or spending.

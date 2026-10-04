@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+import { exportStoredScores } from "./lib/stored-export.mjs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 
 import { COMPETITIONS } from "../src/competitions.js";
@@ -31,6 +33,12 @@ const competitions = (
   .filter((comp) => /^[A-Z0-9]{2,6}$/.test(comp.code) && Number.isInteger(comp.leagueId));
 
 const rootDir = new URL("../data/", import.meta.url);
+
+if (process.env.SCORE_READ_ORIGIN) {
+  if (!competitions.length) throw Error("No valid competitions configured");
+  const results = await exportStoredScores({ competitions, origin: process.env.SCORE_READ_ORIGIN, rootDir: fileURLToPath(rootDir) });
+  process.exit(results.every(result => result.error) ? 1 : 0);
+}
 
 if (!token) {
   console.log("API_FOOTBALL_KEY is not set; no live data generated.");

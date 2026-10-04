@@ -19,6 +19,7 @@ permissions:
 
 jobs:
   feed:
+    if: ${{ vars.SCORE_READ_ORIGIN == '' }}
     runs-on: ubuntu-latest
     # Six-minute live loop plus restart pause and setup headroom.
     timeout-minutes: 12

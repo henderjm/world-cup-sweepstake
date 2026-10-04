@@ -1,3 +1,4 @@
+import { storedOrigin } from "../worker/stored-read.js";
 // Feed the Worker safety copy through a separate provider route. Discovery
 // reads the provider directly; asking the Worker would repeat its outage.
 // Each live pass reuses discovery for scores. Match detail is fetched once
@@ -158,6 +159,12 @@ async function refreshScores({ scheduled, pending, deadline, states }) {
 }
 
 async function main() {
+  if (process.env.SCORE_READ_ORIGIN) {
+    storedOrigin(process.env.SCORE_READ_ORIGIN);
+    console.log("feeder: stored mode selected; the shared collector owns upstream collection");
+    if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, "follow_up_needed=false\n");
+    return;
+  }
   if (!KEY || !TOKEN) {
     console.log("feeder: API_FOOTBALL_KEY or DETAIL_INGEST_TOKEN not configured; nothing to do");
     return;
