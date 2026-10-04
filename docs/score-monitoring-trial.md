@@ -89,7 +89,7 @@ supervisor and real receiver adapter; watchdog selection remains a design gate.
 
 ## Implemented recorder recovery
 
-`python3 scripts/resume-score-recorder.py PLAN.json LEDGER.jsonl` starts or resumes
+`python3 scripts/run-score-monitor.py record PLAN.json LEDGER.jsonl` starts or resumes
 one approved window. It requires Python 3 on a POSIX host and Node (or an explicit
 NODE_BINARY). The wrapper holds a nonblocking OS file lock, inherited by the Node
 child, so process exit releases ownership without deleting stale PID files.
@@ -106,5 +106,8 @@ An interrupted initial plan remains an error requiring review, not invented data
 
 Four new process/file recovery cases plus existing recorder/alert tests passed
 (34 total), including actual HTTP recording across termination and restart. This
-does not yet implement unattended next-window rollover, retention, watcher lock
-recovery or deployment. Those remain the continuous-supervisor work.
+also covers watcher crash recovery via
+`python3 scripts/run-score-monitor.py watch LEDGER.jsonl STATE.json`.
+Overlapping watchers are rejected and pending alerts retry after process-group
+termination without lock deletion. No unattended next-window rollover, retention,
+supervisor installation or deployment is implemented yet.

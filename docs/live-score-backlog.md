@@ -1791,3 +1791,13 @@ interrupted tails, changed/corrupt evidence, overlapping recorder exclusion and
 actual HTTP recording across termination/restart with four unique saved slots
 and exactly four requests. Evidence: `/tmp/kickoff-resume-final.log`. Automatic
 window rollover, watcher restart/retention and real external delivery remain.
+
+## October 4 — crash-safe watcher ownership
+
+Recorder and watcher now share `scripts/run-score-monitor.py` and an inherited
+POSIX file lock. The watcher no longer leaves a stale PID lock requiring manual
+removal after a crash. A legacy lock blocks migration until its process is checked.
+The real receiver test rejects an overlapping watcher, kills the process group
+and retries the original pending event without deleting locks or alert state.
+All 34 related tests pass. Continuous rollover, retention, an independent
+supervisor and a durable paging adapter remain open. No deployment or spending.

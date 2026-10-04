@@ -1,6 +1,5 @@
-import { fstatSync, statSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
-import { resolve } from "node:path";
+import { requireMonitorLock } from "./lib/scoreMonitorLock.mjs";
 import { readLedger } from "./lib/scoreAlerts.mjs";
 import { open, readFile } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -29,13 +28,7 @@ if (mode === "report") {
   // the replacement stored-data API, not the existing production endpoint.
   if (new URL(plan.origin).hostname === "goon-squad-data.gs-wc.workers.dev" && plan.intervalMs < 60000)
     throw Error("Current production Worker requires a >=60s probe interval to protect provider quota");
-  if (mode === "resume") {
-    const fd = Number(process.env.SCORE_RECORDER_LOCK_FD);
-    if (!Number.isInteger(fd) || fd < 3) throw Error("Resume requires scripts/resume-score-recorder.py");
-    const held = fstatSync(fd), expected = statSync(`${resolve(output)}.recorder.lock`);
-    if (!held.isFile() || held.dev !== expected.dev || held.ino !== expected.ino)
-      throw Error("Recorder lock does not match ledger");
-  }
+  if (mode === "resume") requireMonitorLock(`${output}.recorder.lock`);
   const file = await open(output, mode === "resume" ? "a+" : "wx", 0o600);
   const write = async row => { await file.writeFile(JSON.stringify(row) + "\n"); await file.sync(); };
   const records = [];

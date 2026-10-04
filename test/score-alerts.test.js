@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, writeFile, rm, unlink } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -162,8 +162,9 @@ async function directory(t) {
   return path;
 }
 function run(args, url) {
-  const child = spawn(process.execPath, ['scripts/watch-score-reliability.mjs', ...args],
-    { env: { ...process.env, SCORE_ALERT_URL: url, SCORE_ALERT_TOKEN: '' } });
+  const child = spawn('python3', ['scripts/run-score-monitor.py', 'watch', ...args],
+    { detached: true, env: { ...process.env, NODE_BINARY: process.execPath, SCORE_ALERT_URL: url, SCORE_ALERT_TOKEN: '' } });
+  child.kill = signal => { process.kill(-child.pid, signal); return true; };
   let stdout = '', stderr = '';
   child.stdout.on('data', data => { stdout += data; }); child.stderr.on('data', data => { stderr += data; });
   const done = new Promise((resolve, reject) => {
@@ -205,7 +206,7 @@ test('CLI delivers incident and recovery to a real receiver and restart does not
   assert.equal(received.length, 2);
   await writeFile(statePath + '.lock', '{"pid":999999}\n');
   const locked = await run([log, statePath], url).done;
-  assert.equal(locked.code, 1); assert.match(locked.stderr, /Watcher lock exists/);
+  assert.equal(locked.code, 1); assert.match(locked.stderr, /Legacy watcher lock exists/);
   assert.equal(received.length, 2);
 });
 
@@ -259,6 +260,10 @@ test('real recorder stall and loss reach the receiver; killed watcher resumes it
   t.after(() => { if (watcher.child.exitCode === null) watcher.child.kill('SIGKILL'); });
   await until(() => received.length === 1);
   assert.deepEqual(received[0].reasons, ['old-source-time']);
+  const overlapping = await run([log, statePath], url).done;
+  assert.equal(overlapping.code, 1);
+  assert.match(overlapping.stderr, /Another monitor process owns this output/);
+  assert.equal(received.length, 1);
   watcher.child.kill('SIGKILL'); await watcher.done;
   const saved = JSON.parse(await readFile(statePath, 'utf8'));
   assert.equal(saved.events[0].acknowledgedAt, null);
@@ -266,8 +271,8 @@ test('real recorder stall and loss reach the receiver; killed watcher resumes it
   await until(() => calls >= 3);
   await until(async () => (await readFile(log, 'utf8')).trimEnd().split('\n').length >= 4);
   recorder.kill('SIGKILL'); await recorderExit;
-  // An operator may remove only a lock whose process was confirmed terminal.
-  await unlink(statePath + '.lock'); reject = false;
+  // OS ownership ends with the killed process group; no lock deletion is needed.
+  reject = false;
   watcher = run([log, statePath], url);
   const result = await watcher.done;
   assert.equal(result.code, 0, result.stderr);

@@ -13,11 +13,11 @@ Run the recorder with a new ledger filename on durable storage. Once its initial
 plan line has been written, start the watcher in a second process:
 
 ```sh
-node scripts/measure-score-reliability.mjs record /path/plan.json /path/observations.jsonl
+python3 scripts/run-score-monitor.py record /path/plan.json /path/observations.jsonl
 ```
 
 ```sh
-node scripts/watch-score-reliability.mjs /path/observations.jsonl /path/alert-state.json
+python3 scripts/run-score-monitor.py watch /path/observations.jsonl /path/alert-state.json
 ```
 
 The watcher requires `SCORE_ALERT_URL` from the process environment. Configure an
@@ -26,13 +26,15 @@ query parameters in the URL are rejected. Optional `SCORE_ALERT_TOKEN` supplies 
 Bearer authorization header; use secret injection, never commit or print it.
 Do not point tests at a real messaging destination without authorization.
 
-Only one watcher may own an alert-state path. It creates a mode-0600 `.lock`
-file containing its PID and startup time. SIGINT/SIGTERM finish bounded delivery,
-save evidence and release the lock. After a crash, verify that exact process is
-terminal before removing only its lock. Preserve the state and restart with the
-same paths and destination. Locks are deliberately not stolen by a timeout or a
-PID-only guess. Use absolute paths on a persistent, single-host filesystem; this
-is not a distributed lock.
+Only one watcher may own an alert-state path. The Python wrapper acquires a
+nonblocking POSIX lock on `.watcher.lock`, inherited by its Node child.
+SIGINT/SIGTERM finish bounded delivery and save evidence. Ownership ends when
+both processes exit, including after a crash; restart with the same paths and
+destination. Never unlink the persistent lock inode. Supervisors must terminate
+the whole process group: killing only the wrapper leaves the child holding ownership.
+Use a persistent local filesystem with POSIX flock semantics, not network storage.
+This is not a distributed lock. A legacy `.lock` file blocks startup: verify its
+old watcher has stopped before removing that legacy file once. Preserve alert state.
 
 ## Detection and delivery contract
 
@@ -115,8 +117,8 @@ node --test test/score-alerts.test.js test/score-reliability.test.js
 
 The real-process test runs a synthetic score endpoint, recorder, watcher and
 receiver. It injects stale data, rejects the first alert, kills the watcher,
-confirms process exit before removing its lock, then restarts with its preserved
-state. It also kills the recorder: missing planned checks reach the receiver.
+rejects an overlapping watcher, then restarts with its preserved state without
+manual lock deletion. It also kills the recorder: missing planned checks reach the receiver.
 Receipt evidence checks the original retry ID, incident/recovery order and all
 three distinct acknowledged events. All receipt delays in that local test are
 under ten seconds; this is not a busy-matchday or external paging measurement.

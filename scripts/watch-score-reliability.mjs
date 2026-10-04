@@ -1,4 +1,5 @@
-import { open, readFile, unlink, stat } from 'node:fs/promises';
+import { requireMonitorLock } from './lib/scoreMonitorLock.mjs';
+import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { alertDestination, readLedger, advanceAlerts, saveAlertState, readAlertState, dispatchAlerts } from './lib/scoreAlerts.mjs';
@@ -8,16 +9,11 @@ if (!ledgerArg || !stateArg || extra.length) throw Error('Usage: SCORE_ALERT_URL
 const ledgerPath = resolve(ledgerArg), statePath = resolve(stateArg);
 if (ledgerPath === statePath) throw Error('Evidence and alert state require different paths');
 const destination = alertDestination(process.env.SCORE_ALERT_URL);
-const lockPath = `${statePath}.lock`;
-const lock = await open(lockPath, 'wx', 0o600).catch(error => {
-  if (error.code === 'EEXIST') throw Error('Watcher lock exists. Verify its recorded PID is stopped before manually removing the lock; never discard alert state.');
-  throw error;
-});
+requireMonitorLock(`${statePath}.watcher.lock`);
 let stopped = false;
 const stop = () => { stopped = true; };
 process.on('SIGTERM', stop); process.on('SIGINT', stop);
 try {
-  await lock.writeFile(JSON.stringify({ pid: process.pid, startedAt: Date.now() }) + '\n'); await lock.sync();
   let state = await readFile(statePath, 'utf8').then(readAlertState).catch(error => {
     if (error.code === 'ENOENT') return null;
     throw error;
@@ -42,5 +38,4 @@ try {
   }
 } finally {
   process.off('SIGTERM', stop); process.off('SIGINT', stop);
-  await lock.close(); await unlink(lockPath);
 }
