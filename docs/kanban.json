@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-04",
-  "revision": "63aa3d7",
+  "revision": "4f9d4dd",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -18,14 +18,14 @@
       "priority": "P0",
       "title": "Make busy matchdays reliable",
       "summary": "Architecture work underway; production reliability remains unmeasured.",
-      "acceptance": "Measure 99.95% usable scoreboards and 99.9% active observation freshness. Measure provider-visible change to screen separately: p95 \u226430s, p99 \u226460s. Warn after 45s. Missing checks and provider failures count against the user-facing result.",
-      "next": "Complete provider-consumer migration and prepare the priced cloud trial with independent monitoring.",
-      "evidence": "Local collector/read foundation bb977b8 and durable alert watcher d50aab4. This programme remains in progress; hourly automation is paused."
+      "acceptance": "Measure 99.95% usable scoreboards and 99.9% active observation freshness. Measure provider-visible change to screen separately: p95 ≤30s, p99 ≤60s. Warn after 45s. Missing checks and provider failures count against the user-facing result.",
+      "next": "Finish trial costs, independent monitoring and remaining preflight, then seek approval for the concrete trial.",
+      "evidence": "Local stored-mode migration, release artifacts, unapplied infrastructure and budget initialization are prepared. Latest service suite: 80 passed. Production reliability and actual AWS behavior remain unmeasured."
     },
     {
       "id": "monitor",
       "status": "Up next",
-      "priority": "P0 \u00b7 first",
+      "priority": "P0 · first",
       "title": "External monitoring and approved paging",
       "summary": "Local watcher is verified; continuous hosting and real paging remain open.",
       "acceptance": "Record both PL and CL, missing observations and worst-fixture freshness independently. Inject an incident and verify delivery to the configured alert receiver plus recovery. Preserve dated evidence.",
@@ -47,10 +47,10 @@
       "status": "In progress",
       "priority": "P0",
       "title": "Package and price the AWS trial",
-      "summary": "Prepare a reviewable active and standby deployment.",
+      "summary": "Artifacts and infrastructure are prepared locally; costs and operational gates remain incomplete.",
       "acceptance": "Produce infrastructure, monthly cost assumptions, read-only IAM, throttling, egress constraints and rollback. Exercise multi-zone takeover and cold/warm traffic after approval.",
-      "next": "Build immutable container and Lambda archive, infrastructure/IAM plan, and complete network/monitoring costs before approval.",
-      "evidence": "63aa3d7 preserves seven official Ireland price records and reproducible scenario subtotals. Trial/cutover/rollback draft saved. Compute alone is $18.02/month; full budget and cloud validation remain incomplete. No resources created. Standalone package from committed sources passed 75 local service checks, including actual collector/reader processes; existing destination rejected."
+      "next": "Complete network/storage/monitoring costs, artifact identity and runtime preflight, and the approved-monitor proposal before requesting trial approval.",
+      "evidence": "63aa3d7: official Ireland rate inputs. 7454850: pinned Linux image and checksummed reader ZIP. 920fc3f: unapplied template with collectors off; lint passed. Full budget, actual IAM and cloud behavior remain unverified."
     },
     {
       "id": "latency",
@@ -93,13 +93,53 @@
       "evidence": "Local engineering is not blocked by this gate."
     },
     {
+      "id": "artifacts",
+      "status": "Validated locally",
+      "priority": "P0",
+      "title": "Pinned collector and reader artifacts",
+      "summary": "Release files isolated from unrelated worktree edits.",
+      "acceptance": "Build from an explicit commit, preserve source hashes, pin the image base, run non-root and load the reader from its extracted archive.",
+      "next": "Rebuild from the approved final revision; verify ECR/S3 identities and retain uploaded digests.",
+      "evidence": "7454850: Linux image passed 75 service tests with read-only filesystem and no capabilities. Extracted reader entrypoint loaded. These artifacts predate later initialization/lease changes."
+    },
+    {
+      "id": "infrastructure",
+      "status": "Validated locally",
+      "priority": "P0",
+      "title": "Trial infrastructure and scoped roles",
+      "summary": "A reviewable template exists; no cloud resources created.",
+      "acceptance": "Declare retained storage, narrow reader/collector roles, two isolated placements, throttled reads and collectors defaulting off. Verify actual IAM after approval.",
+      "next": "Run AWS denial tests and placement/capacity checks in the approved trial.",
+      "evidence": "920fc3f: CloudFormation lint 1.57.1 and three policy/configuration regression checks passed. Local checks do not prove IAM enforcement."
+    },
+    {
+      "id": "initialization",
+      "status": "Validated locally",
+      "priority": "P0",
+      "title": "Budget-preserving initialization",
+      "summary": "Explicit usage evidence prevents a fresh trial from resetting consumed allowance.",
+      "acceptance": "Preview without network calls; verify exact table, current-day evidence, uncertain requests and stopped-consumer attestation. Refuse existing budgets and competing initialization.",
+      "next": "Use only after runtime shutdown proof and approval; keep the resulting evidence and let the lease expire naturally.",
+      "evidence": "d04d56f: actual CLI preview, wrong-table rejection, apply and reset refusal passed against DynamoDB Local. Four focused cases; full service suite now 80."
+    },
+    {
+      "id": "network",
+      "status": "Validated locally",
+      "priority": "P0",
+      "title": "Read-only network preflight",
+      "summary": "Account and route checks are ready for an approved AWS target.",
+      "acceptance": "Check exact account, owned subnets, distinct AZ IDs, IPv4 capacity, effective route tables and attached internet gateways. Never report full deployment readiness.",
+      "next": "Run against the approved VPC; verify ACLs, DNS, specific routes and actual provider HTTPS connectivity separately.",
+      "evidence": "e8e86fd: four focused network cases plus three infrastructure checks passed. No live account/VPC preflight has run."
+    },
+    {
       "id": "stored-export",
       "status": "Validated locally",
       "priority": "P0",
       "title": "Stored exports and feeder retirement",
       "summary": "Static scores and detail can share the collector without provider calls.",
       "acceptance": "Preserve source ages and last-good files, accept finished-match corrections, retain dated scorer totals on incomplete events, and stop the old feeder in stored mode.",
-      "next": "Enable only during approved cutover, after player-history migration and runtime coverage checks.",
+      "next": "Enable only during approved cutover, after runtime coverage checks and proof old jobs stopped.",
       "evidence": "fc8d905: six focused export/feeder cases and 1,641 root tests passed. No repository variable enabled and no public deployment."
     },
     {
@@ -109,8 +149,8 @@
       "title": "Partitioned storage and read service",
       "summary": "Viewers read stored scores without provider access.",
       "acceptance": "Atomic, fenced publication; bounded coherent reads; corrupt data unavailable; scores and quota survive restart. Test mobile and desktop loading, empty, stale and recovery states.",
-      "next": "Package for cloud trial and validate actual IAM, latency and capacity.",
-      "evidence": "bb977b8 \u00b7 42 service checks, 1,606 app tests and headless journeys passed. Synthetic 1,000-fixture warm unchanged read: 1,431-byte manifest. Not a cloud latency or browser payload result."
+      "next": "Validate deployed IAM, cold/warm latency and capacity during the approved trial.",
+      "evidence": "bb977b8 · 42 service checks, 1,606 app tests and headless journeys passed. Synthetic 1,000-fixture warm unchanged read: 1,431-byte manifest. Not a cloud latency or browser payload result."
     },
     {
       "id": "worker-reads",
@@ -119,7 +159,7 @@
       "title": "Worker score and match-detail reads",
       "summary": "Opt-in stored reads for scoreboards, match drawers and internal detail consumers.",
       "acceptance": "No provider fallback in stored mode; preserve source age and versions, retain labelled last-good data, allow downward corrections and keep existing features intact.",
-      "next": "Finish remaining provider consumers and validate actual cloud D1, IAM, capacity and matchday freshness in the approved trial.",
+      "next": "Verify stored-mode switches and actual D1, notification delivery, IAM and matchday freshness during the approved trial.",
       "evidence": "472e286 plus 1d3b15c: headless drawer checks and scheduled-state replay passed. Provisional points survive delayed final detail; settlement retry is atomic and idempotent locally. No provider or legacy detail KV calls in replay. Not enabled or deployed."
     },
     {
@@ -130,7 +170,7 @@
       "summary": "Failed or missing checks reach a receiver even after watcher restart.",
       "acceptance": "Persist before send, require matching acknowledgment, deduplicate retries, preserve incident/recovery order and alert when the recorder stops.",
       "next": "Configure an approved external receiver and verify downstream human delivery, plus a watchdog outside the monitor failure domain.",
-      "evidence": "d50aab4 \u00b7 1,620 app tests passed; 30 focused checks passed after final checksum change. Real local processes verify stale data, receiver refusal, watcher restart and recorder loss. All three distinct events acknowledged locally within ten seconds of detection."
+      "evidence": "d50aab4 · 1,620 app tests passed; 30 focused checks passed after final checksum change. Real local processes verify stale data, receiver refusal, watcher restart and recorder loss. All three distinct events acknowledged locally within ten seconds of detection."
     },
     {
       "id": "collector",
@@ -139,8 +179,8 @@
       "title": "Prioritized collector and shared API budget",
       "summary": "Bound provider work and preserve known scores through failures.",
       "acceptance": "Prioritize live fixtures, validate discovery completeness, count every attempt, persist cooldowns, reject stale owners and keep stale observation ages honest.",
-      "next": "Migrate remaining consumers and validate the shared production path.",
-      "evidence": "1f57fe8, 8468ca6, a9e2647 \u00b7 local database, synthetic provider and restart tests. No production cutover."
+      "next": "Complete operational gates and validate the shared production path after approval.",
+      "evidence": "4f9d4dd: 80 local service tests passed. Synthetic 151-claim workload used 151 strong ownership reads and two lease writes; takeover and stale-writer rejection passed. Production unchanged."
     },
     {
       "id": "recorder",
@@ -150,7 +190,7 @@
       "summary": "Version-aware recovery with a durable measurement baseline.",
       "acceptance": "Reject older snapshots without discarding valid mixed-age updates. Record missing checks rather than silently excluding them from reliability reports.",
       "next": "Deploy independent monitoring with tested alert delivery.",
-      "evidence": "4d9b364, 64f7336 \u00b7 locally verified; not an installed continuous monitor."
+      "evidence": "4d9b364, 64f7336 · locally verified; not an installed continuous monitor."
     },
     {
       "id": "tables",
