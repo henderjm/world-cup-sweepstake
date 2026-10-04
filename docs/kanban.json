@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-04",
-  "revision": "c2fb2bc",
+  "revision": "8793cf6",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -39,8 +39,8 @@
       "title": "Migrate every provider consumer",
       "summary": "Prevent details, stats and background jobs competing with scores.",
       "acceptance": "Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.",
-      "next": "Wire one-request collector detail jobs through the supplementary budget, validate endpoint coverage, then connect stored reads and Worker settlement consumers.",
-      "evidence": "c2fb2bc adds atomic independently observed detail storage; all 49 service tests passed, including seven new detail checks. f379742 adds the opt-in Worker score boundary. Detail scheduling, reads and settlement are not connected yet; production unchanged."
+      "next": "Serve stored match detail with per-section degraded states; migrate Worker detail, settlement and notifications, then replay mobile and desktop journeys headlessly.",
+      "evidence": "8793cf6 connects single-request detail jobs to the supplementary budget. 54 service checks and six final collector checks passed, including score preemption, quota reserve, partial responses and takeover. Worker detail consumers remain on the old path; production unchanged."
     },
     {
       "id": "cloud",
