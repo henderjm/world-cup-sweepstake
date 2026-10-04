@@ -1690,3 +1690,21 @@ limitations (AZ/VPC/routing preflight, KMS assumption, retained-resource costs,
 IAM denial tests, initialization/operator tooling and monitoring) are recorded
 in `infra/scores/README.md`. Next: runnable budget initialization/preflight and
 complete cost/monitoring proposal before approval.
+
+### 4 October — budget-preserving initialization command
+
+Added the operator CLI and documented cutover evidence schema. Preview validates
+locally without AWS/provider calls. Explicit apply checks exact table ARN/status,
+claims a unique lease and initializes only a missing budget. Requires current-day
+usage at most five minutes old, other-consumer shutdown attestation/evidence,
+and explicit uncertain usage; rejects the last 30 seconds before UTC rollover.
+Revalidates after claiming and retains the existing one-minute drain. No reset,
+resource creation or collector enablement is exposed. Operator assertions do not
+prove external consumers stopped; runtime preflight is still required.
+
+All 79 service tests passed against disposable DynamoDB Local on Node 24,
+including four new checks for invalid/stale evidence, lease contention,
+concurrent initialization, reset refusal, and the actual CLI preview/identity/
+apply flow. Evidence: `/tmp/kickoff-initialization-suite.log`. No cloud writes or
+provider calls. Next: remote resource/runtime preflight, complete costs and an
+independent monitor/receiver proposal before deployment approval.

@@ -32,7 +32,7 @@ AWS simulation and assumed-role denial tests; DynamoDB Local does not enforce it
 `EnableCollection` defaults to false and both services start with desired count
 zero. A missing budget also fails closed in the application. Initialization is
 an explicit operator step requiring verified current provider usage and old
-consumers stopped; a working operator command/runbook is still pending. Only
+consumers stopped; the initialization command is documented below. Only
 enable collection after approval and initialization. The two services use
 separate subnets, each with one task when enabled, and rolling replacements
 cannot temporarily increase that count. Natural lease expiry governs takeover.
@@ -51,3 +51,42 @@ allowing stored manifests/parts. Prove collector transactional writes with the
 lease ConditionCheck and denial on unrelated keys/tables. Then exercise task
 loss, delayed writers, provider outage/429, cold/warm reads and real browser
 journeys. No local policy assertion substitutes for those cloud tests.
+
+## Initialize once after approved cutover
+
+Keep both collector services at zero tasks. Stop all legacy provider consumers,
+including in-flight jobs, then observe the account's actual used requests. Save
+an evidence JSON file with these fields (numbers are operator-supplied, not
+recommended account limits):
+
+- `tableArn`: exact Ireland table ARN from the approved stack.
+- `observedAt`: usage observation time as epoch milliseconds.
+- `consumersStoppedAt`: verified shutdown time, no later than observation.
+- `consumersStopped`: explicit `true` attestation.
+- `evidence`: reference to the dated shutdown/usage evidence.
+- `used`: observed daily used requests; `uncertainRequests`: conservative count
+  for any usage not yet reflected in the observation. Neither defaults to zero.
+- `policy`: explicit `dailyLimit`, `minuteLimit`, `scoreReserve` from the approved
+  provider allowance and capacity plan.
+
+Preview from the release directory:
+`node services/scores/run-initialize-budget.mjs EVIDENCE.json`.
+This validates locally and makes no AWS/provider call. After explicit approval,
+append `--apply`. The operator role needs DescribeTable and the collector's
+scoped lease/budget GetItem, PutItem and ConditionCheckItem permissions. No
+provider key is needed. Capture stdout in the cutover evidence record.
+
+Apply checks the exact table ARN/status before claiming a unique initialization
+lease. It rejects an existing budget, an occupied lease, stale/future usage,
+usage from a different UTC day and the final 30 seconds of a UTC day. Evidence
+expires after five minutes and is revalidated after lease acquisition. The
+initial count includes uncertain requests and the first minute is drained.
+The lease expires naturally; do not delete it. A timeout after submission can
+mean the write committed: inspect the budget before retrying. Never delete or
+reset a budget to make initialization succeed.
+
+The tool checks the operator's evidence fields, not whether external consumers
+actually stopped. That still requires runtime observation. It does not enable
+the services, alter existing usage, contact the provider or create infrastructure.
+For disposable tests only, SCORE_DYNAMODB_ENDPOINT must be loopback HTTP and
+synthetic credentials are used; a DynamoDB Local ARN cannot target AWS.
