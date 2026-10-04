@@ -69,3 +69,9 @@ preview) and 8743 (`node scripts/qa/score-service-server.mjs`). Run
 empty, delayed and recovered scores, including new versions with mixed fixture
 ages. The replay has no provider credentials or production storage; its scope
 and remaining infrastructure work are documented in `services/scores/README.md`.
+
+For the actual collector/database path, run DynamoDB Local on :18043 (instructions
+in that service README) and `node scripts/qa/collector-server.mjs` on :8743, then
+run `collector.js` through the same headless runner. It uses the stored read API,
+real collector, budget, mapper and database with a synthetic local HTTP provider.
+Stop the QA server before its database so it can delete its owned test tables.

@@ -1,9 +1,9 @@
 # Stored score service
 
 Local implementation of the snapshot contract, DynamoDB storage adapter and
-read-only API for the planned collector, plus shared request admission and a
-bounded provider client. No production route uses this service yet. The polling
-loop and migration of existing provider consumers are unfinished.
+read-only API, plus shared request admission, a bounded provider client and a
+runnable collector. No production route uses this service yet. Migration of
+existing consumers, cloud deployment and operational monitoring remain unfinished.
 
 `snapshots.mjs` accepts complete normalized fixture snapshots and returns the
 existing `/PL/live` or `/CL/live` response shape, with additional version and
@@ -128,9 +128,8 @@ allows at most five seconds including streamed body reads, and caps bodies at
 8 MiB. It reuses the existing API envelope/error validation. Successful
 `observedAt` is captured after body validation, before database bookkeeping;
 it remains a collection timestamp, not proof of upstream event freshness.
-Discovery must additionally validate competition, season, pagination and expected
-fixture coverage before mapping/publishing. The collector implementing those
-checks is still pending.
+The collector additionally validates competition, season, pagination and expected
+fixture coverage before mapping/publishing.
 
 Provider quota headers can lower the configured limits and increase counted
 usage, never refund an attempt or automatically authorize a higher plan.
@@ -142,6 +141,54 @@ deadline would cross that boundary and retains pacing/cooldowns across it. This
 UTC policy is not suitable for a RapidAPI subscription's different reset rules.
 [Provider rate limits](https://www.api-football.com/news/post/how-ratelimit-works),
 [subscription reset rules](https://www.api-football.com/terms).
+
+## Runnable collector
+
+`collector.mjs` rebuilds a priority queue from stored observations after each
+action. It claims/renews a unique process lease and performs at most one budgeted
+HTTP request per step. Another owner stays passive. Jobs run in this order:
+
+1. Live or overdue non-terminal fixtures, every 15 seconds in batches of up to
+   20 IDs. A failed batch keeps its own scores and observation times while other
+   batches can progress. Halftime, extra time and penalties remain live jobs.
+2. Complete season discovery every 15 minutes, including after midnight. Pages
+   accumulate without publication until complete; pages must agree, contain
+   unique IDs and match the configured competition/season. Discovery is bounded
+   to 20 pages, 2,000 fixtures and two minutes. Losing known fixtures rejects the
+   new snapshot. A restart discards unfinished pages and starts discovery again.
+3. Fixtures within two hours of kickoff, every 15 minutes with the next refresh
+   clipped to kickoff. Terminal results leave live polling but remain subject
+   to discovery, which can apply later provider corrections.
+4. Standings every 15 minutes, using supplementary allowance. Invalid or
+   truncated tables retain the saved table; fetching a table never advances
+   score-observation timestamps.
+
+Failed jobs wait 30 seconds before re-entering the queue; shared provider
+cooldowns may delay them further. Failures log the job and failing phase without
+dumping provider bodies or credentials. The loop wakes at least every five
+seconds to maintain its lease and re-evaluate due work. These are configured
+cadences, not a measured source-to-screen latency guarantee. A cold, validated
+empty response has no independent expected-fixture inventory; seed/compare
+known schedules during shadow rollout before trusting that absence in production.
+
+Run only against an already provisioned table and initialized budget:
+
+```sh
+SCORE_TABLE_NAME=your-approved-table SCORE_SEASONS=PL:2026,CL:2026 \
+  AWS_REGION=eu-west-1 npm run collect --prefix services/scores
+```
+
+Supply `API_FOOTBALL_KEY` through the process's secret environment, not command
+arguments or committed files. The process creates no infrastructure or budget.
+SIGINT/SIGTERM stops scheduling and lets the bounded in-flight operation finish.
+The lease then expires naturally; it is never deleted to accelerate takeover.
+
+For local tests, set **both** `SCORE_DYNAMODB_ENDPOINT` and
+`SCORE_PROVIDER_ENDPOINT` to loopback HTTP URLs. The runner rejects other local
+overrides and uses synthetic credentials even if a real key is in the shell.
+No new account, plan or cloud resource is needed for the test path. The runtime
+entrypoint test starts this process against local services, observes publication
+and checks a clean SIGTERM exit.
 
 ## Read contract and browser compatibility
 
@@ -229,6 +276,26 @@ requests and cooldown after an actual database process restart. It uses an
 injected clock to exercise expiry without wall-clock sleeps. This is not AWS availability-zone,
 network-partition, IAM, throughput or sustained matchday reliability evidence.
 
-Next: collector discovery/polling, priority scheduling, migration of every existing
-provider consumer, and independent monitoring. Price and seek approval for cloud
+Nine collector tests additionally cover partial batches, paginated discovery and
+its restart, identity/status validation, known-fixture retention, quota recovery,
+PL/CL separation, midnight scheduling, match transitions, table retention and the
+actual CLI process. All 35 service checks use local storage and synthetic HTTP.
+
+For headless validation through the actual collector and database, keep DynamoDB
+Local and the site preview on :8742 running, then use:
+
+```sh
+node scripts/qa/collector-server.mjs
+node scripts/qa/run-headless.mjs scripts/qa/collector.js
+```
+
+The QA server binds to localhost:8743, owns disposable test tables and a local
+provider server, and deletes its tables on SIGINT/SIGTERM. Stop it before stopping
+DynamoDB. The browser checks retry, validated empty discovery, loading, stale
+score retention and recovery, 390/1440px layouts and absence of provider calls
+from viewers. No visible browser or production provider request is used.
+
+Next: migration of every existing provider consumer and independent monitoring.
+Review whole-season payload size and read cost against the planned hot-record
+layout before claiming scalable infrastructure. Price and seek approval for cloud
 infrastructure before validating AWS failover and a controlled production cutover.

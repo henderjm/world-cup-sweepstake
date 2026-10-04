@@ -1215,3 +1215,62 @@ collector takeover. Then migrate every existing provider consumer, add independe
 monitoring/alert delivery, and prepare the priced cloud rollout for approval.
 No real provider request, subscription change, AWS provisioning or public
 deployment was performed. Production reliability remains unmeasured.
+
+## October 4 — runnable collector and headless database integration
+
+Previous continuation classified as progress: `8468ca6` committed shared
+admission and the bounded HTTP client. The collector now runs through a real
+process entrypoint and builds its queue from persisted score observations.
+It performs one budgeted request per step and keeps a unique collector lease.
+
+- Live/overdue fixtures take priority, in batches of at most 20 IDs on a
+  15-second cadence. Halftime, extra time and penalties continue polling.
+- Discovery runs every 15 minutes without a nighttime cutoff. Competition,
+  season, result counts, page sequence, fixture IDs, teams and statuses must
+  validate before publication. Incomplete discovery is not a successful empty
+  feed. Pages remain unpublished until complete and restart from page one
+  after process replacement. Known fixtures cannot disappear from a snapshot.
+- Each successful batch replaces only its own observations. A failed batch
+  retains its prior data while another batch can publish newer scores. Final
+  states stop live polling and can receive corrections through discovery.
+- Upcoming-fixture refresh is clipped to kickoff. Standings use supplementary
+  allowance; malformed or truncated tables preserve the saved table and never
+  make old score observations look fresh.
+- CLI configuration requires explicit supported seasons and an existing table
+  and budget. It provisions nothing. Local test overrides require both endpoints
+  on loopback and always use synthetic credentials. SIGTERM stops the loop
+  cleanly; takeover relies on lease expiry rather than deleting fencing history.
+
+Evidence:
+- All 35 service tests pass, including nine collector checks through real local
+  HTTP and DynamoDB. They cover batch isolation, pagination/restart, invalid
+  identities/statuses, empty discovery versus lost fixtures, cooldown/takeover,
+  PL/CL separation, midnight scheduling, match transitions, genuine downward
+  corrections, incomplete tables, and starting/stopping the actual CLI process.
+- All 1,606 working-tree app regression tests pass. The isolated frontend build
+  uses committed frontend sources and excludes unrelated mobile changes.
+- Headless Chromium at 390/1440px passes the database-backed collector journey:
+  uncollected error/retry, validated empty discovery, loading, 1–0, a provider
+  outage with retained 1–0 and a stale warning, then recovery to 2–0 with the
+  warning cleared. No browser errors or overflow. Exactly four synthetic
+  provider calls and three publications occurred; viewer reads added neither.
+  The first browser attempt found a mismatched installed Playwright package;
+  using the matching already-installed headless runtime passed without downloads
+  or a visible browser. Reproduction: `scripts/qa/collector-server.mjs`,
+  `scripts/qa/collector.js`, and `services/scores/README.md`.
+
+These are local correctness and browser-state checks, not production SLOs or a
+real match-window latency measurement. Discovery cannot independently prove a
+cold empty provider response is truthful; shadow rollout must seed/compare known
+fixture inventories. Terminal-result corrections currently wait for discovery.
+
+Next P0: review storage/read sizing and complete the independent runtime monitor
+and read-service entrypoint, then inventory and migrate every existing provider
+consumer. Whole-season records remain an interim design: the historical checked-in
+PL feed has 380 fixtures and is about 185 KB before new observation metadata.
+That is sizing evidence only (its July timestamp is not current-score evidence).
+Validate larger CL seasons and implement the planned hot-record layout before
+using small-record assumptions in an AWS cost or throughput claim. Prepare the
+priced active/standby deployment and shadow/cutover plan for approval, with real
+busy-window measurements and delivered alerts as gates. No production provider
+request, paid infrastructure, plan change or public deployment occurred.
