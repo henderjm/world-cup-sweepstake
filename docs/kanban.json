@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-04",
-  "revision": "fa25837",
+  "revision": "9694c15",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -81,6 +81,16 @@
       "acceptance": "Verify Sabah identity before changing labels or follow keys. Align hero/date and metadata, retain calendar state during polling, measure rendering budgets and keep existing features reachable.",
       "next": "Take the highest-impact bounded product fix after the reliability critical path.",
       "evidence": "Initial mobile and desktop benchmark recorded September 10; targeted refresh September 19."
+    },
+    {
+      "id": "quiet-day",
+      "status": "Validated locally",
+      "priority": "P1",
+      "title": "Reach the next matchday in one click",
+      "summary": "Quiet-day and empty-Live views lead directly to upcoming followed fixtures.",
+      "acceptance": "Keep competition and Following; reveal scheduled fixtures; Back restores filters. Preserve stale labels, 44px touch target and mobile layout. Malformed league identity cannot crash freshness labels.",
+      "next": "Include in the next approved release; continue CL table and fixture discovery review.",
+      "evidence": "9694c15: 31 focused tests and headless 390/1440px CL/combined journeys passed; existing date/outage/recovery replay passed. Public LiveScore/FotMob comparison recorded October 4. No deployment."
     },
     {
       "id": "cutover",

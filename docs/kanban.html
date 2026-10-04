@@ -10,7 +10,7 @@
 @media(max-width:650px){#kickoff-kanban .lanes{grid-template-columns:1fr}}
 </style>
 <div id="kickoff-kanban">
-<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code fa25837</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
+<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code 9694c15</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
 <div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">4</span></h3><article data-card="reliability">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Make busy matchdays reliable</summary>
@@ -43,7 +43,11 @@
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Approve spending and public cutover</summary>
 <dl><dt>Acceptance</dt><dd>User approves the concrete priced trial before resources or upgrades, and approves public deployment separately after busy-window reliability evidence and rollback are ready.</dd><dt>Next action</dt><dd>Complete the plan and validation evidence first. No user action needed now.</dd><dt>Evidence</dt><dd>Local engineering is not blocked by this gate.</dd></dl></details>
-<p>Future gate: not asking for approval yet.</p></article></section><section aria-label="Validated locally"><h3>Validated locally <span class="text-muted">10</span></h3><article data-card="artifacts">
+<p>Future gate: not asking for approval yet.</p></article></section><section aria-label="Validated locally"><h3>Validated locally <span class="text-muted">11</span></h3><article data-card="quiet-day">
+<span class="viz-badge">P1</span>
+<details><summary class="cursor-interaction">Reach the next matchday in one click</summary>
+<dl><dt>Acceptance</dt><dd>Keep competition and Following; reveal scheduled fixtures; Back restores filters. Preserve stale labels, 44px touch target and mobile layout. Malformed league identity cannot crash freshness labels.</dd><dt>Next action</dt><dd>Include in the next approved release; continue CL table and fixture discovery review.</dd><dt>Evidence</dt><dd>9694c15: 31 focused tests and headless 390/1440px CL/combined journeys passed; existing date/outage/recovery replay passed. Public LiveScore/FotMob comparison recorded October 4. No deployment.</dd></dl></details>
+<p>Quiet-day and empty-Live views lead directly to upcoming followed fixtures.</p></article><article data-card="artifacts">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Pinned collector and reader artifacts</summary>
 <dl><dt>Acceptance</dt><dd>Build from an explicit commit, preserve source hashes, pin the image base, run non-root and load the reader from its extracted archive.</dd><dt>Next action</dt><dd>Rebuild from the approved final revision; verify ECR/S3 identities and retain uploaded digests.</dd><dt>Evidence</dt><dd>7454850: Linux image passed 75 service tests with read-only filesystem and no capabilities. Extracted reader entrypoint loaded. These artifacts predate later initialization/lease changes.</dd></dl></details>
