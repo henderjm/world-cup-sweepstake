@@ -1455,3 +1455,24 @@ coverage, preserve last-good partial responses, then serve stored detail and
 migrate Worker settlement/notification consumers. This storage foundation is not
 connected to production or to final fantasy settlement. No UI changed this turn;
 headless end-to-end journeys remain required when the read path is connected.
+
+### 2026-10-04 — detail jobs join the shared collector budget
+
+Connected fixture, lineups, events and player collection as single-request
+supplementary jobs. Due scores retain priority between detail requests. Read one
+manifest for takeover hydration, retain original ages after failed/partial
+refreshes, retry initial partial coverage after 30 seconds, and refresh every
+section after the final result changes. Skip distant future/cancelled/postponed
+fixtures; keep historical completed detail eligible. Validate fixture and team
+identity before publishing; retain unknown raw statistics.
+
+Evidence: 54 service tests passed, followed by six focused collector tests with
+the final pre-match/partial scheduling cases. Real local HTTP and DynamoDB checks
+prove supplementary quota denial still permits scores, score jobs preempt detail,
+partial refresh retains complete lineups, and takeover/final-whistle observations
+remain distinct. No frontend changes or provider production traffic.
+
+Next: stored match-detail read API, degraded response semantics and Worker
+integration; validate null statistics and final settlement before headless
+mobile/desktop replay. No claim of deployed reliability or account-wide quota
+control: legacy consumers still use their existing provider path.

@@ -6,6 +6,8 @@ import { mapApiFootballMatches, mapApiFootballStandingsPayload, TERMINAL_MATCH_S
 import { assertApiFootballPayload } from "../../src/apiFootballPayload.js";
 import { hasStandings } from "../../src/standingsRecovery.js";
 import { nextSnapshot } from "./snapshots.mjs";
+import { detailJobs, validateDetailPayload } from "./detail-collector.mjs";
+import { detailSubject } from "./details.mjs";
 import { normalizeSeasons } from "./config.mjs";
 
 const DISCOVERY_MS = 15 * 60000;
@@ -66,21 +68,27 @@ export class ScoreCollector {
     this.seasons = normalizeSeasons(seasons);
     this.retryAt = new Map();
     this.discovery = new Map();
+    this.details = new Map();
+    this.epoch = null;
   }
 
   async step() {
     const lease = await this.store.claim(this.owner);
     if (!lease) return { state: "standby", retryAt: this.now() + 1000 };
+    if (this.epoch !== lease.epoch) {
+      this.details.clear(); this.discovery.clear(); this.retryAt.clear(); this.epoch = lease.epoch;
+    }
     const snapshots = Object.fromEntries(await Promise.all(Object.entries(this.seasons)
       .map(async ([code, season]) => [code, await this.store.read(code, season)])));
     const now = this.now();
-    const jobs = scoreJobs(snapshots, this.seasons, now);
+    const jobs = [...scoreJobs(snapshots, this.seasons, now), ...detailJobs(snapshots, this.seasons, this.details, now)];
     const keys = new Set(jobs.map(job => job.key));
     for (const key of this.retryAt.keys()) if (!keys.has(key)) this.retryAt.delete(key);
     for (const job of jobs) job.due = Math.max(job.due, this.retryAt.get(job.key) ?? 0);
     const job = jobs.filter(candidate => candidate.due <= now).sort((a, b) => a.priority - b.priority || a.due - b.due
       || a.key.localeCompare(b.key))[0];
     if (!job) return { state: "idle", retryAt: Math.min(...jobs.map(candidate => candidate.due)) };
+    if (job.kind === "detail") return this.collectDetail(lease, job);
     const previous = snapshots[job.competition];
     let discovery = this.discovery.get(job.competition);
     if (discovery && now - discovery.startedAt > 120000) { this.discovery.delete(job.competition); discovery = null; }
@@ -148,6 +156,43 @@ export class ScoreCollector {
       const retryAt = this.now() + RETRY_MS;
       this.retryAt.set(job.key, retryAt);
       return { state: "failed", competition: job.competition, kind: job.kind, phase, error: error.name, retryAt };
+    }
+  }
+
+  async collectDetail(lease, job) {
+    let phase = "read";
+    try {
+      if (job.section === "hydrate") {
+        this.details.set(job.detailKey, await this.store.readDetailManifest(job.competition, job.season, job.match.id));
+        return { state: "hydrated", kind: "detail", competition: job.competition, id: job.match.id };
+      }
+      const stored = await this.store.readDetail(job.competition, job.season, job.match.id);
+      const path = job.section === "fixture" ? `/fixtures?id=${job.match.id}` : `/fixtures/${job.section}?fixture=${job.match.id}`;
+      phase = "request";
+      const result = await this.provider.request(lease, path, { priority: "supplementary" });
+      if (!result.allowed) {
+        this.retryAt.set(job.key, result.retryAt);
+        return { state: "deferred", kind: "detail", section: job.section, competition: job.competition,
+          reason: result.reason, retryAt: result.retryAt };
+      }
+      phase = "validation";
+      const coverage = validateDetailPayload(result.payload, job, stored);
+      if (coverage !== "complete" && stored?.sections[job.section]?.coverage === "complete")
+        throw Error("Incomplete detail would replace last-good coverage");
+      phase = "publication";
+      const manifest = await this.store.publishDetail(lease, { competition: job.competition, season: job.season,
+        id: job.match.id, section: job.section, baseVersion: stored?.version ?? 0, payload: result.payload,
+        observedAt: result.observedAt, subject: detailSubject(job.match), coverage });
+      this.details.set(job.detailKey, manifest);
+      this.retryAt.delete(job.key);
+      return { state: "published", kind: "detail", section: job.section, competition: job.competition,
+        id: job.match.id, coverage, version: manifest.version };
+    } catch (error) {
+      if (phase === "publication") this.details.delete(job.detailKey);
+      const retryAt = this.now() + RETRY_MS;
+      this.retryAt.set(job.key, retryAt);
+      return { state: "failed", kind: "detail", section: job.section, competition: job.competition,
+        phase, error: error.name, retryAt };
     }
   }
 

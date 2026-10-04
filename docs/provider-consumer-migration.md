@@ -148,3 +148,36 @@ All 49 score-service tests passed against DynamoDB Local, including seven detail
 checks for restart, age preservation, invalid writes, terminal transitions,
 concurrent writers, delayed old-owner writes, mixed-version reads and corruption.
 No public deployment, real provider calls or frontend changes were made.
+
+## Detail collector connected — 4 October 2026
+
+The collector now hydrates one fixture manifest at a time, then requests one
+fixture/lineups/events/players section per step through the supplementary budget.
+Every step rebuilds the score queue first. Live and imminent detail precedes
+historical detail; matches more than two hours away and cancelled/postponed
+matches do not trigger detail collection. Historical completed matches remain
+eligible. Metadata caches clear on lease generation changes and prune fixtures
+no longer in configured snapshots. No provider work is triggered by viewers.
+
+Validation checks a single complete provider page, fixture/competition/season
+identity, expected teams, lineup identities and player-statistics shape. Empty
+pre-match supplementary responses are unpublished. Missing timeline goals or
+insufficient lineups/player minutes are partial; initial partial sections retry
+after 30 seconds rather than a long finished/lineup cache window. A partial
+refresh cannot replace an existing complete section or advance its observation
+time. Final status/result changes make all four sections due again. Raw absent
+statistics remain null. Coverage is a structural check, not independent proof
+that the provider reported every card, substitution or statistic correctly.
+
+All 54 then-existing service checks passed; the final six detail-collector
+checks passed after adding pre-match and partial scheduling cases. Tests use
+real loopback HTTP and DynamoDB, including quota reserve denial, score
+preemption, takeover hydration and final-whistle refresh. Earlier failures were
+test-clock pacing and an incorrect expectation of work during an idle interval.
+
+Remaining: serve these records with per-section degraded state and route Worker
+match detail, settlement and notification consumers through that service. The
+legacy mapper's null-to-zero player-stat defaults require explicit handling in
+the stored response. This collector is not deployed; browser behavior and final
+settlement are not yet changed by these jobs. Later source corrections remain
+subject to the existing finished-detail cache window until a score/status change.
