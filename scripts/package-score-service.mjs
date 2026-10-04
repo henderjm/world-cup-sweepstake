@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +14,7 @@ const output = resolve(destination);
 await mkdir(output);
 const files = git(['ls-tree', '-r', '--name-only', commit, 'services/scores']).toString().trim().split('\n')
   .filter(path => /^services\/scores\/[^/]+\.mjs$/.test(path));
-files.push('services/scores/package.json', 'services/scores/package-lock.json', ...[
+files.push('services/scores/Dockerfile', 'services/scores/package.json', 'services/scores/package-lock.json', ...[
   'apiFootballPayload', 'apiQuota', 'competitions', 'domain', 'fantasy',
   'fantasyExpectedPoints', 'fantasyHistoricalXp', 'fantasyPlayerTier', 'format',
   'mapApiFootball', 'matchDetailCache', 'scoreSnapshot', 'standingsRecovery',
@@ -34,4 +34,10 @@ await writeFile(resolve(output, 'release.json'), JSON.stringify({
   commit, node: process.version, sources: hashes,
   collector: 'services/scores/run-collector.mjs', lambdaHandler: 'services/scores/lambda.handler',
 }, null, 2) + '\n');
+await mkdir(resolve(output, 'artifacts'));
+execFileSync('zip', ['-q', '-r', 'artifacts/reader.zip', 'package.json', 'release.json', 'src', 'services'], {
+  cwd: output, stdio: 'inherit',
+});
+const archiveHash = createHash('sha256').update(await readFile(resolve(output, 'artifacts/reader.zip'))).digest('hex');
+await writeFile(resolve(output, 'artifacts/reader.zip.sha256'), `${archiveHash}  reader.zip\n`);
 console.log(`Packaged ${commit} in ${output}`);
