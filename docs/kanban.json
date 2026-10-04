@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-04",
-  "revision": "f379742",
+  "revision": "c2fb2bc",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -19,7 +19,7 @@
       "title": "Make busy matchdays reliable",
       "summary": "Architecture work underway; production reliability remains unmeasured.",
       "acceptance": "Measure 99.95% usable scoreboards and 99.9% active observation freshness. Measure provider-visible change to screen separately: p95 \u226430s, p99 \u226460s. Warn after 45s. Missing checks and provider failures count against the user-facing result.",
-      "next": "Inventory every provider consumer; prepare migration and the priced cloud trial with independent monitoring.",
+      "next": "Complete provider-consumer migration and prepare the priced cloud trial with independent monitoring.",
       "evidence": "Local collector/read foundation bb977b8 and durable alert watcher d50aab4. This programme remains in progress; hourly automation is paused."
     },
     {
@@ -39,8 +39,8 @@
       "title": "Migrate every provider consumer",
       "summary": "Prevent details, stats and background jobs competing with scores.",
       "acceptance": "Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.",
-      "next": "Collect and store lineups, events and player details through the shared budget, then redirect Worker detail readers and settlement consumers.",
-      "evidence": "f379742 inventories four direct provider entry points and adds the Worker getLive stored-read boundary. Details, feeder and build/player jobs still require migration; production switch remains unset."
+      "next": "Wire one-request collector detail jobs through the supplementary budget, validate endpoint coverage, then connect stored reads and Worker settlement consumers.",
+      "evidence": "c2fb2bc adds atomic independently observed detail storage; all 49 service tests passed, including seven new detail checks. f379742 adds the opt-in Worker score boundary. Detail scheduling, reads and settlement are not connected yet; production unchanged."
     },
     {
       "id": "cloud",
