@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-04",
-  "revision": "f7341bd",
+  "revision": "472e286",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -39,8 +39,8 @@
       "title": "Migrate every provider consumer",
       "summary": "Prevent details, stats and background jobs competing with scores.",
       "acceptance": "Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.",
-      "next": "Add the bounded Worker stored-detail client, migrate public and background detail readers, then verify mobile and desktop journeys headlessly.",
-      "evidence": "f7341bd adds the stored match-detail API with independent freshness, null statistics and settlement-guard checks. All 63 service tests passed, including real local HTTP. Collector jobs share the budget; Worker detail consumers remain on the old path. Not deployed."
+      "next": "Verify cron side effects against representative D1 state; migrate remaining feeder, static export and player-history consumers before the priced cloud trial.",
+      "evidence": "472e286 connects public and background Worker detail consumers to stored mode. 1,635 app tests, fifteen reader checks, Worker bundle and headless mobile/desktop replay passed. Thirteen stored reads, zero provider calls in replay. Remaining non-Worker consumers and cron state validation stay open; not deployed."
     },
     {
       "id": "cloud",
@@ -106,11 +106,11 @@
       "id": "worker-reads",
       "status": "Validated locally",
       "priority": "P0",
-      "title": "Worker score and schedule reads",
-      "summary": "One opt-in stored-service boundary for scoreboard and internal schedule consumers.",
+      "title": "Worker score and match-detail reads",
+      "summary": "Opt-in stored reads for scoreboards, match drawers and internal detail consumers.",
       "acceptance": "No provider fallback in stored mode; preserve source age and versions, retain labelled last-good data, allow downward corrections and keep existing features intact.",
-      "next": "Migrate supplementary detail and player consumers before claiming account-wide quota control or approving cutover.",
-      "evidence": "f379742 \u00b7 1,629 regression tests, nine focused checks, Worker dry-run bundle and headless mobile/desktop replay passed. Five stored-service reads, zero provider calls in the replay. Not enabled or deployed."
+      "next": "Validate representative cron side effects and finish remaining provider-consumer migration before approving cutover.",
+      "evidence": "472e286 and f379742: score and detail integration locally verified. 1,635 app tests, fifteen reader checks and headless missing/stale/corrected detail journeys passed. No legacy detail mixing in stored responses. Not enabled or deployed."
     },
     {
       "id": "alerts",

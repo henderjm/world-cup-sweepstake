@@ -10,7 +10,7 @@
 @media(max-width:650px){#kickoff-kanban .lanes{grid-template-columns:1fr}}
 </style>
 <div id="kickoff-kanban">
-<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code f7341bd</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
+<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code 472e286</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
 <div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">2</span></h3><article data-card="reliability">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Make busy matchdays reliable</summary>
@@ -18,7 +18,7 @@
 <p>Architecture work underway; production reliability remains unmeasured.</p></article><article data-card="consumers">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Migrate every provider consumer</summary>
-<dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Add the bounded Worker stored-detail client, migrate public and background detail readers, then verify mobile and desktop journeys headlessly.</dd><dt>Evidence</dt><dd>f7341bd adds the stored match-detail API with independent freshness, null statistics and settlement-guard checks. All 63 service tests passed, including real local HTTP. Collector jobs share the budget; Worker detail consumers remain on the old path. Not deployed.</dd></dl></details>
+<dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Verify cron side effects against representative D1 state; migrate remaining feeder, static export and player-history consumers before the priced cloud trial.</dd><dt>Evidence</dt><dd>472e286 connects public and background Worker detail consumers to stored mode. 1,635 app tests, fifteen reader checks, Worker bundle and headless mobile/desktop replay passed. Thirteen stored reads, zero provider calls in replay. Remaining non-Worker consumers and cron state validation stay open; not deployed.</dd></dl></details>
 <p>Prevent details, stats and background jobs competing with scores.</p></article></section><section aria-label="Up next"><h3>Up next <span class="text-muted">5</span></h3><article data-card="monitor">
 <span class="viz-badge">P0 · first</span>
 <details><summary class="cursor-interaction">External monitoring and approved paging</summary>
@@ -49,9 +49,9 @@
 <dl><dt>Acceptance</dt><dd>Atomic, fenced publication; bounded coherent reads; corrupt data unavailable; scores and quota survive restart. Test mobile and desktop loading, empty, stale and recovery states.</dd><dt>Next action</dt><dd>Package for cloud trial and validate actual IAM, latency and capacity.</dd><dt>Evidence</dt><dd>bb977b8 · 42 service checks, 1,606 app tests and headless journeys passed. Synthetic 1,000-fixture warm unchanged read: 1,431-byte manifest. Not a cloud latency or browser payload result.</dd></dl></details>
 <p>Viewers read stored scores without provider access.</p></article><article data-card="worker-reads">
 <span class="viz-badge">P0</span>
-<details><summary class="cursor-interaction">Worker score and schedule reads</summary>
-<dl><dt>Acceptance</dt><dd>No provider fallback in stored mode; preserve source age and versions, retain labelled last-good data, allow downward corrections and keep existing features intact.</dd><dt>Next action</dt><dd>Migrate supplementary detail and player consumers before claiming account-wide quota control or approving cutover.</dd><dt>Evidence</dt><dd>f379742 · 1,629 regression tests, nine focused checks, Worker dry-run bundle and headless mobile/desktop replay passed. Five stored-service reads, zero provider calls in the replay. Not enabled or deployed.</dd></dl></details>
-<p>One opt-in stored-service boundary for scoreboard and internal schedule consumers.</p></article><article data-card="alerts">
+<details><summary class="cursor-interaction">Worker score and match-detail reads</summary>
+<dl><dt>Acceptance</dt><dd>No provider fallback in stored mode; preserve source age and versions, retain labelled last-good data, allow downward corrections and keep existing features intact.</dd><dt>Next action</dt><dd>Validate representative cron side effects and finish remaining provider-consumer migration before approving cutover.</dd><dt>Evidence</dt><dd>472e286 and f379742: score and detail integration locally verified. 1,635 app tests, fifteen reader checks and headless missing/stale/corrected detail journeys passed. No legacy detail mixing in stored responses. Not enabled or deployed.</dd></dl></details>
+<p>Opt-in stored reads for scoreboards, match drawers and internal detail consumers.</p></article><article data-card="alerts">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Durable incident and recovery alerts</summary>
 <dl><dt>Acceptance</dt><dd>Persist before send, require matching acknowledgment, deduplicate retries, preserve incident/recovery order and alert when the recorder stops.</dd><dt>Next action</dt><dd>Configure an approved external receiver and verify downstream human delivery, plus a watchdog outside the monitor failure domain.</dd><dt>Evidence</dt><dd>d50aab4 · 1,620 app tests passed; 30 focused checks passed after final checksum change. Real local processes verify stale data, receiver refusal, watcher restart and recorder loss. All three distinct events acknowledged locally within ten seconds of detection.</dd></dl></details>
