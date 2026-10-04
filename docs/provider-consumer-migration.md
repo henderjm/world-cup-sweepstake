@@ -181,3 +181,39 @@ legacy mapper's null-to-zero player-stat defaults require explicit handling in
 the stored response. This collector is not deployed; browser behavior and final
 settlement are not yet changed by these jobs. Later source corrections remain
 subject to the existing finished-detail cache window until a score/status change.
+
+## Stored match-detail endpoint — 4 October 2026
+
+`GET /{PL|CL}/match/{id}` is now served by the read runtime. Only configured
+seasons and known score fixtures can read detail. Unknown IDs return 404 without
+a detail lookup; database/partition errors return 503. A known fixture awaiting
+its first detail collection returns its actual score/header with missing
+sections marked degraded, keeping the match openable. Responses use no-store.
+
+The score header always comes from the score snapshot; referee and half-time
+scores remain from independently observed fixture detail. Each section exposes
+state, observedAt and ageMs. Live-result changes also degrade old fixture,
+timeline and player data, rather than pretending that a newly observed score
+refreshes them. Legacy endpoint-family names on `degraded` retain compatibility
+with the drawer and `isSettleableDetail`. Stale score observations also degrade
+`/fixtures`, independently of detail age. Snapshot metadata carries score and
+detail versions/generations separately.
+
+Player-stat mapping preserves null minutes and defensive statistics. Missing
+participant minutes or missing statistics for a player with recorded minutes
+make the player section partial; the existing fantasy settlement guard rejects
+that response. Unused bench players are not assumed to have played. This may
+expose provider coverage limitations: do not replace missing values with zero to
+force settlement; verify source semantics and preserve the limitation visibly.
+
+All 63 score-service tests passed, including eight detail-response checks and
+actual reader-process HTTP requests. Tests use DynamoDB Local, exercise fresh,
+missing, stale, corrected-result and unavailable states, and call the real
+fantasy settlement guard. Full 22-player fixtures exposed and fixed a metadata
+size check incorrectly applied to the assembled payload. The database reader
+issues only strongly consistent GetItem calls, with no budget/provider access.
+
+Remaining: Worker stored-detail client with bounded requests and version checks,
+then migrate public/cron/fantasy/notification readers and validate headless
+mobile and desktop journeys. The new service endpoint is not publicly deployed;
+production Worker detail reads still use the legacy provider path.

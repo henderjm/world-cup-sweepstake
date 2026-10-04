@@ -42,6 +42,14 @@ test("actual read-service process serves stored scores and recalculates stale ag
   const feed = await response.json();
   assert.equal(feed.matches[0].score.home, 1); assert.equal(feed.stale, true); assert.ok(feed.staleAgeMs >= 90000);
   assert.equal((await fetch(`http://127.0.0.1:${port}/CL/live`, { method: "POST" })).status, 405);
+  const matchResponse = await fetch(`http://127.0.0.1:${port}/CL/match/900001`);
+  assert.equal(matchResponse.status, 200);
+  const detail = await matchResponse.json();
+  assert.equal(detail.score.home, 1);
+  assert.equal(detail.coverage.lineups.state, "missing");
+  assert.equal(detail.degraded.length, 4);
+  assert.equal(detail.stale, true);
+  assert.equal((await fetch(`http://127.0.0.1:${port}/CL/match/999999`)).status, 404);
   assert.equal((await store.read("CL", "2026")).version, 1);
   assert.equal(await store.readBudget(), null);
   child.kill("SIGTERM");

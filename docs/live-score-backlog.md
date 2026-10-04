@@ -1476,3 +1476,20 @@ Next: stored match-detail read API, degraded response semantics and Worker
 integration; validate null statistics and final settlement before headless
 mobile/desktop replay. No claim of deployed reliability or account-wide quota
 control: legacy consumers still use their existing provider path.
+
+### 2026-10-04 — stored detail responses and settlement guard
+
+Added known-fixture match-detail reads to the stored service. Current score
+headers remain independent of section observation times. Missing sections keep
+a known match openable but degraded; database failures are unavailable. Expose
+per-section age/coverage, preserve referee and half-time data, and mark old
+live/final-result detail degraded when the score changes. Raw unknown player
+statistics stay null; missing participant minutes and played-player statistics
+block the existing fantasy settlement guard.
+
+Validation: all 63 service checks passed with real local DynamoDB and reader
+HTTP process checks. Eight new response tests cover unknown fixtures, complete
+22-player details, missing/stale/unavailable states, result corrections, null
+statistics and settlement. Full lineup data caught and fixed an assembled-
+payload versus metadata-size validation error. No browser or production path
+changed: Worker integration and headless end-to-end replay remain next.
