@@ -1,0 +1,56 @@
+{
+  "recordedDate": "2026-10-04",
+  "scope": "Brief public API and headless browser diagnostic, not a matchday SLO measurement",
+  "errors": [],
+  "feeds": [
+    {
+      "url": "https://goon-squad-data.gs-wc.workers.dev/PL/live",
+      "status": 200,
+      "lastUpdated": "2026-10-04T09:51:30.031Z",
+      "matches": 380
+    },
+    {
+      "url": "https://goon-squad-data.gs-wc.workers.dev/CL/live",
+      "status": 200,
+      "lastUpdated": "2026-10-04T09:51:30.902Z",
+      "matches": 234
+    },
+    {
+      "url": "https://kickoffdraft.com/data/CL/live.json?cache=1791107490860",
+      "status": 200,
+      "lastUpdated": "2026-10-03T22:47:01.601Z",
+      "matches": 234
+    }
+  ],
+  "journeys": [
+    {
+      "competition": "PL",
+      "width": 390,
+      "overflow": false,
+      "showsEmptyToday": true,
+      "showsSavedTable": false
+    },
+    {
+      "competition": "PL",
+      "width": 1440,
+      "overflow": false,
+      "showsEmptyToday": true,
+      "showsSavedTable": false
+    },
+    {
+      "competition": "CL",
+      "width": 390,
+      "overflow": false,
+      "showsEmptyToday": true,
+      "showsSavedTable": true
+    },
+    {
+      "competition": "CL",
+      "width": 1440,
+      "overflow": false,
+      "showsEmptyToday": true,
+      "showsSavedTable": true
+    }
+  ],
+  "ledgerNote": "Captured before adding one-second source-clock-skew tolerance. Raw negative ages of 34-50 ms produced future-source-time diagnostics; do not interpret these as stale-score failures. HTTP statuses and timestamps are unchanged."
+}

@@ -1,6 +1,6 @@
 # Daily live-score product backlog
 
-Updated: 2026-09-26. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
+Updated: 2026-10-04. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
 Starting revision: `bfaf0a66e03febeda47647789e275853155ef638`.
 
 ## Mandate and continuation
@@ -178,6 +178,11 @@ New leagues are explicitly out of scope for now (user direction, September 19).
 Continue competitor analysis and implementation within PL/CL.
 
 ## Prioritized remaining work
+
+October 4 continuation: the previous goal turn was progress (the reliability
+contract was committed as `936aa0d`). This turn implements the first bounded
+baseline recorder; see the dated evidence section below. The wider reliability
+goal is still unproven and active.
 
 | Priority | Item | Definition of done |
 | --- | --- | --- |
@@ -1022,3 +1027,44 @@ cron starts still determine whether a chain begins, and GitHub queue delays can
 extend gaps. P0 remains approval-dependent runtime validation of runner handoffs
 and score delivery; detail fairness on repeatedly slow matchdays is next local
 work. Nothing here is deployed and the production incident remains open.
+
+## October 4 — durable API reliability recorder implemented locally
+
+`scripts/measure-score-reliability.mjs` now records an explicit observation plan
+and bounded PL/CL reads to an append-only ledger. Its report reconstructs missed
+checks after interruption, preserves expected fixtures when responses lose them,
+and reports per-competition/per-fixture failures. Fresh final results retire a
+fixture; stale finals do not, and a fresh live correction reopens it. Timeouts
+cover response bodies, and failed requests remain in latency measurements.
+
+The current production hostname is limited to one probe per competition per
+minute to avoid turning monitoring into extra provider pressure. There are no
+retries or cache-busting parameters. Reports explicitly measure feed-reported
+age, not independently verified source freshness or browser availability.
+No active expected fixtures yields a null freshness percentage. Usage, expected
+schedule preparation and limits are in `docs/score-reliability-recorder.md`.
+
+Validation:
+- Sixteen focused tests cover missing observations/fixtures, competition
+  isolation, invalid/old/future data, terminal corrections, live statuses, clock
+  skew, duplicate logs and quota protection. A real local HTTP process exercises
+  recording/reporting, interrupted final writes and cancellation of stalled bodies.
+- The working-tree regression suite passes 1,588 tests (including the existing
+  separate native work). No UI/product runtime code changed in this increment.
+- Read-only production evidence around 09:50–09:52 UTC: the preliminary PL read
+  returned 502. The bounded recorder then saw PL 200/200 and CL 502/200. This is
+  evidence of intermittent failures, not a root cause or measured matchday SLO.
+  The initial run exposed 34–50 ms source clock skew; the final recorder tolerates
+  up to one second while preserving raw ages. Its raw ledger predates that fix
+  and is annotated in `docs/live-score-evidence/2026-10-04-reliability-smoke.json`.
+- Headless public checks at 390 and 1440px saw both feeds recover and no page
+  errors or horizontal overflow. Both views displayed no games today. CL used
+  the labelled saved table from October 3, 22:47 UTC. This observation does not
+  independently validate the provider's schedule or empty matchday.
+
+Remaining P0: deploy-independent monitoring with an independently reconciled
+fixture schedule, browser/version observations and verified alert delivery;
+implement the dedicated collector, fenced takeover and stored-data read adapter
+locally; price the infrastructure and provider options before requesting spend
+approval. The new recorder is a bounded local command, not an installed service.
+No public deployment, paid provisioning or subscription change was performed.

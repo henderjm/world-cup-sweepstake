@@ -12,6 +12,11 @@ accounting, cached-data ages, error logging and regression tests, but not a
 durable, independently sampled match-window reliability history. A healthy
 quota endpoint or successful HTTP response does not prove current scores.
 
+October 4: a bounded local API recorder and report command are implemented;
+see `score-reliability-recorder.md`. They preserve planned checks, missing
+observations and expected-fixture failures in an append-only ledger. This is
+measurement tooling, not an installed continuous monitor or an achieved SLO.
+
 The September 26 release `c6274e8` passed 1,563 JavaScript tests, Go tests,
 production build and headless public mobile/desktop checks. Those checks saw
 working PL/CL feeds and a labelled saved CL table. They did not measure a busy
