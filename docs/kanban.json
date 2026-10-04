@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-04",
-  "revision": "9694c15",
+  "revision": "7372c8d + monitoring cadence correction",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -50,7 +50,7 @@
       "summary": "Artifacts and infrastructure are prepared locally; costs and operational gates remain incomplete.",
       "acceptance": "Produce infrastructure, monthly cost assumptions, read-only IAM, throttling, egress constraints and rollback. Exercise multi-zone takeover and cold/warm traffic after approval.",
       "next": "Finish independent monitor/watchdog/receiver proposal and pricing, provider allowance and remaining artifact/runtime checks before approval.",
-      "evidence": "990dfb3: AWS subtotals $47.93/$70.01/$290.76 for 100k/1m/10m visitor reads plus 345,600 monitor reads. 21 official rates. Independent hosting/watchdog/paging and provider costs remain outside these subtotals."
+      "evidence": "Five-second PL/CL monitoring adds 1,036,800 API reads over 30 days. Existing October 4 Ireland rate snapshot yields AWS subtotals $64.88/$86.96/$307.71 for 100k/1m/10m visitor reads. Browser checks, external hosting/watchdog/paging and provider costs remain excluded."
     },
     {
       "id": "latency",

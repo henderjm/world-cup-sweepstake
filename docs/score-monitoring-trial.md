@@ -21,10 +21,10 @@ on the same host and call that an independent watchdog.
 
 ## Probe and evidence contract
 
-For the approved stored service, propose one PL and one CL probe every 15 seconds.
-A 30-day month adds 345,600 API requests, before any browser journeys or watchdog
-traffic. At the current 200 KiB response assumption, that is 65.92 GiB of outbound
-AWS data, costing $5.93 in transfer alone without free allowances. The cost calculator now adds these
+For the approved stored service, use one PL and one CL probe every five seconds, matching the reliability contract.
+A 30-day month adds 1,036,800 API requests, before any browser journeys or watchdog
+traffic. At the current 200 KiB response assumption, that is 197.75 GiB of outbound
+AWS data, costing $17.80 in transfer alone without free allowances. The cost calculator now adds these
 requests to each visitor-traffic scenario; do not add them a second time. The existing provider-backed Worker remains protected by
 its 60-second sampling minimum until stored mode is approved and verified.
 

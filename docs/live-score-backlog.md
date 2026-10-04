@@ -1927,3 +1927,20 @@ late starts and includes event diagnostics on failure. Final related suite:
 run emitted four accepted events instead of two; three subsequent repetitions
 passed before the timing change, so its root cause is unconfirmed. Do not claim
 that intermittent failure is conclusively fixed; retain diagnostics on recurrence.
+
+## October 4 — restore the contracted monitoring cadence in trial pricing
+
+Found and corrected a proposal mismatch: `live-score-reliability.md` requires
+five-second stored-API probes, but trial pricing used fifteen seconds. No SLO was
+approved for relaxation. Two competitions continuously sampled for 30 days add
+1,036,800 API reads and 197.75 GiB at the 200 KiB response assumption. Reusing the
+October 4 Ireland rate snapshot, updated AWS subtotals are $64.88/$86.96/$307.71
+for 100k/1m/10m visitor requests. These replace the earlier $47.93/$70.01/$290.76
+proposal; browser checks at least every 30 seconds and external monitoring costs
+remain additional. Current provider-backed Worker still has its 60-second safety
+floor. Neither production polling nor infrastructure changed.
+
+Separately, six isolated pre-timing-fix schedule integration runs all passed.
+This did not reproduce the earlier extra incidents and does not establish their
+cause. Logs remain at `/tmp/kickoff-monitor-before.rcG0Ns/run-1.log` through
+`run-6.log`; keep strengthened timestamp/event diagnostics for recurrence.

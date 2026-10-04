@@ -15,12 +15,11 @@ const assumptions = {
   collectorLogsGiB: 1, readerLogKiBPerRequest: 1, logRetentionDays: 14,
   standardAlarms: 4, customMetrics: 4, secrets: 1, secretReads: 1000,
   artifactWrites: 100, artifactReads: 1000,
-  monitorDays: 30, monitorCompetitions: 2, monitorIntervalSeconds: 15,
-
+  monitorDays: 30, monitorCompetitions: 2, monitorIntervalSeconds: 5,
 };
+const monitorRequests = assumptions.monitorDays * 86400 * assumptions.monitorCompetitions / assumptions.monitorIntervalSeconds;
 const scenarios = [100000, 1000000, 10000000].map(visitorRequests => {
   const a = assumptions;
-  const monitorRequests = a.monitorDays * 86400 * a.monitorCompetitions / a.monitorIntervalSeconds;
   const requests = visitorRequests + monitorRequests;
   const responseGiB = requests * a.responseKiB / 1024 / 1024;
   const logGiB = a.collectorLogsGiB + requests * a.readerLogKiBPerRequest / 1024 / 1024;
@@ -51,6 +50,6 @@ console.log(JSON.stringify({ rateDate: snapshot.checked, region: snapshot.region
     'Paid storage/transfer tiers are applied from the first byte; no account-wide free allowances assumed.',
     'Log storage conservatively assumes no compression and 14/30 month retention.',
     'Metrics/alarms are cost allowances, not installed monitoring.',
-    'Visitor scenarios include an additional 345,600 monthly PL/CL monitor reads; browser journeys and watchdog calls are extra.',
+    `Visitor scenarios include an additional ${monitorRequests.toLocaleString('en-US')} monthly PL/CL monitor reads; browser journeys and watchdog calls are extra.`,
     'All quantities are scenario assumptions, not measured production usage.'],
   status: 'Scenario subtotal only; not a total budget, bill forecast or spending approval. No free-tier or volume discounts applied.' }, null, 2));

@@ -10,7 +10,7 @@
 @media(max-width:650px){#kickoff-kanban .lanes{grid-template-columns:1fr}}
 </style>
 <div id="kickoff-kanban">
-<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code 9694c15</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
+<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code 7372c8d + monitoring cadence correction</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
 <div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">4</span></h3><article data-card="reliability">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Make busy matchdays reliable</summary>
@@ -26,7 +26,7 @@
 <p>Prevent details, stats and background jobs competing with scores.</p></article><article data-card="cloud">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Package and price the AWS trial</summary>
-<dl><dt>Acceptance</dt><dd>Produce infrastructure, monthly cost assumptions, read-only IAM, throttling, egress constraints and rollback. Exercise multi-zone takeover and cold/warm traffic after approval.</dd><dt>Next action</dt><dd>Finish independent monitor/watchdog/receiver proposal and pricing, provider allowance and remaining artifact/runtime checks before approval.</dd><dt>Evidence</dt><dd>990dfb3: AWS subtotals $47.93/$70.01/$290.76 for 100k/1m/10m visitor reads plus 345,600 monitor reads. 21 official rates. Independent hosting/watchdog/paging and provider costs remain outside these subtotals.</dd></dl></details>
+<dl><dt>Acceptance</dt><dd>Produce infrastructure, monthly cost assumptions, read-only IAM, throttling, egress constraints and rollback. Exercise multi-zone takeover and cold/warm traffic after approval.</dd><dt>Next action</dt><dd>Finish independent monitor/watchdog/receiver proposal and pricing, provider allowance and remaining artifact/runtime checks before approval.</dd><dt>Evidence</dt><dd>Five-second PL/CL monitoring adds 1,036,800 API reads over 30 days. Existing October 4 Ireland rate snapshot yields AWS subtotals $64.88/$86.96/$307.71 for 100k/1m/10m visitor reads. Browser checks, external hosting/watchdog/paging and provider costs remain excluded.</dd></dl></details>
 <p>Artifacts and infrastructure are prepared locally; costs and operational gates remain incomplete.</p></article></section><section aria-label="Up next"><h3>Up next <span class="text-muted">3</span></h3><article data-card="latency">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Measure real matchday delivery</summary>

@@ -70,12 +70,16 @@ Run `node scripts/estimate-score-trial.mjs` to reproduce
 
 | Monthly visitor API requests | Assumed response transfer | Modeled AWS subtotal |
 | --- | --- | --- |
-| 100,000 | 84.99 GiB | $47.93 |
-| 1,000,000 | 256.65 GiB | $70.01 |
-| 10,000,000 | 1,973.27 GiB | $290.76 |
+| 100,000 | 216.83 GiB | $64.88 |
+| 1,000,000 | 388.49 GiB | $86.96 |
+| 10,000,000 | 2,105.10 GiB | $307.71 |
 
-Each scenario adds 345,600 PL/CL monitor reads (every 15 seconds for 30 days)
-to visitor requests. Transfer and AWS subtotals include those probes.
+Each scenario adds 1,036,800 PL/CL monitor reads (every five seconds for 30 days)
+to visitor requests. Transfer and AWS subtotals include those probes. Continuous
+30-day sampling is a conservative cost assumption; report active match windows
+separately. This corrects the prior 15-second proposal to the five-second API
+cadence in `live-score-reliability.md`. Browser checks at least every 30 seconds
+are additionally required and remain outside this subtotal.
 
 Assumptions: 200 KiB transferred per response, 0.5 GiB Lambda memory, 150 ms per
 request, 30 DynamoDB read units per API request, and 10 million collector read
@@ -95,7 +99,7 @@ cost allowances; they are not installed monitoring. No NAT is in this design.
 Free-tier benefits are not assumed: the paid DynamoDB storage tier and first
 paid outbound-transfer rate apply from the first byte. These are conservative
 scenario assumptions, not an account bill forecast. At ten million visitor requests plus monitoring,
-response transfer contributes $177.59 of the $290.76 modeled AWS subtotal; two
+response transfer contributes $189.46 of the $307.71 modeled AWS subtotal; two
 public IPv4 addresses contribute $7.30/month. Response compression and actual
 payload sizes must be measured before reducing that allowance.
 
