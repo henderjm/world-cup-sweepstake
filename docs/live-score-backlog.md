@@ -1775,3 +1775,19 @@ includes these requests separately from visitor traffic: AWS subtotals become
 $47.93/$70.01/$290.76 for 100k/1m/10m visitor requests. Monitor hosting, watchdog,
 paging and provider charges are still outside those AWS subtotals. Calculations
 reproduced and arithmetic checked; capacity and delivery remain unverified.
+
+### 4 October — recover a recorder window safely after process loss
+
+Added a POSIX-lock wrapper and guarded resume path. Original plan and complete
+records are validated before any truncation; only an unterminated tail can be
+removed. Existing saved slots are never reprobed, expired slots stay missing,
+and changed plans/complete corruption fail closed. Legacy unlocked writers are
+not eligible for resume, preventing an unsafe mixed-lock concurrency path.
+Wrapper and child share the OS lock; termination releases it without deleting
+lock files. No cloud service or provider request used.
+
+All 34 focused recorder/reliability/alert tests passed. Four new cases verify
+interrupted tails, changed/corrupt evidence, overlapping recorder exclusion and
+actual HTTP recording across termination/restart with four unique saved slots
+and exactly four requests. Evidence: `/tmp/kickoff-resume-final.log`. Automatic
+window rollover, watcher restart/retention and real external delivery remain.

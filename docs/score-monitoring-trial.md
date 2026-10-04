@@ -86,3 +86,25 @@ The $7.80 host/backup candidate plus $4.99 one-time receiving-platform price is
 only part of monitoring cost. It does not complete the spending proposal or
 establish end-to-end reliability. Next engineering work is the continuous
 supervisor and real receiver adapter; watchdog selection remains a design gate.
+
+## Implemented recorder recovery
+
+`python3 scripts/resume-score-recorder.py PLAN.json LEDGER.jsonl` starts or resumes
+one approved window. It requires Python 3 on a POSIX host and Node (or an explicit
+NODE_BINARY). The wrapper holds a nonblocking OS file lock, inherited by the Node
+child, so process exit releases ownership without deleting stale PID files.
+Keep the `.recorder.lock` inode; do not unlink it while any recorder may run.
+Use a local filesystem with working POSIX flock semantics, not shared/network
+storage. Restart the wrapper with the same paths after process failure.
+
+Only ledgers created by this locked wrapper can resume. Legacy `record` outputs
+remain reportable but cannot resume because their original writer had no lock.
+An altered plan or complete corrupt record fails without rewriting evidence.
+Only an unterminated final append is truncated; completed probes are preserved,
+missed slots remain missing, and future probes continue without duplicate slots.
+An interrupted initial plan remains an error requiring review, not invented data.
+
+Four new process/file recovery cases plus existing recorder/alert tests passed
+(34 total), including actual HTTP recording across termination and restart. This
+does not yet implement unattended next-window rollover, retention, watcher lock
+recovery or deployment. Those remain the continuous-supervisor work.
