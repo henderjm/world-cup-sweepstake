@@ -33,10 +33,10 @@ immutable value. `input` contains:
 
 All timestamps remain attached to their observations. Old fixture observations
 cannot replace newer ones; equal-time changed content is rejected. A genuinely
-newer score correction can lower a score. Writes are capped at 300 KiB, with
-standings capped at 64 KiB; larger snapshots fail without replacing last-good
-data. Production storage may need partitioned fixture records and a manifest
-before supporting payloads that exceed this initial bound.
+newer score correction can lower a score. A normalized snapshot is capped at
+2 MiB and 2,000 fixtures, each fixture at 32 KiB, and standings at 64 KiB.
+Storage additionally caps each partition at 256 KiB and the manifest at 4 KiB;
+larger publications fail without replacing last-good data.
 
 **The storage adapter must enforce the following atomically.** Calling
 `nextSnapshot` in application code alone does not provide concurrency safety:
@@ -59,8 +59,9 @@ of durable storage, distributed fencing, provider-call fencing or AWS failover.
 
 `DynamoScoreStore` in `dynamodb.mjs` takes an injected AWS SDK v3 DynamoDB client,
 table name and optional clock/request timeout. The table has one string partition
-key, `pk`, and no sort key. It uses a persisted `COLLECTOR` lease plus separate
-`SCORE#competition#season` items. The runtime does not create or delete tables.
+key, `pk`, and no sort key. It uses a persisted `COLLECTOR` lease, a
+`SCORE#competition#season` manifest and bounded fixture/table partitions below.
+The runtime does not create or delete tables.
 Construct the public API with `readSnapshot: (code, season) => store.read(code, season)`.
 Its deployment role must have only `GetItem`; the collector role additionally
 needs conditional `PutItem` and the permissions required for transaction checks.
@@ -73,6 +74,38 @@ that would reset its fencing history. Each `publish(lease, input)` transaction
 checks the current owner/epoch/expiry and expected snapshot version together.
 Strongly consistent base-table reads expose whole committed snapshots. See
 [DynamoDB transactions](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html).
+
+### Partitioned snapshots and reads
+
+`layout.mjs` separates active/overdue fixtures and those within two hours of
+kickoff into eight stable ID buckets (`H0`–`H7`). Other fixtures use sixteen
+separate buckets (`C0`–`C15`); standings use `T`. Each item key appends the bucket
+to its competition/season key. There are at most 25 partition keys plus one
+manifest per competition/season; old versions do not create unbounded records.
+An unused bucket can remain on disk, but the manifest no longer references it.
+
+The manifest contains the publication metadata and a SHA-256 digest for every
+referenced part. Only changed parts are written. One transaction commits them
+with the manifest and the existing lease/version checks: at most 27 actions,
+with payload headroom below DynamoDB's 4 MiB transaction and 400 KiB item limits.
+No reader can observe an acknowledged manifest whose parts were only partly
+committed. This replaces the unreleased monolithic prototype format; no deployed
+store was migrated. Local test tables are created afresh.
+
+Every read obtains a strongly consistent manifest. Each process keeps up to
+8 MiB of serialized part strings keyed by content digest, so unchanged parts
+need no additional database read. Cold requests retain their own fetch deadlines.
+Cached strings are parsed into new objects for each caller; callers cannot
+mutate future reads. The manifest is never served from a TTL cache, and age is
+recalculated from original observations on every response.
+
+Parts use mutable keys. If a writer changes one between a reader's manifest and
+part reads, the digest mismatch forces a complete retry. Both attempts share one
+three-second default read deadline. Missing/corrupt parts or repeated races fail
+unavailable; they cannot produce a hybrid score version or trigger a provider
+fallback. A coherent older snapshot already selected before a concurrent commit
+can finish normally. API response size still includes the whole season; this
+layout reduces database I/O, not the bytes sent to the browser.
 
 Requests have a three-second default timeout, and publication requires that much
 lease headroom. Expiry comparisons use the application clock, not a database
@@ -192,6 +225,27 @@ and checks a clean SIGTERM exit.
 
 ## Read contract and browser compatibility
 
+`lambda.mjs` exports `handler` for an HTTP API Gateway integration configured with
+payload format `2.0`. Its environment needs `SCORE_TABLE_NAME`, `SCORE_SEASONS`
+and the AWS region; it needs no provider key, collection lease or initialized
+provider budget. Package the shared `src/` imports and pinned service dependencies
+with it. The deployment role must allow only `GetItem` for score keys; actual IAM,
+gateway routing, throttling and cloud deployment still require verification.
+[API Gateway payload format](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-lambda.html).
+
+For local HTTP checks against an existing test table:
+
+```sh
+SCORE_TABLE_NAME=your-test-table SCORE_SEASONS=PL:2026,CL:2026 \
+  SCORE_DYNAMODB_ENDPOINT=http://127.0.0.1:18043 SCORE_PORT=8744 \
+  npm run serve --prefix services/scores
+```
+
+The local server binds only to loopback and invokes the same gateway adapter.
+It validates the database override as loopback, uses synthetic credentials,
+and stops on SIGINT/SIGTERM. The app's GET paths, CORS and no-store response
+semantics are unchanged. This is a runnable read service, not a deployed API.
+
 `createScoreReadApi({ readSnapshot, seasons, now })` returns a Request-to-Response
 handler. `readSnapshot(competition, season)` must only read stored data. The API
 has no provider client or write endpoint. Missing initial data and storage errors
@@ -279,7 +333,18 @@ network-partition, IAM, throughput or sustained matchday reliability evidence.
 Nine collector tests additionally cover partial batches, paginated discovery and
 its restart, identity/status validation, known-fixture retention, quota recovery,
 PL/CL separation, midnight scheduling, match transitions, table retention and the
-actual CLI process. All 35 service checks use local storage and synthetic HTTP.
+actual CLI process. Five partition tests add a 1,000-fixture workload, a forced
+publication race, missing/corrupt parts, atomic oversize rejection and movement
+between active/completed buckets. Two runtime tests cover the gateway adapter
+and the actual read-service process without a provider key. All 42 service checks
+use local storage and synthetic HTTP.
+
+The October 4 synthetic workload stores a 728,960-byte normalized snapshot across
+25 parts; the largest part is 45,189 bytes. A cold reader retrieves 730,259 bytes
+of stored values, a warm unchanged reader retrieves only the 1,431-byte manifest,
+and a one-fixture update requires 3,606 bytes. That update writes one part and the
+manifest under one lease check. These exclude protocol overhead and are not AWS
+billing measurements, production traffic forecasts or latency guarantees.
 
 For headless validation through the actual collector and database, keep DynamoDB
 Local and the site preview on :8742 running, then use:
@@ -289,13 +354,14 @@ node scripts/qa/collector-server.mjs
 node scripts/qa/run-headless.mjs scripts/qa/collector.js
 ```
 
-The QA server binds to localhost:8743, owns disposable test tables and a local
+The QA server routes reads through the gateway adapter, binds to localhost:8743,
+owns disposable test tables and a local
 provider server, and deletes its tables on SIGINT/SIGTERM. Stop it before stopping
 DynamoDB. The browser checks retry, validated empty discovery, loading, stale
 score retention and recovery, 390/1440px layouts and absence of provider calls
 from viewers. No visible browser or production provider request is used.
 
 Next: migration of every existing provider consumer and independent monitoring.
-Review whole-season payload size and read cost against the planned hot-record
-layout before claiming scalable infrastructure. Price and seek approval for cloud
+Validate cold/warm capacity, actual IAM and read latency in a cloud trial before
+claiming scalable infrastructure. Price and seek approval for cloud
 infrastructure before validating AWS failover and a controlled production cutover.

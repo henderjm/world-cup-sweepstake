@@ -135,6 +135,8 @@ test("read API uses strongly consistent database reads without any write command
     commands.push(command); return db.send(command, options);
   } } });
   const api = createScoreReadApi({ readSnapshot: (code, season) => reader.read(code, season), seasons: { CL: "2026" }, now: clock });
+  await reader.read("CL", "2026");
+  commands.length = 0;
   const responses = await Promise.all(Array.from({ length: 100 }, () => api(new Request("https://scores.test/CL/live"))));
   assert.ok(responses.every(response => response.status === 200));
   assert.equal(commands.length, 100);

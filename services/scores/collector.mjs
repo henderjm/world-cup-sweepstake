@@ -6,6 +6,7 @@ import { mapApiFootballMatches, mapApiFootballStandingsPayload, TERMINAL_MATCH_S
 import { assertApiFootballPayload } from "../../src/apiFootballPayload.js";
 import { hasStandings } from "../../src/standingsRecovery.js";
 import { nextSnapshot } from "./snapshots.mjs";
+import { normalizeSeasons } from "./config.mjs";
 
 const DISCOVERY_MS = 15 * 60000;
 const LIVE_MS = 15000;
@@ -61,10 +62,8 @@ function fixtureRows(payload, job, observedAt, epoch) {
 
 export class ScoreCollector {
   constructor({ store, provider, seasons, owner = randomUUID(), now = Date.now }) {
-    if (!seasons || !Object.keys(seasons).length || Object.entries(seasons).some(([code, season]) =>
-      !Object.hasOwn(COMPETITIONS, code) || !/^\d{4}$/.test(String(season)))) throw Error("Explicit supported competition seasons are required");
     this.store = store; this.provider = provider; this.owner = owner; this.now = now;
-    this.seasons = Object.fromEntries(Object.entries(seasons).map(([code, season]) => [code, String(season)]));
+    this.seasons = normalizeSeasons(seasons);
     this.retryAt = new Map();
     this.discovery = new Map();
   }

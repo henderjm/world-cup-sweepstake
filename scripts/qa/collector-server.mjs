@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { ScoreCollector } from "../../services/scores/collector.mjs";
 import { ScoreProvider } from "../../services/scores/provider.mjs";
 import { DynamoScoreStore } from "../../services/scores/dynamodb.mjs";
-import { createScoreReadApi } from "../../services/scores/snapshots.mjs";
+import { createReadHandler } from "../../services/scores/read-handler.mjs";
 import { client, createTable, deleteTable } from "../../services/scores/test/support.mjs";
 
 const start = Date.parse("2026-10-13T19:30:00Z"), db = client();
@@ -32,7 +32,7 @@ async function reset() {
   collector = new ScoreCollector({ store, provider, seasons: { CL: 2026 }, now: () => now });
 }
 await reset();
-const api = createScoreReadApi({ readSnapshot: (code, season) => store.read(code, season), seasons: { CL: 2026 }, now: () => now });
+const api = createReadHandler({ store: { read: (code, season) => store.read(code, season) }, seasons: { CL: 2026 }, now: () => now });
 const server = createServer(async (req, res) => {
   try {
     if (req.url === "/reset") await reset();
@@ -44,8 +44,9 @@ const server = createServer(async (req, res) => {
       if (event.state === "published") publications++;
       else if (!(req.url === "/stall" && event.state === "failed")) throw Error(`Unexpected collector state: ${event.state}`);
     } else if (req.url !== "/state") {
-      const response = await api(new Request(`http://127.0.0.1:8743${req.url}`, { method: req.method }));
-      res.writeHead(response.status, Object.fromEntries(response.headers)); res.end(await response.text()); return;
+      const response = await api({ version: "2.0", rawPath: new URL(req.url, "http://localhost").pathname,
+        requestContext: { http: { method: req.method } } });
+      res.writeHead(response.statusCode, response.headers); res.end(response.body); return;
     }
     res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({ now, calls, publications }));
   } catch (error) { res.writeHead(500); res.end(error.message); }

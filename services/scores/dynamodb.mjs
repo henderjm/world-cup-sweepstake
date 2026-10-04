@@ -3,6 +3,7 @@ import { GetItemCommand, PutItemCommand, TransactWriteItemsCommand } from "@aws-
 import { COMPETITIONS } from "../../src/competitions.js";
 import { nextSnapshot } from "./snapshots.mjs";
 import { initialBudget, reserveRequest, finishRequest } from "./budget.mjs";
+import { snapshotLayout, validateManifest, assembleSnapshot, digest, MAX_PART_BYTES } from "./layout.mjs";
 
 const leaseKey = { pk: { S: "COLLECTOR" } };
 const budgetKey = { pk: { S: "PROVIDER_BUDGET" } };
@@ -27,10 +28,13 @@ export class DynamoScoreStore {
     this.tableName = tableName;
     this.now = now;
     this.requestTimeoutMs = requestTimeoutMs;
+    this.parts = new Map();
+    this.partBytes = 0;
   }
 
-  send(command) {
-    return this.client.send(command, { abortSignal: AbortSignal.timeout(this.requestTimeoutMs) });
+  send(command, signal) {
+    const timeout = AbortSignal.timeout(this.requestTimeoutMs);
+    return this.client.send(command, { abortSignal: signal ? AbortSignal.any([timeout, signal]) : timeout });
   }
 
   async claim(owner, ttl = 30000) {
@@ -59,16 +63,49 @@ export class DynamoScoreStore {
   }
 
   async read(competition, season) {
-    const result = await this.send(new GetItemCommand({ TableName: this.tableName,
-      Key: snapshotKey(competition, season), ConsistentRead: true }));
-    return result.Item ? JSON.parse(result.Item.snapshot.S) : null;
+    const key = snapshotKey(competition, season), deadline = AbortSignal.timeout(this.requestTimeoutMs);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = await this.send(new GetItemCommand({ TableName: this.tableName, Key: key, ConsistentRead: true }), deadline);
+      if (!result.Item) return null;
+      const manifest = JSON.parse(result.Item.manifest.S);
+      validateManifest(manifest, competition, season, Number(result.Item.version.N));
+      const entries = await Promise.all(Object.entries(manifest.parts).map(async ([name, hash]) =>
+        [name, await this.readPart(`${key.pk.S}#${name}`, hash, deadline)]));
+      // A writer may replace a mutable partition after the manifest read.
+      // Retry the whole read; never attach that newer part to the older version.
+      if (entries.every(([, data]) => data !== null)) return assembleSnapshot(manifest, Object.fromEntries(entries));
+    }
+    throw Error("Score publication changed during read or a partition is unavailable");
+  }
+
+  async readPart(key, hash, signal) {
+    const cacheKey = `${key}#${hash}`;
+    if (this.parts.has(cacheKey)) return this.parts.get(cacheKey);
+    const result = await this.send(new GetItemCommand({ TableName: this.tableName, Key: { pk: { S: key } }, ConsistentRead: true }), signal);
+    const data = result.Item?.data?.S;
+    if (typeof data !== "string" || Buffer.byteLength(data) > MAX_PART_BYTES || result.Item.digest?.S !== hash || digest(data) !== hash) return null;
+    // Cache immutable strings by content digest; returning parsed objects would
+    // let one caller corrupt the value used by later readers.
+    if (!this.parts.has(cacheKey)) {
+      const size = Buffer.byteLength(data);
+      while (this.partBytes + size > 8 * 1024 * 1024) {
+        const oldest = this.parts.keys().next().value;
+        this.partBytes -= Buffer.byteLength(this.parts.get(oldest)); this.parts.delete(oldest);
+      }
+      this.parts.set(cacheKey, data); this.partBytes += size;
+    }
+    return data;
   }
 
   async publish(lease, input) {
     const previous = await this.read(input.competition, input.season);
     const next = nextSnapshot(previous, input, { epoch: lease.epoch, now: this.now() });
-    await this.commit(lease, { ...snapshotKey(input.competition, input.season),
-      snapshot: { S: JSON.stringify(next) } }, input.baseVersion);
+    const key = snapshotKey(input.competition, input.season), { manifest, parts } = snapshotLayout(next);
+    const old = previous ? snapshotLayout(previous).parts : {};
+    const changed = Object.entries(parts).filter(([name, part]) => old[name]?.digest !== part.digest)
+      .map(([name, part]) => ({ Put: { TableName: this.tableName,
+        Item: { pk: { S: `${key.pk.S}#${name}` }, digest: { S: part.digest }, data: { S: part.data } } } }));
+    await this.commit(lease, { ...key, manifest: { S: JSON.stringify(manifest) } }, input.baseVersion, undefined, changed);
     return next.version;
   }
 
@@ -100,7 +137,7 @@ export class DynamoScoreStore {
     return this.commit(lease, { ...budgetKey, budget: { S: JSON.stringify(next) } }, baseVersion, validThrough);
   }
 
-  async commit(lease, item, baseVersion, validThrough = this.now() + this.requestTimeoutMs) {
+  async commit(lease, item, baseVersion, validThrough = this.now() + this.requestTimeoutMs, additionalItems = []) {
     if (!lease || !Number.isSafeInteger(lease.expiresAt) || lease.expiresAt <= validThrough)
       throw Error("Collector lease expired or too close to expiry");
     await this.send(new TransactWriteItemsCommand({
@@ -120,6 +157,7 @@ export class DynamoScoreStore {
           ...(baseVersion ? { ExpressionAttributeNames: { "#version": "version" },
             ExpressionAttributeValues: { ":version": { N: String(baseVersion) } } } : {}),
         } },
+        ...additionalItems,
       ],
     }));
   }

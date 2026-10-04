@@ -4,7 +4,7 @@ import { TERMINAL_MATCH_STATUSES } from "../../src/mapApiFootball.js";
 import { hasStandings } from "../../src/standingsRecovery.js";
 import { snapshotObservationTime } from "../../src/scoreSnapshot.js";
 
-const MAX_BYTES = 300 * 1024;
+const MAX_BYTES = 2 * 1024 * 1024;
 const preMatch = new Set(["TIMED", "SCHEDULED"]);
 const validScore = score => Number.isInteger(score?.home) && score.home >= 0
   && Number.isInteger(score?.away) && score.away >= 0;
@@ -17,18 +17,19 @@ function timestamp(value, now) {
 // The storage adapter must atomically check the live lease and expected version
 // before replacing a snapshot. Validation alone cannot fence another process.
 export function nextSnapshot(previous, input, { epoch, now }) {
-  if (!COMPETITIONS[input.competition] || !/^\d{4}$/.test(String(input.season))) throw Error("Invalid competition or season");
+  if (!Object.hasOwn(COMPETITIONS, input.competition) || !/^\d{4}$/.test(String(input.season))) throw Error("Invalid competition or season");
   if (!Number.isSafeInteger(epoch) || epoch < 1 || !Number.isSafeInteger(now)) throw Error("Invalid writer generation");
   if (previous && (previous.competition !== input.competition || previous.season !== String(input.season)))
     throw Error("Snapshot identity changed");
   if (input.baseVersion !== (previous?.version ?? 0)) throw Error("Snapshot version conflict");
   if (previous && epoch < previous.collectorEpoch) throw Error("Writer generation moved backwards");
-  if (!Array.isArray(input.fixtures)) throw Error("A complete fixture snapshot is required");
+  if (!Array.isArray(input.fixtures) || input.fixtures.length > 2000) throw Error("A complete bounded fixture snapshot is required");
   timestamp(input.scheduleObservedAt, now);
   if (previous && input.scheduleObservedAt < previous.scheduleObservedAt) throw Error("Schedule observation moved backwards");
   const before = new Map((previous?.fixtures ?? []).map(row => [row.match.id, row]));
   const ids = new Set();
   for (const row of input.fixtures) {
+    if (Buffer.byteLength(JSON.stringify(row)) > 32 * 1024) throw Error("Fixture exceeds storage limit");
     const m = row?.match;
     if (!Number.isSafeInteger(m?.id) || m.id < 1 || ids.has(m.id)
       || !Number.isFinite(Date.parse(m.utcDate)) || !m.homeTeam || !m.awayTeam

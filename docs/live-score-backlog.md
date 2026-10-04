@@ -1274,3 +1274,59 @@ using small-record assumptions in an AWS cost or throughput claim. Prepare the
 priced active/standby deployment and shadow/cutover plan for approval, with real
 busy-window measurements and delivered alerts as gates. No production provider
 request, paid infrastructure, plan change or public deployment occurred.
+
+## October 4 — partitioned score storage and runnable read service
+
+The preceding collector turn made progress in `1f57fe8`. The next sizing check
+confirmed that the initial single-item design was inappropriate for larger
+seasons and frequent live writes. Storage now uses a small version manifest,
+eight active/upcoming buckets, sixteen other-fixture buckets and a separate
+standings record. Only changed partitions are written, atomically with the
+manifest and the existing lease/version conditions. Record keys are bounded
+per competition/season instead of accumulating a new set every publication.
+
+Readers fetch a strongly consistent manifest and verify partition content
+digests. A concurrent publication that changes a part causes a bounded whole-read
+retry; missing/corrupt data returns unavailable. An 8 MiB serialized-part cache
+reduces repeat reads without caching manifests or resetting observation ages.
+Cold requests retain independent network deadlines. The bounds are 2 MiB and
+2,000 fixtures per normalized snapshot, 32 KiB per fixture, 256 KiB per stored
+partition, 64 KiB of standings and a 4 KiB manifest. Oversize writes fail before
+replacing the prior snapshot. This changes the unreleased prototype storage
+format; no deployed store or production data was migrated.
+
+`services/scores/lambda.mjs` now exposes the read handler for HTTP API Gateway
+payload format 2.0. `run-read-api.mjs` serves the same adapter on loopback for
+local validation. Neither needs a provider key, collection lease or provider
+budget. Shared season/loopback configuration was extracted from the collector
+entrypoint rather than creating competing configuration rules. Deployment IAM
+must enforce read-only access; actual cloud permissions and routing remain untested.
+
+Evidence:
+- All 42 service checks pass, including a 1,000-fixture synthetic season,
+  a publication injected between manifest and partition reads, missing/corrupt
+  parts, atomic oversize rejection, movement from active to completed buckets,
+  and an actual read-service process without a provider key. The large test
+  initially exposed aliased score objects in its synthetic fixture builder;
+  correcting that test data made the intended single-score update verifiable.
+- The synthetic snapshot is 728,960 bytes. The largest of its 25 parts is
+  45,189 bytes; the manifest is 1,431 bytes. A cold reader fetches 730,259 bytes
+  of stored values. A warm unchanged read fetches only the manifest; one score
+  update requires 3,606 bytes and writes only one part plus the manifest under
+  a lease check. These exclude protocol overhead and do not establish AWS bills,
+  cold-start frequency, browser transfer savings or end-to-end latency. The API
+  still returns the complete season for compatibility.
+- Actual database restart preserves the partitioned score, generation, counted
+  requests and cooldown; takeover and publication resume without resetting usage.
+- All 1,606 app regression tests pass. Final headless mobile/desktop checks run
+  through the new gateway adapter and storage layout: retry, empty, loading,
+  stale-score retention and recovery all pass without errors or overflow. Viewer
+  reads add no provider calls or publications. The existing isolated frontend
+  was reused after verifying its committed frontend sources are unchanged.
+
+Next P0: independent runtime monitoring and verified alert delivery, complete
+inventory/migration of existing provider consumers, and a packaged, priced cloud
+trial. Include cold/warm read volume, whole-season response size, gateway
+throttling, IAM and multi-zone takeover in the review. Require real busy-window
+freshness and latency evidence before production cutover. No real score-provider
+request, AWS resource, subscription change or public deployment was performed.

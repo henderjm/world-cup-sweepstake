@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "collect": "node run-collector.mjs",
+    "serve": "node run-read-api.mjs",
     "test:integration": "node --test test/*.test.mjs"
   },
   "dependencies": {
