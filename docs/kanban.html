@@ -10,7 +10,7 @@
 @media(max-width:650px){#kickoff-kanban .lanes{grid-template-columns:1fr}}
 </style>
 <div id="kickoff-kanban">
-<div class="viz-row text-small"><span>Updated 2026-10-04</span><span>Code 56309fb frontend · 1a7527e collector · bb79bf0 reader</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
+<div class="viz-row text-small"><span>Updated 2026-10-10</span><span>Code 56309fb frontend · 46f0c14 collector · bb79bf0 reader</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
 <div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">2</span></h3><article data-card="reliability">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Make busy matchdays reliable</summary>
@@ -55,7 +55,11 @@
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Reliability recorder and read contract</summary>
 <dl><dt>Acceptance</dt><dd>Reject older snapshots without discarding valid mixed-age updates. Record missing checks rather than silently excluding them from reliability reports.</dd><dt>Next action</dt><dd>Deploy independent monitoring with tested alert delivery.</dd><dt>Evidence</dt><dd>4d9b364, 64f7336 · locally verified; not an installed continuous monitor.</dd></dl></details>
-<p>Version-aware recovery with a durable measurement baseline.</p></article></section><section aria-label="Released"><h3>Released <span class="text-muted">16</span></h3><article data-card="consumers">
+<p>Version-aware recovery with a durable measurement baseline.</p></article></section><section aria-label="Released"><h3>Released <span class="text-muted">17</span></h3><article data-card="live-detail-budget">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Restore live timelines and line-ups after background quota exhaustion</summary>
+<dl><dt>Acceptance</dt><dd>Current fixture, timeline and lineups publish after supplementary cutoff; scores retain 3000 exclusive requests under the 7500 policy. Verify real public drawer on desktop and mobile and preserve rollout freshness evidence.</dd><dt>Next action</dt><dd>Model a full busy PL/CL day before claiming the quota supports every detail refresh. Player statistics remain under the background allowance.</dd><dt>Evidence</dt><dd>Collector 46f0c14 deployed; AWS UPDATE_COMPLETE. Both starting elevens, one card and three substitutions verified for match 1557425. 85 service and 4 infrastructure tests pass; headless drawer state checks pass. 60 public probes, no HTTP failures, maximum score source age 25.227s. See 2026-10-10-live-detail-recovery.json.</dd></dl></details>
+<p>Current match timelines and line-ups now survive the background-data cutoff; production desktop and mobile verified.</p></article><article data-card="consumers">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Migrate every provider consumer</summary>
 <dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Complete supplementary history and invalid detail diagnostics within the shared allowance.</dd><dt>Evidence</dt><dd>Worker provider key removed; source variable set; feeder run 37219078579 skipped. Fantasy pool publishes 618 unambiguous players with explicit degraded coverage.</dd></dl></details>

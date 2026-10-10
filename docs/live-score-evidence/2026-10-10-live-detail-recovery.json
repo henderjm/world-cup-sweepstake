@@ -1,0 +1,80 @@
+{
+  "date": "2026-10-10",
+  "collectorCommit": "46f0c146988f567175e67670a38f489b912acbe6",
+  "imageDigest": "sha256:42d2cf73da35a6ab5cfbbb1aac12d60df99348320d5c61fb6d01dd909bdd3878",
+  "readerCommit": "bb79bf0",
+  "frontendCommit": "56309fb",
+  "matchId": 1557425,
+  "cause": "All detail collection was supplementary. Total use 2962 exceeded the 1500 optional cutoff; no detail version existed for this live fixture.",
+  "policy": {
+    "dailyLimit": 7500,
+    "backgroundCutoff": 1500,
+    "currentDetailCutoff": 4500,
+    "finalScoreOnlyAllowance": 3000,
+    "providerUpgrade": false,
+    "budgetReset": false
+  },
+  "coverageAfter": {
+    "fixture": {
+      "state": "complete",
+      "observedAt": 1791654660759,
+      "ageMs": 32509
+    },
+    "lineups": {
+      "state": "complete",
+      "observedAt": 1791654661814,
+      "ageMs": 31454
+    },
+    "events": {
+      "state": "complete",
+      "observedAt": 1791654667467,
+      "ageMs": 25801
+    },
+    "players": {
+      "state": "missing",
+      "observedAt": null,
+      "ageMs": null
+    }
+  },
+  "snapshotAfter": {
+    "version": 2361,
+    "collectorEpoch": 8,
+    "observedAt": 1791654678894,
+    "detailVersion": 3,
+    "detailCollectorEpoch": 8
+  },
+  "lineups": [
+    11,
+    11
+  ],
+  "events": {
+    "cards": 1,
+    "substitutions": 3
+  },
+  "tests": {
+    "scoreServicePassed": 85,
+    "infrastructurePassed": 4,
+    "headlessDrawerWidths": [
+      320,
+      390,
+      1440
+    ],
+    "headlessProductionWidths": [
+      390,
+      1440
+    ],
+    "productionJavascriptErrors": []
+  },
+  "remaining": [
+    "Player statistics remain missing under supplementary cap",
+    "Full busy-day budget capacity and independent reliability monitoring unmeasured"
+  ],
+  "publicProbes": {
+    "count": 60,
+    "httpFailures": 1,
+    "maxSourceAgeSeconds": 25.227,
+    "from": "2026-10-10T17:49:06.795Z",
+    "to": "2026-10-10T18:12:03.848Z"
+  },
+  "deploymentStatus": "CloudFormation UPDATE_COMPLETE; both ECS services COMPLETED with one running replacement each"
+}

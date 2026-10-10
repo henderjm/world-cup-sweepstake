@@ -1,6 +1,6 @@
 # Daily live-score product backlog
 
-Updated: 2026-10-04. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
+Updated: 2026-10-10. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
 Starting revision: `bfaf0a66e03febeda47647789e275853155ef638`.
 
 ## October 10 live detail repair
@@ -20,7 +20,11 @@ player stats and historical detail cannot use that allowance; live scores run
 first and retain their final reserve; all calls obey the daily cap; headless
 production drawer shows provider-confirmed detail. Rolling deployments must start
 replacement tasks before stopping existing collectors (100% minimum, 200% maximum).
-Local verification: 85 score-service regression tests pass. Production pending.
+Verified: 85 score-service and four infrastructure tests pass; headless drawer
+state checks pass at 320/390/1440px. AWS rollout completed; real desktop/mobile
+drawers show both starting elevens, one card and three substitutions. 60 public
+score probes succeeded, maximum source age 25.227s. Player statistics remain
+missing. Evidence: `live-score-evidence/2026-10-10-live-detail-recovery.json`.
 
 ## Current production state after approved AWS cutover
 
@@ -39,6 +43,7 @@ Hourly automation stays paused.
 | Priority | Remaining work | Acceptance |
 | --- | --- | --- |
 | P0 | Independent matchday monitoring and paging | Supervised collector-independent checks, monitor-loss watchdog, durable alerts and an approved receiver; preserve missing observations and measure the existing SLOs. No new paid service without approval. |
+| P0 | Busy-day provider budget | Model PL/CL score, standings and current detail demand across a full busy day, including retries. Preserve the final 3000 score-only requests, expose detail admission failures, and measure missing sections; do not purchase a plan upgrade without approval. |
 | P0 | Public read capacity | Verify representative concurrent mobile/desktop clients against the 10 RPS / burst 20 AWS ceiling, including static exports. Demonstrate a cache/rate-limit strategy that meets agreed traffic and freshness targets before claiming capacity. |
 | P1 | Supplementary collection quality | Finish all three fantasy history seasons without touching the 6000-request score reserve. Stop repeated invalid archived-detail retries starving history. Log bounded validation reasons and fixture IDs. Verify cached exports retain source age and never invent player positions or xP. |
 | P1 | Provider squad conflicts | Player 416250 appears twice in Aston Villa with conflicting positions. The stored pool excludes every ambiguous ID and reports them in coverage. Publish unambiguous players, retain a recent complete export where possible, and verify eventual provider correction. |
