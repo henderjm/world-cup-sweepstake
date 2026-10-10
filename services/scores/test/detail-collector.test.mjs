@@ -10,12 +10,12 @@ import { DynamoScoreStore } from "../dynamodb.mjs";
 import { detailCoverage } from "../details.mjs";
 import { client, createTable, deleteTable } from "./support.mjs";
 
-async function setup(t, limit = 1000) {
+async function setup(t, limit = 1000, used = 0) {
   const db = client(), tableName = await createTable(db);
   let now = Date.parse("2026-10-13T19:30:00Z") - 61000;
   const clock = () => now, calls = [];
   const store = new DynamoScoreStore({ client: db, tableName, now: clock });
-  await store.initializeBudget(await store.claim("bootstrap"), { dailyLimit: limit, minuteLimit: 300, scoreReserve: 100 }, 0);
+  await store.initializeBudget(await store.claim("bootstrap"), { dailyLimit: limit, minuteLimit: 300, scoreReserve: 100 }, used);
   now += 61000;
   const row = { fixture: { id: 900001, date: new Date(now - 1800000).toISOString(), status: { short: "1H", elapsed: 30 } },
     league: { id: 2, season: 2026, round: "League Stage - 2" },
@@ -65,18 +65,25 @@ test("one detail request yields to due live scores and preserves raw unknown sta
   assert.equal((await store.readBudget()).used, calls.length);
 });
 
-test("supplementary detail cannot consume the score reserve", async t => {
-  const { collector, collect, calls, advance, state, store } = await setup(t, 103);
-  await collect(result => result.section === "fixture" && result.state === "published");
+test("live timeline and lineups survive optional exhaustion while scores retain a reserve", async t => {
+  const { collector, collect, calls, advance, state, store } = await setup(t, 103, 3);
+  await collect(result => result.section === "lineups" && result.state === "published");
+  assert.equal((await store.readDetail("CL", "2026", 900001)).sections.events.coverage, "complete");
   const count = calls.length;
-  assert.equal(count, 3); // discovery, unavailable standings, detail fixture
   advance(1000);
   const deferred = await collector.step();
-  assert.equal(deferred.state, "deferred"); assert.equal(deferred.kind, "detail");
+  assert.equal(deferred.section, "players"); assert.equal(deferred.state, "deferred");
   assert.equal(calls.length, count);
   advance(16000); state.row.goals.home = 2;
   assert.equal((await collector.step()).kind, "live");
   assert.equal((await store.read("CL", "2026")).fixtures[0].match.score.home, 2);
+});
+
+test("current detail cannot consume the final score-only allowance", async t => {
+  const { collect, store } = await setup(t, 103, 51);
+  const deferred = await collect(result => result.kind === "detail" && result.state === "deferred");
+  assert.equal(deferred.reason, "score-reserve");
+  assert.equal((await store.readBudget()).used, 53);
 });
 
 test("partial refresh retains complete lineups and their original age", async t => {
@@ -138,4 +145,19 @@ test("empty pre-match detail is unpublished; partial coverage retries sooner tha
   assert.equal(detailJobs(snapshots, { CL: "2026" }, manifests, now).find(job => job.section === "lineups").due, now + 30000);
   match.utcDate = new Date(now + 3 * 3600000).toISOString();
   assert.deepEqual(detailJobs(snapshots, { CL: "2026" }, manifests, now), []);
+});
+
+test("only current fixture, events and lineups use the middle allowance", () => {
+  const now = Date.parse("2026-10-10T17:00:00Z");
+  const match = { id: 1, utcDate: new Date(now - 3600000).toISOString(), status: "FINISHED" };
+  const key = detailKey("PL", "2026", 1);
+  const manifests = new Map([[key, { sections: { fixture: { observedAt: now, coverage: "complete" } } }]]);
+  const jobs = () => detailJobs({ PL: { fixtures: [{ match }] } }, { PL: "2026" }, manifests, now);
+  const currentKey = jobs().find(job => job.section === "events").key;
+  assert.deepEqual(jobs().map(job => job.admission), ["match-detail", "match-detail", "match-detail", "supplementary"]);
+  match.utcDate = new Date(now - 5 * 3600000).toISOString();
+  assert.ok(jobs().every(job => job.admission === "supplementary"));
+  assert.notEqual(jobs().find(job => job.section === "events").key, currentKey);
+  match.status = "IN_PLAY";
+  assert.equal(jobs().find(job => job.section === "events").admission, "match-detail");
 });

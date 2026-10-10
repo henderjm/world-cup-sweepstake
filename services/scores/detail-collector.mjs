@@ -1,3 +1,4 @@
+import { isLive } from "../../src/format.js";
 import { COMPETITIONS } from "../../src/competitions.js";
 import { assertApiFootballPayload } from "../../src/apiFootballPayload.js";
 import { mapApiFootballMatches } from "../../src/mapApiFootball.js";
@@ -11,9 +12,16 @@ export function detailJobs(snapshots, seasons, manifests, now) {
       const key = detailKey(competition, season, match.id);
       known.add(key);
       if (Date.parse(match.utcDate) > now + 2 * 3600000 || ["CANCELLED", "POSTPONED"].includes(match.status)) continue;
-      const priority = ["FINISHED", "AWARDED"].includes(match.status) ? 6 : 4;
-      const add = (section, due) => jobs.push({ competition, season, kind: "detail", section, match, priority, due,
-        detailKey: key, key: `${key}:${section}` });
+      const terminal = ["FINISHED", "AWARDED"].includes(match.status);
+      const priority = terminal ? 6 : 4;
+      const kickoff = Date.parse(match.utcDate);
+      const current = isLive(match.status) || (kickoff >= now - 4 * 3600000
+        && (terminal || ["TIMED", "SCHEDULED"].includes(match.status)));
+      const add = (section, due) => {
+        const admission = current && section !== "players" ? "match-detail" : "supplementary";
+        jobs.push({ competition, season, kind: "detail", section, match, priority, due, admission,
+          detailKey: key, key: `${key}:${section}:${admission}` });
+      };
       if (!manifests.has(key)) { add("hydrate", 0); continue; }
       const manifest = manifests.get(key), profile = matchDetailCacheProfile(match, now);
       const coverage = detailCoverage(manifest, match, now);

@@ -3,6 +3,25 @@
 Updated: 2026-10-04. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
 Starting revision: `bfaf0a66e03febeda47647789e275853155ef638`.
 
+## October 10 live detail repair
+
+Man United–Tottenham (1557425) had no stored detail at 17:46 UTC despite current
+scores. Shared usage was 2962/7500: the 1500 supplementary cutoff blocked every
+detail section. Current fixture identity, events and lineups now have a bounded
+middle allowance up to 4500 total requests; the final 3000 remain score-only.
+Historical detail and player statistics retain the 1500 cutoff. Current means
+live, within two hours before kickoff, or up to four hours after kickoff for
+scheduled/recently finished fixtures. Admission changes use separate retry keys.
+This restores access, not unlimited freshness: middle-tier exhaustion can still
+defer details, and provider availability is independently validated.
+
+Acceptance: current fixture/events/lineups publish after optional exhaustion;
+player stats and historical detail cannot use that allowance; live scores run
+first and retain their final reserve; all calls obey the daily cap; headless
+production drawer shows provider-confirmed detail. Rolling deployments must start
+replacement tasks before stopping existing collectors (100% minimum, 200% maximum).
+Local verification: 85 score-service regression tests pass. Production pending.
+
 ## Current production state after approved AWS cutover
 
 October 4: the owner approved provisioning, cutover and the provider-key transfer.

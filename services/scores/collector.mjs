@@ -180,7 +180,7 @@ export class ScoreCollector {
       const stored = await this.store.readDetail(job.competition, job.season, job.match.id);
       const path = job.section === "fixture" ? `/fixtures?id=${job.match.id}` : `/fixtures/${job.section}?fixture=${job.match.id}`;
       phase = "request";
-      const result = await this.provider.request(lease, path, { priority: "supplementary" });
+      const result = await this.provider.request(lease, path, { priority: job.admission });
       if (!result.allowed) {
         this.retryAt.set(job.key, result.retryAt);
         return { state: "deferred", kind: "detail", section: job.section, competition: job.competition,

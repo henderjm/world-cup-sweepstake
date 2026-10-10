@@ -34,14 +34,17 @@ function currentBudget(previous, now) {
 }
 
 export function reserveRequest(previous, { priority, id, now, admissionTimeoutMs }) {
-  if (!["scores", "supplementary"].includes(priority) || !id) throw Error("Invalid provider request priority or ID");
+  if (!["scores", "match-detail", "supplementary"].includes(priority) || !id) throw Error("Invalid provider request priority or ID");
   const next = currentBudget(previous, now);
   const expiresAt = now + admissionTimeoutMs + DISPATCH_WINDOW_MS + PROVIDER_TIMEOUT_MS;
   const tomorrow = (next.day + 1) * DAY_MS;
   const deny = (reason, retryAt) => ({ allowed: false, reason, retryAt });
   if (now < Math.max(next.nextAt, next.blockedUntil)) return deny("paced", Math.max(next.nextAt, next.blockedUntil));
   if (expiresAt >= tomorrow) return deny("day-boundary", tomorrow);
-  const cap = next.policy.dailyLimit - (priority === "scores" ? 0 : next.policy.scoreReserve);
+  // Current match details may use half the reserve; scores retain the other half.
+  const reserve = priority === "scores" ? 0 : priority === "match-detail"
+    ? Math.ceil(next.policy.scoreReserve / 2) : next.policy.scoreReserve;
+  const cap = next.policy.dailyLimit - reserve;
   if (next.used >= cap) return deny(priority === "scores" ? "daily-limit" : "score-reserve", tomorrow);
   next.used++;
   next.permit = { id, day: next.day, dispatchBy: expiresAt - PROVIDER_TIMEOUT_MS, expiresAt };

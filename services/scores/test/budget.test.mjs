@@ -88,3 +88,10 @@ test("failures back off, and UTC rollover preserves pacing without carrying dail
   assert.throws(() => reserve(state, start), /clock moved backwards/);
   assert.throws(() => finishRequest(nextDay.next, { id: "other" }, { ok: true }, midnight), /replaced/);
 });
+
+test("current match details have bounded access after optional data is stopped", () => {
+  assert.equal(reserve(initial(7), start + 60000, "match-detail").allowed, true);
+  assert.equal(reserve(initial(8), start + 60000, "match-detail").reason, "score-reserve");
+  assert.equal(reserve(initial(8), start + 60000, "scores").allowed, true);
+  assert.equal(reserve(initial(10), start + 60000, "match-detail").allowed, false);
+});
