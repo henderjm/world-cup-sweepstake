@@ -20,7 +20,7 @@
       "summary": "Current match timelines and line-ups now survive the background-data cutoff; production desktop and mobile verified.",
       "acceptance": "Current fixture, timeline and lineups publish after supplementary cutoff; scores retain 3000 exclusive requests under the 7500 policy. Verify real public drawer on desktop and mobile and preserve rollout freshness evidence.",
       "next": "Model a full busy PL/CL day before claiming the quota supports every detail refresh. Player statistics remain under the background allowance.",
-      "evidence": "Collector 46f0c14 deployed; AWS UPDATE_COMPLETE. Both starting elevens, one card and three substitutions verified for match 1557425. 85 service and 4 infrastructure tests pass; headless drawer state checks pass. 60 public probes, no HTTP failures, maximum score source age 25.227s. See 2026-10-10-live-detail-recovery.json."
+      "evidence": "Collector 46f0c14 deployed; AWS UPDATE_COMPLETE. Both starting elevens, one card and three substitutions verified for match 1557425. 85 service and 4 infrastructure tests pass; headless drawer state checks pass. 60 public probes, 59 successful and one timeout, maximum score source age 25.227s. See 2026-10-10-live-detail-recovery.json."
     },
     {
       "id": "reliability",

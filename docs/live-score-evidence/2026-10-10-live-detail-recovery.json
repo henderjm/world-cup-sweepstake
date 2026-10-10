@@ -74,7 +74,58 @@
     "httpFailures": 1,
     "maxSourceAgeSeconds": 25.227,
     "from": "2026-10-10T17:49:06.795Z",
-    "to": "2026-10-10T18:12:03.848Z"
+    "to": "2026-10-10T18:12:03.848Z",
+    "failures": [
+      {
+        "at": "2026-10-10T18:10:37.423Z",
+        "error": "The operation was aborted due to timeout"
+      }
+    ],
+    "maxGapSeconds": 1031.808,
+    "limitation": "Local sampling contains a long observation gap and one timeout; this is not continuous uptime evidence. Timeout cause is not established."
   },
-  "deploymentStatus": "CloudFormation UPDATE_COMPLETE; both ECS services COMPLETED with one running replacement each"
+  "deploymentStatus": "CloudFormation UPDATE_COMPLETE; both ECS services COMPLETED with one running replacement each",
+  "followup": {
+    "minute": 86,
+    "score": {
+      "home": 1,
+      "away": 0,
+      "htHome": 0,
+      "htAway": 0,
+      "penHome": null,
+      "penAway": null
+    },
+    "coverage": {
+      "fixture": {
+        "state": "complete",
+        "observedAt": 1791655991465,
+        "ageMs": 28963
+      },
+      "lineups": {
+        "state": "complete",
+        "observedAt": 1791655567389,
+        "ageMs": 453039
+      },
+      "events": {
+        "state": "complete",
+        "observedAt": 1791655996856,
+        "ageMs": 23572
+      },
+      "players": {
+        "state": "missing",
+        "observedAt": null,
+        "ageMs": null
+      }
+    },
+    "snapshot": {
+      "version": 2446,
+      "collectorEpoch": 8,
+      "observedAt": 1791656007247,
+      "detailVersion": 46,
+      "detailCollectorEpoch": 8
+    },
+    "goals": 1,
+    "cards": 5,
+    "substitutions": 7
+  }
 }

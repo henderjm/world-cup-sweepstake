@@ -23,7 +23,7 @@ replacement tasks before stopping existing collectors (100% minimum, 200% maximu
 Verified: 85 score-service and four infrastructure tests pass; headless drawer
 state checks pass at 320/390/1440px. AWS rollout completed; real desktop/mobile
 drawers show both starting elevens, one card and three substitutions. 60 public
-score probes succeeded, maximum source age 25.227s. Player statistics remain
+score probes recorded 59 successful reads and one timeout; maximum successful-read source age 25.227s. Player statistics remain
 missing. Evidence: `live-score-evidence/2026-10-10-live-detail-recovery.json`.
 
 ## Current production state after approved AWS cutover
