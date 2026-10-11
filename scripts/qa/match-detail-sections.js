@@ -5,15 +5,17 @@ async (browserPage) => {
   for (const width of [320, 390, 1440]) {
     const context = await browserPage.context().browser().newContext({ viewport: { width, height: 844 } });
     const page = await context.newPage();
+    await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.abort());
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     let count = 25;
+    let outdated = true;
     let unavailable = false;
     let loading = true;
     let release;
     const gate = new Promise(resolve => { release = resolve; });
     const feed = () => ({ competition: 'CL', source: 'Browser fixture', lastUpdated: new Date().toISOString(), standings: [], matches: [{ id: 900001, homeTeam: 'Home', awayTeam: 'Away', utcDate: '2026-09-11T12:00:00Z', status: 'IN_PLAY', minute: count, stage: 'LEAGUE_STAGE', matchday: 1, score: { home: 1, away: 0 } }] });
-    const detail = () => ({ id: 900001, goals: [{ minute: 1, scorer: 'Scorer', team: 'Home' }], cards: Array.from({ length: count }, (_, i) => ({ minute: i + 2, player: `Card ${i + 1}`, team: 'Home', card: 'YELLOW' })), home: { name: 'Home', lineup: Array.from({ length: 11 }, (_, i) => ({ name: `Home player ${i + 1}`, num: i + 1 })) }, away: { name: 'Away', lineup: Array.from({ length: 11 }, (_, i) => ({ name: `Away player ${i + 1}`, num: i + 1 })) }, playerStats: [{ playerId: 1 }] });
+    const detail = () => ({ id: 900001, coverage: { events: { state: outdated ? "outdated-result" : "complete", ageMs: 105 * 60000 } }, goals: [{ minute: 1, scorer: 'Scorer', team: 'Home' }], cards: Array.from({ length: count }, (_, i) => ({ minute: i + 2, player: `Card ${i + 1}`, team: 'Home', card: 'YELLOW' })), home: { name: 'Home', lineup: Array.from({ length: 11 }, (_, i) => ({ name: `Home player ${i + 1}`, num: i + 1 })) }, away: { name: 'Away', lineup: Array.from({ length: 11 }, (_, i) => ({ name: `Away player ${i + 1}`, num: i + 1 })) }, playerStats: [{ playerId: 1 }] });
     try {
       await page.clock.install({ time: new Date('2026-09-11T12:30:00Z') });
       await page.addInitScript(() => localStorage.setItem('gs-session', 'intercepted-test-session'));
@@ -29,7 +31,7 @@ async (browserPage) => {
         }
         return route.fulfill({ status: 404, body: 'Not in fixture' });
       });
-      await page.goto('http://127.0.0.1:8732/#live?competition=CL');
+      await page.goto('http://127.0.0.1:8732/#live?competition=CL', { waitUntil: 'domcontentloaded' });
       await page.locator('.score-day [data-match-id]').click();
       await page.getByText('Loading timeline…', { exact: true }).waitFor();
       await page.getByRole('navigation', { name: 'Match sections' }).getByRole('button', { name: 'Line-ups', exact: true }).click();
@@ -38,6 +40,9 @@ async (browserPage) => {
       release();
       await page.getByText('Home player 1', { exact: false }).first().waitFor();
       assert(await page.locator('#mdLineups').evaluate(e => e === document.activeElement), 'Loading completion lost section focus');
+      await page.getByText(/Timeline updates delayed/).waitFor();
+      assert((await page.locator('#mdTimeline').innerText()).includes('105 minutes ago'), 'Old timeline source age missing');
+      outdated = false;
       const hash = await page.evaluate(() => location.hash);
       const nav = page.getByRole('navigation', { name: 'Match sections' });
       await nav.getByRole('button', { name: 'Line-ups', exact: true }).click();
@@ -45,6 +50,7 @@ async (browserPage) => {
       count = 30;
       await page.clock.runFor(20000);
       await page.getByText('Card 30', { exact: false }).waitFor();
+      assert(await page.getByText(/Timeline updates delayed/).count() === 0, 'Recovered timeline kept stale warning');
       const after = await page.locator('#mdLineups').evaluate(e => e.getBoundingClientRect().top);
       assert(Math.abs(before - after) < 2, `Line-ups jumped ${after - before}px at ${width}`);
       assert(await page.locator('#mdLineups').evaluate(e => e === document.activeElement), 'Polling lost section focus');
@@ -84,6 +90,7 @@ async (browserPage) => {
   for (const status of ['TIMED', 'IN_PLAY', 'FINISHED', 'POSTPONED', 'CANCELLED', 'ERROR']) {
     const context = await browserPage.context().browser().newContext({ viewport: { width: 390, height: 844 } });
     const page = await context.newPage();
+    await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.abort());
     let failure = status === 'ERROR';
     try {
       await page.clock.install({ time: new Date('2026-09-11T12:30:00Z') });
@@ -95,7 +102,7 @@ async (browserPage) => {
         if (path === '/match/900001') return failure ? route.fulfill({ status: 503, body: 'Unavailable' }) : route.fulfill({ json: { id: 900001, venue: 'Test stadium' } });
         return route.fulfill({ status: 404, body: 'Not in fixture' });
       });
-      await page.goto('http://127.0.0.1:8732/#live?competition=CL');
+      await page.goto('http://127.0.0.1:8732/#live?competition=CL', { waitUntil: 'domcontentloaded' });
       await page.locator('.score-day [data-match-id]').click();
       await page.locator('[data-md-loading]').waitFor({ state: 'detached' });
       const text = await page.locator('#mdBody').innerText();

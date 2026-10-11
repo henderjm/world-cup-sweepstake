@@ -13,12 +13,13 @@ export function detailJobs(snapshots, seasons, manifests, now) {
       known.add(key);
       if (Date.parse(match.utcDate) > now + 2 * 3600000 || ["CANCELLED", "POSTPONED"].includes(match.status)) continue;
       const terminal = ["FINISHED", "AWARDED"].includes(match.status);
-      const priority = terminal ? 6 : 4;
       const kickoff = Date.parse(match.utcDate);
-      const current = isLive(match.status) || (kickoff >= now - 4 * 3600000
+      const current = isLive(match.status) || (kickoff >= now - 24 * 3600000
         && (terminal || ["TIMED", "SCHEDULED"].includes(match.status)));
+      const priority = current ? 4 : 6;
+      const beforeKickoff = ["TIMED", "SCHEDULED"].includes(match.status);
       const add = (section, due) => {
-        const admission = current && section !== "players" ? "match-detail" : "supplementary";
+        const admission = current ? "scores" : "supplementary";
         jobs.push({ competition, season, kind: "detail", section, match, priority, due, admission,
           detailKey: key, key: `${key}:${section}:${admission}` });
       };
@@ -26,11 +27,15 @@ export function detailJobs(snapshots, seasons, manifests, now) {
       const manifest = manifests.get(key), profile = matchDetailCacheProfile(match, now);
       const coverage = detailCoverage(manifest, match, now);
       for (const section of DETAIL_SECTIONS) {
+        if (beforeKickoff && ["events", "players"].includes(section)) continue;
         // Fixture identity supplies the team IDs used to validate other sections.
         if (section !== "fixture" && !manifest?.sections.fixture) continue;
         const previous = manifest?.sections[section];
+        const interval = beforeKickoff ? (section === "fixture" || previous?.coverage === "complete" ? 15 * 60000 : 5 * 60000)
+          : terminal ? profile[section] * 1000
+            : Math.min(profile[section] * 1000, previous?.coverage === "partial" ? 60000 : Infinity);
         add(section, previous && coverage[section].state !== "outdated-result"
-          ? previous.observedAt + Math.min(profile[section] * 1000, previous.coverage === "partial" ? 30000 : Infinity) : 0);
+          ? previous.observedAt + interval : 0);
       }
     }
   }

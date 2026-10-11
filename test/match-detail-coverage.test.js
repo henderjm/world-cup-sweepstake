@@ -32,3 +32,14 @@ test("partial detail preserves available players and metadata while explaining t
 test("metadata survives an otherwise empty detail payload", () => {
   assert.match(renderDetail(match, { venue: "Empty stadium" }), /Empty stadium/);
 });
+
+test("an outdated nonempty timeline warns independently of the fresh final score", () => {
+  const detail = { cards: [{ minute: 8, player: "Old card", team: "Home", card: "YELLOW" }],
+    coverage: { events: { state: "outdated-result", ageMs: 105 * 60000 } } };
+  const html = renderDetail({ ...match, status: "FINISHED" }, detail);
+  assert.match(html, /Old card/);
+  assert.match(html, /Timeline updates delayed/);
+  assert.match(html, /105 minutes ago/);
+  detail.coverage.events.state = "complete";
+  assert.doesNotMatch(renderDetail(match, detail), /Timeline updates delayed/);
+});

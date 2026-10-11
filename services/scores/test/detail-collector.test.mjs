@@ -72,18 +72,18 @@ test("live timeline and lineups survive optional exhaustion while scores retain 
   const count = calls.length;
   advance(1000);
   const deferred = await collector.step();
-  assert.equal(deferred.section, "players"); assert.equal(deferred.state, "deferred");
-  assert.equal(calls.length, count);
+  assert.equal(deferred.section, "players"); assert.equal(deferred.state, "published");
+  assert.equal(calls.length, count + 1);
   advance(16000); state.row.goals.home = 2;
   assert.equal((await collector.step()).kind, "live");
   assert.equal((await store.read("CL", "2026")).fixtures[0].match.score.home, 2);
 });
 
-test("current detail cannot consume the final score-only allowance", async t => {
-  const { collect, store } = await setup(t, 103, 51);
+test("current detail still obeys the hard daily allowance", async t => {
+  const { collect, store } = await setup(t, 103, 101);
   const deferred = await collect(result => result.kind === "detail" && result.state === "deferred");
-  assert.equal(deferred.reason, "score-reserve");
-  assert.equal((await store.readBudget()).used, 53);
+  assert.equal(deferred.reason, "daily-limit");
+  assert.equal((await store.readBudget()).used, 103);
 });
 
 test("partial refresh retains complete lineups and their original age", async t => {
@@ -142,22 +142,60 @@ test("empty pre-match detail is unpublished; partial coverage retries sooner tha
   const meta = { observedAt: now, subject: detailSubject(match), coverage: "partial" };
   const manifests = new Map([[key, { sections: { fixture: { ...meta, coverage: "complete" }, lineups: meta } }]]);
   const snapshots = { CL: { fixtures: [{ match }] } };
-  assert.equal(detailJobs(snapshots, { CL: "2026" }, manifests, now).find(job => job.section === "lineups").due, now + 30000);
+  assert.equal(detailJobs(snapshots, { CL: "2026" }, manifests, now).find(job => job.section === "lineups").due, now + 5 * 60000);
   match.utcDate = new Date(now + 3 * 3600000).toISOString();
   assert.deepEqual(detailJobs(snapshots, { CL: "2026" }, manifests, now), []);
 });
 
-test("only current fixture, events and lineups use the middle allowance", () => {
+test("current match sections use the protected allowance; archives remain optional", () => {
   const now = Date.parse("2026-10-10T17:00:00Z");
   const match = { id: 1, utcDate: new Date(now - 3600000).toISOString(), status: "FINISHED" };
   const key = detailKey("PL", "2026", 1);
   const manifests = new Map([[key, { sections: { fixture: { observedAt: now, coverage: "complete" } } }]]);
   const jobs = () => detailJobs({ PL: { fixtures: [{ match }] } }, { PL: "2026" }, manifests, now);
   const currentKey = jobs().find(job => job.section === "events").key;
-  assert.deepEqual(jobs().map(job => job.admission), ["match-detail", "match-detail", "match-detail", "supplementary"]);
-  match.utcDate = new Date(now - 5 * 3600000).toISOString();
+  assert.deepEqual(jobs().map(job => job.admission), ["scores", "scores", "scores", "scores"]);
+  match.utcDate = new Date(now - 25 * 3600000).toISOString();
   assert.ok(jobs().every(job => job.admission === "supplementary"));
   assert.notEqual(jobs().find(job => job.section === "events").key, currentKey);
   match.status = "IN_PLAY";
-  assert.equal(jobs().find(job => job.section === "events").admission, "match-detail");
+  assert.equal(jobs().find(job => job.section === "events").admission, "scores");
+});
+
+test("batched live scores publish embedded sections without separate provider requests", async t => {
+  const { collector, collect, store, state, advance, calls } = await setup(t, 1000, 600);
+  state.mutate = (payload, url) => url.pathname === '/fixtures' && url.searchParams.has('ids')
+    ? { ...payload, response: payload.response.map(row => ({ ...row, events: state.events, lineups: state.lineups, players: state.players })) } : payload;
+  await collect(result => result.kind === 'discovery' && result.state === 'published');
+  advance(16000);
+  const before = calls.length;
+  const result = await collector.step();
+  assert.equal(result.kind, 'live'); assert.equal(result.state, 'published');
+  assert.equal(result.detailFailures, undefined);
+  assert.equal(calls.length, before + 1);
+  const detail = await store.readDetail('CL', '2026', 900001);
+  assert.ok(['fixture','events','lineups','players'].every(section => detail.sections[section].coverage === 'complete'));
+  assert.equal(detail.payloads.fixture.response[0].players, undefined);
+  state.row.fixture.status.short = 'FT'; state.row.goals.away = 1;
+  state.events = [{ team: { id: 2 }, type: 'Goal', detail: 'Normal Goal', time: { elapsed: 90 } }];
+  advance(16000);
+  assert.equal((await collector.step()).state, 'published');
+  const final = await store.readDetail('CL', '2026', 900001);
+  assert.ok(Object.values(detailCoverage(final, (await store.read('CL','2026')).fixtures[0].match, Date.parse('2026-10-13T19:31:00Z'))).every(section => section.state === 'complete'));
+  assert.equal(final.payloads.events.response.length, 1);
+});
+
+test("malformed embedded events preserve last-good detail without rejecting the newer score", async t => {
+  const { collector, collect, store, state, advance } = await setup(t);
+  await collect(result => result.section === 'events' && result.state === 'published');
+  const before = await store.readDetail('CL','2026',900001);
+  state.row.goals.home = 1;
+  state.mutate = (payload, url) => url.searchParams.has('ids')
+    ? { ...payload, response: payload.response.map(row => ({ ...row, events: [{ team: { id: 99 }, type: 'Goal', time: { elapsed: 30 } }] })) } : payload;
+  advance(16000);
+  const result = await collector.step();
+  assert.equal(result.state, 'published');
+  assert.equal(result.detailFailures[0].section, 'events');
+  assert.equal((await store.read('CL','2026')).fixtures[0].match.score.home,1);
+  assert.deepEqual((await store.readDetail('CL','2026',900001)).sections.events,before.sections.events);
 });

@@ -322,10 +322,16 @@ export function renderDetail(match, detail = {}) {
     detail.referee ? `<span><b>Referee</b>${esc(detail.referee)}</span>` : "",
   ].filter(Boolean);
 
+  const eventCoverage = detail.coverage?.events;
+  const timelineDelayed = ["stale", "outdated-result", "partial", "invalid"].includes(eventCoverage?.state);
+  const eventAge = Number.isFinite(eventCoverage?.ageMs)
+    ? ` Last received ${Math.max(0, Math.floor(eventCoverage.ageMs / 60000))} minutes ago.` : "";
+  const timelineNotice = timelineDelayed
+    ? `<p class="note" role="status">Timeline updates delayed. Saved events may not match the score.${eventAge}</p>` : "";
   const degraded = Array.isArray(detail.degraded) && detail.degraded.length > 0;
 
   return `
-    ${detailSection("mdTimeline", "Timeline", timeline || `<p class="note">${coverageNote(match, "Timeline")}</p>`)}
+    ${detailSection("mdTimeline", "Timeline", timelineNotice + (timeline || `<p class="note">${coverageNote(match, "Timeline")}</p>`))}
     ${detailSection("mdLineups", "Line-ups", lineups)}
     ${meta.length ? `<div class="dz__meta">${meta.join("")}</div>` : ""}
     <p class="note--dim" style="margin-top:14px;">${
