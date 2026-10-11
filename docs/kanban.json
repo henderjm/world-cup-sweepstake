@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-10",
+  "updated": "2026-10-11",
   "revision": "56309fb frontend \u00b7 46f0c14 collector \u00b7 bb79bf0 reader",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
@@ -14,13 +14,13 @@
   "cards": [
     {
       "id": "live-detail-budget",
-      "status": "Released",
+      "status": "In progress",
       "priority": "P0",
       "title": "Restore live timelines and line-ups after background quota exhaustion",
-      "summary": "Current match timelines and line-ups now survive the background-data cutoff; production desktop and mobile verified.",
-      "acceptance": "Current fixture, timeline and lineups publish after supplementary cutoff; scores retain 3000 exclusive requests under the 7500 policy. Verify real public drawer on desktop and mobile and preserve rollout freshness evidence.",
-      "next": "Model a full busy PL/CL day before claiming the quota supports every detail refresh. Player statistics remain under the background allowance.",
-      "evidence": "Collector 46f0c14 deployed; AWS UPDATE_COMPLETE. Both starting elevens, one card and three substitutions verified for match 1557425. 85 service and 4 infrastructure tests pass; headless drawer state checks pass. 60 public probes, 59 successful and one timeout, maximum score source age 25.227s. See 2026-10-10-live-detail-recovery.json."
+      "summary": "Reopened: Liverpool\u2013Man City finished 0\u20133 but timeline stopped around minute 11 when total requests reached the 4500 internal cutoff.",
+      "acceptance": "Simulate a full busy PL/CL day on the 7500-request policy. Avoid minute-by-minute empty pre-match event/fixture polling; reserve measured score demand; reconcile all final goals and substitutions; show explicit stale timeline age. Verify recovery through the public drawer, including budget exhaustion and final-whistle transitions.",
+      "next": "Replace the fixed mid-tier cutoff with a measured collection schedule and budget policy; preserve hard provider caps. Verify complete final timeline before declaring this resolved. No provider upgrade is currently justified by the measured daily usage.",
+      "evidence": "October 11: provider budget 4916/7500; stored timeline last observed 15:41:34 UTC, one minute-8 yellow card, zero goals. Current score 0\u20133 FT. Stored detail coverage explicitly outdated-result. Yesterday\u2019s 46f0c14 repair did not prevent recurrence."
     },
     {
       "id": "reliability",

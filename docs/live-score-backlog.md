@@ -1,7 +1,23 @@
 # Daily live-score product backlog
 
-Updated: 2026-10-10. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
+Updated: 2026-10-11. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
 Starting revision: `bfaf0a66e03febeda47647789e275853155ef638`.
+
+## October 11 recurrence — open P0
+
+Liverpool–Man City (1557424) finished 0–3 while its timeline retained only the
+minute-8 card. Last event observation: 15:41:34 UTC (16:41 Irish time), roughly
+11 minutes after kickoff. Measured shared usage was 4916/7500; the internal
+4500 current-detail cutoff, rather than exhaustion of the daily allowance,
+blocked refreshes. All stored detail sections are outdated-result; players missing.
+The October 10 repair restored one match but did not solve daily capacity.
+
+Do not recommend a paid upgrade from this evidence alone. Required next work:
+reduce empty pre-match and repeated historical polling; model full busy-day demand;
+allocate score/detail capacity against that demand; ensure final-whistle reconciliation;
+show stale timeline age clearly. Acceptance includes complete final goals and
+substitutions, hard quota enforcement, and real browser recovery after exhaustion.
+No new fix has been deployed for this recurrence.
 
 ## October 10 live detail repair
 
