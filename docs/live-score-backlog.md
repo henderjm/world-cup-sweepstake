@@ -3,7 +3,7 @@
 Updated: 2026-10-11. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
 Starting revision: `bfaf0a66e03febeda47647789e275853155ef638`.
 
-## October 11 recurrence — open P0
+## October 11 recurrence — repaired by 06fd597
 
 Liverpool–Man City (1557424) finished 0–3 while its timeline retained only the
 minute-8 card. Last event observation: 15:41:34 UTC (16:41 Irish time), roughly
@@ -17,7 +17,15 @@ reduce empty pre-match and repeated historical polling; model full busy-day dema
 allocate score/detail capacity against that demand; ensure final-whistle reconciliation;
 show stale timeline age clearly. Acceptance includes complete final goals and
 substitutions, hard quota enforcement, and real browser recovery after exhaustion.
-No new fix has been deployed for this recurrence.
+Release 06fd597 repairs the request waste and removes the fixed detail cutoff.
+The 24-hour 28-match simulation uses 4585/7500 requests with final reconciliation
+within 149 seconds, including two minutes of provider delay. A late-day recovery
+run starting at 4916 ends at 6772. All 132 affected tests and headless UI checks pass.
+Production Liverpool–City now has all three goals, nine substitutions and 40
+player-stat entries; every detail section is complete. Desktop and mobile show
+the recovered timeline and clear the stale warning. Pages run 38172976067 passed.
+See `live-score-evidence/2026-10-11-busy-matchday.md` and
+`live-score-evidence/2026-10-11-production-recovery.json` for scope and evidence.
 
 ## October 10 live detail repair
 
@@ -59,7 +67,7 @@ Hourly automation stays paused.
 | Priority | Remaining work | Acceptance |
 | --- | --- | --- |
 | P0 | Independent matchday monitoring and paging | Supervised collector-independent checks, monitor-loss watchdog, durable alerts and an approved receiver; preserve missing observations and measure the existing SLOs. No new paid service without approval. |
-| P0 | Busy-day provider budget | Model PL/CL score, standings and current detail demand across a full busy day, including retries. Preserve the final 3000 score-only requests, expose detail admission failures, and measure missing sections; do not purchase a plan upgrade without approval. |
+| P0 | Busy-day provider budget | Model PL/CL score, standings and current detail demand across a full busy day, including retries. Preserve the tested protected score/detail workload and hard provider limits, expose admission failures, and measure missing sections; do not purchase a plan upgrade without approval. |
 | P0 | Public read capacity | Verify representative concurrent mobile/desktop clients against the 10 RPS / burst 20 AWS ceiling, including static exports. Demonstrate a cache/rate-limit strategy that meets agreed traffic and freshness targets before claiming capacity. |
 | P1 | Supplementary collection quality | Finish all three fantasy history seasons without touching the 6000-request score reserve. Stop repeated invalid archived-detail retries starving history. Log bounded validation reasons and fixture IDs. Verify cached exports retain source age and never invent player positions or xP. |
 | P1 | Provider squad conflicts | Player 416250 appears twice in Aston Villa with conflicting positions. The stored pool excludes every ambiguous ID and reports them in coverage. Publish unambiguous players, retain a recent complete export where possible, and verify eventual provider correction. |

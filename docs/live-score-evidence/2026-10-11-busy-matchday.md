@@ -43,7 +43,15 @@ simulation, not a live traffic load test or an availability measurement.
   lease fencing, quota exhaustion and unknown statistics.
 
 132 affected tests passed, including both simulations. Headless browser checks
-and production rollout evidence are recorded after deployment.
+passed at 320/390/1440px, including loading, absent data, stale warning, errors,
+retry, automatic recovery and stable focus/scroll. Production release 06fd597
+completed on GitHub Pages (run 38172976067) and AWS (UPDATE_COMPLETE; both ECS
+deployments COMPLETED). Public Liverpool–City reads recovered all three goals,
+nine substitutions and 40 player-stat entries with complete section coverage.
+Fifteen public probes succeeded during the observed recovery. Desktop and mobile
+showed the stale warning before recovery and the full timeline without it after.
+Quota was not reset; verified usage after recovery was 4973/7500.
+See `2026-10-11-production-recovery.json` for the exact image and observations.
 
 These bounds apply to the tested PL/CL workload and failure patterns. Unlimited
 provider outages, larger competition coverage and production traffic capacity

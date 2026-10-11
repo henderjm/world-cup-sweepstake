@@ -10,12 +10,8 @@
 @media(max-width:650px){#kickoff-kanban .lanes{grid-template-columns:1fr}}
 </style>
 <div id="kickoff-kanban">
-<div class="viz-row text-small"><span>Updated 2026-10-11</span><span>Code 56309fb frontend · 46f0c14 collector · bb79bf0 reader</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
-<div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">3</span></h3><article data-card="live-detail-budget">
-<span class="viz-badge">P0</span>
-<details><summary class="cursor-interaction">Restore live timelines and line-ups after background quota exhaustion</summary>
-<dl><dt>Acceptance</dt><dd>Simulate a full busy PL/CL day on the 7500-request policy. Avoid minute-by-minute empty pre-match event/fixture polling; reserve measured score demand; reconcile all final goals and substitutions; show explicit stale timeline age. Verify recovery through the public drawer, including budget exhaustion and final-whistle transitions.</dd><dt>Next action</dt><dd>Replace the fixed mid-tier cutoff with a measured collection schedule and budget policy; preserve hard provider caps. Verify complete final timeline before declaring this resolved. No provider upgrade is currently justified by the measured daily usage.</dd><dt>Evidence</dt><dd>October 11: provider budget 4916/7500; stored timeline last observed 15:41:34 UTC, one minute-8 yellow card, zero goals. Current score 0–3 FT. Stored detail coverage explicitly outdated-result. Yesterday’s 46f0c14 repair did not prevent recurrence.</dd></dl></details>
-<p>Reopened: Liverpool–Man City finished 0–3 but timeline stopped around minute 11 when total requests reached the 4500 internal cutoff.</p></article><article data-card="reliability">
+<div class="viz-row text-small"><span>Updated 2026-10-11</span><span>Code 06fd597 frontend and collector · bb79bf0 reader</span><span>Hourly work: Paused</span><span>Owner: Codex</span></div>
+<div class="lanes"><section aria-label="In progress"><h3>In progress <span class="text-muted">2</span></h3><article data-card="reliability">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Make busy matchdays reliable</summary>
 <dl><dt>Acceptance</dt><dd>Measure 99.95% usable scoreboards and 99.9% active observation freshness. Measure provider-visible change to screen separately: p95 ≤30s, p99 ≤60s. Warn after 45s. Missing checks and provider failures count against the user-facing result.</dd><dt>Next action</dt><dd>Complete independent monitoring, measure public read capacity, then capture busy-matchday SLO evidence.</dd><dt>Evidence</dt><dd>AWS production cutover verified October 4. Standby lease takeover in 15.916 seconds; twelve public reads succeeded; PL and CL then published version 5 under epoch 6. Sustained availability and event latency remain unmeasured.</dd></dl></details>
@@ -59,7 +55,11 @@
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Reliability recorder and read contract</summary>
 <dl><dt>Acceptance</dt><dd>Reject older snapshots without discarding valid mixed-age updates. Record missing checks rather than silently excluding them from reliability reports.</dd><dt>Next action</dt><dd>Deploy independent monitoring with tested alert delivery.</dd><dt>Evidence</dt><dd>4d9b364, 64f7336 · locally verified; not an installed continuous monitor.</dd></dl></details>
-<p>Version-aware recovery with a durable measurement baseline.</p></article></section><section aria-label="Released"><h3>Released <span class="text-muted">16</span></h3><article data-card="consumers">
+<p>Version-aware recovery with a durable measurement baseline.</p></article></section><section aria-label="Released"><h3>Released <span class="text-muted">17</span></h3><article data-card="live-detail-budget">
+<span class="viz-badge">P0</span>
+<details><summary class="cursor-interaction">Restore live timelines and line-ups after background quota exhaustion</summary>
+<dl><dt>Acceptance</dt><dd>Full 28-match busy-day simulation under 7500 daily requests; bounded final-whistle reconciliation; quota exhaustion and restart tests; real headless desktop/mobile recovery.</dd><dt>Next action</dt><dd>Measure sustained production freshness and provider outages with independent monitoring; scale the tested workload before adding competitions.</dd><dt>Evidence</dt><dd>06fd597: 132 affected tests pass. Busy-day model: 4585 requests; all 28 final details complete within 149s, including 120s provider delay. Recovery from 4916 spent ends at 6772. Real match 1557424: three goals, nine substitutions, 40 player-stat entries, complete coverage; headless desktop/mobile verified.</dd></dl></details>
+<p>Batch score payloads now populate match details; the fixed detail cutoff and empty pre-match polls are removed. Liverpool–City recovered completely.</p></article><article data-card="consumers">
 <span class="viz-badge">P0</span>
 <details><summary class="cursor-interaction">Migrate every provider consumer</summary>
 <dl><dt>Acceptance</dt><dd>Inventory Worker, GitHub and script consumers; route provider calls through the shared budget and viewers through stored reads. Preserve fantasy, predictions, notifications, accounts and match detail.</dd><dt>Next action</dt><dd>Complete supplementary history and invalid detail diagnostics within the shared allowance.</dd><dt>Evidence</dt><dd>Worker provider key removed; source variable set; feeder run 37219078579 skipped. Fantasy pool publishes 618 unambiguous players with explicit degraded coverage.</dd></dl></details>

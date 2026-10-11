@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-11",
-  "revision": "56309fb frontend \u00b7 46f0c14 collector \u00b7 bb79bf0 reader",
+  "revision": "06fd597 frontend and collector \u00b7 bb79bf0 reader",
   "automation": "Paused",
   "pageId": "page_6ac22fa3f7a08191811317ab2199240e",
   "pageUrl": "https://chatgpt.com/space/page_6ac22fa3f7a08191811317ab2199240e",
@@ -14,13 +14,13 @@
   "cards": [
     {
       "id": "live-detail-budget",
-      "status": "In progress",
+      "status": "Released",
       "priority": "P0",
       "title": "Restore live timelines and line-ups after background quota exhaustion",
-      "summary": "Reopened: Liverpool\u2013Man City finished 0\u20133 but timeline stopped around minute 11 when total requests reached the 4500 internal cutoff.",
-      "acceptance": "Simulate a full busy PL/CL day on the 7500-request policy. Avoid minute-by-minute empty pre-match event/fixture polling; reserve measured score demand; reconcile all final goals and substitutions; show explicit stale timeline age. Verify recovery through the public drawer, including budget exhaustion and final-whistle transitions.",
-      "next": "Replace the fixed mid-tier cutoff with a measured collection schedule and budget policy; preserve hard provider caps. Verify complete final timeline before declaring this resolved. No provider upgrade is currently justified by the measured daily usage.",
-      "evidence": "October 11: provider budget 4916/7500; stored timeline last observed 15:41:34 UTC, one minute-8 yellow card, zero goals. Current score 0\u20133 FT. Stored detail coverage explicitly outdated-result. Yesterday\u2019s 46f0c14 repair did not prevent recurrence."
+      "summary": "Batch score payloads now populate match details; the fixed detail cutoff and empty pre-match polls are removed. Liverpool\u2013City recovered completely.",
+      "acceptance": "Full 28-match busy-day simulation under 7500 daily requests; bounded final-whistle reconciliation; quota exhaustion and restart tests; real headless desktop/mobile recovery.",
+      "next": "Measure sustained production freshness and provider outages with independent monitoring; scale the tested workload before adding competitions.",
+      "evidence": "06fd597: 132 affected tests pass. Busy-day model: 4585 requests; all 28 final details complete within 149s, including 120s provider delay. Recovery from 4916 spent ends at 6772. Real match 1557424: three goals, nine substitutions, 40 player-stat entries, complete coverage; headless desktop/mobile verified."
     },
     {
       "id": "reliability",

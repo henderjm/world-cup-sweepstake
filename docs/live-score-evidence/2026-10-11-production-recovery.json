@@ -1,0 +1,795 @@
+{
+  "release": "06fd597a74091ab5b3819d586952d53b00f889f7",
+  "collectorDigest": "sha256:fc88e844d47ecb68b32b63f6d19067f7a83028a43668135c6a0ee7048e5a3298",
+  "reader": "bb79bf0",
+  "pagesRun": 38172976067,
+  "pagesConclusion": "success",
+  "awsStatus": "UPDATE_COMPLETE; both ECS deployments COMPLETED, one running replacement each",
+  "matchId": 1557424,
+  "score": {
+    "home": 0,
+    "away": 3,
+    "htHome": 0,
+    "htAway": 0,
+    "penHome": null,
+    "penAway": null
+  },
+  "coverage": {
+    "fixture": {
+      "state": "complete",
+      "observedAt": 1791751217060,
+      "ageMs": 867
+    },
+    "lineups": {
+      "state": "complete",
+      "observedAt": 1791751216111,
+      "ageMs": 1816
+    },
+    "events": {
+      "state": "complete",
+      "observedAt": 1791751215748,
+      "ageMs": 2179
+    },
+    "players": {
+      "state": "complete",
+      "observedAt": 1791751217060,
+      "ageMs": 867
+    }
+  },
+  "goals": [
+    {
+      "minute": 65,
+      "injuryTime": null,
+      "type": "REGULAR",
+      "team": "Man City",
+      "scorerId": 1100,
+      "scorer": "Erling Haaland",
+      "assistId": null,
+      "assist": null,
+      "home": 0,
+      "away": 1
+    },
+    {
+      "minute": 68,
+      "injuryTime": null,
+      "type": "REGULAR",
+      "team": "Man City",
+      "scorerId": 1422,
+      "scorer": "Jeremy Doku",
+      "assistId": 138908,
+      "assist": "Elliot Anderson",
+      "home": 0,
+      "away": 2
+    },
+    {
+      "minute": 78,
+      "injuryTime": null,
+      "type": "REGULAR",
+      "team": "Man City",
+      "scorerId": 156477,
+      "scorer": "Rayan Cherki",
+      "assistId": 129033,
+      "assist": "Josko Gvardiol",
+      "home": 0,
+      "away": 3
+    }
+  ],
+  "substitutionCount": 9,
+  "playerStatEntries": 40,
+  "snapshot": {
+    "version": 3610,
+    "collectorEpoch": 8,
+    "observedAt": 1791750938791,
+    "detailVersion": 277,
+    "detailCollectorEpoch": 9
+  },
+  "probes": [
+    {
+      "at": "2026-10-11T20:37:31.557Z",
+      "http": 200,
+      "score": {
+        "home": 0,
+        "away": 3,
+        "htHome": 0,
+        "htAway": 0,
+        "penHome": null,
+        "penAway": null
+      },
+      "coverage": {
+        "fixture": {
+          "state": "outdated-result",
+          "observedAt": 1791733297885,
+          "ageMs": 17753816
+        },
+        "lineups": {
+          "state": "outdated-result",
+          "observedAt": 1791732613798,
+          "ageMs": 18437903
+        },
+        "events": {
+          "state": "outdated-result",
+          "observedAt": 1791733294602,
+          "ageMs": 17757099
+        },
+        "players": {
+          "state": "missing",
+          "observedAt": null,
+          "ageMs": null
+        }
+      },
+      "goals": 0,
+      "subs": 0,
+      "players": 0,
+      "snapshot": {
+        "version": 3610,
+        "collectorEpoch": 8,
+        "observedAt": 1791750938791,
+        "detailVersion": 273,
+        "detailCollectorEpoch": 8
+      }
+    },
+    {
+      "at": "2026-10-11T20:37:42.975Z",
+      "http": 200,
+      "score": {
+        "home": 0,
+        "away": 3,
+        "htHome": 0,
+        "htAway": 0,
+        "penHome": null,
+        "penAway": null
+      },
+      "coverage": {
+        "fixture": {
+          "state": "outdated-result",
+          "observedAt": 1791733297885,
+          "ageMs": 17765234
+        },
+        "lineups": {
+          "state": "outdated-result",
+          "observedAt": 1791732613798,
+          "ageMs": 18449321
+        },
+        "events": {
+          "state": "outdated-result",
+          "observedAt": 1791733294602,
+          "ageMs": 17768517
+        },
+        "players": {
+          "state": "missing",
+          "observedAt": null,
+          "ageMs": null
+        }
+      },
+      "goals": 0,
+      "subs": 0,
+      "players": 0,
+      "snapshot": {
+        "version": 3610,
+        "collectorEpoch": 8,
+        "observedAt": 1791750938791,
+        "detailVersion": 273,
+        "detailCollectorEpoch": 8
+      }
+    },
+    {
+      "at": "2026-10-11T20:37:54.263Z",
+      "http": 200,
+      "score": {
+        "home": 0,
+        "away": 3,
+        "htHome": 0,
+        "htAway": 0,
+        "penHome": null,
+        "penAway": null
+      },
+      "coverage": {
+        "fixture": {
+          "state": "outdated-result",
+          "observedAt": 1791733297885,
+          "ageMs": 17776525
+        },
+        "lineups": {
+          "state": "outdated-result",
+          "observedAt": 1791732613798,
+          "ageMs": 18460612
+        },
+        "events": {
+          "state": "outdated-result",
+          "observedAt": 1791733294602,
+          "ageMs": 17779808
+        },
+        "players": {
+          "state": "missing",
+          "observedAt": null,
+          "ageMs": null
+        }
+      },
+      "goals": 0,
+      "subs": 0,
+      "players": 0,
+      "snapshot": {
+        "version": 3610,
+        "collectorEpoch": 8,
+        "observedAt": 1791750938791,
+        "detailVersion": 273,
+        "detailCollectorEpoch": 8
+      }
+    },
+    {
+      "at": "2026-10-11T20:38:06.566Z",
+      "http": 200,
+      "score": {
+        "home": 0,
+        "away": 3,
+        "htHome": 0,
+        "htAway": 0,
+        "penHome": null,
+        "penAway": null
+      },
+      "coverage": {
+        "fixture": {
+          "state": "outdated-result",
+          "observedAt": 1791733297885,
+          "ageMs": 17788834
+        },
+        "lineups": {
+          "state": "outdated-result",
+          "observedAt": 1791732613798,
+          "ageMs": 18472921
+        },
+        "events": {
+          "state": "outdated-result",
+          "observedAt": 1791733294602,
+          "ageMs": 17792117
+        },
+        "players": {
+          "state": "missing",
+          "observedAt": null,
+          "ageMs": null
+        }
+      },
+      "goals": 0,
+      "subs": 0,
+      "players": 0,
+      "snapshot": {
+        "version": 3610,
+        "collectorEpoch": 8,
+        "observedAt": 1791750938791,
+        "detailVersion": 273,
+        "detailCollectorEpoch": 8
+      }
+    },
+    {
+      "at": "2026-10-11T20:38:18.109Z",
+      "http": 200,
+      "score": {
+        "home": 0,
+        "away": 3,
+        "htHome": 0,
+        "htAway": 0,
+        "penHome": null,
+        "penAway": null
+      },
+      "coverage": {
+        "fixture": {
+          "state": "outdated-result",
+          "observedAt": 1791733297885,
+          "ageMs": 17800372
+        },
+        "lineups": {
+          "state": "outdated-result",
+          "observedAt": 1791732613798,
+          "ageMs": 18484459
+        },
+        "events": {
+          "state": "outdated-result",
+          "observedAt": 1791733294602,
+          "ageMs": 17803655
+        },
+        "players": {
+          "state": "missing",
+          "observedAt": null,
+          "ageMs": null
+        }
+      },
+      "goals": 0,
+      "subs": 0,
+      "players": 0,
+      "snapshot": {
+        "version": 3610,
+        "collectorEpoch": 8,
+        "observedAt": 1791750938791,
+        "detailVersion": 273,
+        "detailCollectorEpoch": 8
+      }
+    },
+    {
+      "at": "2026-10-11T20:38:30.316Z",
+      "http": 200,
+      "score": {
+        "home": 0,
+        "away": 3,
+        "htHome": 0,
+        "htAway": 0,
+        "penHome": null,
+        "penAway": null
+      },
+      "coverage": {
+        "fixture": {
+          "state": "outdated-result",
+          "observedAt": 1791733297885,
+          "ageMs": 17812584
+        },
+        "lineups": {
+          "state": "outdated-result",
+          "observedAt": 1791732613798,
+          "ageMs": 18496671
+        },
+        "events": {
+          "state": "outdated-result",
+          "observedAt": 1791733294602,
+          "ageMs": 17815867
+        },
+        "players": {
+          "state": "missing",
+          "observedAt": null,
+          "ageMs": null
+        }
+      },
+      "goals": 0,
+      "subs": 0,
+      "players": 0,
+      "snapshot": {
+        "version": 3610,
+        "collectorEpoch": 8,
+        "observedAt": 1791750938791,
+        "detailVersion": 273,
+        "detailCollectorEpoch": 8
+      }
+    },
+    {
+      "at": "2026-10-11T20:38:42.537Z",
+      "http": 200,
+      "score": {
+        "home": 0,
+        "away": 3,
+        "htHome": 0,
+        "htAway": 0,
+        "penHome": null,
+        "penAway": null
+      },
+      "coverage": {
+        "fixture": {
+          "state": "outdated-result",
+          "observedAt": 1791733297885,
+          "ageMs": 17824801
+        },
+        "lineups": {
+          "state": "outdated-result",
+          "observedAt": 1791732613798,
+          "ageMs": 18508888
+        },
+        "events": {
+          "state": "outdated-result",
+          "observedAt": 1791733294602,
+          "ageMs": 17828084
+        },
+        "players": {
+          "state": "missing",
+          "observedAt": null,
+          "ageMs": null
+        }
+      },
+      "goals": 0,
+      "subs": 0,
+      "players": 0,
+      "snapshot": {
+        "version": 3610,
+        "collectorEpoch": 8,
+        "observedAt": 1791750938791,
+        "detailVersion": 273,
+        "detailCollectorEpoch": 8
+      }
+    },
+    {
+      "at": "2026-10-11T20:38:54.845Z",
+      "http": 200,
+      "score": {
+        "home": 0,
+        "away": 3,
+        "htHome": 0,
+        "htAway": 0,
+        "penHome": null,
+        "penAway": null
+      },
+      "coverage": {
+        "fixture": {
+          "state": "outdated-result",
+          "observedAt": 1791733297885,
+          "ageMs": 17837109
+        },
+        "lineups": {
+          "state": "outdated-result",
+          "observedAt": 1791732613798,
+          "ageMs": 18521196
+        },
+        "events": {
+          "state": "outdated-result",
+          "observedAt": 1791733294602,
+          "ageMs": 17840392
+        },
+        "players": {
+          "state": "missing",
+          "observedAt": null,
+          "ageMs": null
+        }
+      },
+      "goals": 0,
+      "subs": 0,
+      "players": 0,
+      "snapshot": {
+        "version": 3610,
+        "collectorEpoch": 8,
+        "observedAt": 1791750938791,
+        "detailVersion": 273,
+        "detailCollectorEpoch": 8
+      }
+    },
+    {
+      "at": "2026-10-11T20:39:07.192Z",
+      "http": 200,
+      "score": {
+        "home": 0,
+        "away": 3,
+        "htHome": 0,
+        "htAway": 0,
+        "penHome": null,
+        "penAway": null
+      },
+      "coverage": {
+        "fixture": {
+          "state": "outdated-result",
+          "observedAt": 1791733297885,
+          "ageMs": 17849453
+        },
+        "lineups": {
+          "state": "outdated-result",
+          "observedAt": 1791732613798,
+          "ageMs": 18533540
+        },
+        "events": {
+          "state": "outdated-result",
+          "observedAt": 1791733294602,
+          "ageMs": 17852736
+        },
+        "players": {
+          "state": "missing",
+          "observedAt": null,
+          "ageMs": null
+        }
+      },
+      "goals": 0,
+      "subs": 0,
+      "players": 0,
+      "snapshot": {
+        "version": 3610,
+        "collectorEpoch": 8,
+        "observedAt": 1791750938791,
+        "detailVersion": 273,
+        "detailCollectorEpoch": 8
+      }
+    },
+    {
+      "at": "2026-10-11T20:39:19.129Z",
+      "http": 200,
+      "score": {
+        "home": 0,
+        "away": 3,
+        "htHome": 0,
+        "htAway": 0,
+        "penHome": null,
+        "penAway": null
+      },
+      "coverage": {
+        "fixture": {
+          "state": "outdated-result",
+          "observedAt": 1791733297885,
+          "ageMs": 17861396
+        },
+        "lineups": {
+          "state": "outdated-result",
+          "observedAt": 1791732613798,
+          "ageMs": 18545483
+        },
+        "events": {
+          "state": "outdated-result",
+          "observedAt": 1791733294602,
+          "ageMs": 17864679
+        },
+        "players": {
+          "state": "missing",
+          "observedAt": null,
+          "ageMs": null
+        }
+      },
+      "goals": 0,
+      "subs": 0,
+      "players": 0,
+      "snapshot": {
+        "version": 3610,
+        "collectorEpoch": 8,
+        "observedAt": 1791750938791,
+        "detailVersion": 273,
+        "detailCollectorEpoch": 8
+      }
+    },
+    {
+      "at": "2026-10-11T20:39:31.302Z",
+      "http": 200,
+      "score": {
+        "home": 0,
+        "away": 3,
+        "htHome": 0,
+        "htAway": 0,
+        "penHome": null,
+        "penAway": null
+      },
+      "coverage": {
+        "fixture": {
+          "state": "outdated-result",
+          "observedAt": 1791733297885,
+          "ageMs": 17873575
+        },
+        "lineups": {
+          "state": "outdated-result",
+          "observedAt": 1791732613798,
+          "ageMs": 18557662
+        },
+        "events": {
+          "state": "outdated-result",
+          "observedAt": 1791733294602,
+          "ageMs": 17876858
+        },
+        "players": {
+          "state": "missing",
+          "observedAt": null,
+          "ageMs": null
+        }
+      },
+      "goals": 0,
+      "subs": 0,
+      "players": 0,
+      "snapshot": {
+        "version": 3610,
+        "collectorEpoch": 8,
+        "observedAt": 1791750938791,
+        "detailVersion": 273,
+        "detailCollectorEpoch": 8
+      }
+    },
+    {
+      "at": "2026-10-11T20:39:43.583Z",
+      "http": 200,
+      "score": {
+        "home": 0,
+        "away": 3,
+        "htHome": 0,
+        "htAway": 0,
+        "penHome": null,
+        "penAway": null
+      },
+      "coverage": {
+        "fixture": {
+          "state": "outdated-result",
+          "observedAt": 1791733297885,
+          "ageMs": 17885853
+        },
+        "lineups": {
+          "state": "outdated-result",
+          "observedAt": 1791732613798,
+          "ageMs": 18569940
+        },
+        "events": {
+          "state": "outdated-result",
+          "observedAt": 1791733294602,
+          "ageMs": 17889136
+        },
+        "players": {
+          "state": "missing",
+          "observedAt": null,
+          "ageMs": null
+        }
+      },
+      "goals": 0,
+      "subs": 0,
+      "players": 0,
+      "snapshot": {
+        "version": 3610,
+        "collectorEpoch": 8,
+        "observedAt": 1791750938791,
+        "detailVersion": 273,
+        "detailCollectorEpoch": 8
+      }
+    },
+    {
+      "at": "2026-10-11T20:39:55.089Z",
+      "http": 200,
+      "score": {
+        "home": 0,
+        "away": 3,
+        "htHome": 0,
+        "htAway": 0,
+        "penHome": null,
+        "penAway": null
+      },
+      "coverage": {
+        "fixture": {
+          "state": "outdated-result",
+          "observedAt": 1791733297885,
+          "ageMs": 17897359
+        },
+        "lineups": {
+          "state": "outdated-result",
+          "observedAt": 1791732613798,
+          "ageMs": 18581446
+        },
+        "events": {
+          "state": "outdated-result",
+          "observedAt": 1791733294602,
+          "ageMs": 17900642
+        },
+        "players": {
+          "state": "missing",
+          "observedAt": null,
+          "ageMs": null
+        }
+      },
+      "goals": 0,
+      "subs": 0,
+      "players": 0,
+      "snapshot": {
+        "version": 3610,
+        "collectorEpoch": 8,
+        "observedAt": 1791750938791,
+        "detailVersion": 273,
+        "detailCollectorEpoch": 8
+      }
+    },
+    {
+      "at": "2026-10-11T20:40:06.152Z",
+      "http": 200,
+      "score": {
+        "home": 0,
+        "away": 3,
+        "htHome": 0,
+        "htAway": 0,
+        "penHome": null,
+        "penAway": null
+      },
+      "coverage": {
+        "fixture": {
+          "state": "outdated-result",
+          "observedAt": 1791733297885,
+          "ageMs": 17908413
+        },
+        "lineups": {
+          "state": "outdated-result",
+          "observedAt": 1791732613798,
+          "ageMs": 18592500
+        },
+        "events": {
+          "state": "outdated-result",
+          "observedAt": 1791733294602,
+          "ageMs": 17911696
+        },
+        "players": {
+          "state": "missing",
+          "observedAt": null,
+          "ageMs": null
+        }
+      },
+      "goals": 0,
+      "subs": 0,
+      "players": 0,
+      "snapshot": {
+        "version": 3610,
+        "collectorEpoch": 8,
+        "observedAt": 1791750938791,
+        "detailVersion": 273,
+        "detailCollectorEpoch": 8
+      }
+    },
+    {
+      "at": "2026-10-11T20:40:17.772Z",
+      "http": 200,
+      "score": {
+        "home": 0,
+        "away": 3,
+        "htHome": 0,
+        "htAway": 0,
+        "penHome": null,
+        "penAway": null
+      },
+      "coverage": {
+        "fixture": {
+          "state": "complete",
+          "observedAt": 1791751217060,
+          "ageMs": 867
+        },
+        "lineups": {
+          "state": "complete",
+          "observedAt": 1791751216111,
+          "ageMs": 1816
+        },
+        "events": {
+          "state": "complete",
+          "observedAt": 1791751215748,
+          "ageMs": 2179
+        },
+        "players": {
+          "state": "complete",
+          "observedAt": 1791751217060,
+          "ageMs": 867
+        }
+      },
+      "goals": 3,
+      "subs": 9,
+      "players": 40,
+      "snapshot": {
+        "version": 3610,
+        "collectorEpoch": 8,
+        "observedAt": 1791750938791,
+        "detailVersion": 277,
+        "detailCollectorEpoch": 9
+      }
+    }
+  ],
+  "browserBefore": [
+    {
+      "width": 1440,
+      "errors": [],
+      "timeline": "TIMELINE\n\nTimeline updates delayed. Saved events may not match the score. Last received 298 minutes ago.\n\n8'\nRonald Araujo Yellow card\nLIV",
+      "warning": 1
+    },
+    {
+      "width": 390,
+      "errors": [],
+      "timeline": "TIMELINE\n\nTimeline updates delayed. Saved events may not match the score. Last received 298 minutes ago.\n\n8'\nRonald Araujo Yellow card\nLIV",
+      "warning": 1
+    }
+  ],
+  "browserAfter": [
+    {
+      "width": 1440,
+      "errors": [],
+      "timeline": "TIMELINE\n8'\nRonald Araujo Yellow card\nLIV\n47'\nRyan Gravenberch Yellow card\nLIV\n56'\nJeremy Doku on for Iliman Ndiaye\nMCI\n58'\nNico O'Reilly Yellow card\nMCI\n62'\nRyan Gravenberch Red card\nLIV\n65'\nErling Haaland Goal \u00b7 0\u20131\nMCI\n66'\nTreymaurice Nyoni on for Florian Wirtz\nLIV\n66'\nJosko Gvardiol on for Nico O'Reilly\nMCI\n68'\nJeremy Doku Goal \u00b7 assist Elliot Anderson \u00b7 0\u20132\nMCI\n75'\nJeremie Frimpong on for Ronald Araujo\nLIV\n75'\nRio Ngumoha on for Lewis Koumas\nLIV\n78'\nRayan Cherki Goal \u00b7 assist Josko Gvardiol \u00b7 0\u20133\nMCI\n80'\nAllan Andrade Elias on for Erling Haaland\nMCI\n80'\nAyyoub Bouaddi on for Enzo Fern\u00e1ndez\nMCI\n86'\nAyyoub Bouaddi Yellow card\nMCI\n88'\nJoe Gomez on for J\u00e9r\u00e9my Jacquet\nLIV\n88'\nFederico Chiesa on for Bradley Barcola\nLIV\n90'\nVirgil van Dijk Yellow card\nLIV",
+      "warning": 0
+    },
+    {
+      "width": 390,
+      "errors": [],
+      "timeline": "TIMELINE\n8'\nRonald Araujo Yellow card\nLIV\n47'\nRyan Gravenberch Yellow card\nLIV\n56'\nJeremy Doku on for Iliman Ndiaye\nMCI\n58'\nNico O'Reilly Yellow card\nMCI\n62'\nRyan Gravenberch Red card\nLIV\n65'\nErling Haaland Goal \u00b7 0\u20131\nMCI\n66'\nTreymaurice Nyoni on for Florian Wirtz\nLIV\n66'\nJosko Gvardiol on for Nico O'Reilly\nMCI\n68'\nJeremy Doku Goal \u00b7 assist Elliot Anderson \u00b7 0\u20132\nMCI\n75'\nJeremie Frimpong on for Ronald Araujo\nLIV\n75'\nRio Ngumoha on for Lewis Koumas\nLIV\n78'\nRayan Cherki Goal \u00b7 assist Josko Gvardiol \u00b7 0\u20133\nMCI\n80'\nAllan Andrade Elias on for Erling Haaland\nMCI\n80'\nAyyoub Bouaddi on for Enzo Fern\u00e1ndez\nMCI\n86'\nAyyoub Bouaddi Yellow card\nMCI\n88'\nJoe Gomez on for J\u00e9r\u00e9my Jacquet\nLIV\n88'\nFederico Chiesa on for Bradley Barcola\nLIV\n90'\nVirgil van Dijk Yellow card\nLIV",
+      "warning": 0
+    }
+  ],
+  "tests": {
+    "affectedPassed": 132,
+    "busyDayRequests": 4585,
+    "busyDayMaxFinalReconciliationMs": 149000,
+    "lateRecoveryInitialUsed": 4916,
+    "lateRecoveryTotalUsed": 6772,
+    "headlessWidths": [
+      320,
+      390,
+      1440
+    ]
+  },
+  "budgetAfter": {
+    "used": 4973,
+    "limit": 7500,
+    "reset": false,
+    "providerUpgrade": false
+  },
+  "taskDefinition": "kickoff-draft-scores-CollectorTask-PmM2zIHMI7a3:1"
+}
