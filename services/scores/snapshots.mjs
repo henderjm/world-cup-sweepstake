@@ -107,7 +107,8 @@ export function createScoreReadApi({ readSnapshot, seasons, now = Date.now }) {
       if (!snapshot) return json({ competition: code, error: "scores not collected yet" }, 503);
       if (snapshot.competition !== code || snapshot.season !== String(seasons[code])) throw Error("Stored identity mismatch");
       return json(scoreFeed(snapshot, now()));
-    } catch {
+    } catch (error) {
+      console.error(JSON.stringify({ at: new Date().toISOString(), route: "live", competition: code, error: error?.name, message: String(error?.message ?? "").slice(0, 160) }));
       return json({ competition: code, error: "stored scores unavailable" }, 503);
     }
   };

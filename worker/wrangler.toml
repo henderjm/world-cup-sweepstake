@@ -15,6 +15,18 @@ workers_dev = true
 # unprefixed routes. Season is the four-digit starting year: 2026 = the 2026-27
 # season. NOTE: these vars are applied on every deploy, so always deploy from an
 # up-to-date checkout.
+# Workers Logs: keep the Worker's own console output (cron pass failures, route
+# failures, the live wire's summaries, quota warnings) instead of losing it to
+# anyone not running `wrangler tail` at the time. Per-request invocation logs
+# are off: the site polls every 20 seconds per open tab, and a log event per
+# poll would be noise and volume, whereas explicit log lines are a handful a
+# minute. Read them in the dashboard: Workers & Pages > goon-squad-data > Logs.
+[observability]
+enabled = true
+
+[observability.logs]
+invocation_logs = false
+
 [vars]
 API_FOOTBALL_COMPETITIONS = "PL:2026,CL:2026"
 # Google OAuth web client id (public, not a secret; the client secret is never
