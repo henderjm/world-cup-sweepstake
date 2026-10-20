@@ -89,6 +89,36 @@ button { font-family: inherit; cursor: pointer; }
 
 .shell { min-height: 100vh; display: flex; flex-direction: column; }
 
+.native-app .shell {
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+.native-app .bnav { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+.native-app .topnav { top: env(safe-area-inset-top); }
+
+.notification-alert {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top));
+  left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+  z-index: 100;
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.notification-alert button { background: none; border: 0; color: var(--text); text-align: left; }
+.notification-alert button:first-child { flex: 1; }
+.native-app .main { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
+.native-app .dz__panel {
+  padding-top: calc(18px + env(safe-area-inset-top));
+  padding-bottom: calc(30px + env(safe-area-inset-bottom));
+}
+
 .topnav {
   position: sticky;
   top: 0;

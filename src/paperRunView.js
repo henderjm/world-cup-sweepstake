@@ -1,4 +1,5 @@
 import { resultBadge, shareText, sortLeaderboard } from "./paperRunModel.js";
+import { shareBaseUrl } from "./native.js";
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -20,7 +21,7 @@ export function renderPaperRunPanel(dayState) {
     ? shareText({
         challenge,
         result,
-        url: `${window.location.origin}${window.location.pathname}#paperrun`,
+        url: `${shareBaseUrl()}#paperrun`,
       })
     : "";
 

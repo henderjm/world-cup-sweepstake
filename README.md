@@ -24,6 +24,10 @@ and substitutions, shared match banter, and an optional AI-written match read.
 
 The app is built with Svelte and Vite. Run `npm run dev` locally or `npm run build` to produce the static `dist/` site.
 
+Android and iOS preview projects are available through Capacitor. See
+[mobile builds and iPhone distribution](docs/mobile.md) for APK commands,
+Apple signing requirements and current native feature limitations.
+
 ## Live Data
 
 Data comes from API-Football. The paid Pro plan is required for the configured 2026 season.

@@ -1,0 +1,25 @@
+{
+  "appId": "com.kickoffdraft.app",
+  "appName": "Kickoff Draft",
+  "webDir": "dist",
+  "backgroundColor": "#0a0e14",
+  "android": { "includePlugins": ["@capacitor/app", "@capacitor-firebase/authentication", "@capacitor-firebase/messaging"] },
+  "ios": { "includePlugins": ["@capacitor/app"] },
+  "experimental": {
+    "ios": {
+      "spm": {
+        "swiftToolsVersion": "6.1",
+        "packageTraits": { "@capacitor-firebase/authentication": ["Google"] },
+        "packageOptions": {
+          "@capacitor-firebase/authentication": { "symlink": true },
+          "@capacitor-firebase/messaging": { "symlink": true }
+        }
+      }
+    }
+  },
+  "plugins": {
+    "CapacitorHttp": { "enabled": true },
+    "FirebaseAuthentication": { "skipNativeAuth": true, "providers": ["google.com"] },
+    "FirebaseMessaging": { "presentationOptions": ["alert", "badge", "sound"] }
+  }
+}

@@ -8,3 +8,13 @@ worker/.wrangler/
 # ANTHROPIC_API_KEY go on a dev machine.
 .dev.vars
 *.dev.vars
+
+mobile-builds/
+*.keystore
+*.jks
+*.p12
+*.mobileprovision
+*.p8
+google-services.json
+GoogleService-Info.plist
+*service-account*.json

@@ -1,5 +1,7 @@
 import { DATA_API } from "./data.js";
 import { authHeaders } from "./account.js";
+import { isNative } from "./native.js";
+import { nativePush, nativePushAvailable } from "./nativePush.js";
 
 // Device push: service-worker registration, the browser push subscription, and the
 // Worker routes that store it. All state lives in the browser's push manager and
@@ -9,12 +11,13 @@ import { authHeaders } from "./account.js";
 const VAPID_PUBLIC_KEY = "BOJgZCuRFEipYuiJncqnpx199Ncr570h8IeIHAoxEbFYakhhmGz8PpXbMDshAiY9o0HK8HNzW3dh_wAJvk7h-eM";
 
 export function pushSupported() {
-  return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  return isNative ? nativePushAvailable() : "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
 // "unsupported" | "denied" | "on" | "off"
 export async function pushState() {
   if (!pushSupported() || !DATA_API) return "unsupported";
+  if (isNative) return nativePush().state();
   if (Notification.permission === "denied") return "denied";
   const registration = await navigator.serviceWorker.getRegistration();
   const subscription = await registration?.pushManager.getSubscription();
@@ -22,6 +25,10 @@ export async function pushState() {
 }
 
 export async function enablePush() {
+  if (isNative) {
+    if (!nativePushAvailable()) throw new Error("Native notifications are not configured");
+    return nativePush().enable();
+  }
   const registration = await navigator.serviceWorker.register("./sw.js");
   const permission = await Notification.requestPermission();
   if (permission !== "granted") throw new Error("permission " + permission);
@@ -43,6 +50,7 @@ export async function enablePush() {
 }
 
 export async function disablePush() {
+  if (isNative) return nativePushAvailable() ? nativePush().disable() : undefined;
   const registration = await navigator.serviceWorker.getRegistration();
   const subscription = await registration?.pushManager.getSubscription();
   if (!subscription) return;
@@ -55,9 +63,14 @@ export async function disablePush() {
 }
 
 export async function sendTestPush() {
+  const endpoint = isNative
+    ? nativePush().endpoint()
+    : (await (await navigator.serviceWorker.getRegistration())?.pushManager.getSubscription())?.endpoint;
+  if (!endpoint) throw new Error("Enable notifications on this device first");
   const response = await fetch(`${DATA_API}/push/test`, {
     method: "POST",
-    headers: authHeaders(),
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ endpoint }),
   });
   if (!response.ok) throw new Error(`test ${response.status}`);
   return response.json();

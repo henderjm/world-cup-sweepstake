@@ -1,0 +1,49 @@
+name: Mobile preview builds
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - run: npm test
+      - run: npm run mobile:apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kickoff-draft-android-preview
+          path: mobile-builds/kickoff-draft-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  ios-simulator:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run mobile:ios:simulator
+      - run: ditto -c -k --keepParent mobile-builds/ios-simulator/Build/Products/Debug-iphonesimulator/App.app mobile-builds/kickoff-draft-ios-simulator.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kickoff-draft-ios-simulator
+          path: mobile-builds/kickoff-draft-ios-simulator.zip
+          if-no-files-found: error
+          retention-days: 14
