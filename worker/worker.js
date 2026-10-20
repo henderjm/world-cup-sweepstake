@@ -1,6 +1,7 @@
 import { nativeEndpoint, nativePushConfigured, sendNativePush } from "./native-push.js";
 import { createStoredDetailReader } from "./stored-detail.js";
 import { createStoredScoreReader } from "./stored-scores.js";
+import { WIRE_DEFAULT_MODEL, handleLiveWire, runLiveWirePass } from "./liveWireStore.js";
 
 // Goon Squad data API (Cloudflare Worker).
 //
@@ -685,6 +686,12 @@ export default {
         return json(detail, 200, { ...cors, "Cache-Control": env.SCORE_READ_ORIGIN ? "no-store" : `public, max-age=${browserMaxAge}` });
       }
 
+      // The Wire: one live commentary timeline across every match. A pure D1
+      // read; the cron writes it (runScheduledLiveWire), visits never do.
+      if (url.pathname === "/wire") {
+        return handleLiveWire(request, env, cors, json);
+      }
+
       const analysisRoute = url.pathname.match(/^\/analysis\/(\d{1,12})$/);
       if (analysisRoute) {
         return handleAnalysis(env, Number(analysisRoute[1]), cors);
@@ -743,6 +750,12 @@ export default {
         // costs nothing upstream. Ahead of scoring so a match that finishes this
         // tick is settled by the pass below and its provisional row cleared.
         await runCronPass("live-points", () => runScheduledLivePoints(env));
+        // The Wire, behind the passes that read the same match detail so it
+        // rides their memo (and in stored mode spends no API-Football call at
+        // all). Ahead of scoring because commentary is only worth anything
+        // while it is live; its model calls are capped per tick and per day,
+        // and it is isolated like every pass, so it cannot hold scoring up.
+        await runCronPass("live-wire", () => runScheduledLiveWire(env));
         await runCronPass("fantasy-scoring", () => runScheduledFantasyScoring(env));
         // Behind fantasy scoring so a tick that settles both a match's player
         // points and its predictions recomputes the gameweek once with
@@ -1044,6 +1057,32 @@ async function handleAnalysis(env, id, cors) {
   const stored = await readLatestAnalysis(env, id);
   if (!stored?.body) return json({ error: "no analysis yet" }, 404, cors);
   return json(stored.body, 200, { ...cors, "Cache-Control": "public, max-age=60" });
+}
+
+// The Wire's cron pass. Commentary is display-only, so it is shed with the
+// other live-detail extras when the allowance is low (stored mode spends no
+// allowance, so it always runs there). Without ANTHROPIC_API_KEY the timeline
+// still runs on templates alone.
+async function runScheduledLiveWire(env) {
+  if (!env.DB || !scoreSourceConfigured(env)) return;
+  const summary = await runLiveWirePass({
+    db: env.DB,
+    competitions: parseCompetitions(env),
+    getLive: (comp) => getLive(comp, env.API_FOOTBALL_KEY, env),
+    // Stored reads cost nothing upstream, so a finished match keeps being read
+    // until its last-minute goals land; a direct provider read is spent only on
+    // live matches, and only while the allowance has room.
+    fetchDetail: (match, comp) => env.SCORE_READ_ORIGIN
+      || (isLive(match.status) && allowsLiveEventDetail(currentAllowanceLevel()))
+      ? fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY, { env, comp }) : null,
+    // An empty or events-degraded read is a failed read, never a goal being
+    // ruled out: see reconcileWire.
+    isDetailTrusted: (detail) => detailHasSubstance(detail) && !detail.degraded?.includes("/fixtures/events"),
+    createClient: env.ANTHROPIC_API_KEY
+      ? () => new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 20_000 }) : null,
+    model: env.WIRE_MODEL || WIRE_DEFAULT_MODEL,
+  });
+  if (summary.inserted || summary.ai || summary.retired) console.log("live-wire", JSON.stringify(summary));
 }
 
 async function runScheduledAnalysis(env) {

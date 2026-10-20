@@ -1,4 +1,5 @@
-import { loadModel, modelSignature } from "./data.js";
+import { DATA_API, loadModel, modelSignature } from "./data.js";
+import { renderWireList, renderWirePanel, renderWirePulse } from "./liveWireView.js";
 import { createScoreFeeds, combinedScoreModel } from "./scoreFeeds.js";
 import { knockoutRounds, selectedKnockoutRound } from "./knockout.js";
 import { createLocalFollows, uniqueFollows, followsTeam, LOCAL_FOLLOWS_KEY } from "./teamFollows.js";
@@ -300,6 +301,10 @@ const state = {
   competition: initialScores?.competition ?? storedCompetition(),
   scoreCompetition: initialScores?.competition ?? null,
   scoreDate: initialScores?.date ?? null,
+  // The Wire (live commentary panel): items keyed by stored row id, because a
+  // goal ruled out is RENAMED server-side and keying on the item key would show
+  // the original twice. See loadWire.
+  wire: { day: null, items: new Map(), cursor: null, filter: "all", expanded: false, error: false, fresh: new Set(), inflight: false },
   tableCompetition: null,
   knockoutPhase: initialScores?.phase ?? null,
   knockoutRound: initialScores?.round ?? null,
@@ -700,6 +705,7 @@ async function start() {
   renderAll();
   startPolling();
   await refreshScores();
+  loadWire();
   trackAppLoad(model, Math.round(performance.now() - buildStart));
   const matchParam = new URLSearchParams(window.location.search).get("match");
   if (matchParam) {
@@ -802,6 +808,102 @@ async function poll() {
   scheduleNextPoll();
   await refreshScores();
   refreshLiveMatchup(model);
+  loadWire();
+}
+
+// -- The Wire (live commentary) ------------------------------------------------
+// The server writes the timeline from its minute cron (worker/liveWireStore.js);
+// the browser only reads it, on the same poll as the scores, and asks only for
+// rows changed since its cursor. The panel shows on today's scores (the wire
+// keeps three days but is a live surface, not an archive) and only once there
+// is something to say, so a day with no football never shows an empty box.
+
+function wireDay() {
+  return state.scoreDate ?? localDateKey();
+}
+
+function wireVisible() {
+  return state.section === "scores" && state.tab === "live" && wireDay() === localDateKey();
+}
+
+function wireMatches(competition) {
+  const matches = matchModel().matches ?? [];
+  return competition ? matches.filter(match => match.competitionCode === competition) : matches;
+}
+
+function wireOptions(competition) {
+  return {
+    items: [...state.wire.items.values()],
+    matches: wireMatches(competition),
+    filter: state.wire.filter,
+    expanded: state.wire.expanded,
+    follows: scoreFollowOptions().follows,
+    fresh: state.wire.fresh,
+    competition,
+    error: state.wire.error && !state.wire.items.size,
+  };
+}
+
+function wireSlot(competition) {
+  if (!wireVisible()) return "";
+  const hasItems = [...state.wire.items.values()].some(item => !competition || item.competition === competition);
+  if (!hasItems) return "";
+  return renderWirePanel(wireOptions(competition));
+}
+
+// Repaints just the panel's list and pulse, so a poll that only brought new
+// commentary never re-renders the score cards around it (or steals focus).
+function repaintWire({ full = false } = {}) {
+  const panel = elements.layout.querySelector("[data-wire]");
+  const competition = allScores() ? null : model.competition?.code ?? null;
+  if (!panel || full) {
+    if (wireVisible()) renderLayout();
+    return;
+  }
+  const options = wireOptions(competition);
+  panel.querySelector("[data-wire-list]").innerHTML = renderWireList(options.items, options);
+  panel.querySelector("[data-wire-pulse]").innerHTML = renderWirePulse(options.matches, options.items);
+}
+
+async function loadWire() {
+  if (!DATA_API || !wireVisible() || state.wire.inflight) return;
+  const day = wireDay();
+  if (state.wire.day !== day) {
+    state.wire = { ...state.wire, day, items: new Map(), cursor: null, fresh: new Set(), error: false };
+  }
+  const initial = state.wire.cursor == null;
+  state.wire.inflight = true;
+  try {
+    const query = new URLSearchParams({ day });
+    if (state.wire.cursor) query.set("since", state.wire.cursor);
+    const response = await fetch(`${DATA_API}/wire?${query}`, { cache: "no-store", signal: AbortSignal.timeout(8000) });
+    if (!response.ok) throw Error(`wire ${response.status}`);
+    const body = await response.json();
+    if (state.wire.day !== day) return; // the date changed while this was in flight
+    const fresh = new Set();
+    for (const item of body.items ?? []) {
+      const known = state.wire.items.get(item.rowId);
+      if (!known && !initial) fresh.add(item.key);
+      state.wire.items.set(item.rowId, item);
+    }
+    state.wire.cursor = body.cursor ?? state.wire.cursor;
+    state.wire.error = false;
+    state.wire.fresh = fresh;
+    const panelShown = Boolean(elements.layout.querySelector("[data-wire]"));
+    if (!panelShown && state.wire.items.size) repaintWire({ full: true });
+    else if (panelShown && (body.items ?? []).length) repaintWire();
+    if (fresh.size) {
+      // The highlight is a one-off arrival cue, not a state: clear it so the
+      // next repaint does not replay the animation on rows already seen.
+      window.setTimeout(() => {
+        state.wire.fresh = new Set();
+      }, 4000);
+    }
+  } catch {
+    state.wire.error = true;
+  } finally {
+    state.wire.inflight = false;
+  }
 }
 
 // A matchup score frozen at whenever its tab first loaded is exactly the
@@ -916,10 +1018,15 @@ function renderLayoutContent() {
     return;
   }
 
+  // First visit to today's scores (or back to today from another date): fetch
+  // the wire now rather than waiting up to a minute for the next poll.
+  if (wireVisible() && state.wire.day !== wireDay()) queueMicrotask(loadWire);
+
   if (allScores()) {
     const panel = `<div class="panelcol">
       ${state.isMobile ? renderCompetitionChips(null, true) : ""}
       <div class="scores-home-heading"><h1 class="hero__title">Football scores</h1></div>
+      ${wireSlot(null)}
       ${renderScoresHome(scoreFeeds.values(), scoreFollowOptions())}
     </div>`;
     elements.layout.className = state.isMobile ? "layout" : "layout layout--scores-overview";
@@ -949,6 +1056,7 @@ function renderLayoutContent() {
       ${state.isMobile ? renderCompetitionChips(state.competition, true) : ""}
       ${renderHero(model, state.tab === "knockout" ? { title: "Knockout rounds", showSummary: false } : {})}
       ${renderScoresTabs(model, state.tab)}
+      ${state.tab === "live" ? wireSlot(model.competition?.code ?? null) : ""}
       ${renderPanel()}
     </div>`;
 
@@ -4366,6 +4474,19 @@ function applyBoardImport() {
 
 function wireLayoutControls() {
   elements.layout.addEventListener("click", (event) => {
+    const wireFilter = event.target.closest("[data-wire-filter]");
+    if (wireFilter) {
+      state.wire.filter = wireFilter.dataset.wireFilter;
+      state.wire.expanded = false;
+      track("wire_filter_changed", { filter: state.wire.filter });
+      repaintWire({ full: true });
+      return;
+    }
+    if (event.target.closest("[data-wire-expand]")) {
+      state.wire.expanded = !state.wire.expanded;
+      repaintWire();
+      return;
+    }
     const phase = event.target.closest("[data-knockout-phase]");
     if (phase) {
       state.knockoutPhase = phase.dataset.knockoutPhase;
