@@ -15,6 +15,22 @@ import { normalizeSeasons } from "./config.mjs";
 const DISCOVERY_MS = 15 * 60000;
 const LIVE_MS = 15000;
 const RETRY_MS = 30000;
+// One malformed or vanished fixture used to fail its whole competition: a row
+// that failed validation threw for the page, a batch missing one requested id
+// threw for all twenty, and a known fixture absent from discovery failed every
+// discovery for good ("Snapshot lost expected fixtures"). On 2026-10-20 that
+// froze the Champions League feed from 15:21 UTC through the evening while the
+// Premier League kept publishing, and the retry loops burned ~1,600 requests an
+// hour. A FEW bad rows are now quarantined and a FEW vanished pre-match fixtures
+// retired; more than this many at once is still treated as a broken response,
+// which is what keeps a short or empty reply from erasing a season.
+const MAX_QUARANTINED_ROWS = 3;
+const MAX_RETIRED_FIXTURES = 3;
+// An overdue fixture (kickoff passed, never seen live) must also be missing from
+// this many consecutive id batches before discovery may retire it, so one
+// incomplete discovery page cannot drop a match that is about to start.
+const RETIRE_AFTER_BATCH_MISSES = 2;
+const PRE_MATCH = new Set(["TIMED", "SCHEDULED"]);
 
 export function scoreJobs(snapshots, seasons, now) {
   const jobs = [];
@@ -51,17 +67,35 @@ function validatePage(payload, page) {
     throw Error("Incomplete or inconsistent provider page");
 }
 
-function fixtureRows(payload, job, observedAt, epoch) {
-  if (payload.response.some(row => row.league?.id !== COMPETITIONS[job.competition].apiFootballLeagueId
-    || String(row.league?.season) !== job.season || typeof row.teams?.home?.name !== "string"
-    || !row.teams.home.name.trim() || typeof row.teams?.away?.name !== "string" || !row.teams.away.name.trim()))
-    throw Error("Fixture competition, season or teams do not match discovery");
-  const fixtures = mapApiFootballMatches(payload).map(match => ({ match, observedAt, providerUpdatedAt: null }));
-  if (fixtures.some(row => row.match.status === "TIMED" && !["NS", "TBD"].includes(row.match.providerStatus)))
-    throw Error("Unknown provider match status");
+// Validates each provider row on its own. Returns the valid fixtures plus the
+// ids of rows quarantined for being individually invalid. A response where
+// every row is invalid, or more than MAX_QUARANTINED_ROWS are, is a wrong or
+// broken response rather than a bad row, and still fails outright.
+export function fixtureRows(payload, job, observedAt, epoch) {
+  const fixtures = [], quarantined = [];
+  for (const row of payload.response) {
+    let reason = null;
+    if (row.league?.id !== COMPETITIONS[job.competition].apiFootballLeagueId || String(row.league?.season) !== job.season
+      || typeof row.teams?.home?.name !== "string" || !row.teams.home.name.trim()
+      || typeof row.teams?.away?.name !== "string" || !row.teams.away.name.trim())
+      reason = "Fixture competition, season or teams do not match discovery";
+    const fixture = reason ? null : { match: mapApiFootballMatches({ response: [row] })[0], observedAt, providerUpdatedAt: null };
+    if (fixture && fixture.match.status === "TIMED" && !["NS", "TBD"].includes(fixture.match.providerStatus))
+      reason = "Unknown provider match status";
+    if (fixture && !reason) {
+      try {
+        nextSnapshot(null, { competition: job.competition, season: job.season, baseVersion: 0,
+          scheduleObservedAt: observedAt, fixtures: [fixture] }, { epoch, now: observedAt });
+      } catch (error) { reason = error.message; }
+    }
+    if (!reason) { fixtures.push(fixture); continue; }
+    if (payload.response.length === 1 || quarantined.length >= MAX_QUARANTINED_ROWS) throw Error(reason);
+    quarantined.push(Number(row.fixture?.id) || null);
+  }
+  if (payload.response.length && !fixtures.length) throw Error("Every provider row was invalid");
   nextSnapshot(null, { competition: job.competition, season: job.season, baseVersion: 0,
     scheduleObservedAt: observedAt, fixtures }, { epoch, now: observedAt });
-  return fixtures;
+  return { fixtures, quarantined };
 }
 
 export class ScoreCollector {
@@ -71,6 +105,7 @@ export class ScoreCollector {
     this.retryAt = new Map();
     this.discovery = new Map();
     this.details = new Map();
+    this.batchMisses = new Map(); // fixture id -> consecutive id batches it was missing from
     this.epoch = null;
     this.fantasy = new FantasyCollector({ store, provider, now });
   }
@@ -80,7 +115,7 @@ export class ScoreCollector {
     if (!lease) return { state: "standby", retryAt: this.now() + 1000 };
     if (this.epoch !== lease.epoch) {
       this.fantasy.reset();
-      this.details.clear(); this.discovery.clear(); this.retryAt.clear(); this.epoch = lease.epoch;
+      this.details.clear(); this.discovery.clear(); this.retryAt.clear(); this.batchMisses.clear(); this.epoch = lease.epoch;
     }
     const snapshots = Object.fromEntries(await Promise.all(Object.entries(this.seasons)
       .map(async ([code, season]) => [code, await this.store.read(code, season)])));
@@ -136,12 +171,14 @@ export class ScoreCollector {
         if (previous.standings.rows.some(group => group.table.some(row => !teams.has(row.team.id)))) throw Error("Standings lost expected teams");
         input.standings = { rows, observedAt };
       } else {
-        const rows = fixtureRows(payload, job, observedAt, lease.epoch);
+        const { fixtures: rows, quarantined } = fixtureRows(payload, job, observedAt, lease.epoch);
         if (job.kind === "discovery") {
-          discovery ??= { startedAt: observedAt, page: 1, total: payload.paging.total, rows: [] };
+          discovery ??= { startedAt: observedAt, page: 1, total: payload.paging.total, rows: [], quarantined: [] };
           if (payload.paging.total !== discovery.total || discovery.rows.length + rows.length > 2000)
             throw Error("Discovery pagination changed or exceeds fixture bound");
           discovery.rows.push(...rows);
+          discovery.quarantined.push(...quarantined);
+          if (discovery.quarantined.length > MAX_QUARANTINED_ROWS) throw Error("Too many invalid discovery rows");
           if (new Set(discovery.rows.map(row => row.match.id)).size !== discovery.rows.length) throw Error("Duplicate discovery fixture");
           if (page < discovery.total) {
             discovery.page++;
@@ -150,11 +187,28 @@ export class ScoreCollector {
           }
           const known = new Map(input.fixtures.map(row => [row.match.id, row]));
           input.fixtures = discovery.rows.map(row => known.get(row.match.id)?.observedAt > row.observedAt ? known.get(row.match.id) : row);
+          // A known fixture whose row was quarantined keeps its stored row.
+          const seen = new Set(input.fixtures.map(row => row.match.id));
+          for (const id of discovery.quarantined) if (known.has(id) && !seen.has(id)) { input.fixtures.push(known.get(id)); seen.add(id); }
+          const absent = [...known.values()].filter(row => !seen.has(row.match.id));
+          const retirable = absent.filter(row => PRE_MATCH.has(row.match.status)
+            && (Date.parse(row.match.utcDate) > observedAt || (this.batchMisses.get(row.match.id) ?? 0) >= RETIRE_AFTER_BATCH_MISSES));
+          if (retirable.length !== absent.length || retirable.length > MAX_RETIRED_FIXTURES)
+            throw Error("Snapshot lost expected fixtures");
+          if (retirable.length) input.removedIds = retirable.map(row => row.match.id);
           input.scheduleObservedAt = discovery.startedAt;
         } else {
-          if (payload.paging.total !== 1 || rows.length !== job.ids.length || rows.some(row => !job.ids.includes(row.match.id)))
-            throw Error("Live batch did not return every requested fixture");
+          // A batch answers for what it returned. A requested fixture it left out
+          // keeps its last observation and is counted as missing, so discovery
+          // can retire it if the provider has really dropped it. An EMPTY answer
+          // is a throttled or failed read, not twenty vanished matches.
+          if (payload.paging.total !== 1 || !rows.length || rows.some(row => !job.ids.includes(row.match.id)))
+            throw Error("Live batch returned no or unrequested fixtures");
           const updates = new Map(rows.map(row => [row.match.id, row]));
+          for (const id of job.ids) {
+            if (updates.has(id)) this.batchMisses.delete(id);
+            else this.batchMisses.set(id, (this.batchMisses.get(id) ?? 0) + 1);
+          }
           input.fixtures = input.fixtures.map(row => updates.get(row.match.id) ?? row);
         }
       }
@@ -164,12 +218,19 @@ export class ScoreCollector {
         ? await this.collectEmbeddedDetails(lease, job, payload, observedAt) : [];
       if (job.kind === "discovery") this.discovery.delete(job.competition);
       this.retryAt.delete(job.key);
-      return { state: "published", competition: job.competition, kind: job.kind, version: input.baseVersion + 1, ...(detailFailures.length ? { detailFailures } : {}) };
+      for (const id of input.removedIds ?? []) this.batchMisses.delete(id);
+      const missing = job.ids.filter(id => !payload.response.some(row => row.fixture?.id === id));
+      return { state: "published", competition: job.competition, kind: job.kind, version: input.baseVersion + 1,
+        ...(detailFailures.length ? { detailFailures } : {}), ...(missing.length ? { missing } : {}),
+        ...(input.removedIds ? { retired: input.removedIds } : {}) };
     } catch (error) {
       if (job.kind === "discovery") this.discovery.delete(job.competition);
       const retryAt = this.now() + RETRY_MS;
       this.retryAt.set(job.key, retryAt);
-      return { state: "failed", competition: job.competition, kind: job.kind, phase, error: error.name, retryAt };
+      // The message, bounded, is what tells a refused request from a validation
+      // rule from a storage conflict; the bare error name ("Error") did not.
+      return { state: "failed", competition: job.competition, kind: job.kind, phase, error: error.name,
+        message: String(error.message ?? "").slice(0, 160), retryAt };
     }
   }
 
