@@ -124,3 +124,33 @@ test("the snapshot only accepts a bounded removal of fixtures that never started
   assert.throws(() => nextSnapshot(previous, input([row(1, "TIMED"), row(3, "TIMED")], [2]), { epoch: 1, now: T0 + 1 }), /Invalid fixture removal/);
   assert.throws(() => nextSnapshot(previous, input([row(2, "FINISHED", { home: 1, away: 0 })], [1]), { epoch: 1, now: T0 + 1 }), /lost expected/);
 });
+
+test("a detail section that fails validation backs off instead of re-spending every 30 seconds", async () => {
+  // 2026-10-20: lineups naming a player with no provider id failed validation
+  // for three matches every 30s on the protected scores budget, ~700 requests
+  // an hour, until the daily allowance ran out at 17:39 UTC.
+  const now = T0 + 17 * H;
+  const fixture = { fixture: { id: 1635661 }, teams: { home: { id: 1 }, away: { id: 2 } } };
+  const calls = [];
+  const collector = new ScoreCollector({
+    store: { readDetail: async () => ({ version: 1, sections: {}, payloads: { fixture: { response: [fixture] } } }) },
+    provider: { request: async (_lease, path) => {
+      calls.push(path);
+      return { allowed: true, observedAt: now, payload: envelope([
+        { team: { id: 1 }, startXI: [{ player: { id: null, name: "Unregistered" } }], substitutes: [] },
+        { team: { id: 2 }, startXI: [], substitutes: [] },
+      ]) };
+    } },
+    seasons: { CL: "2026" }, owner: "test", now: () => now,
+  });
+  const match = { id: 1635661, status: "IN_PLAY", utcDate: new Date(now - 30 * 60000).toISOString(), homeTeam: "A", awayTeam: "B", score: { home: 0, away: 0 } };
+  const job = { competition: "CL", season: "2026", kind: "detail", section: "lineups", match, admission: "scores",
+    detailKey: "d", key: "d:lineups:scores" };
+  const event = await collector.collectDetail({ epoch: 1, expiresAt: now + 30000 }, job);
+  assert.equal(event.state, "failed");
+  assert.equal(event.phase, "validation");
+  assert.equal(event.error, "MalformedDetailPayload");
+  assert.match(event.message, /Invalid lineup players/);
+  assert.equal(event.retryAt - now, 5 * 60000);
+  assert.deepEqual(calls, ["/fixtures/lineups?fixture=1635661"]);
+});
