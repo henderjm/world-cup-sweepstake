@@ -68,6 +68,9 @@ export function createDetailReadApi({ store, seasons, now = Date.now }) {
       if (!row) return json({ error: "unknown fixture" }, 404);
       const detail = await store.readDetail(code, season, id);
       return json(storedMatchDetail(snapshot, row, detail, now()));
-    } catch { return json({ error: "stored match detail unavailable" }, 503); }
+    } catch (error) {
+      console.error(JSON.stringify({ at: new Date().toISOString(), route: "match-detail", error: error?.name, message: String(error?.message ?? "").slice(0, 160) }));
+      return json({ error: "stored match detail unavailable" }, 503);
+    }
   };
 }

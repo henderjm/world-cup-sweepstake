@@ -77,6 +77,9 @@ export function createFantasyReadApi({ store, seasons, now = Date.now }) {
       ]);
       if (!squads) return json({ error: 'squads not collected yet' }, 503);
       return json(storedPlayerPool(squads, Object.fromEntries(previousSeasonsFor(season, 3).map((year, i) => [year, history[i]])), season, now()));
-    } catch { return json({ error: 'stored player pool unavailable' }, 503); }
+    } catch (error) {
+      console.error(JSON.stringify({ at: new Date().toISOString(), route: 'player-pool', error: error?.name, message: String(error?.message ?? '').slice(0, 160) }));
+      return json({ error: 'stored player pool unavailable' }, 503);
+    }
   };
 }
