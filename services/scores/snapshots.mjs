@@ -47,7 +47,14 @@ export function nextSnapshot(previous, input, { epoch, now }) {
   }
   // A partial or empty upstream response must not erase known games, including
   // historical results. A season rollover uses a separate storage identity.
-  if ([...before.keys()].some(id => !ids.has(id))) throw Error("Snapshot lost expected fixtures");
+  // The one exception is a fixture the provider has genuinely dropped (deleted
+  // or re-issued under a new id): the collector names at most three, only ones
+  // that never started, and only after a complete discovery no longer lists
+  // them. Results and live matches can never be removed this way.
+  const removed = new Set(input.removedIds ?? []);
+  if (removed.size > 3 || [...removed].some(id => !preMatch.has(before.get(id)?.match.status) || ids.has(id)))
+    throw Error("Invalid fixture removal");
+  if ([...before.keys()].some(id => !ids.has(id) && !removed.has(id))) throw Error("Snapshot lost expected fixtures");
   let standings = previous?.standings ?? { rows: [], observedAt: null, delayed: true };
   if (input.standings !== undefined) {
     const candidate = input.standings;

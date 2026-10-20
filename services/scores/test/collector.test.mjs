@@ -42,7 +42,7 @@ async function setup(t, records = [fixture(900001)], { at = start, bootstrapAt =
   return { db, tableName, store, provider, collector, state, calls, clock, providerEndpoint, advance: ms => { now += ms; } };
 }
 
-test("live batches precede optional jobs and one failed batch retains its individual observations", async t => {
+test("live batches precede optional jobs and a partial batch keeps the missing fixture's last observation", async t => {
   const records = Array.from({ length: 22 }, (_, i) => fixture(900001 + i));
   const { store, collector, state, calls, clock, advance } = await setup(t, records);
   assert.equal((await collector.step()).kind, "discovery");
@@ -51,8 +51,11 @@ test("live batches precede optional jobs and one failed batch retains its indivi
   state.records = records.map(row => ({ ...row, goals: { home: 2, away: 0 } }));
   state.alter = (body, url) => url.searchParams.get("ids")?.startsWith("900001")
     ? { ...body, response: body.response.slice(1), results: body.results - 1 } : body;
-  const failed = await collector.step();
-  assert.equal(failed.state, "failed"); assert.equal(failed.kind, "live");
+  // A batch answers for what it returned: one missing fixture no longer fails
+  // its nineteen siblings (the 2026-10-20 CL freeze, see collector-ghost.test.mjs).
+  const partial = await collector.step();
+  assert.equal(partial.state, "published"); assert.equal(partial.kind, "live");
+  assert.deepEqual(partial.missing, [900001]);
   advance(1000);
   assert.equal((await collector.step()).state, "published");
   const stored = await store.read("CL", "2026");
