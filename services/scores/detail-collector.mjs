@@ -44,6 +44,16 @@ export function detailJobs(snapshots, seasons, manifests, now) {
 }
 
 const positive = value => Number.isSafeInteger(value) && value > 0;
+// A payload whose own shape is wrong (a player with no provider id, an event
+// for a team not in the fixture). Refetching it seconds later returns the same
+// payload, so the collector backs these off (DETAIL_VALIDATION_RETRY_MS) where
+// a mismatch with the stored score, which clears within a tick, keeps the
+// short retry. Named so the logs say which kind of failure it was.
+export function malformed(message) {
+  const error = Error(message);
+  error.name = "MalformedDetailPayload";
+  return error;
+}
 const named = value => typeof value === "string" && value.trim().length > 0;
 const player = value => positive(value?.id) && named(value?.name);
 
@@ -69,19 +79,19 @@ export function validateDetailPayload(payload, job, stored) {
   if (job.section === "events") {
     if (rows.length > 500 || rows.some(row => !teamIds.includes(row.team?.id) || !named(row.type)
       || !Number.isInteger(row.time?.elapsed) || row.time.elapsed < 0 || row.time.elapsed > 180))
-      throw Error("Invalid match events");
+      throw malformed("Invalid match events");
     const goals = rows.filter(row => row.type === "Goal" && ["Normal Goal", "Own Goal", "Penalty"].includes(row.detail));
     const score = job.match.score;
     complete = Number.isInteger(score?.home) && Number.isInteger(score?.away) && goals.length === score.home + score.away;
   } else {
     if (rows.length > 2 || new Set(rows.map(row => row.team?.id)).size !== rows.length
-      || rows.some(row => !teamIds.includes(row.team?.id))) throw Error("Unexpected detail teams");
+      || rows.some(row => !teamIds.includes(row.team?.id))) throw malformed("Unexpected detail teams");
     if (job.section === "lineups") {
       if (rows.some(row => !Array.isArray(row.startXI) || !Array.isArray(row.substitutes)
         || row.startXI.length > 11 || row.substitutes.length > 30
         || [...row.startXI, ...row.substitutes].some(entry => !player(entry.player))
         || new Set([...row.startXI, ...row.substitutes].map(entry => entry.player.id)).size !== row.startXI.length + row.substitutes.length))
-        throw Error("Invalid lineup players");
+        throw malformed("Invalid lineup players");
       complete = rows.length === 2 && rows.every(row => row.startXI.length === 11);
     } else if (job.section === "players") {
       if (rows.some(row => !Array.isArray(row.players) || row.players.length > 50
@@ -89,7 +99,7 @@ export function validateDetailPayload(payload, job, stored) {
         || row.players.some(entry => !player(entry.player) || !Array.isArray(entry.statistics) || entry.statistics.length !== 1
           || !entry.statistics[0].games || (entry.statistics[0].games.minutes != null
             && (!Number.isInteger(entry.statistics[0].games.minutes) || entry.statistics[0].games.minutes < 0)))))
-        throw Error("Invalid player statistics");
+        throw malformed("Invalid player statistics");
       complete = rows.length === 2 && rows.every(row => row.players.filter(entry => Number.isInteger(entry.statistics[0].games.minutes)).length >= 11);
     } else throw Error("Unknown detail section");
   }

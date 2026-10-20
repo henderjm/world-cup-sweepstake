@@ -31,6 +31,16 @@ const MAX_RETIRED_FIXTURES = 3;
 // incomplete discovery page cannot drop a match that is about to start.
 const RETIRE_AFTER_BATCH_MISSES = 2;
 const PRE_MATCH = new Set(["TIMED", "SCHEDULED"]);
+// A detail section whose payload is MALFORMED (a lineup naming a player with
+// no provider id, say; see malformed() in detail-collector.mjs) fails identically when fetched again 30s
+// later, and current-match detail is admitted under the protected "scores"
+// priority. On 2026-10-20 three matches' lineups and player stats failed this
+// way every 30 seconds, roughly 700 wasted requests an hour, and the daily
+// allowance ran out at 17:39 UTC with every match still in play: both
+// competitions then froze until midnight. Request, storage and score-mismatch
+// failures keep the short retry: those clear within a tick, and backing off a
+// full-time mismatch would hold back the final result.
+const DETAIL_VALIDATION_RETRY_MS = 5 * 60000;
 
 export function scoreJobs(snapshots, seasons, now) {
   const jobs = [];
@@ -310,10 +320,11 @@ export class ScoreCollector {
         id: job.match.id, coverage, version: manifest.version, ...(detailFailures.length ? { detailFailures } : {}) };
     } catch (error) {
       if (phase === "publication") this.details.delete(job.detailKey);
-      const retryAt = this.now() + (job.admission === "supplementary" ? 15 * 60000 : RETRY_MS);
+      const retryAt = this.now() + (job.admission === "supplementary" ? 15 * 60000
+        : error.name === "MalformedDetailPayload" ? DETAIL_VALIDATION_RETRY_MS : RETRY_MS);
       this.retryAt.set(job.key, retryAt);
       return { state: "failed", id: job.match.id, kind: "detail", section: job.section, competition: job.competition,
-        phase, error: error.name, retryAt };
+        phase, error: error.name, message: String(error.message ?? "").slice(0, 160), retryAt };
     }
   }
 
