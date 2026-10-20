@@ -48,6 +48,26 @@ jobs:
       - name: Check for deploy token
         id: token
         run: echo "have=${{ secrets.CLOUDFLARE_API_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+      # Production reads scores from the AWS stored-score service, and the
+      # Worker holds no API-Football key any more. deploy-score-worker.mjs
+      # deliberately passes an EMPTY origin through when the variable is unset
+      # (a manual rollback to legacy mode must be able to clear the binding),
+      # so without this check a missing repo variable would silently deploy a
+      # Worker with no score source at all. CI never means to do that: fail
+      # loudly instead and leave the running Worker untouched.
+      - name: Require the stored score origin
+        if: steps.token.outputs.have == 'true'
+        env:
+          SCORE_READ_ORIGIN: ${{ vars.SCORE_READ_ORIGIN }}
+        run: |
+          if [ -z "$SCORE_READ_ORIGIN" ]; then
+            echo "::error::SCORE_READ_ORIGIN repo variable is not set. Refusing to deploy a Worker with no score source; set it under Settings > Secrets and variables > Actions > Variables, then re-run."
+            exit 1
+          fi
+          case "$SCORE_READ_ORIGIN" in
+            https://*) echo "Stored score origin is set." ;;
+            *) echo "::error::SCORE_READ_ORIGIN must be an https:// origin."; exit 1 ;;
+          esac
       # The Worker bundles @anthropic-ai/sdk and @pushforge/builder from the
       # root node_modules, so the install happens at the repo root.
       - name: Install dependencies
