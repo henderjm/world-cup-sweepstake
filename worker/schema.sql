@@ -625,3 +625,35 @@ CREATE TABLE IF NOT EXISTS prediction_entries (
 );
 CREATE INDEX IF NOT EXISTS prediction_entries_match ON prediction_entries(match_id);
 CREATE INDEX IF NOT EXISTS prediction_entries_gameweek ON prediction_entries(gameweek);
+
+-- The Wire: the live commentary timeline across every match being played
+-- (src/liveWire.js is the logic, worker/liveWireStore.js the cron pass).
+-- Append-only like the league feed: item_key is the event's stable identity,
+-- so the minute cron re-derives every watched match and INSERT OR IGNOREs, and
+-- nothing is ever announced twice. `facts` is JSON carrying FACTS, never
+-- pre-rendered prose; the template wording is produced at read time.
+--
+-- ai_state: NULL = not a moment for the model; 'pending' -> 'sending' (claimed
+-- by one cron tick with a guarded UPDATE so overlapping ticks cannot both call
+-- the model) -> 'done' | 'rejected' (the line stated a figure the payload did
+-- not contain) | 'failed' | 'expired' (too old to be worth writing).
+--
+-- A goal ruled out keeps its row (the reader saw it) with its key renamed to
+-- free the ordinal slot for the next real goal; see reconcileWire.
+CREATE TABLE IF NOT EXISTS live_wire_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_key TEXT NOT NULL UNIQUE,
+  match_id INTEGER NOT NULL,
+  competition TEXT NOT NULL,
+  match_day TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  facts TEXT NOT NULL,
+  ai_line TEXT,
+  ai_state TEXT,
+  ai_version INTEGER,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS live_wire_items_day ON live_wire_items(match_day, updated_at);
+CREATE INDEX IF NOT EXISTS live_wire_items_match ON live_wire_items(match_id);
+CREATE INDEX IF NOT EXISTS live_wire_items_ai ON live_wire_items(ai_state, created_at);

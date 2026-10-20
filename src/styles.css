@@ -3735,3 +3735,68 @@ button { font-family: inherit; cursor: pointer; }
 .score-follow.is-active > span:first-child, .follow-mark { color: var(--accent); }
 .score-follow[aria-disabled="true"], [data-save-follows][aria-disabled="true"] { opacity: .6; cursor: wait; }
 .dz__team .score-follow { margin-top: 10px; font-size: 12px; }
+
+/* The Wire: live commentary from every ground (src/liveWireView.js). Sits in
+   the main column, not the aside, because the aside is hidden below 1200px and
+   the commentary has to reach every screen. */
+.wire { padding: 16px 16px 12px; margin-bottom: 16px; display: grid; gap: 12px; }
+.wire__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.wire__title { margin: 0; display: inline-flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 900; font-style: italic; text-transform: uppercase; letter-spacing: 0.02em; }
+.wire__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.wire__dot.is-live { background: var(--clay); animation: sgPulse 1.4s ease-in-out infinite; }
+.wire__sub { margin: 0; color: var(--muted); font-size: 12px; }
+.wire__filters .seg { min-height: 36px; }
+.wire__pulse {
+  width: 100%; display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; align-items: center;
+  padding: 10px 14px; border: 1px solid var(--accent-line); border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--accent-soft), transparent 80%); color: var(--text);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.wire__pulse:hover, .wire__pulse:focus-visible { border-color: var(--accent); }
+.wire__pulselabel { grid-row: span 2; color: var(--accent-ink); background: var(--accent); border-radius: 6px; padding: 4px 8px; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.06em; }
+.wire__pulsematch { font-weight: 800; font-variant-numeric: tabular-nums; }
+.wire__pulsewhy { color: var(--muted); font-size: 12px; }
+.wire__list { list-style: none; margin: 0; padding: 0; display: grid; }
+.wire__item {
+  position: relative; display: grid; grid-template-columns: 46px 14px minmax(0, 1fr); gap: 0 10px;
+  padding: 10px 6px; border-top: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+}
+.wire__item:first-child { border-top: 0; }
+.wire__item:hover, .wire__item:focus-visible { background: var(--surface-2); outline: none; }
+.wire__item.is-followed { box-shadow: inset 3px 0 0 var(--accent); }
+.wire__item.is-new { animation: wireArrive 1.6s ease-out; }
+@keyframes wireArrive { 0% { background: var(--accent-soft); transform: translateY(-4px); opacity: 0; } 20% { opacity: 1; transform: none; } 100% { background: transparent; } }
+.wire__min { color: var(--muted); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; padding-top: 2px; }
+.wire__mark { width: 10px; height: 10px; margin-top: 5px; border-radius: 50%; background: var(--line-2); }
+.wire__item--goal .wire__mark { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.wire__item--red .wire__mark { width: 8px; height: 12px; border-radius: 2px; background: var(--clay); }
+.wire__item--yellow .wire__mark { width: 8px; height: 12px; border-radius: 2px; background: var(--gold); }
+.wire__item--void .wire__mark { background: transparent; border: 2px solid var(--muted); }
+.wire__item--sub .wire__mark { width: 8px; height: 8px; margin-top: 6px; background: var(--muted); }
+.wire__body { min-width: 0; display: grid; gap: 2px; }
+.wire__body p { margin: 0; }
+.wire__match { color: var(--faint); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.wire__comp { margin-right: 6px; padding: 1px 5px; border: 1px solid var(--line-2); border-radius: 4px; color: var(--muted); }
+.wire__headline { font-weight: 800; font-size: 14px; }
+.wire__item.is-big .wire__headline { font-style: italic; text-transform: uppercase; font-weight: 900; font-size: 15px; }
+.wire__item--goal.is-big .wire__headline { color: var(--accent); }
+.wire__item--red .wire__headline { color: var(--clay); }
+.wire__item.is-overturned .wire__headline, .wire__item.is-overturned .wire__line { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--faint); }
+.wire__flag { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px; background: var(--surface-3); color: var(--text); font-size: 10px; font-style: normal; text-decoration: none; letter-spacing: 0.04em; }
+.wire__line { color: var(--text); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.wire__impact { color: var(--accent-2); font-size: 12px; font-weight: 700; }
+.wire__ai {
+  margin-top: 6px !important; padding: 8px 10px; border-left: 2px solid var(--violet); border-radius: 0 8px 8px 0;
+  background: rgb(167 139 250 / 0.08); color: var(--text); font-size: 13px; line-height: 1.45; font-style: italic;
+}
+.wire__aichip { display: inline-block; margin-right: 8px; padding: 0 5px; border-radius: 4px; background: var(--violet); color: var(--accent-ink); font-size: 10px; font-weight: 900; font-style: normal; letter-spacing: 0.06em; vertical-align: 1px; }
+.wire__ai--pending { display: flex; align-items: center; }
+.wire__shimmer { flex: 1; height: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2)); background-size: 200% 100%; animation: wireShimmer 1.2s linear infinite; }
+@keyframes wireShimmer { from { background-position: 200% 0; } to { background-position: 0 0; } }
+.wire__empty { margin: 4px 0; color: var(--muted); font-size: 13px; }
+.wire__more { justify-self: start; min-height: 40px; padding: 6px 12px; border: 1px solid var(--line-2); border-radius: 8px; background: transparent; color: var(--text); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.wire__more:hover { border-color: var(--accent-line); color: var(--accent); }
+@media (max-width: 760px) {
+  .wire { padding: 14px 12px 10px; }
+  .wire__item { grid-template-columns: 40px 12px minmax(0, 1fr); gap: 0 8px; }
+}
