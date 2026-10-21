@@ -197,6 +197,8 @@ export class DynamoScoreStore {
     const previous = await this.readBudget();
     const next = finishRequest(previous, permit, outcome, this.now());
     await this.writeBudget(lease, next, previous.version);
+    if (next.rejectedReading?.at === next.updatedAt)
+      console.warn(JSON.stringify({ at: new Date(next.updatedAt).toISOString(), state: "implausible-quota", used: next.used, ...next.rejectedReading }));
   }
 
   writeBudget(lease, next, baseVersion, validThrough) {
