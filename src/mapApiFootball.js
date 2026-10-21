@@ -312,7 +312,7 @@ function buildMatchDetail(summary, fixture, lineupsPayload, eventsPayload, playe
 
 function mapLineupPlayer(player) {
   return {
-    id: player?.id ?? null,
+    id: player?.id || null,
     name: decodeEntities(player?.name ?? ""),
     pos: player?.pos ?? null,
     num: player?.number ?? null,
@@ -328,7 +328,8 @@ function mapPlayerStats(payload, teamNames) {
     (team.players ?? []).map((entry) => {
       const stats = entry.statistics?.[0] ?? {};
       return {
-        playerId: entry.player?.id ?? null,
+        // An unregistered player arrives as id 0 here (null in lineups).
+        playerId: entry.player?.id || null,
         player: decodeEntities(entry.player?.name ?? ""),
         team: teamNames.get(team.team?.id) ?? normalizeTeamName(team.team?.name),
         minutes: stats.games?.minutes ?? 0,

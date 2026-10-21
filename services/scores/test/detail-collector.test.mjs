@@ -147,6 +147,31 @@ test("empty pre-match detail is unpublished; partial coverage retries sooner tha
   assert.deepEqual(detailJobs(snapshots, { CL: "2026" }, manifests, now), []);
 });
 
+test("a few named players the provider has not registered are accepted; a team of them is not", () => {
+  const match = { id: 900001, utcDate: "2026-10-20T19:00:00Z", status: "FINISHED", score: { home: 1, away: 0 } };
+  const stored = { payloads: { fixture: { response: [{ teams: { home: { id: 1 }, away: { id: 2 } } }] } } };
+  const page = response => ({ errors: [], paging: { current: 1, total: 1 }, results: response.length, response });
+  const squad = (team, newcomers, missingId) => Array.from({ length: 22 }, (_, i) =>
+    ({ player: i < newcomers ? { id: missingId, name: `Newcomer ${i}` } : { id: team * 100 + i, name: `Player ${i}` } }));
+  const lineups = (newcomers, missingId = null) => page([1, 2].map(team => {
+    const all = squad(team, team === 1 ? newcomers : 0, missingId);
+    return { team: { id: team }, startXI: all.slice(0, 11), substitutes: all.slice(11) };
+  }));
+  const players = newcomers => page([1, 2].map(team => ({ team: { id: team },
+    players: squad(team, team === 1 ? newcomers : 0, 0).map(entry => ({ ...entry, statistics: [{ games: { minutes: 90 } }] })) })));
+  assert.equal(validateDetailPayload(lineups(1), { match, section: "lineups" }, stored), "complete");
+  assert.equal(validateDetailPayload(lineups(3, 0), { match, section: "lineups" }, stored), "complete");
+  assert.equal(validateDetailPayload(players(2), { match, section: "players" }, stored), "complete");
+  assert.throws(() => validateDetailPayload(lineups(4), { match, section: "lineups" }, stored), /Invalid lineup players/);
+  assert.throws(() => validateDetailPayload(players(4), { match, section: "players" }, stored), /Invalid player statistics/);
+  const nameless = lineups(1);
+  nameless.response[0].startXI[0].player.name = " ";
+  assert.throws(() => validateDetailPayload(nameless, { match, section: "lineups" }, stored), /Invalid lineup players/);
+  const duplicate = lineups(0);
+  duplicate.response[0].startXI[1].player.id = duplicate.response[0].startXI[0].player.id;
+  assert.throws(() => validateDetailPayload(duplicate, { match, section: "lineups" }, stored), /Invalid lineup players/);
+});
+
 test("current match sections use the protected allowance; archives remain optional", () => {
   const now = Date.parse("2026-10-10T17:00:00Z");
   const match = { id: 1, utcDate: new Date(now - 3600000).toISOString(), status: "FINISHED" };

@@ -55,7 +55,18 @@ export function malformed(message) {
   return error;
 }
 const named = value => typeof value === "string" && value.trim().length > 0;
-const player = value => positive(value?.id) && named(value?.name);
+// The provider fields players it has not registered yet with id null (lineups)
+// or 0 (player statistics): Roma's Di Nunzio on 2026-10-20 failed five CL
+// fixtures' sections every five minutes all day. A few such named players per
+// team are real; a team of them is a broken payload.
+const MAX_UNREGISTERED_PER_TEAM = 3;
+const unregistered = value => (value?.id == null || value.id === 0) && named(value?.name);
+const player = value => (positive(value?.id) || unregistered(value)) && named(value?.name);
+function validRoster(entries) {
+  const ids = entries.map(entry => entry.player?.id).filter(positive);
+  return entries.every(entry => player(entry.player)) && new Set(ids).size === ids.length
+    && entries.length - ids.length <= MAX_UNREGISTERED_PER_TEAM;
+}
 
 export function validateDetailPayload(payload, job, stored) {
   assertApiFootballPayload(payload);
@@ -89,14 +100,13 @@ export function validateDetailPayload(payload, job, stored) {
     if (job.section === "lineups") {
       if (rows.some(row => !Array.isArray(row.startXI) || !Array.isArray(row.substitutes)
         || row.startXI.length > 11 || row.substitutes.length > 30
-        || [...row.startXI, ...row.substitutes].some(entry => !player(entry.player))
-        || new Set([...row.startXI, ...row.substitutes].map(entry => entry.player.id)).size !== row.startXI.length + row.substitutes.length))
+        || !validRoster([...row.startXI, ...row.substitutes])))
         throw malformed("Invalid lineup players");
       complete = rows.length === 2 && rows.every(row => row.startXI.length === 11);
     } else if (job.section === "players") {
       if (rows.some(row => !Array.isArray(row.players) || row.players.length > 50
-        || new Set(row.players.map(entry => entry.player?.id)).size !== row.players.length
-        || row.players.some(entry => !player(entry.player) || !Array.isArray(entry.statistics) || entry.statistics.length !== 1
+        || !validRoster(row.players)
+        || row.players.some(entry => !Array.isArray(entry.statistics) || entry.statistics.length !== 1
           || !entry.statistics[0].games || (entry.statistics[0].games.minutes != null
             && (!Number.isInteger(entry.statistics[0].games.minutes) || entry.statistics[0].games.minutes < 0)))))
         throw malformed("Invalid player statistics");
