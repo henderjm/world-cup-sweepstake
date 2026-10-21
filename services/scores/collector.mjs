@@ -227,9 +227,14 @@ export class ScoreCollector {
       const detailFailures = job.ids.length
         ? await this.collectEmbeddedDetails(lease, job, payload, observedAt) : [];
       if (job.kind === "discovery") this.discovery.delete(job.competition);
-      this.retryAt.delete(job.key);
-      for (const id of input.removedIds ?? []) this.batchMisses.delete(id);
       const missing = job.ids.filter(id => !payload.response.some(row => row.fixture?.id === id));
+      // A fixture the batch left out keeps its old observation, which would make
+      // its batch permanently overdue: re-polled every step at the highest
+      // priority, starving later live batches and discovery (the step that can
+      // retire it) while spending a request each time. Poll it on the normal cadence.
+      if (missing.length) this.retryAt.set(job.key, observedAt + LIVE_MS);
+      else this.retryAt.delete(job.key);
+      for (const id of input.removedIds ?? []) this.batchMisses.delete(id);
       return { state: "published", competition: job.competition, kind: job.kind, version: input.baseVersion + 1,
         ...(detailFailures.length ? { detailFailures } : {}), ...(missing.length ? { missing } : {}),
         ...(input.removedIds ? { retired: input.removedIds } : {}) };

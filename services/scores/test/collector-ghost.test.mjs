@@ -126,9 +126,10 @@ test("the snapshot only accepts a bounded removal of fixtures that never started
 });
 
 test("a detail section that fails validation backs off instead of re-spending every 30 seconds", async () => {
-  // 2026-10-20: lineups naming a player with no provider id failed validation
-  // for three matches every 30s on the protected scores budget, ~700 requests
-  // an hour, until the daily allowance ran out at 17:39 UTC.
+  // 2026-10-20: lineups that failed validation for three matches were re-fetched
+  // every 30s on the protected scores budget, ~700 requests an hour, until the
+  // daily allowance ran out at 17:39 UTC. (That payload, a named player with no
+  // provider id, is now accepted; a nameless one is still malformed.)
   const now = T0 + 17 * H;
   const fixture = { fixture: { id: 1635661 }, teams: { home: { id: 1 }, away: { id: 2 } } };
   const calls = [];
@@ -137,7 +138,7 @@ test("a detail section that fails validation backs off instead of re-spending ev
     provider: { request: async (_lease, path) => {
       calls.push(path);
       return { allowed: true, observedAt: now, payload: envelope([
-        { team: { id: 1 }, startXI: [{ player: { id: null, name: "Unregistered" } }], substitutes: [] },
+        { team: { id: 1 }, startXI: [{ player: { id: null, name: " " } }], substitutes: [] },
         { team: { id: 2 }, startXI: [], substitutes: [] },
       ]) };
     } },
