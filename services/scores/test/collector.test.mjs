@@ -185,6 +185,32 @@ test("standings preserve score ages and reject incomplete tables", async t => {
   assert.deepEqual((await store.read("CL", "2026")).standings, saved.standings);
 });
 
+test("one id-less standings row takes the one known team it replaced; two cannot be told apart", async t => {
+  const finished = fixture(900001); finished.fixture.status.short = "FT";
+  const { collector, store, state, advance } = await setup(t, [finished]);
+  await collector.step();
+  const row = id => ({ rank: id, team: { id, name: `Team ${id}` }, points: 0, goalsDiff: 0,
+    all: { played: 0, win: 0, draw: 0, lose: 0, goals: { for: 0, against: 0 } } });
+  let table = [1, 2, 3].map(row);
+  state.alter = (body, url) => url.pathname === "/standings"
+    ? { ...body, results: 1, response: [{ league: { id: 2, season: 2026, standings: [table] } }] } : body;
+  advance(1000);
+  assert.equal((await collector.step()).state, "published");
+  // Sabah FA became "Sabah FC" with team id null on 2026-10-21.
+  table = [row(1), { ...row(2), team: { id: null, name: "Renamed" }, points: 3 }, row(3)];
+  advance(15 * 60000);
+  assert.equal((await collector.step()).kind, "discovery");
+  advance(1000);
+  assert.equal((await collector.step()).state, "published");
+  const repaired = (await store.read("CL", "2026")).standings.rows[0].table;
+  assert.deepEqual(repaired.map(entry => [entry.team.id, entry.points]), [[1, 0], [2, 3], [3, 0]]);
+  table = [row(1), { ...row(2), team: { id: null, name: "A" } }, { ...row(3), team: { id: null, name: "B" } }];
+  advance(15 * 60000);
+  assert.equal((await collector.step()).kind, "discovery");
+  advance(1000);
+  assert.equal((await collector.step()).phase, "validation");
+});
+
 test("the collector CLI runs real collection and exits cleanly on SIGTERM", async t => {
   const at = Date.now();
   const { tableName, store, providerEndpoint } = await setup(t, [fixture(900001, 2, at)], { at });

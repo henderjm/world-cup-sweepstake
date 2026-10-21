@@ -170,6 +170,16 @@ export class ScoreCollector {
         if (payload.paging.total !== 1 || payload.response.some(row => row.league?.id !== league || String(row.league?.season) !== job.season))
           throw Error("Incomplete or mismatched standings");
         const tables = payload.response.flatMap(row => row.league.standings ?? []);
+        // On 2026-10-21 the provider renamed Sabah FA to "Sabah FC" and dropped its
+        // team id, failing every CL standings read from 17:43 UTC. One id-less row
+        // and one previously known team absent can only be the same club.
+        const idless = tables.flat().filter(row => row?.team && row.team.id == null);
+        if (idless.length === 1) {
+          const present = new Set(tables.flat().map(row => row?.team?.id));
+          const absent = (previous.standings?.rows ?? []).flatMap(group => group.table)
+            .filter(row => !present.has(row.team.id));
+          if (absent.length === 1) idless[0].team = { ...idless[0].team, id: absent[0].team.id };
+        }
         if (!tables.length || tables.some(table => !Array.isArray(table) || !table.length || table.some(row =>
           !Number.isSafeInteger(row.team?.id) || row.team.id < 1 || typeof row.team.name !== "string" || !row.team.name.trim()
           || !Number.isInteger(row.rank) || row.rank < 1 || !Number.isInteger(row.points) || !Number.isInteger(row.goalsDiff)
