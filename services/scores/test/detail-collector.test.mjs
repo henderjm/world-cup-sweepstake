@@ -172,6 +172,29 @@ test("a few named players the provider has not registered are accepted; a team o
   assert.throws(() => validateDetailPayload(duplicate, { match, section: "lineups" }, stored), /Invalid lineup players/);
 });
 
+test("a final result's complete detail never ages out or re-fetches; gaps in recent finals use the protected allowance", () => {
+  // 2026-10-21: seven PL matches from 10 and 19 Oct read "stale" because their
+  // complete detail was older than six hours, and fantasy never settled them.
+  const now = Date.parse("2026-10-21T21:00:00Z");
+  const match = { id: 1557417, utcDate: "2026-10-10T11:30:00Z", status: "FINISHED", homeTeam: "Arsenal",
+    awayTeam: "X", score: { home: 2, away: 1 } };
+  const meta = { observedAt: Date.parse("2026-10-10T14:00:00Z"), subject: detailSubject(match), coverage: "complete" };
+  const manifest = { sections: { fixture: meta, lineups: meta, events: meta, players: meta } };
+  assert.ok(Object.values(detailCoverage(manifest, match, now)).every(section => section.state === "complete"));
+  const key = detailKey("PL", "2026", match.id);
+  const jobs = () => detailJobs({ PL: { fixtures: [{ match }] } }, { PL: "2026" }, new Map([[key, manifest]]), now);
+  assert.deepEqual(jobs(), []);
+  // A corrected result still invalidates it.
+  match.score = { home: 2, away: 2 };
+  assert.equal(detailCoverage(manifest, match, now).lineups.state, "outdated-result");
+  assert.ok(jobs().every(job => job.admission === "supplementary"));
+  match.utcDate = "2026-10-19T19:00:00Z";
+  assert.ok(jobs().length === 4 && jobs().every(job => job.admission === "scores"));
+  // An unfinished section of a final still ages and is retried.
+  manifest.sections.players = { ...meta, subject: detailSubject(match), coverage: "partial" };
+  assert.equal(detailCoverage(manifest, match, now).players.state, "stale");
+});
+
 test("current match sections use the protected allowance; archives remain optional", () => {
   const now = Date.parse("2026-10-10T17:00:00Z");
   const match = { id: 1, utcDate: new Date(now - 3600000).toISOString(), status: "FINISHED" };
@@ -180,7 +203,11 @@ test("current match sections use the protected allowance; archives remain option
   const jobs = () => detailJobs({ PL: { fixtures: [{ match }] } }, { PL: "2026" }, manifests, now);
   const currentKey = jobs().find(job => job.section === "events").key;
   assert.deepEqual(jobs().map(job => job.admission), ["scores", "scores", "scores", "scores"]);
+  // Gaps in a final from the last 72 hours stay protected (fantasy settles off
+  // them); older archives remain optional.
   match.utcDate = new Date(now - 25 * 3600000).toISOString();
+  assert.ok(jobs().every(job => job.admission === "scores"));
+  match.utcDate = new Date(now - 73 * 3600000).toISOString();
   assert.ok(jobs().every(job => job.admission === "supplementary"));
   assert.notEqual(jobs().find(job => job.section === "events").key, currentKey);
   match.status = "IN_PLAY";

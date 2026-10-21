@@ -5,6 +5,8 @@ import { mapApiFootballMatches } from "../../src/mapApiFootball.js";
 import { matchDetailCacheProfile } from "../../src/matchDetailCache.js";
 import { DETAIL_SECTIONS, detailCoverage, detailKey, detailSubject } from "./details.mjs";
 
+const TERMINAL_REPAIR_MS = 72 * 3600000;
+
 export function detailJobs(snapshots, seasons, manifests, now) {
   const jobs = [], known = new Set();
   for (const [competition, season] of Object.entries(seasons)) {
@@ -15,7 +17,11 @@ export function detailJobs(snapshots, seasons, manifests, now) {
       const terminal = ["FINISHED", "AWARDED"].includes(match.status);
       const kickoff = Date.parse(match.utcDate);
       const current = isLive(match.status) || (kickoff >= now - 24 * 3600000
-        && (terminal || ["TIMED", "SCHEDULED"].includes(match.status)));
+        && (terminal || ["TIMED", "SCHEDULED"].includes(match.status)))
+        // Fantasy cannot settle a finished match until its detail is complete,
+        // and the optional allowance is spent by mid-morning, so recent finals
+        // with gaps are filled from the protected one.
+        || (terminal && kickoff >= now - TERMINAL_REPAIR_MS);
       const priority = current ? 4 : 6;
       const beforeKickoff = ["TIMED", "SCHEDULED"].includes(match.status);
       const add = (section, due) => {
@@ -28,6 +34,9 @@ export function detailJobs(snapshots, seasons, manifests, now) {
       const coverage = detailCoverage(manifest, match, now);
       for (const section of DETAIL_SECTIONS) {
         if (beforeKickoff && ["events", "players"].includes(section)) continue;
+        // Complete detail of a final result is permanent; re-fetching it every
+        // six hours for the rest of the season spent allowance on nothing.
+        if (terminal && coverage[section].state === "complete") continue;
         // Fixture identity supplies the team IDs used to validate other sections.
         if (section !== "fixture" && !manifest?.sections.fixture) continue;
         const previous = manifest?.sections[section];

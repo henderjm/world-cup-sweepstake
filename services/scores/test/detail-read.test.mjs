@@ -95,13 +95,16 @@ test("newer canonical score wins without refreshing old timeline or player times
   assert.equal(isSettleableDetail(detail), false);
 });
 
-test("an expired section and an expired score keep their own ages", async t => {
+test("a final result's complete detail and score keep their ages but never expire", async t => {
+  // Expiring them after six hours left finished matches unsettleable for good
+  // once the optional allowance closed (seven PL matches on 2026-10-21).
   const { complete, handler, advance, clock } = await setup(t);
   await complete(); const observed = clock(); advance(6 * 3600000 + 1);
   const detail = JSON.parse((await handler(event())).body);
-  assert.equal(detail.coverage.players.state, "stale"); assert.equal(detail.coverage.players.observedAt, observed);
-  assert.equal(detail.stale, true); assert.equal(detail.staleAgeMs, 6 * 3600000 + 1);
-  assert.equal(isSettleableDetail(detail), false);
+  assert.equal(detail.coverage.players.state, "complete"); assert.equal(detail.coverage.players.observedAt, observed);
+  assert.equal(detail.stale, false); assert.equal(detail.staleAgeMs, 6 * 3600000 + 1);
+  assert.deepEqual(detail.degraded, []);
+  assert.equal(isSettleableDetail(detail), true);
 });
 
 test("database failure is unavailable, not missing or empty detail", async () => {

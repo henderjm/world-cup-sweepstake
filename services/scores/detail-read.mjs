@@ -43,7 +43,8 @@ export function storedMatchDetail(snapshot, row, stored, now) {
   }
   const active = isLive(match.status) || (["TIMED", "SCHEDULED"].includes(match.status) && Date.parse(match.utcDate) <= now);
   const ageMs = Math.max(0, now - row.observedAt);
-  const stale = row.observedAt > now || ageMs > (active ? 45000 : 6 * 3600000);
+  const terminal = ["FINISHED", "AWARDED"].includes(match.status);
+  const stale = row.observedAt > now || (!terminal && ageMs > (active ? 45000 : 6 * 3600000));
   const degraded = Object.entries(coverage).filter(([, section]) => section.state !== "complete").map(([name]) => family(name));
   if (stale && !degraded.includes("/fixtures")) degraded.push("/fixtures");
   return { ...detail, source: "stored-score-service", competition: snapshot.competition, season: snapshot.season,

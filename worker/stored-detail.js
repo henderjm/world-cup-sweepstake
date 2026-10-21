@@ -34,28 +34,37 @@ function validate(body, comp, id, now) {
 
 function aged(body, now, failed = false) {
   const result = structuredClone(body), profile = matchDetailCacheProfile(body, now);
+  // A final result's complete detail does not age (see detailCoverage in
+  // services/scores/details.mjs); a corrected result arrives as outdated-result.
+  const terminal = ["FINISHED", "AWARDED"].includes(body.status);
   const degraded = new Set(result.degraded);
   for (const name of sections) {
     const section = result.coverage[name];
     section.ageMs = section.observedAt === null ? null : Math.max(0, now - section.observedAt);
-    if (section.state === "complete" && section.ageMs >= profile[name] * 1000) section.state = "stale";
+    if (section.state === "complete" && !terminal && section.ageMs >= profile[name] * 1000) section.state = "stale";
     if (failed || section.state !== "complete") degraded.add(family(name));
   }
   const active = isLive(body.status) || (["TIMED", "SCHEDULED"].includes(body.status) && Date.parse(body.utcDate) <= now);
   result.staleAgeMs = Math.max(0, now - body.snapshot.observedAt);
-  result.stale = failed || body.stale || result.staleAgeMs > (active ? 45000 : 6 * 3600000);
+  result.stale = failed || body.stale || (!terminal && result.staleAgeMs > (active ? 45000 : 6 * 3600000));
   if (result.stale) degraded.add("/fixtures");
   result.degraded = [...degraded];
   return result;
 }
 
-export function createStoredDetailReader({ fetcher = (...args) => fetch(...args), now = Date.now, timeoutMs = 4000 } = {}) {
+// freshMs(body) is how long a successful read may be reused, decided from the
+// match it describes (see createStoredScoreReader for why reuse matters). It
+// is a function because a live match and a final result deserve very
+// different windows. Ages and degradation are still recomputed on every read.
+export function createStoredDetailReader({ fetcher = (...args) => fetch(...args), now = () => Date.now(), timeoutMs = 4000, freshMs = () => 0 } = {}) {
   const saved = new Map(), inflight = new Map();
   let savedBytes = 0;
   return async function read(comp, id, configuredOrigin) {
     if (!positive(id)) throw Error("Invalid fixture id");
     const origin = storedOrigin(configuredOrigin);
     const key = `${origin}/${comp.code}/${comp.season}/${id}`;
+    const cached = saved.get(key);
+    if (cached && now() - cached.fetchedAt < freshMs(cached.body)) return aged(cached.body, now());
     if (!inflight.has(key)) {
       if (inflight.size >= 32) throw Error("Stored detail capacity exceeded");
       const pending = (async () => {
@@ -67,7 +76,7 @@ export function createStoredDetailReader({ fetcher = (...args) => fetch(...args)
           if (previous && ["version", "collectorEpoch", "detailVersion", "detailCollectorEpoch"].some(name =>
             (body.snapshot[name] ?? 0) < (previous.snapshot[name] ?? 0))) throw Error("Stored detail regressed");
           savedBytes -= saved.get(key)?.size ?? 0;
-          saved.delete(key); saved.set(key, { body, size }); savedBytes += size;
+          saved.delete(key); saved.set(key, { body, size, fetchedAt: now() }); savedBytes += size;
           while (savedBytes > 4 * 1024 * 1024 || saved.size > 32) {
             const first = saved.keys().next().value; savedBytes -= saved.get(first).size; saved.delete(first);
           }

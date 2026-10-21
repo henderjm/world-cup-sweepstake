@@ -61,9 +61,14 @@ export function detailCoverage(manifest, match, now) {
   return Object.fromEntries(DETAIL_SECTIONS.map(name => {
     const section = manifest?.sections[name];
     const ageMs = section ? Math.max(0, now - section.observedAt) : null;
+    // A complete section of a final result is permanent: only a corrected result
+    // (a new subject) invalidates it. Ageing it out after the 6-hour window left
+    // every finished match "stale" for good once the optional budget closed,
+    // and fantasy scoring refuses to settle a degraded read.
     const state = !section ? "missing" : section.observedAt > now ? "invalid"
       : terminal && section.subject !== subject ? "outdated-result"
-        : ageMs >= profile[name] * 1000 ? "stale" : section.coverage;
+        : terminal && section.coverage === "complete" ? "complete"
+          : ageMs >= profile[name] * 1000 ? "stale" : section.coverage;
     return [name, { state, observedAt: section?.observedAt ?? null, ageMs }];
   }));
 }
