@@ -226,8 +226,13 @@ const PAPER_RUN_TTL = 90 * 24 * 60 * 60; // 90 days
 // failure was served as a never-changing 200 for the life of the isolate, which
 // suppressed the browser's own static fallback (see src/liveStale.js).
 const lastLive = new Map();
-const readStoredScores = createStoredScoreReader();
-const readStoredDetail = createStoredDetailReader();
+// Reuse windows for stored score-service reads (see createStoredScoreReader).
+// A live match's detail moves on the collector's own 15s cadence; a final
+// result's is permanent bar a correction, which a minute's reuse barely delays.
+const STORED_FEED_FRESH_MS = 5000;
+const storedDetailFreshMs = detail => isLive(detail.status) ? 5000 : isFinished(detail.status) ? 60000 : 15000;
+const readStoredScores = createStoredScoreReader({ freshMs: STORED_FEED_FRESH_MS });
+const readStoredDetail = createStoredDetailReader({ freshMs: storedDetailFreshMs });
 
 // Per-match detail is 3 upstream requests; pacing between matches keeps a busy
 // multi-match minute-tick under the Ultra tier's ~7 req/sec ceiling instead of
@@ -270,6 +275,17 @@ function parseCompetitions(env) {
 // one, not 4. On a warm isolate the memo in fetchJson makes every one of them
 // free and only the match-detail payloads are actually spent.
 async function findKnownMatch(competitions, id, token, env = null) {
+  // Stored feeds cost no provider allowance, so there is nothing to save by
+  // stopping at the first hit: read them together. One after the other, a
+  // Champions League drawer waited for the whole Premier League feed first.
+  if (env?.SCORE_READ_ORIGIN) {
+    const feeds = await Promise.allSettled(competitions.map(comp => getLive(comp, token, env)));
+    for (const [index, feed] of feeds.entries()) {
+      const match = feed.value?.matches.find((entry) => entry.id === id);
+      if (match) return { ...match, competition: competitions[index].code };
+    }
+    return null;
+  }
   for (const comp of competitions) {
     try {
       const live = await getLive(comp, token, env);

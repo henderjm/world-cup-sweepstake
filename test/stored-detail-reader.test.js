@@ -75,6 +75,8 @@ test("public Worker detail reads stay on stored service and never replace degrad
   const oldFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = oldFetch; });
   let failed = false, storedCalls = 0, legacyReads = 0;
+  const realNow = Date.now; let skew = 0; t.after(() => { Date.now = realNow; });
+  Date.now = () => realNow() + skew;
   const match = { id: 900001, utcDate: detail().utcDate, status: "IN_PLAY", homeTeam: "Home", awayTeam: "Away", score: { home: 1, away: 0 } };
   globalThis.fetch = async url => {
     assert.ok(String(url).startsWith(origin), `Unexpected provider call: ${url}`);
@@ -87,8 +89,27 @@ test("public Worker detail reads stay on stored service and never replace degrad
     ANALYSIS_CACHE: { get: async () => { legacyReads++; return null; }, put: async () => { throw Error("Legacy write"); } } };
   const request = () => worker.fetch(new Request("https://worker.invalid/match/900001", { headers: { Origin: "https://kickoffdraft.com" } }), env, { waitUntil() {} });
   const first = await request(); assert.equal(first.status, 200); assert.equal(first.headers.get("Cache-Control"), "no-store");
-  failed = true;
+  failed = true; skew += 61000; // past the Worker's reuse window
   const second = await request(), body = await second.json();
   assert.equal(second.status, 200); assert.equal(body.degraded.length, 4); assert.equal(isSettleableDetail(body), false);
   assert.equal(legacyReads, 0); assert.equal(storedCalls, 4);
+});
+
+test("detail reuse follows the match: live briefly, a final result longer, and a final never ages out", async () => {
+  let clock = at, count = 0, body = detail();
+  const reader = createStoredDetailReader({ now: () => clock, freshMs: d => d.status === "IN_PLAY" ? 5000 : 60000,
+    fetcher: async () => { count++; return Response.json(body); } });
+  await reader(comp, 900001, origin); clock += 4000; await reader(comp, 900001, origin);
+  assert.equal(count, 1);
+  clock += 2000; await reader(comp, 900001, origin);
+  assert.equal(count, 2);
+  body = { ...detail(), status: "FINISHED", score: { home: 2, away: 1 } };
+  clock += 6000; await reader(comp, 900001, origin);
+  clock += 30000; const final = await reader(comp, 900001, origin);
+  assert.equal(count, 3);
+  // Seven days on, complete detail of a final result is still complete.
+  clock += 7 * 86400000;
+  const later = await reader(comp, 900001, origin);
+  assert.deepEqual(later.degraded, []); assert.equal(later.stale, false);
+  assert.equal(final.coverage.lineups.state, "complete");
 });

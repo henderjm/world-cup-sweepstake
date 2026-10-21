@@ -106,6 +106,10 @@ test("real HTTP body stalls hit the deadline", async t => {
 
 test("Worker score routes use only stored reads, recover in place and preserve the browser stale cutoff", async t => {
   const previous = globalThis.fetch; t.after(() => { globalThis.fetch = previous; });
+  // The Worker reuses a stored read for a few seconds; step past that window
+  // between phases so each one reaches the stored service.
+  const realNow = Date.now; let skew = 0; t.after(() => { Date.now = realNow; });
+  Date.now = () => realNow() + skew; const later = () => { skew += 61000; };
   let mode = "healthy", calls = 0;
   globalThis.fetch = async (url, options) => {
     assert.ok(String(url).startsWith(origin));
@@ -123,14 +127,15 @@ test("Worker score routes use only stored reads, recover in place and preserve t
     assert.equal(response.headers.get("Access-Control-Allow-Origin"), "https://kickoffdraft.com");
     assert.equal((await response.json()).source, "stored-score-service");
   }
-  mode = "failure";
+  mode = "failure"; later();
   assert.equal((await (await request("/PL/live")).json()).stale, true);
-  mode = "old";
+  mode = "old"; later();
   assert.equal((await request("/PL/live")).status, 502);
-  mode = "recovery";
+  mode = "recovery"; later();
   const recovered = await (await request("/PL/live")).json();
   assert.equal(recovered.snapshot.version, 3); assert.equal(recovered.stale, false);
-  assert.equal(calls, 6);
+  // /live reads both feeds; /PL/live and /CL/live straight after reuse them.
+  assert.equal(calls, 5);
 });
 
 test("missing configuration and invalid stored origins cannot trigger a direct-provider fallback", async t => {
@@ -156,4 +161,16 @@ test("stored readers reject redirects without following them", async t => {
   t.after(() => { server.closeAllConnections(); server.close(); });
   await assert.rejects(createStoredScoreReader()(comp, `http://127.0.0.1:${server.address().port}`), /unavailable/);
   assert.equal(followed, 0);
+});
+
+test("a reuse window answers repeat polls from memory and still ages the copy", async () => {
+  let clock = at, count = 0;
+  const reader = createStoredScoreReader({ now: () => clock, freshMs: 5000, fetcher: async () => { count++; return Response.json(feed()); } });
+  await reader(comp, origin);
+  clock += 4000;
+  const reused = await reader(comp, origin);
+  assert.equal(count, 1); assert.equal(reused.staleAgeMs, 4000);
+  clock += 1000;
+  await reader(comp, origin);
+  assert.equal(count, 2);
 });
