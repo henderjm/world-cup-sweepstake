@@ -38,8 +38,12 @@ export function storedMatchDetail(snapshot, row, stored, now) {
     const raw = statistics.get(player.playerId);
     Object.assign(player, { minutes: raw?.games?.minutes ?? null, tackles: raw?.tackles?.total ?? null,
       blocks: raw?.tackles?.blocks ?? null, interceptions: raw?.tackles?.interceptions ?? null });
-    if (player.minutes > 0 && [player.position, player.tackles, player.blocks, player.interceptions].some(value => value == null)
-      && coverage.players.state === "complete") coverage.players.state = "partial";
+    // Only what settlement scores from gates coverage. The provider sends null,
+    // not 0, for a tackle, block or interception a player never made (every
+    // keeper, most blocks), so gating on them held six PL matches from 10 Oct
+    // unsettled for good. They are display-only; if fantasy ever scores them,
+    // they must gate here again.
+    if (player.minutes > 0 && player.position == null && coverage.players.state === "complete") coverage.players.state = "partial";
   }
   const active = isLive(match.status) || (["TIMED", "SCHEDULED"].includes(match.status) && Date.parse(match.utcDate) <= now);
   const ageMs = Math.max(0, now - row.observedAt);

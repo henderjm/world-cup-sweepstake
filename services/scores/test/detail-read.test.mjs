@@ -73,13 +73,19 @@ test("complete fresh stored detail preserves referee and halftime with only stro
   assert.equal(await store.readBudget(), null);
 });
 
-test("unknown played-player statistics remain null and block settlement", async t => {
+test("null defensive statistics stay null but do not block settlement; a missing position does", async t => {
   const { complete, publish, handler } = await setup(t);
   await complete();
-  await publish("players", [{ team: { id: 1 }, players: [{ player: { id: 1, name: "Player 1" },
-    statistics: [{ games: { minutes: 90, position: "D" }, tackles: { total: null } }] }] }]);
-  const detail = JSON.parse((await handler(event())).body);
+  // Full squads, as the provider sends a keeper's stats: no tackles, blocks or interceptions at all.
+  const players = position => [1, 2].map(id => ({ team: { id }, players: Array.from({ length: 11 }, (_, n) => ({
+    player: { id: id * 100 + n, name: `Player ${id}-${n}` },
+    statistics: [{ games: { minutes: 90, position: n === 0 ? position : "D" }, tackles: { total: null, blocks: null, interceptions: null } }] })) }));
+  await publish("players", players("D"));
+  let detail = JSON.parse((await handler(event())).body);
   assert.equal(detail.playerStats[0].tackles, null); assert.equal(detail.playerStats[0].blocks, null);
+  assert.notEqual(detail.coverage.players.state, "partial");
+  await publish("players", players(null));
+  detail = JSON.parse((await handler(event())).body);
   assert.equal(detail.coverage.players.state, "partial"); assert.equal(isSettleableDetail(detail), false);
 });
 
