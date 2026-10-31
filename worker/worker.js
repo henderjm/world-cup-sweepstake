@@ -5457,7 +5457,6 @@ async function sendLeaguePush(env, memberIds, { title, body, leagueId, tag, pref
     const prefs = safePrefs(sub.prefs);
     return prefs[pref] ?? DEFAULT_PREFS[pref] ?? false;
   });
-  if (!recipients.length) return;
   const payload = {
     title,
     body,
@@ -5468,7 +5467,8 @@ async function sendLeaguePush(env, memberIds, { title, body, leagueId, tag, pref
     url: `${env.SITE_ORIGIN ?? ""}/#fantasy`,
     tag: `league-${leagueId}-${tag}`,
   };
-  await Promise.all(recipients.map((sub) => sendPush(env, sub, payload)));
+  const results = await Promise.all(recipients.map((sub) => sendPush(env, sub, payload)));
+  await recordPushLog(env, { scope: "league", refId: leagueId, pref, payload, results });
 }
 
 // -- AI weekly league recap (Phase 4.6) ---------------------------------------
@@ -6359,7 +6359,6 @@ async function sendMatchEvents(env, comp, match, events) {
     .bind(comp.code, match.homeTeam, match.awayTeam)
     .all();
   const subscribers = subs.results ?? [];
-  if (!subscribers.length) return;
 
   for (const event of events) {
     const payload = {
@@ -6372,7 +6371,23 @@ async function sendMatchEvents(env, comp, match, events) {
       const prefs = safePrefs(sub.prefs);
       return prefs[event.pref] ?? DEFAULT_PREFS[event.pref];
     });
-    await Promise.all(recipients.map((sub) => sendPush(env, sub, payload)));
+    const results = await Promise.all(recipients.map((sub) => sendPush(env, sub, payload)));
+    await recordPushLog(env, { scope: "match", refId: match.id, pref: event.pref, payload, results });
+  }
+}
+
+// Logging is after the fact and can never cost a push: a missing push_log
+// table (migration not applied yet) or a D1 blip is a console line, nothing more.
+async function recordPushLog(env, { scope, refId, pref, payload, results }) {
+  try {
+    await env.DB.prepare(
+      `INSERT INTO push_log (scope, ref_id, pref, tag, title, body, recipients, accepted)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+    )
+      .bind(scope, refId ?? null, pref, payload.tag, payload.title, payload.body ?? "", results.length, results.filter(Boolean).length)
+      .run();
+  } catch (error) {
+    console.error("push log write failed", error?.message ?? error);
   }
 }
 
@@ -7634,6 +7649,20 @@ async function runScheduledApiUsage(env) {
   // holding ninety-odd stale payloads until it is recycled.
   pruneCache(responseCache, Date.now());
   await pruneApiUsage(env);
+  await prunePushLog(env);
+}
+
+const PUSH_LOG_RETENTION_DAYS = 30;
+
+async function prunePushLog(env) {
+  if (!env?.DB) return;
+  try {
+    await env.DB.prepare(`DELETE FROM push_log WHERE created_at < datetime('now', ?1)`)
+      .bind(`-${PUSH_LOG_RETENTION_DAYS} days`)
+      .run();
+  } catch (error) {
+    console.error("push log prune failed", error?.message ?? error);
+  }
 }
 
 // Unauthenticated and read-only, the same call as /health/draft-ready: the body
