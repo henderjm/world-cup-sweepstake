@@ -104,17 +104,20 @@ if (fixtureId) {
   const all = await call(`/fixtures/${fixtureId}`, { include: INCLUDES.join(";") });
   if (all.status === 200 && all.data) {
     detailSummary = summarize(all.data);
-    for (const name of INCLUDES) includes[name] = { served: true, ...shape(all.data[name.split(".")[0]]) };
+    for (const name of INCLUDES) includes[name] = { served: true, ...shape(all.data[name.split(".")[0].toLowerCase()]) };
   } else {
     for (const name of INCLUDES) {
       const one = await call(`/fixtures/${fixtureId}`, { include: name });
       includes[name] = one.status === 200 && one.data
-        ? { served: true, ...shape(one.data[name.split(".")[0]]) }
+        ? { served: true, ...shape(one.data[name.split(".")[0].toLowerCase()]) }
         : { served: false, status: one.status, message: one.message };
     }
   }
 }
 
+// Response keys are lower case ("xgfixture"), hence the toLowerCase above.
+// xG on a live fixture needs Sportmonks' Advanced xG tier; Basic serves it
+// only after full time, so an empty live xgfixture is not proof of no xG.
 // Player ratings live in lineups.details (type "Rating"); team xG in xGFixture.
 const lineupDetails = includes["lineups.details"]?.served ? (includes["lineups.details"].sample?.details ?? []) : [];
 const ratingPresent = lineupDetails.some(d => /rating/i.test(d.type?.name ?? d.type?.developer_name ?? "") || d.type_id === 118);
