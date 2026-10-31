@@ -44,6 +44,7 @@ import {
   mergeFixtureUpdates,
 } from "../src/mapApiFootball.js";
 import { isFinished, isLive } from "../src/format.js";
+import { diffMatchEvents } from "../src/matchPushEvents.js";
 import { detailHasSubstance, detailSubstanceScore, DETAIL_SECTION_COUNT } from "../src/matchDetailSubstance.js";
 import {
   MATCH_DETAIL_LIVE,
@@ -6338,39 +6339,13 @@ async function notifyCompetition(env, comp) {
       .run();
     if (!prevRow) continue; // first sighting is a baseline, never a burst of catch-up pushes
 
-    const events = diffMatchEvents(prev, state, match, lastRed, detailMinute);
+    const events = diffMatchEvents(prev, state, match, lastRed, detailMinute, { stale: Boolean(live.stale) });
     await sendMatchEvents(env, comp, match, events);
   }
 }
 
-function diffMatchEvents(prev, cur, match, lastRed, detailMinute) {
-  const events = [];
-  const score = `${cur.home ?? 0}-${cur.away ?? 0}`;
-  const fixture = `${match.homeTeam} v ${match.awayTeam}`;
-  const scoreline = `${match.homeTeam} ${score} ${match.awayTeam}`;
-  const minute = detailMinute ?? match.minute;
-
-  if (!isLive(prev.status) && isLive(cur.status)) {
-    events.push({ pref: "kickoff", title: `Kick-off: ${fixture}`, body: "They're off." });
-  }
-  if ((cur.home ?? 0) > (prev.home ?? 0) || (cur.away ?? 0) > (prev.away ?? 0)) {
-    events.push({ pref: "goals", title: `⚽ ${scoreline}`, body: minute ? `${minute}'` : "Goal!" });
-  }
-  if ((cur.reds ?? 0) > (prev.reds ?? 0)) {
-    events.push({
-      pref: "red",
-      title: `🟥 Red card in ${fixture}`,
-      body: lastRed ? `${lastRed.player} (${lastRed.team}) is off.` : "Down to ten.",
-    });
-  }
-  if (cur.status === "FINISHED" && prev.status !== "FINISHED") {
-    events.push({ pref: "fulltime", title: `FT: ${scoreline}`, body: "Full time." });
-  }
-  return events;
-}
-
 // Sends every event for one match on one tick against a single subscriber lookup
-// (diffMatchEvents can emit up to four events for the same match/tick, and the
+// (diffMatchEvents can emit up to five events for the same match/tick, and the
 // follows x users x push_subscriptions join is identical across all of them), and
 // fans each event's sends out concurrently rather than one device at a time.
 async function sendMatchEvents(env, comp, match, events) {
