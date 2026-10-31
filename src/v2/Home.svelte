@@ -1,6 +1,7 @@
 <script>
   import Crest from "./Crest.svelte";
   import MatchRow from "./MatchRow.svelte";
+  import StakeStrip from "./StakeStrip.svelte";
   import Wire from "./Wire.svelte";
   import { COMPETITIONS, COMPETITION_CODES } from "../competitions.js";
   import { displayTeamName } from "../domain.js";
@@ -13,7 +14,7 @@
     defaultMatchDay, groupByCompetition, hasScore, latestKeyMoment, matchesOnDay, minuteText, redCards, untilKickoff,
   } from "./matchCentre.js";
 
-  let { matches, feeds, follows, wire, flashed, desktop, openId = null, now, onopen } = $props();
+  let { matches, feeds, follows, wire, flashed, desktop, matchup = null, openId = null, now, onopen } = $props();
 
   const today = $derived(localDateKey(now));
   const days = $derived(matchDays(matches));
@@ -159,6 +160,10 @@
           </div>
         {/if}
       </a>
+    {/if}
+
+    {#if matchup?.me && selectedDay === today}
+      <StakeStrip {matchup} {now} />
     {/if}
 
     {#if noMatchToday && !chosenDay && table}

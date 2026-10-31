@@ -6,6 +6,7 @@
   import { switchVersion } from "../appVersion.js";
   import { COMPETITION_CODES } from "../competitions.js";
   import { DATA_API, loadModel } from "../data.js";
+  import { fantasyAvailable, listLeagues, loadMatchup } from "../fantasyApi.js";
   import { isLive } from "../format.js";
   import { localDateKey } from "../scoreDates.js";
   import { combinedScoreModel, createScoreFeeds } from "../scoreFeeds.js";
@@ -33,6 +34,7 @@
   let route = $state(readRoute());
   let desktop = $state(false);
   let banner = $state(readBanner());
+  let matchup = $state(null);
 
   const matches = $derived(combinedScoreModel(feeds).matches);
   const follows = $derived(uniqueFollows([...(account?.follows ?? []), ...localList]));
@@ -94,6 +96,7 @@
     feeds = scoreFeeds.values();
     noteScores(combinedScoreModel(feeds).matches);
     loadWire();
+    if (anyLive) loadStake();
   }
 
   let wireCursor = null;
@@ -130,6 +133,36 @@
     } catch { /* the star stays as it was */ }
   }
 
+  // Follows made signed out live on this device; signing in carries them into
+  // the account once, then clears the device copy so the two cannot diverge.
+  // A follow the account already has is left alone (toggling it would undo it).
+  async function mergeDeviceFollows(owner) {
+    for (const follow of localFollows.all()) {
+      if (currentAccount()?.user?.email !== owner) return;
+      const held = (currentAccount()?.follows ?? [])
+        .some(entry => entry.competition === follow.competition && entry.team === follow.team);
+      try {
+        if (!held) await toggleFollow(follow.competition, follow.team);
+        localFollows.set(follow.competition, follow.team, false);
+      } catch { return; /* kept on the device; retried at the next sign-in */ }
+    }
+    localList = localFollows.all();
+    account = currentAccount() ? { ...currentAccount() } : null;
+  }
+
+  // The stake strip reads the first league that has drafted. Refreshed on the
+  // poll at most once a minute, like V1's live matchup refresh.
+  let stakeAt = 0;
+  async function loadStake() {
+    if (!currentAccount() || !fantasyAvailable()) { matchup = null; return; }
+    if (Date.now() - stakeAt < 60_000) return;
+    stakeAt = Date.now();
+    try {
+      const league = (await listLeagues()).find(entry => entry.draftStatus === "complete");
+      matchup = league ? await loadMatchup(league.id) : null;
+    } catch { /* the strip is additive; keep the last good copy */ }
+  }
+
   let timer;
   function schedule() {
     clearTimeout(timer);
@@ -149,7 +182,11 @@
     addEventListener("hashchange", onHash);
     const onStorage = () => { localFollows.reload(); localList = localFollows.all(); };
     addEventListener("storage", onStorage);
-    const offAccount = onAccountChange(next => (account = next ? { ...next } : null));
+    const offAccount = onAccountChange(next => {
+      account = next ? { ...next } : null;
+      if (next) mergeDeviceFollows(next.user?.email);
+      loadStake();
+    });
     const tick = setInterval(() => (now = Date.now()), 1000);
     restoreAccount();
     refresh().then(schedule);
@@ -197,7 +234,7 @@
 
   {#if route.section === "live"}
     <div class="live-wrap" class:with-panel={desktop && openMatch}>
-      <Home {matches} {feeds} {follows} {wire} {flashed} {desktop} {now} openId={openMatch?.id ?? null} onopen={open} />
+      <Home {matches} {feeds} {follows} {wire} {flashed} {desktop} {now} {matchup} openId={openMatch?.id ?? null} onopen={open} />
       {#if openMatch}
         <MatchSheet match={openMatch} feed={openFeed} {follows} {now} {desktop} onclose={close} onfollow={follow} ontalksignin={() => go("#you")} />
       {/if}
