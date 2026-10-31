@@ -337,6 +337,12 @@ function mapLineupPlayer(player) {
   };
 }
 
+function finiteOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function mapPlayerStats(payload, teamNames) {
   return (payload.response ?? []).flatMap((team) =>
     (team.players ?? []).map((entry) => {
@@ -351,6 +357,13 @@ function mapPlayerStats(payload, teamNames) {
         tackles: stats.tackles?.total ?? 0,
         blocks: stats.tackles?.blocks ?? 0,
         interceptions: stats.tackles?.interceptions ?? 0,
+        // Match-centre fields (V2). Null when the provider sent none, never a
+        // made-up zero: a rating of 0 and "not rated yet" are different facts.
+        rating: finiteOrNull(stats.games?.rating),
+        shots: finiteOrNull(stats.shots?.total),
+        shotsOnTarget: finiteOrNull(stats.shots?.on),
+        keyPasses: finiteOrNull(stats.passes?.key),
+        saves: finiteOrNull(stats.goals?.saves),
       };
     }),
   );

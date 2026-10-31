@@ -3800,3 +3800,11 @@ button { font-family: inherit; cursor: pointer; }
   .wire { padding: 14px 12px 10px; }
   .wire__item { grid-template-columns: 40px 12px minmax(0, 1fr); gap: 0 8px; }
 }
+
+/* V1 framed inside the V2 shell (?embed=1): V2 owns the navigation, so V1's
+   own header, ticker, footer and bottom bar are hidden. */
+.is-embedded .topnav,
+.is-embedded .ticker,
+.is-embedded .footer,
+.is-embedded .bnav { display: none !important; }
+.is-embedded .main { padding-bottom: 24px; }

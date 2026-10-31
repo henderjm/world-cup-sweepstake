@@ -41,3 +41,30 @@ export function scoreRouteHash({ date = null, liveOnly = false, competition = nu
   }
   return `${SCORES_TABS.includes(tab) ? tab : "live"}${params.size ? `?${params}` : ""}`;
 }
+
+// Days the Scores strip offers: only days on which a tracked competition
+// actually plays, so the strip is a list of matchdays rather than a calendar
+// full of blanks. Today is always present (it is where the app opens, and an
+// empty today still says "no kick-offs today, next is..."), and so is the
+// selected day, so a deep link to a quiet date still shows where you are.
+export const MATCH_DAYS_BEFORE = 2;
+export const MATCH_DAYS_AFTER = 5;
+
+export function matchDays(matches = []) {
+  return [...new Set(matches.map(match => match?.utcDate && localDateKey(match.utcDate)).filter(Boolean))].sort();
+}
+
+export function matchDayStrip(days, selected, today = localDateKey()) {
+  const past = days.filter(day => day < today).slice(-MATCH_DAYS_BEFORE);
+  const future = days.filter(day => day > today).slice(0, MATCH_DAYS_AFTER);
+  return [...new Set([...past, today, ...future, selected])].filter(Boolean).sort();
+}
+
+// The neighbouring matchday for a swipe, skipping empty dates. Returns null at
+// either end of the season rather than walking into a blank calendar.
+export function adjacentMatchDay(days, from, direction) {
+  const candidates = [...new Set([...days, localDateKey()])].sort();
+  return direction > 0
+    ? candidates.find(day => day > from) ?? null
+    : candidates.filter(day => day < from).at(-1) ?? null;
+}
