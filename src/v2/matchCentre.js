@@ -117,7 +117,7 @@ function sumStat(players, team, field) {
 // detail carries them (detail.teamStats, wired later); until then shots and
 // shots on target are summed from player statistics, and cards from events.
 // A row is dropped unless both sides have a number.
-export function statRows(detail, homeTeam, awayTeam) {
+export function statRows(detail, homeTeam, awayTeam, { full = false } = {}) {
   const team = detail?.teamStats;
   const players = detail?.playerStats ?? [];
   const pick = (key, field) => {
@@ -133,8 +133,14 @@ export function statRows(detail, homeTeam, awayTeam) {
     { key: "xg", label: "xG", values: [team?.home?.xg ?? null, team?.away?.xg ?? null], format: value => value.toFixed(2) },
     { key: "shots", label: "Shots", values: pick("shots", "shots") },
     { key: "onTarget", label: "On target", values: pick("shotsOnTarget", "shotsOnTarget") },
+    { key: "bigChances", label: "Big chances", values: [team?.home?.bigChances ?? null, team?.away?.bigChances ?? null] },
+    { key: "woodwork", label: "Hit the woodwork", values: [team?.home?.woodwork ?? null, team?.away?.woodwork ?? null], hideZero: true },
     { key: "possession", label: "Possession", values: [team?.home?.possession ?? null, team?.away?.possession ?? null], format: value => `${value}%` },
     { key: "corners", label: "Corners", values: [team?.home?.corners ?? null, team?.away?.corners ?? null] },
+    ...(full ? [
+      { key: "passes", label: "Passes", values: [team?.home?.passes ?? null, team?.away?.passes ?? null] },
+      { key: "fouls", label: "Fouls", values: [team?.home?.fouls ?? null, team?.away?.fouls ?? null] },
+    ] : []),
   ];
   if (detail?.cards) {
     const home = cards(homeTeam);
@@ -142,7 +148,7 @@ export function statRows(detail, homeTeam, awayTeam) {
     rows.push({ key: "cards", label: "Cards", values: [home.total, away.total], reds: [home.reds, away.reds] });
   }
   return rows
-    .filter(row => row.values.every(Number.isFinite))
+    .filter(row => row.values.every(Number.isFinite) && !(row.hideZero && row.values[0] + row.values[1] === 0))
     .map(row => {
       const [home, away] = row.values;
       const total = home + away;
@@ -230,4 +236,25 @@ export function untilKickoff(utcDate, now = Date.now()) {
   if (mins < 24 * 60) return `in ${Math.floor(mins / 60)}h ${mins % 60}m`;
   const days = Math.round(mins / (24 * 60));
   return `in ${days} day${days === 1 ? "" : "s"}`;
+}
+
+// The momentum strip: one bar per minute, home pressure up and away down,
+// scaled to the match's own peak so a quiet game still reads. Empty input
+// (pre-match, or no pressure feed) gives null and the section is omitted.
+export function momentumBars(pressure, { width = 358, height = 64 } = {}) {
+  if (!pressure?.length) return null;
+  const peak = Math.max(...pressure.map(row => Math.max(row.home, row.away)), 1);
+  const last = Math.max(90, ...pressure.map(row => row.minute));
+  const step = width / last;
+  const mid = height / 2;
+  return {
+    width, height, mid,
+    bars: pressure.map(row => ({
+      minute: row.minute,
+      x: (row.minute - 1) * step,
+      w: Math.max(1, step - 1),
+      home: (row.home / peak) * (mid - 2),
+      away: (row.away / peak) * (mid - 2),
+    })),
+  };
 }

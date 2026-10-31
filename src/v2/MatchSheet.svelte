@@ -6,10 +6,11 @@
   import { displayTeamName } from "../domain.js";
   import { dayLabel, statusLabel, timeLabel } from "../format.js";
   import { mountBanter, unmountBanter, banterAvailable } from "../banter.js";
+  import { DATA_API } from "../data.js";
   import { fetchMatchAnalysis, fetchMatchDetail } from "../matchDetail.js";
   import { followsTeam } from "../teamFollows.js";
   import {
-    clubForm, freshness, matchPhase, minuteText, moments, playerOfMatch, ratedPitch, redCards, scorerLines, statRows, untilKickoff,
+    clubForm, freshness, matchPhase, minuteText, momentumBars, moments, playerOfMatch, ratedPitch, redCards, scorerLines, statRows, untilKickoff,
   } from "./matchCentre.js";
 
   let { match, feed, follows, now, desktop, onclose, onfollow, ontalksignin } = $props();
@@ -50,8 +51,30 @@
     }).catch(() => {});
   });
 
+  // Sportmonks team statistics, xG and pressure (GET /match/:id/centre).
+  // Live it is re-read once a minute; after the whistle once, then again
+  // after ten minutes because Basic xG arrives after full time.
+  let centre = $state(null);
+  let centreFor = null;
+  let centreAt = 0;
+  $effect(() => {
+    const id = match.id;
+    if (!DATA_API || !(phase === "live" || phase === "post")) return;
+    const age = Date.now() - centreAt;
+    if (centreFor === id && age < (phase === "live" ? 60_000 : 600_000)) return;
+    if (centreFor !== id) centre = null;
+    centreFor = id;
+    centreAt = Date.now();
+    fetch(`${DATA_API}/match/${id}/centre`, { signal: AbortSignal.timeout(8000) })
+      .then(response => (response.ok ? response.json() : null))
+      .then(body => { if (centreFor === id && body?.available) centre = body; })
+      .catch(() => {});
+  });
+  const merged = $derived(centre ? { ...(detail ?? {}), teamStats: centre.teamStats } : detail);
+  const momentum = $derived(momentumBars(centre?.pressure));
+
   const scorers = $derived(detail ? scorerLines(detail, match.homeTeam) : { home: [], away: [] });
-  const stats = $derived(statRows(detail, match.homeTeam, match.awayTeam));
+  const stats = $derived(statRows(merged, match.homeTeam, match.awayTeam, { full: phase === "post" }));
   const allMoments = $derived(moments(detail, match.homeTeam));
   let timelineOpen = $state(false);
   const latest = $derived(phase === "post" || timelineOpen ? allMoments : allMoments.slice(0, 3));
@@ -200,6 +223,10 @@
       {@render statBars()}
     {/if}
 
+    {#if phase === "live" && momentum}
+      {@render momentumChart()}
+    {/if}
+
     {#if phase === "live" && allMoments.length}
       <section>
         <div class="section-h">
@@ -220,6 +247,10 @@
     {#if phase === "post" && stats.length}
       <div class="section-h"><h2>Stats</h2></div>
       {@render statBars()}
+    {/if}
+
+    {#if phase === "post" && momentum}
+      {@render momentumChart()}
     {/if}
 
     {#if (phase === "live" || phase === "post" || lineupsOut) && (ratedPitch(detail, "home") || ratedPitch(detail, "away"))}
@@ -278,6 +309,20 @@
   </section>
 {/snippet}
 
+{#snippet momentumChart()}
+  <section>
+    <div class="section-h"><h2>Momentum</h2><span class="label">Pressure, minute by minute</span></div>
+    <svg class="momentum" viewBox="0 0 {momentum.width} {momentum.height}" role="img" aria-label="Pressure through the match: {home} above the line, {away} below">
+      <line x1="0" x2={momentum.width} y1={momentum.mid} y2={momentum.mid} stroke="rgba(255,255,255,0.14)" />
+      {#each momentum.bars as bar (bar.minute)}
+        {#if bar.home > 0}<rect x={bar.x} y={momentum.mid - bar.home} width={bar.w} height={bar.home} fill="#c8f542" />{/if}
+        {#if bar.away > 0}<rect x={bar.x} y={momentum.mid} width={bar.w} height={bar.away} fill="#8b95a0" />{/if}
+      {/each}
+    </svg>
+    <div class="mlegend"><span><i class="sw h"></i>{home}</span><span><i class="sw a"></i>{away}</span></div>
+  </section>
+{/snippet}
+
 {#snippet timeline(items)}
   <ol class="events">
     {#each items as item (item.kind + item.index)}
@@ -328,6 +373,11 @@
   .bar i { height: 4px; border-radius: 2px; background: var(--line-2); }
   .bar i.lead { background: var(--accent); }
   .bar i.a.lead { background: var(--text); }
+  .momentum { width: 100%; height: 64px; display: block; }
+  .mlegend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+  .sw.h { background: var(--accent); }
+  .sw.a { background: var(--muted); }
   .events { list-style: none; margin: 0; padding: 0; }
   .events li { display: grid; grid-template-columns: 44px 16px 1fr auto; align-items: center; gap: 8px; min-height: 44px; border-bottom: 1px solid var(--line); font-size: 15px; }
   .emin { font-size: 13px; }

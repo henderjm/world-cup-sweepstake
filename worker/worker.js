@@ -1,3 +1,4 @@
+import { matchCentre } from "./sportmonksCentre.js";
 import { nativeEndpoint, nativePushConfigured, sendNativePush } from "./native-push.js";
 import { createStoredDetailReader } from "./stored-detail.js";
 import { createStoredScoreReader } from "./stored-scores.js";
@@ -635,6 +636,33 @@ export default {
           return json({ error: "upstream unavailable" }, 502, cors);
         }
         return json(data, 200, { ...cors, "Cache-Control": env.SCORE_READ_ORIGIN ? "no-store" : "public, max-age=15" });
+      }
+
+      // Sportmonks team statistics, xG and pressure for the V2 Match page
+      // (worker/sportmonksCentre.js). Same per-IP detail limiter: it is the
+      // other unauthenticated route that can spend a provider allowance.
+      const centreRoute = url.pathname.match(/^\/match\/(\d{1,12})\/centre$/);
+      if (centreRoute) {
+        if (!env.SPORTMONKS_API_KEY) return json({ error: "match centre not configured" }, 501, cors);
+        if (env.DETAIL_LIMITER) {
+          const ip = request.headers.get("CF-Connecting-IP") || "anon";
+          try {
+            const { success } = await env.DETAIL_LIMITER.limit({ key: ip });
+            if (!success) return json({ error: "rate limited" }, 429, { ...cors, "Retry-After": "30" });
+          } catch {
+            // limiter unavailable, fail open
+          }
+        }
+        const known = await findKnownMatch(competitions, Number(centreRoute[1]), token, env);
+        if (!known) return json({ error: "unknown match" }, 404, cors);
+        try {
+          const centre = await matchCentre(env, known);
+          const maxAge = isLive(known.status) ? 30 : 300;
+          return json(centre, 200, { ...cors, "Cache-Control": `public, max-age=${maxAge}` });
+        } catch (error) {
+          console.error(`route failed: /match/:id/centre ${error.message}`);
+          return json({ available: false }, 200, { ...cors, "Cache-Control": "public, max-age=30" });
+        }
       }
 
       const detailRoute = url.pathname.match(/^\/match\/(\d{1,12})$/);
