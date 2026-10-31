@@ -417,3 +417,60 @@ test("mapped match detail decodes escaped player names from the feed", () => {
   assert.equal(detail.goals[0].scorer, "M. O'Riley");
   assert.equal(detail.goals[0].assist, "J. O'Brien");
 });
+
+function liveSummary(score) {
+  return {
+    id: 1557450,
+    status: "IN_PLAY",
+    utcDate: "2026-10-31T12:30:00+00:00",
+    minute: 31,
+    score,
+    penalties: null,
+    homeTeam: "Chelsea",
+    awayTeam: "Man United",
+  };
+}
+const liveLineups = {
+  response: [
+    { team: { id: 49, name: "Chelsea" }, startXI: [], substitutes: [] },
+    { team: { id: 33, name: "Manchester United" }, startXI: [], substitutes: [] },
+  ],
+};
+const goalEvent = (elapsed, teamId, playerId) => ({
+  time: { elapsed, extra: null },
+  team: { id: teamId },
+  player: { id: playerId, name: playerId ? `P${playerId}` : null },
+  assist: { id: null, name: null },
+  type: "Goal",
+  detail: "Normal Goal",
+});
+
+test("drops a goal that a VAR event cancelled", () => {
+  const events = {
+    response: [
+      goalEvent(5, 49, 7),
+      goalEvent(14, 49, 9),
+      { time: { elapsed: 16 }, team: { id: 49 }, player: { id: 9 }, type: "Var", detail: "Goal cancelled" },
+    ],
+  };
+  const detail = mapApiFootballMatchDetailFromSummary(liveSummary({ home: 1, away: 0 }), liveLineups, events, { response: [] });
+  assert.deepEqual(detail.goals.map((g) => [g.minute, g.scorerId, g.home, g.away]), [[5, 7, 1, 0]]);
+  assert.equal("teamId" in detail.goals[0], false);
+});
+
+test("a VAR event for a goal upstream already deleted leaves earlier goals alone", () => {
+  const events = {
+    response: [
+      goalEvent(5, 49, 7),
+      { time: { elapsed: 30 }, team: { id: 49 }, player: { id: 9 }, type: "Var", detail: "Goal Disallowed - offside" },
+    ],
+  };
+  const detail = mapApiFootballMatchDetailFromSummary(liveSummary({ home: 1, away: 0 }), liveLineups, events, { response: [] });
+  assert.equal(detail.goals.length, 1);
+});
+
+test("never shows more goals than the score, so an unlabelled disallowed goal disappears", () => {
+  const events = { response: [goalEvent(14, 49, null)] };
+  const detail = mapApiFootballMatchDetailFromSummary(liveSummary({ home: 0, away: 0 }), liveLineups, events, { response: [] });
+  assert.deepEqual(detail.goals, []);
+});
