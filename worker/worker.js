@@ -133,7 +133,7 @@ import {
 } from "../src/fantasyBots.js";
 import { PICK_VIA } from "../src/draftLogic.js";
 import { dueDraftReminder, validateDraftSchedule } from "../src/fantasyScheduling.js";
-import { blendWithCurrentSeason } from "../src/fantasyExpectedPoints.js";
+import { blendXpThrough } from "./xpBlend.js";
 import {
   CHAT_EVENTS,
   CHAT_PAGE_SIZE,
@@ -2564,15 +2564,16 @@ function shuffle(list) {
 // seeding attempt failed) heals itself on the next cron tick rather than
 // waiting for a commissioner to discover it at draft time. Ordered before
 // runScheduledDraftReminders in the tick so a scheduled auto-start later in
-// the same tick finds a pool already there. Gated on a COUNT rather than
+// the same tick finds a pool already there. Gated on an emptiness check rather than
 // refreshing unconditionally: this runs every minute, and re-upserting ~556
 // rows a minute would be pure waste. Squad churn is picked up by the draft
 // start's own refresh and the nightly bake, not here.
 async function ensureFantasyPlayerPool(env) {
   if (!env.DB) return;
   try {
-    const row = await env.DB.prepare(`SELECT COUNT(*) AS count FROM fantasy_players`).first();
-    if ((row?.count ?? 0) > 0) return;
+    // An existence check, not COUNT(*): a count reads every row (710 a
+    // minute, about a million a day) to answer a yes/no question.
+    if (await env.DB.prepare(`SELECT 1 AS ok FROM fantasy_players LIMIT 1`).first()) return;
     await upsertFantasyPlayerPool(env);
   } catch {
     // nothing here is load-bearing for this tick: the next one retries, and
@@ -2606,8 +2607,7 @@ async function upsertFantasyPlayerPool(env) {
   }
 
   if (!players.length) {
-    const existing = await env.DB.prepare(`SELECT COUNT(*) AS count FROM fantasy_players`).first();
-    if ((existing?.count ?? 0) > 0) return;
+    if (await env.DB.prepare(`SELECT 1 AS ok FROM fantasy_players LIMIT 1`).first()) return;
     throw new Error("EMPTY_PLAYER_POOL");
   }
 
@@ -3514,78 +3514,13 @@ async function recomputeLeagueGameweek(env, leagueId, gameweek, playerPoints) {
 // pure waste.
 async function runScheduledFantasyXpBlend(env) {
   if (!env.DB || !scoreSourceConfigured(env)) return;
-  try {
-    const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
-    if (!comp) return; // fantasy is PL-only; nothing to blend without PL configured
-
-    // Reuses the same /live fetch runScheduledFantasyScoring already made
-    // this tick (same edge cache, same reasoning as the scheduled() handler's
-    // own docstring on why these passes run sequentially rather than in
-    // parallel).
-    const live = await getLive(comp, env.API_FOOTBALL_KEY, env);
-    const currentGameweek = currentGameweekFromMatches(live.matches, Date.now());
-    const latestCompleted = currentGameweek - 1;
-    if (latestCompleted < 1) return; // season hasn't produced a completed gameweek yet
-
-    const state = await env.DB.prepare(`SELECT last_completed_gameweek FROM fantasy_xp_state WHERE id = 1`).first();
-    if ((state?.last_completed_gameweek ?? 0) >= latestCompleted) return; // nothing new to blend
-
-    const [playersResult, scoresResult] = await Promise.all([
-      env.DB.prepare(`SELECT id, historical_xp, historical_basis FROM fantasy_players WHERE active = 1`).all(),
-      // Aggregated in SQL rather than row by row: the underlying table is one
-      // row per player per MATCH, and blendWithCurrentSeason divides by
-      // gameweeks played, so a double gameweek's two matches must count as one
-      // gameweek (COUNT(DISTINCT gameweek)) while contributing both scores
-      // (SUM(points)). Counting rows would quietly halve such a player's
-      // per-gameweek average.
-      env.DB.prepare(
-        `SELECT player_id, SUM(points) AS points, COUNT(DISTINCT gameweek) AS gameweeks
-         FROM fantasy_player_match_scores WHERE gameweek <= ?1 GROUP BY player_id`,
-      )
-        .bind(latestCompleted)
-        .all(),
-    ]);
-
-    const pointsByPlayer = new Map();
-    const gameweeksByPlayer = new Map();
-    for (const row of scoresResult.results ?? []) {
-      pointsByPlayer.set(row.player_id, row.points);
-      gameweeksByPlayer.set(row.player_id, row.gameweeks);
-    }
-
-    const CHUNK = 100;
-    const players = playersResult.results ?? [];
-    for (let i = 0; i < players.length; i += CHUNK) {
-      const chunk = players.slice(i, i + CHUNK);
-      try {
-        await env.DB.batch(
-          chunk.map((player) => {
-            const gameweeksPlayed = gameweeksByPlayer.get(player.id) ?? 0;
-            const currentSeasonPoints = pointsByPlayer.get(player.id) ?? 0;
-            const blended = blendWithCurrentSeason(player.historical_xp, currentSeasonPoints, gameweeksPlayed);
-            const basis = gameweeksPlayed > 0 ? "blended" : player.historical_basis;
-            return env.DB.prepare(
-              `UPDATE fantasy_player_xp SET xp = ?2, xp_basis = ?3, updated_at = datetime('now') WHERE player_id = ?1`,
-            ).bind(player.id, blended, basis);
-          }),
-        );
-      } catch {
-        // one bad chunk must not block the others; the next gameweek's blend
-        // (or a later tick, once fantasy_xp_state hasn't advanced) retries it
-      }
-    }
-
-    await env.DB.prepare(
-      `INSERT INTO fantasy_xp_state (id, last_completed_gameweek, updated_at) VALUES (1, ?1, datetime('now'))
-       ON CONFLICT(id) DO UPDATE SET last_completed_gameweek = ?1, updated_at = datetime('now')`,
-    )
-      .bind(latestCompleted)
-      .run();
-  } catch {
-    // best-effort, same discipline as the bake's own historical enrichment:
-    // xP is a display figure, never a new single point of failure for the
-    // rest of the cron (see the comment on its call site in scheduled())
-  }
+  const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
+  if (!comp) return; // fantasy is PL-only; nothing to blend without PL configured
+  // Reuses the same /live fetch runScheduledFantasyScoring already made this
+  // tick. Errors propagate to runCronPass so a broken blend is logged rather
+  // than silently retried every minute (see worker/xpBlend.js for why).
+  const live = await getLive(comp, env.API_FOOTBALL_KEY, env);
+  await blendXpThrough(env, currentGameweekFromMatches(live.matches, Date.now()) - 1);
 }
 
 // GET /fantasy/players/xp: every active player's current xp/xpBasis, public
