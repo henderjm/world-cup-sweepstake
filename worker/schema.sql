@@ -62,6 +62,33 @@ CREATE TABLE IF NOT EXISTS banter_messages (
 );
 CREATE INDEX IF NOT EXISTS banter_messages_match ON banter_messages(match_id, id);
 
+-- Talk moderation (src/talkModeration.js, migration 013): reports, moderator
+-- hides, muted accounts, and the hand-set moderator list.
+CREATE TABLE IF NOT EXISTS banter_reports (
+  message_id INTEGER NOT NULL REFERENCES banter_messages(id) ON DELETE CASCADE,
+  reporter_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (message_id, reporter_user_id)
+);
+CREATE TABLE IF NOT EXISTS talk_hidden (
+  message_id INTEGER PRIMARY KEY REFERENCES banter_messages(id) ON DELETE CASCADE,
+  hidden_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS talk_mutes (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  muted_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- Set by hand, never from the app: INSERT INTO talk_moderators (user_id)
+-- SELECT id FROM users WHERE email = '<the owner's email>';
+CREATE TABLE IF NOT EXISTS talk_moderators (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- The per-account rate limit reads a user's latest post.
+CREATE INDEX IF NOT EXISTS banter_messages_user ON banter_messages(user_id, id);
+
 CREATE TABLE IF NOT EXISTS banter_reactions (
   match_id INTEGER NOT NULL,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
