@@ -81,6 +81,28 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 );
 CREATE INDEX IF NOT EXISTS push_subs_user ON push_subscriptions(user_id);
 
+-- One row per push the Worker decided to send, so "what did we send for this
+-- match?" has an answer. Per EVENT, not per device: recipients is how many
+-- devices the prefs allowed and accepted how many push services took it (a
+-- push service accepting is not the phone displaying it). A match event with
+-- recipients = 0 is still logged, because "nobody follows either club" is the
+-- answer too. scope is 'match' (ref_id = fixture id) or 'league' (ref_id =
+-- league id). Pruned to PUSH_LOG_RETENTION_DAYS by the cron. Never read on a
+-- request path; it is for debugging from wrangler d1 execute.
+CREATE TABLE IF NOT EXISTS push_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  scope TEXT NOT NULL,
+  ref_id INTEGER,
+  pref TEXT NOT NULL,
+  tag TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  recipients INTEGER NOT NULL,
+  accepted INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS push_log_ref ON push_log(scope, ref_id, created_at);
+
 -- Last-notified state per match, so the notification cron only announces changes.
 CREATE TABLE IF NOT EXISTS notify_state (
   match_id INTEGER PRIMARY KEY,

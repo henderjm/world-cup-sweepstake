@@ -119,6 +119,7 @@ Upstream polling is a state machine, not the browser cadence. The season schedul
 ## Where the logs are
 
 - **Cloudflare Worker** (`goon-squad-data`): Workers Logs (`[observability]` in `worker/wrangler.toml`), dashboard Workers & Pages > goon-squad-data > Logs. Only explicit `console.*` lines are kept (cron pass failures as `cron pass failed: <name>`, `route failed: <path>`, `live-wire {...}` summaries, quota warnings); per-request invocation logs are deliberately off. `npx wrangler tail` still shows them live.
+- **Push notifications sent**: D1 `push_log`, one row per event (match or league) with how many devices it targeted and how many push services accepted it, kept 30 days. `npx wrangler d1 execute squad-goals --remote --command "SELECT * FROM push_log WHERE scope='match' AND ref_id=<fixture id>"`. Accepted by the push service is not proof the phone displayed it.
 - **AWS score collector and read API**: CloudWatch Logs, 14-day retention (`infra/scores/trial.json`). The collector writes one JSON line per non-idle step, including budget deferrals, and failed steps carry `phase` and a bounded `message`; the read handlers log the reason before answering 503.
 - **GitHub Actions** (Pages bake, live-detail feeder, Worker deploy): each run's own log in the Actions tab.
 - **Browser**: exceptions go to PostHog via `trackException` (`src/telemetry.js`).
