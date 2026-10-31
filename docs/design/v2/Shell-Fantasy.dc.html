@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>V2 shell around the V1 Fantasy screen</title>
+<link rel="stylesheet" href="kd.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400..900;1,400..900&display=swap">
+<style>
+body { margin: 0; }
+a { color: #edf2ee; } a:hover { color: #c8f542; }
+</style>
+</helmet>
+<div class="kd" style="width: 390px; height: 844px; position: relative; overflow: hidden; background: #0a0e14;">
+
+  <header style="height: 52px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between;">
+    <a href="Main.dc.html" aria-label="Kickoff Draft home" style="font-size: 22px; font-weight: 900; font-style: italic; letter-spacing: -0.04em; color: #c8f542;">KD</a>
+    <span style="font-size: 13px; color: #8b95a0;">Fantasy</span>
+  </header>
+
+  <div style="display: flex; align-items: stretch; gap: 20px; padding: 0 16px; border-bottom: 1px solid rgba(255,255,255,0.07);">
+    <button class="toggle">Feed</button>
+    <button class="toggle on" style="box-shadow: inset 0 -2px 0 #a78bfa;">My team</button>
+    <button class="toggle">Matchup</button>
+    <button class="toggle">Standings</button>
+    <button class="toggle">Waivers</button>
+  </div>
+
+  <div style="padding: 14px 16px 0;">
+    <div style="display: flex; align-items: baseline; justify-content: space-between;">
+      <h1 style="margin: 0; font-size: 24px; font-weight: 900; font-style: italic; text-transform: uppercase; letter-spacing: -0.01em;">Hender's Heroes</h1>
+      <span style="font-size: 12px; color: #8b95a0;">GW10 · deadline Sat 10:30</span>
+    </div>
+
+    <div style="margin-top: 12px; border-radius: 14px; background: #12181f; padding: 14px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; font-size: 13px;">
+        <span style="color: #a78bfa; font-weight: 700;">You 38 <span style="color: #8b95a0; font-weight: 400;">v</span> Dave 31</span>
+        <span style="color: #8b95a0;">3 playing · 5 to come · 3 done</span>
+      </div>
+      <div style="margin-top: 12px; border-radius: 10px; background: linear-gradient(180deg, #0f2416 0%, #0d1a12 100%); height: 300px; padding: 12px 6px; display: flex; flex-direction: column; justify-content: space-between;">
+        <div style="display: flex; justify-content: space-around;"><div style="text-align: center; font-size: 10px;"><span class="rating" style="background: #a78bfa; color: #0a0e14; min-width: 34px; height: 20px;">7</span><div style="margin-top: 3px;">Palmer <b>C</b></div><div style="color: #8b95a0;">CHE (H)</div></div></div>
+        <div style="display: flex; justify-content: space-around;"><div style="text-align: center; font-size: 10px;"><span class="rating" style="min-width: 34px; height: 20px;">2</span><div style="margin-top: 3px;">Fernandes</div><div style="color: #8b95a0;">MUN (A)</div></div><div style="text-align: center; font-size: 10px;"><span class="rating" style="min-width: 34px; height: 20px; background: transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14); color: #8b95a0;">15:00</span><div style="margin-top: 3px;">Saka</div><div style="color: #8b95a0;">ARS (A) 17:30</div></div><div style="text-align: center; font-size: 10px;"><span class="rating" style="min-width: 34px; height: 20px; background: transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14); color: #8b95a0;">15:00</span><div style="margin-top: 3px;">Rogers</div><div style="color: #8b95a0;">AVL (H)</div></div></div>
+        <div style="display: flex; justify-content: space-around;"><div style="text-align: center; font-size: 10px;"><span class="rating" style="min-width: 34px; height: 20px;">1</span><div style="margin-top: 3px;">Cunha</div><div style="color: #8b95a0;">MUN (A)</div></div><div style="text-align: center; font-size: 10px;"><span class="rating" style="min-width: 34px; height: 20px; background: transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14); color: #8b95a0;">15:00</span><div style="margin-top: 3px;">Rice</div><div style="color: #8b95a0;">ARS (A) 17:30</div></div></div>
+        <div style="display: flex; justify-content: space-around;"><div style="text-align: center; font-size: 10px;"><span class="rating" style="min-width: 34px; height: 20px; background: transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14); color: #8b95a0;">15:00</span><div style="margin-top: 3px;">Hall</div><div style="color: #8b95a0;">NEW (H)</div></div><div style="text-align: center; font-size: 10px;"><span class="rating" style="min-width: 34px; height: 20px; background: transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14); color: #8b95a0;">15:00</span><div style="margin-top: 3px;">Gvardiol</div><div style="color: #8b95a0;">MCI (H)</div></div><div style="text-align: center; font-size: 10px;"><span class="rating" style="min-width: 34px; height: 20px; background: transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14); color: #8b95a0;">15:00</span><div style="margin-top: 3px;">Van de Ven</div><div style="color: #8b95a0;">TOT (H)</div></div><div style="text-align: center; font-size: 10px;"><span class="rating" style="min-width: 34px; height: 20px; background: transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14); color: #8b95a0;">15:00</span><div style="margin-top: 3px;">Robinson</div><div style="color: #8b95a0;">FUL (A)</div></div></div>
+        <div style="display: flex; justify-content: space-around;"><div style="text-align: center; font-size: 10px;"><span class="rating" style="min-width: 34px; height: 20px; background: transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14); color: #8b95a0;">15:00</span><div style="margin-top: 3px;">Pope</div><div style="color: #8b95a0;">NEW (H)</div></div></div>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 12px;">
+        <button style="height: 40px; padding: 0 16px; border-radius: 20px; background: #a78bfa; color: #0a0e14; font-weight: 700; font-size: 13px;">Edit lineup</button>
+        <button style="height: 40px; padding: 0 16px; border-radius: 20px; background: transparent; color: #edf2ee; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14); font-weight: 700; font-size: 13px;">Captain</button>
+      </div>
+    </div>
+
+    <div style="margin-top: 12px; border-radius: 14px; background: #12181f; padding: 14px; font-size: 13px;">
+      <div style="font-weight: 900; font-style: italic; text-transform: uppercase; font-size: 13px; color: #a78bfa;">Bench</div>
+      <div style="display: flex; gap: 12px; margin-top: 8px; color: #8b95a0;"><span>Raya</span><span>Konaté</span><span>Wharton</span><span>Watkins</span></div>
+    </div>
+  </div>
+
+  <nav class="nav" aria-label="Sections">
+    <a href="Main.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg><span>Live</span></a>
+    <a href="Shell-Fantasy.dc.html" class="on" aria-current="page" style="color: #a78bfa;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8l4 4-3 2v10H7V10L4 8z"/></svg><span style="box-shadow: 0 2px 0 #a78bfa;">Fantasy</span></a>
+    <a href="Main.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg><span>Play</span></a>
+    <a href="Main.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg><span>You</span></a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

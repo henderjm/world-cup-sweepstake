@@ -1,0 +1,45 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-10-31T15:10:00Z" },
+  "title": "Kickoff Draft V2",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 390, "h": 844, "title": "Home · live, signed in" },
+    "Home-Signed-Out.dc.html": { "x": 470, "y": 0, "w": 390, "h": 844, "title": "Home · live, signed out" },
+    "Home-Matchday-Pre.dc.html": { "x": 940, "y": 0, "w": 390, "h": 844, "title": "Home · matchday, nothing live yet" },
+    "Home-No-Match.dc.html": { "x": 1410, "y": 0, "w": 390, "h": 844, "title": "Home · no match today" },
+    "Match-Pre.dc.html": { "x": 0, "y": 964, "w": 390, "h": 1200, "title": "Match · before kickoff" },
+    "Match-Live.dc.html": { "x": 470, "y": 964, "w": 390, "h": 1200, "title": "Match · live" },
+    "Match-FT.dc.html": { "x": 940, "y": 964, "w": 390, "h": 1200, "title": "Match · full time" },
+    "Talk.dc.html": { "x": 1410, "y": 964, "w": 390, "h": 1200, "title": "Talk · thread and states" },
+    "Desktop-Live.dc.html": { "x": 0, "y": 2284, "w": 1440, "h": 900, "title": "Desktop · home, live" },
+    "Desktop-Match.dc.html": { "x": 1520, "y": 2284, "w": 1440, "h": 900, "title": "Desktop · match panel open" },
+    "System.dc.html": { "x": 0, "y": 3304, "w": 1440, "h": 1560, "title": "Visual system" },
+    "Shell-Fantasy.dc.html": { "x": 1520, "y": 3304, "w": 390, "h": 844, "title": "V2 shell around V1 Fantasy" }
+  },
+  "order": [
+    "Main.dc.html",
+    "Home-Signed-Out.dc.html",
+    "Home-Matchday-Pre.dc.html",
+    "Home-No-Match.dc.html",
+    "Match-Pre.dc.html",
+    "Match-Live.dc.html",
+    "Match-FT.dc.html",
+    "Talk.dc.html",
+    "Desktop-Live.dc.html",
+    "Desktop-Match.dc.html",
+    "System.dc.html",
+    "Shell-Fantasy.dc.html"
+  ],
+  "notes": {
+    "t1": { "x": 0, "y": -300, "text": "Live home, phone 390. Four states the app picks itself", "kind": "title1", "maxW": 1800 },
+    "t2": { "x": 0, "y": 664, "text": "Match page and Talk, phone. Fold marked at 844", "kind": "title1", "maxW": 1800 },
+    "t3": { "x": 0, "y": 1984, "text": "Desktop 1440. Home, then the match panel over the right column", "kind": "title1", "maxW": 2960 },
+    "t4": { "x": 0, "y": 3004, "text": "Visual system, and the V2 shell around a V1 screen", "kind": "title1", "maxW": 2960 },
+    "s1": { "x": 1880, "y": 0, "w": 360, "text": "First open, no splash. The screen is the announcement: the spotlight fills the top half with a hero score and a ticking lime minute, the list is dense beneath it, nothing is boxed. One dismissible line under the header says you are on the new Kickoff Draft and where the switch back lives.", "fill": "green" },
+    "s2": { "x": 1880, "y": 964, "w": 360, "text": "Above the fold is built from P1 items only. P2 and P3 items (win chances, injuries, fantasy overlay, win-probability line, fan vote) are drawn below the fold or marked so the build order is visible.", "fill": "blue" },
+    "s3": { "x": 1990, "y": 3304, "w": 360, "text": "Shell seam, phase 1. The V2 shell owns the header, the bottom nav and the sub-tab row (text toggles replace the V1 pills, violet underline for Fantasy). Inside it the V1 screen renders as it is: italic uppercase heading, 14px cards, pill buttons. Cheap token swaps the shell can apply: card radius 14 to 12, pill buttons to 8px. Left alone in phase 1: the pitch and bench cards.", "fill": "purple" }
+  },
+  "designSystems": []
+}
