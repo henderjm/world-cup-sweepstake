@@ -13,6 +13,10 @@ import { track } from "./telemetry.js";
 
 export const REACTIONS = ["🔥", "😂", "😱", "🧂", "🐐", "💀"];
 
+// Spoken names for the reaction buttons, which are otherwise named only by
+// the emoji itself.
+const REACTION_NAMES = { "🔥": "Fire", "😂": "Laughing", "😱": "Shocked", "🧂": "Salty", "🐐": "GOAT", "💀": "Dead" };
+
 export function banterAvailable() {
   return Boolean(DATA_API);
 }
@@ -225,7 +229,7 @@ function renderLive() {
   const mine = new Set(data?.reactions?.mine ?? []);
   react.innerHTML = REACTIONS.map((emoji) => {
     const count = counts[emoji] ?? 0;
-    return `<button type="button" class="bn-react ${mine.has(emoji) ? "is-mine" : ""}" data-react="${emoji}" aria-pressed="${mine.has(emoji)}" ${signedIn ? "" : `disabled title="Sign in to react"`}>${emoji}${count ? `<span>${count}</span>` : ""}</button>`;
+    return `<button type="button" class="bn-react ${mine.has(emoji) ? "is-mine" : ""}" data-react="${emoji}" aria-label="${REACTION_NAMES[emoji] ?? emoji}${count ? `, ${count}` : ""}" aria-pressed="${mine.has(emoji)}" ${signedIn ? "" : `disabled title="Sign in to react"`}>${emoji}${count ? `<span>${count}</span>` : ""}</button>`;
   }).join("");
 
   const messages = data?.messages ?? [];

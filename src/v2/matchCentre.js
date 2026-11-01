@@ -57,13 +57,27 @@ export function hasScore(match) {
   return Number.isFinite(match?.score?.home) && Number.isFinite(match?.score?.away);
 }
 
+// Line-up names by player id. The events feed spells a player's full legal
+// name ("Estêvão Willian Almeida de Oliveira Gonçalves") where the line-up
+// uses the name he is known by ("Estêvão"), so events prefer the line-up's.
+function lineupNames(detail) {
+  const names = new Map();
+  for (const side of [detail?.home, detail?.away]) {
+    for (const player of [...(side?.lineup ?? []), ...(side?.bench ?? [])]) {
+      if (player.id && player.name) names.set(player.id, player.name);
+    }
+  }
+  return names;
+}
+
 // "Palmer 23', 64'" per side, from the detail's goals. Own goals credit the
 // side that benefited, which is how the provider already files them.
 export function scorerLines(detail, homeTeam) {
   const sides = { home: new Map(), away: new Map() };
+  const known = lineupNames(detail);
   for (const goal of detail?.goals ?? []) {
     const side = goal.team === homeTeam ? "home" : "away";
-    const name = `${surname(goal.scorer) || "Goal"}${goal.type === "OWN" ? " (og)" : goal.type === "PENALTY" ? " (pen)" : ""}`;
+    const name = `${surname(known.get(goal.scorerId) ?? goal.scorer) || "Goal"}${goal.type === "OWN" ? " (og)" : goal.type === "PENALTY" ? " (pen)" : ""}`;
     const minute = Number.isFinite(goal.minute) ? `${goal.minute}${goal.injuryTime ? `+${goal.injuryTime}` : ""}'` : "";
     const list = sides[side].get(name) ?? [];
     list.push(minute);
@@ -83,19 +97,21 @@ export function redCards(detail, team) {
 
 // Every moment in match order, newest first. Kinds: goal, red, yellow, sub.
 export function moments(detail, homeTeam) {
+  const known = lineupNames(detail);
+  const named = (id, fallback) => known.get(id) ?? fallback;
   const list = [
     ...(detail?.goals ?? []).map(goal => ({
       kind: "goal", minute: goal.minute, extra: goal.injuryTime ?? null, team: goal.team,
-      player: goal.scorer, note: [goal.type === "OWN" ? "own goal" : goal.type === "PENALTY" ? "penalty" : "", goal.assist ? `assist ${goal.assist}` : ""].filter(Boolean).join(" · "),
+      player: named(goal.scorerId, goal.scorer), note: [goal.type === "OWN" ? "own goal" : goal.type === "PENALTY" ? "penalty" : "", goal.assist ? `assist ${named(goal.assistId, goal.assist)}` : ""].filter(Boolean).join(" · "),
       score: Number.isFinite(goal.home) ? `${goal.home} - ${goal.away}` : null,
     })),
     ...(detail?.cards ?? []).map(card => ({
       kind: isRed(card.card) ? "red" : "yellow", minute: card.minute, extra: null, team: card.team,
-      player: card.player, note: card.card === "YELLOW_RED" ? "second yellow" : "", score: null,
+      player: named(card.playerId, card.player), note: card.card === "YELLOW_RED" ? "second yellow" : "", score: null,
     })),
     ...(detail?.subs ?? []).map(sub => ({
       kind: "sub", minute: sub.minute, extra: null, team: sub.team,
-      player: sub.in, note: sub.out ? `on for ${sub.out}` : "", score: null,
+      player: named(sub.inId, sub.in), note: sub.out ? `on for ${named(sub.outId, sub.out)}` : "", score: null,
     })),
   ];
   return list

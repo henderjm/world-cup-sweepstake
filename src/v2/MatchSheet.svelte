@@ -142,9 +142,9 @@
         <div class="team" style:order={i === 0 ? 0 : 2}>
           <Crest {team} size={44} />
           <span class="tname">
-            {#if side === "away" && detail && redCards(detail, team)}<i class="redcard" aria-label="Red card"></i>{/if}
+            {#if side === "away" && detail && redCards(detail, team)}<i class="redcard" role="img" aria-label="Red card"></i>{/if}
             {name}
-            {#if side === "home" && detail && redCards(detail, team)}<i class="redcard" aria-label="Red card"></i>{/if}
+            {#if side === "home" && detail && redCards(detail, team)}<i class="redcard" role="img" aria-label="Red card"></i>{/if}
             <button class="star" class:on={isFollowed(team)} aria-pressed={isFollowed(team)} aria-label="{isFollowed(team) ? 'Unfollow' : 'Follow'} {name}" onclick={() => onfollow(match.competitionCode, team)}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill={isFollowed(team) ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.8 5.8 6.2.9-4.5 4.4 1.1 6.3L12 17.5 6.4 20.4l1.1-6.3L3 9.7l6.2-.9z" /></svg>
             </button>
@@ -298,7 +298,7 @@
         <b class:lead={row.leader === "home"}>{row.text[0]}</b>
         <div>
           <div class="label">{row.label}</div>
-          <div class="bar" role="img" aria-label="{row.label}: {home} {row.text[0]}, {away} {row.text[1]}">
+          <div class="sbar" role="img" aria-label="{row.label}: {home} {row.text[0]}, {away} {row.text[1]}">
             <i class="h" class:lead={row.leader === "home"} style:width="{row.share * 100}%"></i>
             <i class="a" class:lead={row.leader === "away"} style:width="{(1 - row.share) * 100}%"></i>
           </div>
@@ -319,6 +319,7 @@
         {#if bar.away > 0}<rect x={bar.x} y={momentum.mid} width={bar.w} height={bar.away} fill="#8b95a0" />{/if}
       {/each}
     </svg>
+    <div class="maxis" aria-hidden="true"><span>1'</span><span>45'</span><span>{momentum.bars.at(-1)?.minute ?? 90}'</span></div>
     <div class="mlegend"><span><i class="sw h"></i>{home}</span><span><i class="sw a"></i>{away}</span></div>
   </section>
 {/snippet}
@@ -328,8 +329,8 @@
     {#each items as item (item.kind + item.index)}
       <li class={item.side}>
         <b class="emin">{minuteText(item)}</b>
-        <i class="mk {item.kind}" aria-label={({ goal: "Goal", red: "Red card", yellow: "Yellow card", sub: "Substitution" })[item.kind]}></i>
-        <span class="etext">{#if item.kind === "goal"}<b>{item.player}</b>{:else}{item.player}{/if}<span class="muted"> · {displayTeamName(item.team)}{item.note ? ` · ${item.note}` : ""}</span></span>
+        <i class="mk {item.kind}" role="img" aria-label={({ goal: "Goal", red: "Red card", yellow: "Yellow card", sub: "Substitution" })[item.kind]}></i>
+        <span class="etext">{#if item.kind === "goal"}<b>{item.player}</b>{:else}{item.player}{/if}<span class="muted">{` · ${displayTeamName(item.team)}${item.note ? ` · ${item.note}` : ""}`}</span></span>
         {#if item.score}<b class="escore">{item.score}</b>{/if}
       </li>
     {/each}
@@ -338,7 +339,9 @@
 
 <style>
   .sheet { position: fixed; inset: 0; z-index: 30; background: var(--bg); overflow-y: auto; overscroll-behavior: contain; animation: rise 240ms ease-out; }
-  .sheet.desktop { position: sticky; top: 56px; inset: auto; height: calc(100vh - 56px); border-left: 1px solid var(--line); animation: none; }
+  /* Fixed to the viewport, not sticky in the page: sticky sat under the top
+     bar (header clipped) and below the banner (bottom off screen). */
+  .sheet.desktop { position: fixed; top: 56px; right: 0; bottom: 0; left: auto; width: 460px; z-index: 15; border-left: 1px solid var(--line); animation: none; }
   @keyframes rise { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
   .sticky { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 0 8px 12px; border-bottom: 1px solid var(--line); }
   .grip { height: 20px; display: flex; align-items: center; justify-content: center; }
@@ -350,7 +353,7 @@
   .score { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; padding: 0 8px; }
   .team { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
   .tname { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; text-align: center; }
-  .star { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; color: var(--faint); }
+  .star { width: 44px; height: 44px; margin: -6px -10px; display: inline-flex; align-items: center; justify-content: center; color: var(--faint); }
   .star.on { color: var(--accent); }
   .mid { display: flex; flex-direction: column; align-items: center; gap: 4px; }
   .kick { font-size: 32px; font-weight: 800; }
@@ -369,11 +372,12 @@
   .stat b.lead { color: var(--text); }
   .stat .r { text-align: right; }
   .reds { color: var(--clay); font-size: 11px; }
-  .bar { display: flex; gap: 2px; height: 4px; }
-  .bar i { height: 4px; border-radius: 2px; background: var(--line-2); }
-  .bar i.lead { background: var(--accent); }
-  .bar i.a.lead { background: var(--text); }
+  .sbar { display: flex; gap: 2px; height: 4px; }
+  .sbar i { height: 4px; border-radius: 2px; background: var(--line-2); }
+  .sbar i.lead { background: var(--accent); }
+  .sbar i.a.lead { background: var(--text); }
   .momentum { width: 100%; height: 64px; display: block; }
+  .maxis { display: flex; justify-content: space-between; font-size: 11px; color: var(--faint); margin-top: 2px; }
   .mlegend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-top: 6px; }
   .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
   .sw.h { background: var(--accent); }
@@ -394,7 +398,7 @@
   .pitch { background: linear-gradient(180deg, #0f2416 0%, #0d1a12 100%); border-radius: 10px; padding: 14px 8px; display: flex; flex-direction: column; gap: 14px; }
   .line { display: flex; justify-content: space-around; }
   .player { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; flex: 1; }
-  .pn { font-size: 12px; max-width: 72px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pn { font-size: 11px; max-width: 86px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .report { margin-top: 16px; }
   .report-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
   .report h2 { font-size: 24px; line-height: 1.2; font-weight: 800; margin: 10px 0 8px; }

@@ -11,6 +11,7 @@ import {
   normalizeTeamName,
 } from "./domain.js";
 import { competitionFor, zoneFor } from "./competitions.js";
+import { applyLiveResults } from "./liveTable.js";
 import { isFinished, isLive } from "./format.js";
 
 // Analysis exists only once there is a game to talk about.
@@ -21,7 +22,7 @@ export function analysisEligible(match) {
 // Bump when the system prompt or payload shape changes meaningfully: the version is
 // part of the cache signature, so a deploy regenerates live and fresh matches with
 // the new prompt instead of serving reads written by the old one.
-export const ANALYSIS_PROMPT_VERSION = 4;
+export const ANALYSIS_PROMPT_VERSION = 5;
 
 // Cache signature: a new analysis is worth generating whenever the signature changes.
 // Score, status and penalties are always part of it (a goal, half-time, full-time or
@@ -94,9 +95,10 @@ Rules:
 export function buildAnalysisPrompt(detail, live) {
   const matches = live?.matches ?? [];
   const competition = competitionFor(live?.competition);
-  const standings = mapStandings(
-    { standings: canonicalizeStandingsOrder(live?.standings ?? []) },
-    competition.zones,
+  const standings = standingsAfterResults(
+    mapStandings({ standings: canonicalizeStandingsOrder(live?.standings ?? []) }, competition.zones),
+    matches,
+    competition,
   );
   const performance = buildTeamPerformance(matches);
   const homeTeam = normalizeTeamName(detail.home?.name);
@@ -135,6 +137,27 @@ export function buildAnalysisPrompt(detail, live) {
   };
 
   return JSON.stringify(payload);
+}
+
+// The provider recomputes standings some time after the whistle, so a
+// full-time read built from its raw table quoted the table from BEFORE the
+// match ("Chelsea climb to 13 points" while the app showed 16). Results are
+// folded in with applyLiveResults, the same function the app's own table
+// uses, so the report and the table can never disagree. Per group, so a
+// grouped competition never re-sorts one group's clubs into another's.
+function standingsAfterResults(standings, matches, competition) {
+  const groups = new Map();
+  for (const row of standings.values()) {
+    const key = row.group ?? "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  const folded = new Map();
+  for (const rows of groups.values()) {
+    const result = applyLiveResults({ rows, matches, zones: competition.zones, competitionCode: competition.code });
+    for (const row of result.rows) folded.set(row.team, row);
+  }
+  return folded;
 }
 
 function eventWithDisplayTeam(event) {
