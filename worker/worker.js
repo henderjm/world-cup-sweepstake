@@ -1,4 +1,6 @@
 import { matchCentre } from "./sportmonksCentre.js";
+import { findSportmonksMatch, getSportmonksLive, isSportmonksCompetition, sportmonksMatchDetail } from "./sportmonksLive.js";
+import { sportmonksIdOf } from "../src/sportmonksFeed.js";
 import { TALK_ACTIONS, readBanter, talkAction } from "./talkStore.js";
 import { nativeEndpoint, nativePushConfigured, sendNativePush } from "./native-push.js";
 import { createStoredDetailReader } from "./stored-detail.js";
@@ -278,6 +280,9 @@ function parseCompetitions(env) {
 // one, not 4. On a warm isolate the memo in fetchJson makes every one of them
 // free and only the match-detail payloads are actually spent.
 async function findKnownMatch(competitions, id, token, env = null) {
+  // Serie A and La Liga ids are offset Sportmonks ids (src/sportmonksFeed.js);
+  // they are never in an API-Football feed, so they are looked up there only.
+  if (sportmonksIdOf(id)) return env ? findSportmonksMatch(env, id) : null;
   // Stored feeds cost no provider allowance, so there is nothing to save by
   // stopping at the first hit: read them together. One after the other, a
   // Champions League drawer waited for the whole Premier League feed first.
@@ -617,8 +622,21 @@ export default {
       // /:comp/live, plus legacy /live serving the default (first) competition.
       const liveRoute = url.pathname.match(/^\/(?:([A-Za-z0-9]{2,6})\/)?live$/);
       if (liveRoute) {
+        const requested = liveRoute[1]?.toUpperCase();
+        if (requested && isSportmonksCompetition(requested)) {
+          // Served by Sportmonks end to end (worker/sportmonksLive.js). A
+          // failure is a 502 so the browser falls back exactly as it would for
+          // an API-Football outage.
+          if (!env.SPORTMONKS_API_KEY) return json({ error: "competition not configured" }, 501, cors);
+          try {
+            return json(await getSportmonksLive(env, requested), 200, { ...cors, "Cache-Control": "public, max-age=15" });
+          } catch (error) {
+            console.error(`route failed: /${requested}/live ${error.message}`);
+            return json({ error: "upstream unavailable" }, 502, cors);
+          }
+        }
         const comp = liveRoute[1]
-          ? competitions.find((entry) => entry.code === liveRoute[1].toUpperCase())
+          ? competitions.find((entry) => entry.code === requested)
           : competitions[0];
         if (!comp) return json({ error: "unknown competition" }, 404, cors);
         const data = await getLive(comp, token, env);
@@ -689,6 +707,16 @@ export default {
         const known = await findKnownMatch(competitions, id, token, env);
         if (!known) {
           return json({ error: "unknown match" }, 404, cors);
+        }
+        if (sportmonksIdOf(id)) {
+          try {
+            const detail = await sportmonksMatchDetail(env, known);
+            if (!detail) return json({ error: "unknown match" }, 404, cors);
+            return json(detail, 200, { ...cors, "Cache-Control": `public, max-age=${isLive(known.status) ? 20 : 120}` });
+          } catch (error) {
+            console.error(`route failed: /match/:id (sportmonks) ${error.message}`);
+            return json({ error: "upstream unavailable" }, 502, cors);
+          }
         }
         const profile = matchDetailCacheProfile(known);
         // Cost scales with TRAFFIC here, unlike every cron pass, whose cost is

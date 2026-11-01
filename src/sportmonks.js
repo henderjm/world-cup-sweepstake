@@ -12,7 +12,6 @@
 
 import { normalizeTeamName } from "./domain.js";
 
-export const SPORTMONKS_BASE = "https://api.sportmonks.com/v3/football";
 export const SPORTMONKS_LEAGUES = { PL: 8, CL: 2 };
 export const MATCH_CENTRE_INCLUDES = "participants;statistics;xGFixture;pressure";
 
