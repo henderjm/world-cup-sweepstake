@@ -87,3 +87,26 @@ test("freshness is the data's age and live data over two minutes old is delayed"
   assert.deepEqual(freshness({ lastUpdated: "2026-10-31T14:56:00Z", live: true }, now), { text: "Delayed, 4m ago", delayed: true });
   assert.deepEqual(freshness({ lastUpdated: "2026-10-31T14:56:00Z" }, now), { text: "Updated 4m ago", delayed: false });
 });
+
+test("pitch names are one surname, keeping particles", async () => {
+  const { shortPlayerName } = await import("../src/v2/matchCentre.js");
+  assert.equal(shortPlayerName("Jóhann Berg Gudmundsson"), "Gudmundsson");
+  assert.equal(shortPlayerName("Virgil van Dijk"), "van Dijk");
+  assert.equal(shortPlayerName("Estêvão"), "Estêvão");
+});
+
+test("a line-up side carries goals, cards, who went off and who came on", async () => {
+  const { lineupSide } = await import("../src/v2/matchCentre.js");
+  const withBench = {
+    ...detail,
+    home: { ...detail.home, formation: "4-2-3-1", bench: [{ id: 9, name: "Pedro Neto" }, { id: 10, name: "Unused Sub" }] },
+    subs: [{ minute: 70, team: "Chelsea", inId: 9, in: "Pedro Neto", outId: 1, out: "Robert Sánchez" }],
+    cards: [{ minute: 30, team: "Chelsea", playerId: 2, card: "YELLOW" }],
+  };
+  const home = lineupSide(withBench, "home");
+  const palmer = home.rows.flat().find(player => player.id === 2);
+  assert.deepEqual([palmer.goals, palmer.card, palmer.top], [2, "yellow", true]);
+  assert.equal(home.rows.flat().find(player => player.id === 1).off, 70);
+  assert.deepEqual(home.bench.map(player => [player.name, player.on]), [["Neto", 70], ["Sub", null]]);
+  assert.equal(lineupSide({}, "home"), null);
+});

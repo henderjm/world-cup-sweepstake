@@ -34,7 +34,7 @@
   <section class="predict">
     <div class="section-h">
       <h2>Predict the score</h2>
-      <span class="label">Exact 3 pts · result 1 pt</span>
+      <span class="label">Exact 3 · result 1</span>
     </div>
     {#each [["home", home, homeGoals], ["away", away, awayGoals]] as [side, name, value]}
       <div class="side">
@@ -47,13 +47,10 @@
       </div>
     {/each}
     <p class="note" role="status">
-      {#if status === "saved"}
-        Your pick <b>{homeGoals} - {awayGoals}</b> is saved{isSignedIn() ? "" : " on this device"} and locks at {timeLabel(match.utcDate)}.
-        {#if !isSignedIn()}<button class="link" onclick={ontalksignin}>Sign in</button> to keep it across devices.{/if}
-      {:else if status === "saving"}Saving…
-      {:else if status === "locked"}This match has kicked off, so predictions are closed.
-      {:else if status === "error"}Could not save your pick. Tap a number to try again.
-      {:else}Pick both scores. It saves as soon as you do.{/if}
+      {#if status === "saved"}Saved · locks {timeLabel(match.utcDate)}{#if !isSignedIn()} · <button class="link" onclick={ontalksignin}>Sign in</button>{/if}
+      {:else if status === "saving"}Saving
+      {:else if status === "locked"}Closed
+      {:else if status === "error"}Not saved{/if}
     </p>
   </section>
 {/if}

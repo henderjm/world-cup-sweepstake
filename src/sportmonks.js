@@ -13,7 +13,7 @@
 import { normalizeTeamName } from "./domain.js";
 
 export const SPORTMONKS_LEAGUES = { PL: 8, CL: 2 };
-export const MATCH_CENTRE_INCLUDES = "participants;statistics;xGFixture;pressure";
+export const MATCH_CENTRE_INCLUDES = "participants;statistics;xGFixture;pressure;sidelined.sideline.player;sidelined.sideline.type";
 
 // Statistic type ids (verified against a real fixture on 31 October 2026).
 const STAT_TYPES = {
@@ -59,6 +59,20 @@ export function mapMatchCentre(fixture) {
     entry[side] = value;
     byMinute.set(point.minute, entry);
   }
+  // Injured and suspended players for each side, with the reason. A player
+  // name with no reason is still listed; one with no name is dropped.
+  const sidelined = { home: [], away: [] };
+  for (const entry of fixture.sidelined ?? []) {
+    const side = sideOf(fixture, entry.participant_id);
+    const player = entry.sideline?.player;
+    const name = String(player?.display_name ?? player?.common_name ?? player?.name ?? "").trim();
+    if (!side || !name) continue;
+    sidelined[side].push({
+      name,
+      reason: entry.sideline?.type?.name ?? null,
+      suspended: entry.sideline?.category === "suspension",
+    });
+  }
   const team = side => fixture.participants?.find(entry => entry.meta?.location === side)?.name ?? null;
   return {
     provider: "sportmonks",
@@ -66,6 +80,7 @@ export function mapMatchCentre(fixture) {
     home: team("home"),
     away: team("away"),
     teamStats,
+    sidelined,
     pressure: [...byMinute.values()].sort((a, b) => a.minute - b.minute),
   };
 }

@@ -35,3 +35,16 @@ test("a fixture joins on kickoff date and both canonical club names", () => {
   assert.equal(findSportmonksFixture([fixture], { ...match, homeTeam: "Man United", awayTeam: "Chelsea" }), null);
   assert.equal(findSportmonksFixture([fixture, fixture], match), null, "ambiguous joins are refused");
 });
+
+test("injured and suspended players map to their side with the reason", () => {
+  const centre = mapMatchCentre({
+    ...fixture,
+    sidelined: [
+      { participant_id: 14, sideline: { category: "injury", player: { display_name: "Manuel Ugarte " }, type: { name: "Cruciate Ligament Tear" } } },
+      { participant_id: 18, sideline: { category: "suspension", player: { display_name: "Moisés Caicedo" }, type: { name: "Red Card Suspension" } } },
+      { participant_id: 18, sideline: { category: "injury", player: null, type: { name: "Unknown" } } },
+    ],
+  });
+  assert.deepEqual(centre.sidelined.away, [{ name: "Manuel Ugarte", reason: "Cruciate Ligament Tear", suspended: false }]);
+  assert.deepEqual(centre.sidelined.home, [{ name: "Moisés Caicedo", reason: "Red Card Suspension", suspended: true }]);
+});

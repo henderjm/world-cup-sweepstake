@@ -3,7 +3,8 @@
 //
 // Cached for a day's fixture list six hours, a live fixture's centre 60
 // seconds, a finished one 10 minutes (Basic xG lands after the whistle, so it
-// is worth a few re-reads), nothing pre-match. The memo, the allowance floor
+// is worth a few re-reads), an upcoming one 30 minutes (only who is out is
+// worth showing before kickoff). The memo, the allowance floor
 // and the header-only key are worker/sportmonksClient.js's. Missing
 // SPORTMONKS_API_KEY is a 501, the same convention as DB.
 
@@ -15,16 +16,19 @@ import { resetSportmonksClient, sportmonks } from "./sportmonksClient.js";
 const DAY_TTL_MS = 6 * 60 * 60 * 1000;
 const LIVE_TTL_MS = 60 * 1000;
 const FINISHED_TTL_MS = 10 * 60 * 1000;
+const UPCOMING_TTL_MS = 30 * 60 * 1000;
+const UPCOMING = new Set(["TIMED", "SCHEDULED"]);
 
-// { available: false } when there is nothing to show yet (pre-match, no
-// joinable fixture, allowance floor); the client then omits the section.
+// { available: false } when there is nothing to show (no joinable fixture,
+// allowance floor); the client then omits the sections it feeds.
 export async function matchCentre(env, match, now = Date.now()) {
   const live = isLive(match.status);
-  if (!(live || isFinished(match.status))) return { available: false };
+  if (!(live || isFinished(match.status) || UPCOMING.has(match.status))) return { available: false };
+  const ttl = live ? LIVE_TTL_MS : isFinished(match.status) ? FINISHED_TTL_MS : UPCOMING_TTL_MS;
   // A Sportmonks-served competition's match IS a Sportmonks fixture: no join.
   const direct = sportmonksIdOf(match.id);
   if (direct) {
-    const centre = mapMatchCentre(await sportmonks(env, `/fixtures/${direct}?include=${MATCH_CENTRE_INCLUDES}`, live ? LIVE_TTL_MS : FINISHED_TTL_MS, now));
+    const centre = mapMatchCentre(await sportmonks(env, `/fixtures/${direct}?include=${MATCH_CENTRE_INCLUDES}`, ttl, now));
     return centre ? { available: true, ...centre } : { available: false };
   }
   const league = SPORTMONKS_LEAGUES[match.competition];
@@ -34,7 +38,7 @@ export async function matchCentre(env, match, now = Date.now()) {
   const fixture = findSportmonksFixture(fixtures, match);
   if (!fixture) return { available: false };
   const centre = mapMatchCentre(await sportmonks(
-    env, `/fixtures/${fixture.id}?include=${MATCH_CENTRE_INCLUDES}`, live ? LIVE_TTL_MS : FINISHED_TTL_MS, now,
+    env, `/fixtures/${fixture.id}?include=${MATCH_CENTRE_INCLUDES}`, ttl, now,
   ));
   return centre ? { available: true, ...centre } : { available: false };
 }

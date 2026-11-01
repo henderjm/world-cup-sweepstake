@@ -1,6 +1,7 @@
 <script>
   import { onDestroy } from "svelte";
   import Crest from "./Crest.svelte";
+  import Lineups from "./Lineups.svelte";
   import Predict from "./Predict.svelte";
   import { COMPETITIONS } from "../competitions.js";
   import { displayTeamName } from "../domain.js";
@@ -10,7 +11,7 @@
   import { fetchMatchAnalysis, fetchMatchDetail } from "../matchDetail.js";
   import { followsTeam } from "../teamFollows.js";
   import {
-    clubForm, freshness, matchPhase, minuteText, momentumBars, moments, playerOfMatch, ratedPitch, redCards, scorerLines, statRows, untilKickoff,
+    clubForm, freshness, matchPhase, minuteText, momentumBars, moments, playerOfMatch, redCards, scorerLines, statRows, untilKickoff,
   } from "./matchCentre.js";
 
   let { match, feed, follows, now, desktop, onclose, onfollow, ontalksignin } = $props();
@@ -51,17 +52,18 @@
     }).catch(() => {});
   });
 
-  // Sportmonks team statistics, xG and pressure (GET /match/:id/centre).
-  // Live it is re-read once a minute; after the whistle once, then again
-  // after ten minutes because Basic xG arrives after full time.
+  // Sportmonks team statistics, xG, pressure and who is out (GET
+  // /match/:id/centre). Live it is re-read once a minute; after the whistle
+  // once, then again after ten minutes because Basic xG arrives after full
+  // time; before kickoff once, for the injury list.
   let centre = $state(null);
   let centreFor = null;
   let centreAt = 0;
   $effect(() => {
     const id = match.id;
-    if (!DATA_API || !(phase === "live" || phase === "post")) return;
+    if (!DATA_API || phase === "off") return;
     const age = Date.now() - centreAt;
-    if (centreFor === id && age < (phase === "live" ? 60_000 : 600_000)) return;
+    if (centreFor === id && age < (phase === "live" ? 60_000 : phase === "post" ? 600_000 : 1_800_000)) return;
     if (centreFor !== id) centre = null;
     centreFor = id;
     centreAt = Date.now();
@@ -78,9 +80,6 @@
   const allMoments = $derived(moments(detail, match.homeTeam));
   let timelineOpen = $state(false);
   const latest = $derived(phase === "post" || timelineOpen ? allMoments : allMoments.slice(0, 3));
-  let ratingSide = $state("home");
-  const pitch = $derived(ratedPitch(detail, ratingSide));
-  const anyRated = $derived((detail?.playerStats ?? []).some(player => Number.isFinite(player.rating)));
   const potm = $derived(playerOfMatch(detail));
   const homeForm = $derived(clubForm(feed?.tables, match.homeTeam));
   const awayForm = $derived(clubForm(feed?.tables, match.awayTeam));
@@ -202,7 +201,7 @@
 
     {#if phase === "post" && analysis}
       <article class="report">
-        <div class="report-top"><span class="label">Match report</span><span class="chip">Written by AI from the match data</span></div>
+        <div class="report-top"><span class="label">Match report</span><span class="chip" title="Written by AI from the match data">AI</span></div>
         {#if analysis.headline}<h2>{analysis.headline}</h2>{/if}
         <p>{analysis.match}</p>
         <p>{analysis.context}</p>
@@ -253,34 +252,7 @@
       {@render momentumChart()}
     {/if}
 
-    {#if (phase === "live" || phase === "post" || lineupsOut) && (ratedPitch(detail, "home") || ratedPitch(detail, "away"))}
-      <section>
-        <div class="section-h">
-          <h2>{anyRated ? "Ratings" : "Line-ups"}</h2>
-          <div class="sides">
-            <button class="toggle" class:on={ratingSide === "home"} onclick={() => (ratingSide = "home")}>{home}</button>
-            <button class="toggle" class:on={ratingSide === "away"} onclick={() => (ratingSide = "away")}>{away}</button>
-          </div>
-        </div>
-        {#if pitch}
-          <div class="pitch">
-            {#each [...pitch].reverse() as line}
-              <div class="line">
-                {#each line as player (player.id ?? player.name)}
-                  <div class="player">
-                    {#if player.rating !== null}<span class="rating" class:top={player.top}>{player.rating.toFixed(1)}</span>{/if}
-                    <span class="pn">{player.name}</span>
-                  </div>
-                {/each}
-              </div>
-            {/each}
-          </div>
-          {#if anyRated}<p class="note">Ratings from the data provider{phase === "live" ? ", recalculated through the match" : ""}. Unrated players show no number.</p>{/if}
-        {:else}
-          <p class="note">Line-up not placed on the pitch by the provider yet.</p>
-        {/if}
-      </section>
-    {/if}
+    <Lineups detail={phase === "pre" && !lineupsOut ? null : detail} homeTeam={match.homeTeam} awayTeam={match.awayTeam} sidelined={centre?.sidelined} />
 
     {#if phase === "post" && allMoments.length}
       <section>
@@ -311,7 +283,7 @@
 
 {#snippet momentumChart()}
   <section>
-    <div class="section-h"><h2>Momentum</h2><span class="label">Pressure, minute by minute</span></div>
+    <div class="section-h"><h2>Momentum</h2></div>
     <svg class="momentum" viewBox="0 0 {momentum.width} {momentum.height}" role="img" aria-label="Pressure through the match: {home} above the line, {away} below">
       <line x1="0" x2={momentum.width} y1={momentum.mid} y2={momentum.mid} stroke="rgba(255,255,255,0.14)" />
       {#each momentum.bars as bar (bar.minute)}
@@ -393,12 +365,6 @@
   .mk.yellow { width: 8px; height: 11px; border-radius: 1px; background: var(--gold); }
   .mk.sub { box-shadow: inset 0 0 0 1.5px var(--muted); }
   .talk { min-height: 44px; }
-  .sides { display: flex; gap: 16px; }
-  .sides .toggle { max-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; line-height: 44px; }
-  .pitch { background: linear-gradient(180deg, #0f2416 0%, #0d1a12 100%); border-radius: 10px; padding: 14px 8px; display: flex; flex-direction: column; gap: 14px; }
-  .line { display: flex; justify-content: space-around; }
-  .player { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; flex: 1; }
-  .pn { font-size: 11px; max-width: 86px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .report { margin-top: 16px; }
   .report-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
   .report h2 { font-size: 24px; line-height: 1.2; font-weight: 800; margin: 10px 0 8px; }
