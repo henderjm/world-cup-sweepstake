@@ -252,7 +252,7 @@
       {@render momentumChart()}
     {/if}
 
-    <Lineups detail={phase === "pre" && !lineupsOut ? null : detail} homeTeam={match.homeTeam} awayTeam={match.awayTeam} sidelined={centre?.sidelined} />
+    <Lineups detail={phase === "pre" && !lineupsOut ? null : detail} homeTeam={match.homeTeam} awayTeam={match.awayTeam} sidelined={centre?.sidelined} {centre} />
 
     {#if phase === "post" && allMoments.length}
       <section>

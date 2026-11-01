@@ -48,3 +48,14 @@ test("injured and suspended players map to their side with the reason", () => {
   assert.deepEqual(centre.sidelined.away, [{ name: "Manuel Ugarte", reason: "Cruciate Ligament Tear", suspended: false }]);
   assert.deepEqual(centre.sidelined.home, [{ name: "Moisés Caicedo", reason: "Red Card Suspension", suspended: true }]);
 });
+
+test("each player's match figures ride on the centre, by side and shirt number", () => {
+  const centre = mapMatchCentre({
+    ...fixture,
+    season_id: 28083,
+    lineups: [{ team_id: 18, player_id: 28912747, jersey_number: 10, player_name: "Cole Palmer", position_id: 26,
+      details: [{ type_id: 118, data: { value: 8.05 } }, { type_id: 52, data: { value: 1 } }, { type_id: 40, data: { value: true } }] }],
+  });
+  assert.equal(centre.seasonId, 28083);
+  assert.deepEqual(centre.players.home, [{ playerId: 28912747, num: 10, name: "Cole Palmer", keeper: false, stats: { 118: 8.05, 52: 1 } }]);
+});

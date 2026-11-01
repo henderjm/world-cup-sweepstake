@@ -11,9 +11,10 @@
 // not send is absent from the result, never zero.
 
 import { normalizeTeamName } from "./domain.js";
+import { compactDetails } from "./playerStats.js";
 
 export const SPORTMONKS_LEAGUES = { PL: 8, CL: 2 };
-export const MATCH_CENTRE_INCLUDES = "participants;statistics;xGFixture;pressure;sidelined.sideline.player;sidelined.sideline.type";
+export const MATCH_CENTRE_INCLUDES = "participants;statistics;xGFixture;pressure;sidelined.sideline.player;sidelined.sideline.type;lineups.details";
 
 // Statistic type ids (verified against a real fixture on 31 October 2026).
 const STAT_TYPES = {
@@ -73,14 +74,31 @@ export function mapMatchCentre(fixture) {
       suspended: entry.sideline?.category === "suspension",
     });
   }
+  // Every listed player's figures for this match, keyed for the player
+  // sheet. The app joins its own line-up to these by side and shirt number,
+  // which both providers carry, so no player id table is needed.
+  const players = { home: [], away: [] };
+  for (const entry of fixture.lineups ?? []) {
+    const side = sideOf(fixture, entry.team_id);
+    if (!side) continue;
+    players[side].push({
+      playerId: entry.player_id ?? null,
+      num: entry.jersey_number ?? null,
+      name: entry.player_name ?? "",
+      keeper: entry.position_id === 24,
+      stats: compactDetails(entry.details),
+    });
+  }
   const team = side => fixture.participants?.find(entry => entry.meta?.location === side)?.name ?? null;
   return {
     provider: "sportmonks",
     fixtureId: fixture.id,
     home: team("home"),
     away: team("away"),
+    seasonId: fixture.season_id ?? null,
     teamStats,
     sidelined,
+    players,
     pressure: [...byMinute.values()].sort((a, b) => a.minute - b.minute),
   };
 }

@@ -1,4 +1,5 @@
 import { matchCentre } from "./sportmonksCentre.js";
+import { playerSeason } from "./sportmonksPlayers.js";
 import { findSportmonksMatch, getSportmonksLive, isSportmonksCompetition, sportmonksMatchDetail } from "./sportmonksLive.js";
 import { sportmonksIdOf } from "../src/sportmonksFeed.js";
 import { TALK_ACTIONS, readBanter, talkAction } from "./talkStore.js";
@@ -655,6 +656,29 @@ export default {
           return json({ error: "upstream unavailable" }, 502, cors);
         }
         return json(data, 200, { ...cors, "Cache-Control": env.SCORE_READ_ORIGIN ? "no-store" : "public, max-age=15" });
+      }
+
+      // A player's season figures for the V2 player sheet
+      // (worker/sportmonksPlayers.js); current seasons of covered leagues only.
+      const playerRoute = url.pathname.match(/^\/player\/(\d{1,12})\/season\/(\d{1,9})$/);
+      if (playerRoute) {
+        if (!env.SPORTMONKS_API_KEY) return json({ error: "player stats not configured" }, 501, cors);
+        if (env.DETAIL_LIMITER) {
+          const ip = request.headers.get("CF-Connecting-IP") || "anon";
+          try {
+            const { success } = await env.DETAIL_LIMITER.limit({ key: ip });
+            if (!success) return json({ error: "rate limited" }, 429, { ...cors, "Retry-After": "30" });
+          } catch {
+            // limiter unavailable, fail open
+          }
+        }
+        try {
+          const season = await playerSeason(env, Number(playerRoute[1]), Number(playerRoute[2]));
+          return json(season, 200, { ...cors, "Cache-Control": `public, max-age=${season.available ? 3600 : 300}` });
+        } catch (error) {
+          console.error(`route failed: /player/:id/season ${error.message}`);
+          return json({ available: false }, 200, { ...cors, "Cache-Control": "public, max-age=60" });
+        }
       }
 
       // Sportmonks team statistics, xG and pressure for the V2 Match page
