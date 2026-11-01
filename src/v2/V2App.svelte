@@ -13,7 +13,7 @@
   import { combinedScoreModel, createScoreFeeds } from "../scoreFeeds.js";
   import { createLocalFollows, uniqueFollows } from "../teamFollows.js";
   import { track } from "../telemetry.js";
-  import { freshness } from "./matchCentre.js";
+  import { feedsFreshness } from "./matchCentre.js";
 
   const SECTIONS = [
     { key: "live", label: "Live", icon: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>' },
@@ -51,10 +51,7 @@
   const follows = $derived(uniqueFollows([...(account?.follows ?? []), ...localList]));
   const openMatch = $derived(route.matchId == null ? null : matches.find(match => String(match.id) === route.matchId) ?? null);
   const anyLive = $derived(matches.some(match => isLive(match.status)));
-  const newestFeed = $derived(feeds.filter(feed => feed.hasData).sort((a, b) => Date.parse(b.lastUpdated) - Date.parse(a.lastUpdated))[0]);
-  const fresh = $derived(newestFeed ? freshness({
-    lastUpdated: newestFeed.lastUpdated, stale: feeds.some(feed => feed.stale), staleAgeMs: Math.max(0, ...feeds.map(feed => feed.staleAgeMs ?? 0)), live: anyLive,
-  }, now) : { text: "Loading", delayed: false });
+  const fresh = $derived(feedsFreshness(feeds, now, isLive));
 
   function readRoute() {
     const raw = location.hash.replace(/^#/, "");
