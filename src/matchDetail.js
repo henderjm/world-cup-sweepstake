@@ -150,23 +150,7 @@ async function loadDetail(match, signal) {
   }
   const staticSrc = `./data/${encodeURIComponent(match.competitionCode ?? model.competition?.code)}/matches/${match.id}.json?cache=${Date.now()}`;
 
-  // The Worker answers first, but a Worker 200 with empty sections must not
-  // suppress the static bake: upstream soft-throttles the Worker's egress
-  // per endpoint (players present, lineups and events empty, nothing flagged),
-  // while the bake runs on GitHub's egress upstream trusts and so often holds
-  // the more complete copy of a match that has kicked off. On the 2026-27
-  // opening weekend the one match whose Worker read failed OUTRIGHT rendered
-  // fine through this fallback, and the four partial 200s rendered broken.
-  // So: for a started match whose Worker read is missing any section, fetch
-  // the baked copy too and fill the gaps section by section
-  // (fillDetailSections; the fresher Worker read always wins a section it has).
-  let detail = DATA_API ? await fetchDetailJson(`${DATA_API}/match/${match.id}`, signal) : null;
-  const started = isLive(match.status) || isFinished(match.status);
-  if (!detail || (detail.source !== "stored-score-service" && started && (detailSubstanceScore(detail) < DETAIL_SECTION_COUNT || !detail.home?.lineup?.length || !detail.away?.lineup?.length))) {
-    if (signal.aborted) return;
-    const baked = await fetchDetailJson(staticSrc, signal);
-    if (baked) detail = fillDetailSections(detail, baked);
-  }
+  const detail = await fetchMatchDetail(match, signal, staticSrc);
 
   if (signal.aborted || openId !== match.id) return;
   const body = panel.querySelector("#mdBody");
@@ -178,6 +162,30 @@ async function loadDetail(match, signal) {
   if (detail) lastDetail = detail;
   replaceContent(body, renderDetail(match, lastDetail ?? {}));
   if (detail && retryFocused) panel.querySelector("[data-md-close]").focus({ preventScroll: true });
+}
+
+// The detail read itself, shared by the V1 drawer and the V2 match page so the
+// Worker-versus-static-bake arbitration below exists exactly once.
+export async function fetchMatchDetail(match, signal, staticSrc = `./data/${encodeURIComponent(match.competitionCode)}/matches/${match.id}.json?cache=${Date.now()}`) {
+  let detail = DATA_API ? await fetchDetailJson(`${DATA_API}/match/${match.id}`, signal) : null;
+  // The Worker answers first, but a Worker 200 with empty sections must not
+  // suppress the static bake: upstream soft-throttles the Worker's egress
+  // per endpoint (players present, lineups and events empty, nothing flagged),
+  // while the bake runs on GitHub's egress upstream trusts and so often holds
+  // the more complete copy of a match that has kicked off. On the 2026-27
+  // opening weekend the one match whose Worker read failed OUTRIGHT rendered
+  // fine through this fallback, and the four partial 200s rendered broken.
+  // So: for a started match whose Worker read is missing any section, fetch
+  // the baked copy too and fill the gaps section by section
+  // (fillDetailSections; the fresher Worker read always wins a section it has).
+  const started = isLive(match.status) || isFinished(match.status);
+  if (!detail || (detail.source !== "stored-score-service" && started && (detailSubstanceScore(detail) < DETAIL_SECTION_COUNT || !detail.home?.lineup?.length || !detail.away?.lineup?.length))) {
+    if (signal.aborted) return null;
+    const baked = await fetchDetailJson(staticSrc, signal);
+    if (baked) detail = fillDetailSections(detail, baked);
+  }
+
+  return detail;
 }
 
 async function fetchDetailJson(src, signal) {
@@ -197,12 +205,8 @@ async function loadAnalysis(match, signal) {
   if (!DATA_API || match.id == null) return;
   if (!isLive(match.status) && !isFinished(match.status)) return;
   try {
-    const response = await fetch(`${DATA_API}/analysis/${match.id}`, {
-      cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]),
-    });
-    if (!response.ok) return;
-    const analysis = await response.json();
-    if (signal.aborted || openId !== match.id) return;
+    const analysis = await fetchMatchAnalysis(match, signal);
+    if (!analysis || signal.aborted || openId !== match.id) return;
     const slot = panel.querySelector("#mdAnalysis");
     if (!slot || !analysis?.match || !analysis?.context) return;
     const live = isLive(analysis.status);
@@ -217,6 +221,16 @@ async function loadAnalysis(match, signal) {
   } catch {
     // analysis is a bonus; the drawer works without it
   }
+}
+
+// The stored AI read for a match, or null. Shared with the V2 match page.
+export async function fetchMatchAnalysis(match, signal) {
+  if (!DATA_API || match.id == null) return null;
+  if (!isLive(match.status) && !isFinished(match.status)) return null;
+  const response = await fetch(`${DATA_API}/analysis/${match.id}`, {
+    cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]),
+  });
+  return response.ok ? response.json() : null;
 }
 
 // -- shell (instant, no fetch) --------------------------------------------------

@@ -198,6 +198,7 @@ const ROUTES = [
   ["GET", "/analysis/12345"],
   ["GET", "/banter/12345"],
   ["GET", "/match/12345"],
+  ["GET", "/match/12345/centre"],
   ["GET", "/PL/live"],
   ["GET", "/nope-not-a-route"],
 ];

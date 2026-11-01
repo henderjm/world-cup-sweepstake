@@ -760,5 +760,6 @@ export function renderFooter(model) {
   return `
     <p>Data: ${esc(model.source)}${model.lastUpdated ? ` · updated ${dateLabel(model.lastUpdated)}` : ""} · Kickoff Draft is a Goon Squad production · Not affiliated with the Premier League or UEFA.</p>
     ${footerLearnLinks()}
+    <p class="footer__support"><a href="?v=2">Try the new Kickoff Draft</a></p>
     <p class="footer__support"><a href="https://www.buymeacoffee.com/henderjm" target="_blank" rel="noopener noreferrer">Support Kickoff Draft</a></p>`;
 }

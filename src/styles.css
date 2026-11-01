@@ -3800,3 +3800,20 @@ button { font-family: inherit; cursor: pointer; }
   .wire { padding: 14px 12px 10px; }
   .wire__item { grid-template-columns: 40px 12px minmax(0, 1fr); gap: 0 8px; }
 }
+
+/* V1 framed inside the V2 shell (?embed=1): V2 owns the navigation, so V1's
+   own header, ticker, footer and bottom bar are hidden. */
+.is-embedded .topnav,
+.is-embedded .ticker,
+.is-embedded .footer,
+.is-embedded .bnav { display: none !important; }
+.is-embedded .main { padding-bottom: 24px; }
+
+/* Talk moderation (src/banter.js renderMessage). */
+.bn-msg.is-hidden .bn-msg__text { opacity: 0.6; }
+.bn-msg__state { display: block; font-size: 12px; color: var(--gold, #f5c542); margin-top: 2px; }
+.bn-msg__tools { display: flex; gap: 14px; margin-top: 2px; }
+.bn-msg__tool { font-size: 12px; color: var(--faint, #5a646e); min-height: 32px; background: none; border: 0; padding: 0; cursor: pointer; font: inherit; font-size: 12px; }
+.bn-msg__tool:hover { color: var(--muted, #8b95a0); }
+.bn-msg__tool.is-done { cursor: default; display: inline-flex; align-items: center; }
+.bn__notice { color: var(--gold, #f5c542); }

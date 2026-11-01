@@ -1,3 +1,5 @@
+import { matchCentre } from "./sportmonksCentre.js";
+import { TALK_ACTIONS, readBanter, talkAction } from "./talkStore.js";
 import { nativeEndpoint, nativePushConfigured, sendNativePush } from "./native-push.js";
 import { createStoredDetailReader } from "./stored-detail.js";
 import { createStoredScoreReader } from "./stored-scores.js";
@@ -635,6 +637,33 @@ export default {
           return json({ error: "upstream unavailable" }, 502, cors);
         }
         return json(data, 200, { ...cors, "Cache-Control": env.SCORE_READ_ORIGIN ? "no-store" : "public, max-age=15" });
+      }
+
+      // Sportmonks team statistics, xG and pressure for the V2 Match page
+      // (worker/sportmonksCentre.js). Same per-IP detail limiter: it is the
+      // other unauthenticated route that can spend a provider allowance.
+      const centreRoute = url.pathname.match(/^\/match\/(\d{1,12})\/centre$/);
+      if (centreRoute) {
+        if (!env.SPORTMONKS_API_KEY) return json({ error: "match centre not configured" }, 501, cors);
+        if (env.DETAIL_LIMITER) {
+          const ip = request.headers.get("CF-Connecting-IP") || "anon";
+          try {
+            const { success } = await env.DETAIL_LIMITER.limit({ key: ip });
+            if (!success) return json({ error: "rate limited" }, 429, { ...cors, "Retry-After": "30" });
+          } catch {
+            // limiter unavailable, fail open
+          }
+        }
+        const known = await findKnownMatch(competitions, Number(centreRoute[1]), token, env);
+        if (!known) return json({ error: "unknown match" }, 404, cors);
+        try {
+          const centre = await matchCentre(env, known);
+          const maxAge = isLive(known.status) ? 30 : 300;
+          return json(centre, 200, { ...cors, "Cache-Control": `public, max-age=${maxAge}` });
+        } catch (error) {
+          console.error(`route failed: /match/:id/centre ${error.message}`);
+          return json({ available: false }, 200, { ...cors, "Cache-Control": "public, max-age=30" });
+        }
       }
 
       const detailRoute = url.pathname.match(/^\/match\/(\d{1,12})$/);
@@ -6363,7 +6392,6 @@ async function sendPush(env, sub, payload) {
 // messages came from list() lagging behind puts. Reads are public; posting
 // requires a signed-in account, which also makes names unspoofable.
 
-const MAX_BANTER_MESSAGES_PER_MATCH = 500;
 
 async function handleBanter(request, env, id, competitions, token, cors) {
   if (!env.DB) return json({ error: "banter not configured" }, 503, cors);
@@ -6400,64 +6428,18 @@ async function handleBanter(request, env, id, competitions, token, cors) {
           .bind(id, user.id, body.emoji)
           .run();
       }
-    } else if (body.action === "message") {
-      const text = cleanText(body.text);
-      if (!text) return json({ error: "empty message" }, 400, cors);
-      const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM banter_messages WHERE match_id = ?1")
-        .bind(id)
-        .first();
-      if ((count?.n ?? 0) >= MAX_BANTER_MESSAGES_PER_MATCH) {
-        return json({ error: "banter is full for this match" }, 400, cors);
+    } else if (body.action === "message" || TALK_ACTIONS.includes(body.action)) {
+      const outcome = await talkAction(env, id, user, body, cleanText);
+      if (outcome.error) {
+        return json({ error: outcome.error, ...(outcome.reason ? { reason: outcome.reason } : {}) }, outcome.status,
+          outcome.status === 429 ? { ...cors, "Retry-After": "10" } : cors);
       }
-      await env.DB.prepare("INSERT INTO banter_messages (match_id, user_id, text) VALUES (?1, ?2, ?3)")
-        .bind(id, user.id, text)
-        .run();
     } else {
       return json({ error: "bad action" }, 400, cors);
     }
     return json(await readBanter(env, id, user.id), 200, cors);
   }
   return json({ error: "method not allowed" }, 405, cors);
-}
-
-async function readBanter(env, id, userId) {
-  const [counts, mine, msgs] = await Promise.all([
-    env.DB.prepare("SELECT emoji, COUNT(*) AS n FROM banter_reactions WHERE match_id = ?1 GROUP BY emoji")
-      .bind(id)
-      .all(),
-    userId
-      ? env.DB.prepare("SELECT emoji FROM banter_reactions WHERE match_id = ?1 AND user_id = ?2")
-          .bind(id, userId)
-          .all()
-      : Promise.resolve({ results: [] }),
-    env.DB.prepare(
-      `SELECT m.id, m.text, m.created_at, u.name, u.email FROM banter_messages m
-       JOIN users u ON u.id = m.user_id
-       WHERE m.match_id = ?1 ORDER BY m.id DESC LIMIT 50`,
-    )
-      .bind(id)
-      .all(),
-  ]);
-
-  const countMap = {};
-  (counts.results ?? []).forEach((row) => {
-    countMap[row.emoji] = row.n;
-  });
-  return {
-    reactions: {
-      counts: countMap,
-      mine: (mine.results ?? []).map((row) => row.emoji),
-    },
-    messages: (msgs.results ?? [])
-      .reverse()
-      .map((row) => ({
-        id: row.id,
-        name: row.name || String(row.email ?? "").split("@")[0] || "Someone",
-        text: row.text,
-        ts: row.created_at,
-      })),
-    signedIn: Boolean(userId),
-  };
 }
 
 // -- Prediction game (D1-backed) ----------------------------------------------

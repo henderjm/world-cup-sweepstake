@@ -137,7 +137,7 @@ test("merges API-Football fixture, lineup, event and player-stat responses", () 
   assert.equal(detail.away.lineup[0].grid, null);
   assert.deepEqual(detail.goals[0], { minute: 20, injuryTime: null, type: "REGULAR", team: "Arsenal", scorerId: 10, scorer: "Player A", assistId: 11, assist: "Helper", home: 1, away: 0 });
   assert.deepEqual(detail.cards.map((card) => card.card), ["YELLOW", "YELLOW_RED"]);
-  assert.deepEqual(detail.playerStats[0], { playerId: 10, player: "Player A", team: "Arsenal", minutes: 90, position: "F", tackles: 2, blocks: 0, interceptions: 1 });
+  assert.deepEqual(detail.playerStats[0], { playerId: 10, player: "Player A", team: "Arsenal", minutes: 90, position: "F", tackles: 2, blocks: 0, interceptions: 1, rating: null, shots: null, shotsOnTarget: null, keyPasses: null, saves: null });
 });
 
 test("merges live detail endpoints without refetching the fixture summary", () => {

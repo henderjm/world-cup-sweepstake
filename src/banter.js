@@ -23,6 +23,7 @@ let data = null;
 let timer = null;
 let unsubscribeAccount = null;
 let inflight = 0; // posts in the air; refreshes are dropped while > 0
+let notice = ""; // why the last post or action was refused, shown once
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -68,6 +69,7 @@ export function unmountBanter() {
   matchId = null;
   data = null;
   inflight = 0;
+  notice = "";
 }
 
 async function refresh() {
@@ -116,6 +118,13 @@ async function send(body) {
     } else if (response.status === 401) {
       renderSkeleton();
       renderLive();
+    } else {
+      // A refusal (rate limit, moderator-only action) says why; the optimistic
+      // message is dropped and the next refresh restores the true list.
+      const reason = await response.json().catch(() => ({}));
+      notice = reason.error || "That didn't go through. Try again in a moment.";
+      if (data?.messages) data.messages = data.messages.filter((message) => !message.pending);
+      renderLive();
     }
   } catch {
     // optimistic state stands; the next refresh reconciles
@@ -125,6 +134,18 @@ async function send(body) {
 }
 
 function onClick(event) {
+  const action = event.target.closest("[data-talk-action]");
+  if (action && isSignedIn()) {
+    const messageId = Number(action.dataset.messageId);
+    if (action.dataset.talkAction === "report") {
+      const message = data?.messages?.find((entry) => entry.id === messageId);
+      if (message) message.reported = true;
+      renderLive();
+    }
+    track("banter_moderation_action", { match_id: matchId, action: action.dataset.talkAction });
+    send({ action: action.dataset.talkAction, messageId });
+    return;
+  }
   const button = event.target.closest("[data-react]");
   if (!button || !isSignedIn()) return;
   const emoji = button.dataset.react;
@@ -154,6 +175,7 @@ function onSubmit(event) {
   const text = (textInput.value || "").trim();
   if (!text) return;
   textInput.value = "";
+  notice = "";
   if (!data || data.disabled || data.error) data = { reactions: { counts: {}, mine: [] }, messages: [] };
   data.messages = [...(data.messages ?? []), { name: "You", text, pending: true }].slice(-50);
   renderLive();
@@ -207,14 +229,47 @@ function renderLive() {
   }).join("");
 
   const messages = data?.messages ?? [];
-  feed.innerHTML = messages.length
-    ? messages
-        .map(
-          (message) =>
-            `<div class="bn-msg ${message.pending ? "is-pending" : ""}"><span class="bn-msg__name">${esc(message.name)}</span><span class="bn-msg__text">${esc(message.text)}</span></div>`,
-        )
-        .join("")
-    : `<p class="md-note">No banter yet. Get it started.</p>`;
+  const moderator = Boolean(data?.moderator);
+  feed.innerHTML = (messages.length
+    ? messages.map((message) => renderMessage(message, { signedIn, moderator, moderation: Boolean(data?.moderation) })).join("")
+    : `<p class="md-note">No banter yet. Get it started.</p>`)
+    + (notice ? `<p class="md-note bn__notice" role="status">${esc(notice)}</p>` : "");
+}
+
+// One comment, with the quiet moderation controls the PRD asks for: a report
+// link on other people's comments, a label on your own when it is hidden,
+// and hide/mute for a moderator. The Worker has already removed anything
+// this viewer may not see (src/talkModeration.js), so nothing here hides.
+const STATE_LABELS = {
+  pending: "Hidden pending review",
+  removed: "Removed by a moderator",
+  muted: "Author muted",
+};
+
+export function renderMessage(message, { signedIn, moderator, moderation }) {
+  const label = message.state && message.state !== "visible" ? STATE_LABELS[message.state] : "";
+  const tools = [];
+  if (moderation && signedIn && message.id != null && !message.mine && !moderator) {
+    tools.push(message.reported
+      ? `<span class="bn-msg__tool is-done">Reported</span>`
+      : `<button type="button" class="bn-msg__tool" data-talk-action="report" data-message-id="${message.id}">Report</button>`);
+  }
+  if (moderator && message.id != null) {
+    if (message.reports) tools.push(`<span class="bn-msg__tool is-done">${message.reports} report${message.reports === 1 ? "" : "s"}</span>`);
+    tools.push(message.state === "removed"
+      ? `<button type="button" class="bn-msg__tool" data-talk-action="unhide" data-message-id="${message.id}">Unhide</button>`
+      : `<button type="button" class="bn-msg__tool" data-talk-action="hide" data-message-id="${message.id}">Hide</button>`);
+    if (!message.mine) {
+      tools.push(message.state === "muted"
+        ? `<button type="button" class="bn-msg__tool" data-talk-action="unmute" data-message-id="${message.id}">Unmute author</button>`
+        : `<button type="button" class="bn-msg__tool" data-talk-action="mute" data-message-id="${message.id}">Mute author</button>`);
+    }
+  }
+  return `<div class="bn-msg ${message.pending ? "is-pending" : ""} ${label ? "is-hidden" : ""}">`
+    + `<span class="bn-msg__name">${esc(message.name)}</span><span class="bn-msg__text">${esc(message.text)}</span>`
+    + (label ? `<span class="bn-msg__state">${label}</span>` : "")
+    + (tools.length ? `<span class="bn-msg__tools">${tools.join("")}</span>` : "")
+    + `</div>`;
 }
 
 function scrollFeed() {
