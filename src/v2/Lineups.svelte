@@ -1,11 +1,25 @@
 <script>
   import Crest from "./Crest.svelte";
   import { displayTeamName } from "../domain.js";
-  import { lineupSide } from "./matchCentre.js";
+  import PlayerSheet from "./PlayerSheet.svelte";
+  import { lineupSide, shortPlayerName } from "./matchCentre.js";
 
   // Both XIs on one full pitch (away attacking down from the top, home up
   // from the bottom), then each side's bench and who is out, side by side.
-  let { detail, homeTeam, awayTeam, sidelined = null } = $props();
+  let { detail, homeTeam, awayTeam, sidelined = null, centre = null } = $props();
+
+  // The tapped player, joined to the match centre's figures by side and
+  // shirt number (both providers carry it), falling back to the surname.
+  let selected = $state(null);
+  function centrePlayerFor(side, player) {
+    const list = centre?.players?.[side] ?? [];
+    return list.find(entry => entry.num != null && entry.num === player.num)
+      ?? list.find(entry => shortPlayerName(entry.name) === player.name)
+      ?? null;
+  }
+  function pick(side, player) {
+    selected = { side, player, team: side === "home" ? homeTeam : awayTeam, centrePlayer: centrePlayerFor(side, player) };
+  }
 
   const home = $derived(lineupSide(detail, "home"));
   const away = $derived(lineupSide(detail, "away"));
@@ -17,8 +31,8 @@
   const anyOut = $derived(out.home.length > 0 || out.away.length > 0);
 </script>
 
-{#snippet tile(player)}
-  <div class="player" title={player.fullName}>
+{#snippet tile(player, side)}
+  <button class="player" title={player.fullName} aria-label="{player.fullName}, statistics" onclick={() => pick(side, player)}>
     <div class="marks">
       {#if player.rating !== null}<span class="rating" class:top={player.top}>{player.rating.toFixed(1)}</span>{/if}
     </div>
@@ -29,16 +43,16 @@
       {#if player.off !== null}<i class="off" role="img" aria-label="Substituted {player.off} minutes">{player.off}'</i>{/if}
     </div>
     <span class="pname">{player.name}</span>
-  </div>
+  </button>
 {/snippet}
 
-{#snippet half(rows, xi)}
+{#snippet half(rows, xi, side)}
   {#if rows}
     {#each rows as line}
-      <div class="line">{#each line as player (player.id ?? player.name)}{@render tile(player)}{/each}</div>
+      <div class="line">{#each line as player (player.id ?? player.name)}{@render tile(player, side)}{/each}</div>
     {/each}
   {:else}
-    <div class="line wrap">{#each xi as player (player.id ?? player.name)}{@render tile(player)}{/each}</div>
+    <div class="line wrap">{#each xi as player (player.id ?? player.name)}{@render tile(player, side)}{/each}</div>
   {/if}
 {/snippet}
 
@@ -58,24 +72,26 @@
         <div class="box top" aria-hidden="true"></div>
         <div class="box bottom" aria-hidden="true"></div>
         <div class="side away" aria-label="{displayTeamName(awayTeam)} starting eleven">
-          {#if away}{@render half(awayRows, away.xi)}{/if}
+          {#if away}{@render half(awayRows, away.xi, "away")}{/if}
         </div>
         <div class="side home" aria-label="{displayTeamName(homeTeam)} starting eleven">
-          {#if home}{@render half(homeRows, home.xi)}{/if}
+          {#if home}{@render half(homeRows, home.xi, "home")}{/if}
         </div>
       </div>
 
       <div class="cols">
-        {#each [[homeTeam, home], [awayTeam, away]] as [team, data]}
+        {#each [["home", homeTeam, home], ["away", awayTeam, away]] as [side, team, data]}
           <div class="col">
             <div class="col-h"><Crest {team} size={18} /><span>{displayTeamName(team)}</span></div>
             {#if data?.bench?.length}
               <ul class="bench">
                 {#each data.bench as player (player.id ?? player.name)}
                   <li class:used={player.on !== null}>
-                    <span class="bname">{player.fullName}</span>
-                    {#if player.on !== null}<span class="on">{player.on}'</span>{/if}
-                    {#if player.rating !== null}<span class="rating" class:top={player.top}>{player.rating.toFixed(1)}</span>{/if}
+                    <button class="brow" aria-label="{player.fullName}, statistics" onclick={() => pick(side, player)}>
+                      <span class="bname">{player.fullName}</span>
+                      {#if player.on !== null}<span class="on">{player.on}'</span>{/if}
+                      {#if player.rating !== null}<span class="rating" class:top={player.top}>{player.rating.toFixed(1)}</span>{/if}
+                    </button>
                   </li>
                 {/each}
               </ul>
@@ -103,6 +119,10 @@
   </section>
 {/if}
 
+{#if selected}
+  <PlayerSheet player={selected.player} team={selected.team} centrePlayer={selected.centrePlayer} seasonId={centre?.seasonId ?? null} onclose={() => (selected = null)} />
+{/if}
+
 <style>
   .lineups { margin-top: 12px; }
   .pitch {
@@ -120,7 +140,8 @@
   .side.home { padding-top: 18px; }
   .line { display: flex; justify-content: space-around; align-items: flex-start; }
   .line.wrap { flex-wrap: wrap; row-gap: 12px; }
-  .player { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 1; min-width: 0; max-width: 96px; }
+  .player { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 1; min-width: 0; max-width: 96px; min-height: 44px; border-radius: 8px; padding: 2px 0; }
+  .player:hover { background: rgba(255, 255, 255, 0.04); }
   .line.wrap .player { flex: 0 0 25%; }
   .marks { height: 18px; }
   .shirt { position: relative; width: 30px; height: 30px; border-radius: 50%; background: rgba(255, 255, 255, 0.92); color: #0a0e14; display: grid; place-items: center; font-size: 12px; font-weight: 800; }
@@ -137,6 +158,7 @@
   ul { list-style: none; margin: 0; padding: 0; }
   .bench li, .out li { display: flex; align-items: center; gap: 6px; min-height: 32px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted); }
   .bench li.used { color: var(--text); }
+  .brow { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 32px; text-align: left; color: inherit; font-size: 13px; }
   .bname { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .on { color: var(--accent); font-size: 12px; font-weight: 700; }
   .coach { font-size: 13px; margin-top: 8px; }
