@@ -7,6 +7,7 @@
   import { COMPETITION_CODES } from "../competitions.js";
   import { DATA_API, loadModel } from "../data.js";
   import { fantasyAvailable, listLeagues, loadMatchup } from "../fantasyApi.js";
+  import { displayTeamName } from "../domain.js";
   import { isLive } from "../format.js";
   import { localDateKey } from "../scoreDates.js";
   import { combinedScoreModel, createScoreFeeds } from "../scoreFeeds.js";
@@ -35,6 +36,16 @@
   let desktop = $state(false);
   let banner = $state(readBanner());
   let matchup = $state(null);
+  // The day a deep-linked match falls on, applied to the list once.
+  const deepLinkId = readRoute().matchId;
+  let deepLinkDay = $state(null);
+  // The framed V1 screen stays hidden until it has painted, so a section
+  // switch never flashes a blank white page.
+  let frameReady = $state(false);
+  $effect(() => {
+    route.section;
+    frameReady = false;
+  });
 
   const matches = $derived(combinedScoreModel(feeds).matches);
   const follows = $derived(uniqueFollows([...(account?.follows ?? []), ...localList]));
@@ -66,13 +77,32 @@
     else route = readRoute();
   }
 
+  // A match opened from inside the app pushes one history entry, so browser
+  // back and close both return to where the visitor was. Opening a second
+  // match from an open panel REPLACES that entry, so close never walks back
+  // through every match looked at. A match reached by deep link (a share or
+  // a push notification) has no in-app entry behind it, so close goes to
+  // #live rather than history.back(), which would leave the site.
+  let openedInApp = false;
   function open(match) {
     track("v2_match_opened", { competition: match.competitionCode, status: match.status });
-    go(`#match/${match.id}`);
+    const hash = `#match/${match.id}`;
+    if (route.matchId) {
+      history.replaceState(null, "", hash);
+      route = readRoute();
+    } else {
+      openedInApp = true;
+      go(hash);
+    }
   }
   function close() {
-    if (history.length > 1 && route.matchId) history.back();
-    else go("#live");
+    if (openedInApp) {
+      openedInApp = false;
+      history.back();
+    } else {
+      history.replaceState(null, "", "#live");
+      route = readRoute();
+    }
   }
 
   // A score that changed since the last poll flashes its row and card once.
@@ -94,6 +124,10 @@
   async function refresh() {
     await Promise.all(COMPETITION_CODES.map(code => scoreFeeds.refresh(code)));
     feeds = scoreFeeds.values();
+    if (deepLinkId && !deepLinkDay) {
+      const linked = combinedScoreModel(feeds).matches.find(match => String(match.id) === deepLinkId);
+      if (linked?.utcDate) deepLinkDay = localDateKey(linked.utcDate);
+    }
     noteScores(combinedScoreModel(feeds).matches);
     loadWire();
     if (anyLive) loadStake();
@@ -173,12 +207,20 @@
   }
 
   onMount(() => {
-    document.title = "Kickoff Draft: live scores";
     const media = matchMedia("(min-width: 1024px)");
     desktop = media.matches;
     const onMedia = event => (desktop = event.matches);
     media.addEventListener("change", onMedia);
     const onHash = () => (route = readRoute());
+    // A link inside a framed V1 screen that leads to another section (Fantasy's
+    // "Go to sign in", You's "Follow teams") is handed up and opened as the
+    // V2 section, instead of loading that V1 screen under the wrong tab.
+    const onFrameNav = event => {
+      if (event.origin !== location.origin || event.data?.type !== "kd-embed-nav") return;
+      const section = SECTIONS.some(entry => entry.key === event.data.section) ? event.data.section : "live";
+      go(`#${section}`);
+    };
+    addEventListener("message", onFrameNav);
     addEventListener("hashchange", onHash);
     const onStorage = () => { localFollows.reload(); localList = localFollows.all(); };
     addEventListener("storage", onStorage);
@@ -194,11 +236,18 @@
     return () => {
       media.removeEventListener("change", onMedia);
       removeEventListener("hashchange", onHash);
+      removeEventListener("message", onFrameNav);
       removeEventListener("storage", onStorage);
       offAccount();
       clearInterval(tick);
       clearTimeout(timer);
     };
+  });
+
+  $effect(() => {
+    document.title = openMatch
+      ? `${displayTeamName(openMatch.homeTeam)} v ${displayTeamName(openMatch.awayTeam)} · Kickoff Draft`
+      : route.section === "live" ? "Kickoff Draft: live scores" : `${SECTIONS.find(entry => entry.key === route.section)?.label} · Kickoff Draft`;
   });
 
   const openFeed = $derived(openMatch ? feeds.find(feed => feed.competition.code === openMatch.competitionCode) : null);
@@ -234,7 +283,7 @@
 
   {#if route.section === "live"}
     <div class="live-wrap" class:with-panel={desktop && openMatch}>
-      <Home {matches} {feeds} {follows} {wire} {flashed} {desktop} {now} {matchup} openId={openMatch?.id ?? null} onopen={open} />
+      <Home {matches} {feeds} {follows} {wire} {flashed} {desktop} {now} {matchup} openId={openMatch?.id ?? null} initialDay={deepLinkDay} onopen={open} />
       {#if openMatch}
         <MatchSheet match={openMatch} feed={openFeed} {follows} {now} {desktop} onclose={close} onfollow={follow} ontalksignin={() => go("#you")} />
       {/if}
@@ -246,8 +295,10 @@
         <button class="btn ghost" onclick={() => switchVersion("1")}>Switch back to the old app</button>
       </div>
     {/if}
+    {#if !frameReady}<p class="frame-loading" role="status">Loading {route.section}…</p>{/if}
     {#key route.section}
-      <iframe class="framed" class:you={route.section === "you"} title="{route.section} section" src="./?embed=1#{route.section}"></iframe>
+      <iframe class="framed" class:you={route.section === "you"} class:ready={frameReady} title="{route.section} section"
+        src="./?embed=1#{route.section}" onload={() => (frameReady = true)}></iframe>
     {/key}
   {/if}
 
@@ -279,6 +330,9 @@
   .banner span { flex: 1; }
   .banner button { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
   .live-wrap.with-panel { display: grid; grid-template-columns: minmax(0, 1fr) 460px; }
+  .framed { opacity: 0; transition: opacity 120ms; }
+  .framed.ready { opacity: 1; }
+  .frame-loading { position: absolute; left: 16px; top: 72px; color: var(--muted); font-size: 13px; margin: 0; }
   .live-wrap.with-panel :global(.home.desktop) { grid-template-columns: 220px minmax(0, 1fr); }
   .framed { display: block; width: 100%; height: calc(100vh - 52px - 64px); border: 0; background: var(--bg); }
   .framed.you { height: calc(100vh - 52px - 64px - 61px); }

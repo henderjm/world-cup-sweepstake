@@ -63,7 +63,7 @@ test("the strip lists only matchdays around today, plus today and the selected d
 test("a swipe moves to the neighbouring matchday and stops at the season's edge", () => {
   const days = ["2026-10-25", "2026-11-01", "2026-11-04"];
   assert.equal(adjacentMatchDay(days, "2026-10-31", 1), "2026-11-01");
-  assert.equal(adjacentMatchDay(days, "2026-11-01", -1), "2026-10-31");
+  assert.equal(adjacentMatchDay(days, "2026-11-01", -1), "2026-10-25", "a day without matches is skipped");
   assert.equal(adjacentMatchDay(days, "2026-10-31", -1), "2026-10-25");
   assert.equal(adjacentMatchDay(days, "2026-11-04", 1), null);
 });

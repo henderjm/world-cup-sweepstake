@@ -38,15 +38,15 @@
 </a>
 
 <style>
-  .row { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; border-bottom: 1px solid var(--line); }
+  .row { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px; border-bottom: 1px solid var(--line); }
   .row:hover { background: rgba(255, 255, 255, 0.02); }
   .row.is-live { background: var(--accent-soft); }
-  .when { font-size: 13px; color: var(--muted); width: 44px; flex: none; }
+  .when { font-size: 13px; color: var(--muted); width: 40px; flex: none; }
   .is-live .when { color: var(--accent); font-weight: 700; }
   .team { font-size: 15px; font-weight: 500; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .followed .team { font-weight: 600; }
   .right { text-align: right; }
-  .score { font-size: 15px; font-weight: 700; min-width: 48px; text-align: center; }
+  .score { font-size: 15px; font-weight: 700; min-width: 40px; text-align: center; }
   .vs { color: var(--faint); font-weight: 400; }
   .aside { display: none; }
   @media (min-width: 1024px) {

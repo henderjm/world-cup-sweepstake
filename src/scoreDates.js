@@ -63,8 +63,8 @@ export function matchDayStrip(days, selected, today = localDateKey()) {
 // The neighbouring matchday for a swipe, skipping empty dates. Returns null at
 // either end of the season rather than walking into a blank calendar.
 export function adjacentMatchDay(days, from, direction) {
-  const candidates = [...new Set([...days, localDateKey()])].sort();
-  return direction > 0
-    ? candidates.find(day => day > from) ?? null
-    : candidates.filter(day => day < from).at(-1) ?? null;
+  // Matchdays only, the same days the strip shows: a swipe never lands on a
+  // date with nothing to list.
+  const candidates = [...new Set(days)].sort();
+  return direction > 0 ? candidates.find(day => day > from) ?? null : candidates.filter(day => day < from).at(-1) ?? null;
 }
