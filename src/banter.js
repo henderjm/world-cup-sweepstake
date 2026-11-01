@@ -192,17 +192,14 @@ function renderSkeleton() {
   if (!node) return;
   const compose = isSignedIn()
     ? `<form class="bn__compose" data-banter-form>
-        <input class="bn__text" data-banter-text maxlength="140" placeholder="say something…" autocomplete="off" aria-label="Your banter" />
+        <input class="bn__text" data-banter-text maxlength="140" placeholder="Say something" autocomplete="off" aria-label="Your banter" />
         <button class="btn bn__send" type="submit">Send</button>
-      </form>
-      <p class="bn__note">Posting as your Kickoff Draft account, shared with everyone.</p>`
-    : `<p class="bn__note bn__note--signin">Reading is open to all; joining in needs an account.
-        <button class="seg" type="button" data-section-nav="you" data-md-close>Sign in</button>
-      </p>`;
+      </form>`
+    : `<p class="bn__note bn__note--signin"><button class="seg" type="button" data-section-nav="you" data-md-close>Sign in to post</button></p>`;
   node.innerHTML = `
     <div class="bn">
       <div class="bn__react" data-bn-react></div>
-      <div class="bn__feed" data-bn-feed><p class="md-note">Loading banter…</p></div>
+      <div class="bn__feed" data-bn-feed></div>
       ${compose}
     </div>`;
 }
@@ -215,12 +212,12 @@ function renderLive() {
 
   if (data?.disabled) {
     react.innerHTML = "";
-    feed.innerHTML = `<p class="md-note">Banter isn't switched on yet.</p>`;
+    feed.innerHTML = "";
     return;
   }
   if (data?.error) {
     react.innerHTML = "";
-    feed.innerHTML = `<p class="md-note">Couldn't reach banter. Retrying…</p>`;
+    feed.innerHTML = `<p class="md-note">Comments unavailable</p>`;
     return;
   }
 
@@ -236,7 +233,7 @@ function renderLive() {
   const moderator = Boolean(data?.moderator);
   feed.innerHTML = (messages.length
     ? messages.map((message) => renderMessage(message, { signedIn, moderator, moderation: Boolean(data?.moderation) })).join("")
-    : `<p class="md-note">No banter yet. Get it started.</p>`)
+    : "")
     + (notice ? `<p class="md-note bn__notice" role="status">${esc(notice)}</p>` : "");
 }
 

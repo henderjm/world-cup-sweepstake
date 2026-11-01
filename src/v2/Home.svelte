@@ -127,8 +127,6 @@
       <div class="label gap">Your clubs</div>
       {#each follows as follow}
         <div class="club"><Crest team={follow.team} /> <span>{displayTeamName(follow.team)}</span></div>
-      {:else}
-        <p class="note">Follow a club from its match page. No account needed.</p>
       {/each}
       <div class="label gap">Show</div>
       <button class="toggle" class:on={!liveOnly && !myTeams} aria-pressed={!liveOnly && !myTeams} onclick={() => { liveOnly = false; myTeams = false; }}>All matches</button>

@@ -35,10 +35,12 @@ test("repeat reads inside the window are served from the memo", async () => {
   assert.equal(calls.length, 2);
 });
 
-test("a match that has not kicked off spends nothing", async () => {
+test("an upcoming match is read for who is out, a postponed one spends nothing", async () => {
   stub();
-  assert.deepEqual(await matchCentre(env, { ...match, status: "TIMED" }, 0), { available: false });
-  assert.equal(calls.length, 0);
+  assert.equal((await matchCentre(env, { ...match, status: "TIMED" }, 0)).available, true);
+  const spent = calls.length;
+  assert.deepEqual(await matchCentre(env, { ...match, status: "POSTPONED" }, 0), { available: false });
+  assert.equal(calls.length, spent);
 });
 
 test("below the allowance floor it stops calling until the hour resets", async () => {

@@ -25,7 +25,6 @@
   <section class="wire" aria-label="The Wire">
     <div class="section-h">
       <h2>The Wire <span class="dot pulse" aria-hidden="true"></span></h2>
-      <span class="muted small">All matches · newest first</span>
     </div>
     <ol>
       {#each visible as item (item.rowId ?? item.key)}

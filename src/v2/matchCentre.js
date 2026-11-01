@@ -274,3 +274,63 @@ export function momentumBars(pressure, { width = 358, height = 64 } = {}) {
     })),
   };
 }
+
+// A pitch tile fits one surname. "Jóhann Berg Gudmundsson" is "Gudmundsson",
+// "Virgil van Dijk" keeps its particle as "van Dijk", and a one-word name
+// (Estêvão, Rodri) is already as short as it gets.
+const PARTICLES = new Set(["van", "von", "de", "da", "di", "del", "della", "dos", "das", "do", "le", "la", "ter", "ten", "al", "el", "bin", "ben"]);
+export function shortPlayerName(name) {
+  const words = String(name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (words.length < 2) return words[0] ?? "";
+  let start = words.length - 1;
+  while (start > 1 && PARTICLES.has(words[start - 1].toLowerCase())) start -= 1;
+  return words.slice(start).join(" ");
+}
+
+// Everything the line-up section draws for one side: the XI in formation
+// rows (keeper first) with rating and match markers, the bench (who came on
+// and when), and the coach. `rows` is null when the provider has not placed
+// all eleven on the grid; `xi` is then the plain list.
+export function lineupSide(detail, side) {
+  const team = detail?.[side];
+  if (!team?.lineup?.length) return null;
+  const ratings = ratingIndex(detail);
+  const best = topRating(detail, team.name);
+  const goals = new Map();
+  for (const goal of detail.goals ?? []) {
+    if (goal.type === "OWN" || !goal.scorerId) continue;
+    goals.set(goal.scorerId, (goals.get(goal.scorerId) ?? 0) + 1);
+  }
+  const cards = new Map();
+  for (const card of detail.cards ?? []) {
+    if (!card.playerId) continue;
+    const red = card.card === "RED" || card.card === "YELLOW_RED";
+    if (red || !cards.has(card.playerId)) cards.set(card.playerId, red ? "red" : "yellow");
+  }
+  const off = new Map((detail.subs ?? []).filter(sub => sub.outId).map(sub => [sub.outId, sub.minute]));
+  const on = new Map((detail.subs ?? []).filter(sub => sub.inId).map(sub => [sub.inId, sub.minute]));
+  const player = entry => {
+    const rating = ratings.get(entry.id) ?? null;
+    return {
+      id: entry.id,
+      name: shortPlayerName(entry.name),
+      fullName: entry.name,
+      num: entry.num ?? null,
+      rating,
+      top: rating !== null && rating === best,
+      goals: goals.get(entry.id) ?? 0,
+      card: cards.get(entry.id) ?? null,
+      off: off.get(entry.id) ?? null,
+      on: on.get(entry.id) ?? null,
+    };
+  };
+  const placed = pitchRows(team.lineup);
+  return {
+    name: team.name,
+    formation: team.formation ?? null,
+    coach: team.coach ?? null,
+    rows: placed ? placed.map(line => line.map(player)) : null,
+    xi: team.lineup.map(player),
+    bench: [...(team.bench ?? [])].map(player).sort((a, b) => (b.on !== null) - (a.on !== null) || (a.on ?? 0) - (b.on ?? 0)),
+  };
+}
