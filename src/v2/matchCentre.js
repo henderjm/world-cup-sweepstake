@@ -226,16 +226,36 @@ export function clubForm(tables, team) {
   return null;
 }
 
-// "Updated 8s ago" from the data's own age. Live data more than two minutes
-// old, or a feed the server marked stale, is "Delayed" and names its age.
-export function freshness({ lastUpdated, stale = false, staleAgeMs = null, live = false }, now = Date.now()) {
+// "Updated 8s ago" from the data's own age, never the time since the
+// browser fetched. "Delayed" is only ever said about LIVE data more than two
+// minutes old: an upcoming fixture refreshed every fifteen minutes is not
+// late, it is simply not changing. Age alone decides, because a stale serve
+// (the Worker's fallback, or the browser keeping its last good copy) always
+// carries its true, older lastUpdated.
+export function freshness({ lastUpdated, live = false }, now = Date.now()) {
   const updated = Date.parse(lastUpdated ?? "");
   if (!Number.isFinite(updated)) return { text: "Loading", delayed: false };
-  const age = Math.max(0, now - updated, Number.isFinite(staleAgeMs) ? staleAgeMs : 0);
-  const delayed = stale || (live && age > 120_000);
+  const age = Math.max(0, now - updated);
+  const delayed = live && age > 120_000;
   const text = age < 5_000 ? "just now" : age < 60_000 ? `${Math.round(age / 1000)}s ago`
     : age < 3_600_000 ? `${Math.floor(age / 60_000)}m ago` : `${Math.floor(age / 3_600_000)}h ago`;
   return { text: delayed ? `Delayed, ${text}` : `Updated ${text}`, delayed };
+}
+
+// The header chip across every competition: while anything is live, judged
+// on the OLDEST feed that has a live match (each feed against its own data,
+// so a quiet Premier League morning cannot make a live Serie A look late);
+// otherwise just the newest feed's age, never "Delayed".
+export function feedsFreshness(feeds, now = Date.now(), isLive = () => false) {
+  const ready = (feeds ?? []).filter(feed => feed.hasData && Number.isFinite(Date.parse(feed.lastUpdated)));
+  if (!ready.length) return { text: "Loading", delayed: false };
+  const live = ready.filter(feed => (feed.matches ?? []).some(match => isLive(match.status)));
+  if (live.length) {
+    const oldest = live.reduce((a, b) => (Date.parse(a.lastUpdated) <= Date.parse(b.lastUpdated) ? a : b));
+    return freshness({ lastUpdated: oldest.lastUpdated, live: true }, now);
+  }
+  const newest = ready.reduce((a, b) => (Date.parse(a.lastUpdated) >= Date.parse(b.lastUpdated) ? a : b));
+  return freshness({ lastUpdated: newest.lastUpdated }, now);
 }
 
 export function minuteText(item) {

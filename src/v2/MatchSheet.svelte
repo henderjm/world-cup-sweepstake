@@ -21,7 +21,9 @@
   const away = $derived(displayTeamName(match.awayTeam));
   const competition = $derived(COMPETITIONS[match.competitionCode]?.name ?? "");
   const context = $derived(match.matchday ? `${competition} · Matchday ${match.matchday}` : competition);
-  const fresh = $derived(freshness({ lastUpdated: feed?.lastUpdated, stale: feed?.stale, staleAgeMs: feed?.staleAgeMs, live: phase === "live" }, now));
+  // Only a live match shows its data's age; before kickoff and after the
+  // whistle the age is not news.
+  const fresh = $derived(freshness({ lastUpdated: feed?.lastUpdated, live: phase === "live" }, now));
 
   // Detail is refetched when the match moves (score, status, minute) and on
   // a 30-second floor while live, never on every 20-second list poll.
@@ -133,7 +135,7 @@
       </button>
       <span class="label">{context}</span>
       <span class="fresh" class:delayed={fresh.delayed} aria-live="polite">
-        {#if phase === "live"}<span class="dot pulse" class:delayed={fresh.delayed} aria-hidden="true"></span>{/if}{phase === "live" || fresh.delayed ? fresh.text.replace("Updated ", "") : ""}
+        {#if phase === "live"}<span class="dot pulse" class:delayed={fresh.delayed} aria-hidden="true"></span>{/if}{phase === "live" ? fresh.text.replace("Updated ", "") : ""}
       </span>
     </div>
     <div class="score">

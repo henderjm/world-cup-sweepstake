@@ -81,11 +81,23 @@ test("player of the match is the highest rating with his own numbers", () => {
   assert.equal(playerOfMatch({ playerStats: [{ rating: null }] }), null);
 });
 
-test("freshness is the data's age and live data over two minutes old is delayed", () => {
+test("freshness is the data's age and only live data over two minutes old is delayed", () => {
   const now = Date.parse("2026-10-31T15:00:00Z");
   assert.deepEqual(freshness({ lastUpdated: "2026-10-31T14:59:52Z", live: true }, now), { text: "Updated 8s ago", delayed: false });
   assert.deepEqual(freshness({ lastUpdated: "2026-10-31T14:56:00Z", live: true }, now), { text: "Delayed, 4m ago", delayed: true });
-  assert.deepEqual(freshness({ lastUpdated: "2026-10-31T14:56:00Z" }, now), { text: "Updated 4m ago", delayed: false });
+  assert.deepEqual(freshness({ lastUpdated: "2026-10-31T14:50:00Z" }, now), { text: "Updated 10m ago", delayed: false });
+});
+
+test("the header judges only feeds with a live match, each on its own data", async () => {
+  const { feedsFreshness } = await import("../src/v2/matchCentre.js");
+  const now = Date.parse("2026-11-01T12:27:49Z");
+  const live = status => status === "IN_PLAY";
+  const pl = { hasData: true, lastUpdated: "2026-11-01T12:17:17Z", matches: [{ status: "TIMED" }] };
+  const sa = { hasData: true, lastUpdated: "2026-11-01T12:27:44Z", matches: [{ status: "IN_PLAY" }] };
+  assert.deepEqual(feedsFreshness([pl, sa], now, live), { text: "Updated 5s ago", delayed: false }, "a quiet PL morning does not make live Serie A look late");
+  assert.deepEqual(feedsFreshness([pl], now, live), { text: "Updated 10m ago", delayed: false });
+  const lateSa = { ...sa, lastUpdated: "2026-11-01T12:20:00Z" };
+  assert.equal(feedsFreshness([pl, lateSa], now, live).delayed, true);
 });
 
 test("pitch names are one surname, keeping particles", async () => {
