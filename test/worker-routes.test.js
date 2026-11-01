@@ -999,6 +999,109 @@ test("the same gate rejects any subject outside Google's own digit namespace", a
   assert.ok(seen.some((sql) => sql.startsWith("INSERT INTO users")));
 });
 
+// -- Sign-up attribution --------------------------------------------------------
+//
+// The users row records where a person came from at INSERT only
+// (src/attribution.js). Three things must hold at the route: a first sign-in
+// stores the CLEANED record and the conflict branch cannot touch it, a
+// returning manager's origin is left alone, and a database without migration
+// 014 still signs people in.
+
+function attributionDb(seen, { existing = false, failAttributed = false } = {}) {
+  const prepare = (sql) => {
+    const normalized = sql.replace(/\s+/g, " ").trim();
+    let args = [];
+    const statement = {
+      bind: (...bound) => {
+        args = bound;
+        return statement;
+      },
+      first: async () => {
+        if (normalized.startsWith("SELECT id FROM users WHERE google_sub")) return existing ? { id: 1 } : null;
+        return { id: 1, email: "ada@example.test", name: "Ada", prefs: "{}" };
+      },
+      all: async () => ({ results: [] }),
+      run: async () => {
+        seen.push({ sql: normalized, args });
+        if (failAttributed && normalized.includes("signup_source")) {
+          throw new Error("D1_ERROR: table users has no column named signup_source: SQLITE_ERROR");
+        }
+        return { success: true, meta: { changes: 1, last_row_id: 1 } };
+      },
+    };
+    return statement;
+  };
+  return { prepare, batch: async () => [] };
+}
+
+async function signInWithAttribution(attribution, dbOptions) {
+  const seen = [];
+  const restore = stubTokeninfo("104283910938501928374");
+  try {
+    const response = await worker.fetch(
+      new Request("https://example.test/auth/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential: "x".repeat(64), attribution }),
+      }),
+      { ...env, GOOGLE_CLIENT_ID: "test-client-id", DB: attributionDb(seen, dbOptions) },
+    );
+    return { response, body: await response.json(), inserts: seen.filter((s) => s.sql.startsWith("INSERT INTO users")) };
+  } finally {
+    restore();
+  }
+}
+
+test("a first sign-in stores the cleaned attribution, and the conflict branch cannot touch it", async () => {
+  const { response, body, inserts } = await signInWithAttribution({
+    source: "Reddit Ads",
+    medium: "SOCIAL",
+    campaign: "x".repeat(300),
+    landing: "join",
+    extra: "ignored",
+  });
+  assert.equal(response.status, 200);
+  assert.equal(body.newUser, true);
+  assert.equal(inserts.length, 1);
+  const [insert] = inserts;
+  assert.ok(insert.sql.includes("signup_source, signup_medium, signup_campaign, signup_landing"));
+  const conflictClause = insert.sql.slice(insert.sql.indexOf("ON CONFLICT"));
+  assert.ok(!conflictClause.includes("signup_"), "the conflict branch must never rewrite attribution");
+  assert.deepEqual(insert.args.slice(4), ["reddit-ads", "social", "x".repeat(64), "join"]);
+});
+
+test("a returning manager's origin is left alone", async () => {
+  const { response, body, inserts } = await signInWithAttribution({ source: "google" }, { existing: true });
+  assert.equal(response.status, 200);
+  assert.equal(body.newUser, false);
+  assert.equal(inserts.length, 1);
+  assert.ok(!inserts[0].sql.includes("signup_"), "an existing row was handed an attribution");
+});
+
+test("sign-in still works on a database without the attribution columns", async () => {
+  const warn = console.warn;
+  const warned = [];
+  console.warn = (...args) => warned.push(args.join(" "));
+  try {
+    const { response, body, inserts } = await signInWithAttribution({ source: "reddit" }, { failAttributed: true });
+    assert.equal(response.status, 200);
+    assert.ok(body.token, "no session was minted");
+    assert.equal(inserts.length, 2, "the plain insert must follow the failed attributed one");
+    assert.ok(inserts[0].sql.includes("signup_source") && !inserts[1].sql.includes("signup_"));
+    assert.ok(warned.some((line) => line.includes("014-signup-attribution")), "the dropped attribution was not logged");
+  } finally {
+    console.warn = warn;
+  }
+});
+
+test("an unreadable attribution is ignored rather than refused", async () => {
+  for (const attribution of ["reddit", 42, { medium: "social" }, { source: "!!!" }, null]) {
+    const { response, inserts } = await signInWithAttribution(attribution);
+    assert.equal(response.status, 200);
+    assert.ok(!inserts[0].sql.includes("signup_"), `attribution ${JSON.stringify(attribution)} reached the insert`);
+  }
+});
+
 // -- Waiver routes, actually executed -----------------------------------------
 //
 // Same reasoning as the feed block above, but these routes need more than a

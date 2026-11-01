@@ -17,6 +17,7 @@ import {
   leagueProperties,
   lineupSavedProperties,
   realDraftPickProperties,
+  signInProperties,
 } from "../src/funnelEvents.js";
 
 const ALL_BUILDERS = [
@@ -31,6 +32,7 @@ const ALL_BUILDERS = [
   realDraftPickProperties,
   lineupSavedProperties,
   claimSubmittedProperties,
+  signInProperties,
 ];
 
 test("the event vocabulary is unique, frozen and consistently named", () => {
@@ -388,4 +390,30 @@ test("no module outside telemetry.js touches the posthog global directly", async
     });
   }
   assert.deepEqual(offenders, [], `route these through telemetry.js's wrappers:\n${offenders.join("\n")}`);
+});
+
+test("sign-in properties carry the acquisition source and never the person", () => {
+  const props = signInProperties(
+    { newUser: true, token: "s3cret", user: { email: "ada@example.test", name: "Ada" } },
+    { source: "invite", medium: "referral", campaign: null, landing: "join" },
+  );
+  assert.deepEqual(props, {
+    method: "google",
+    new_user: true,
+    signup_source: "invite",
+    signup_medium: "referral",
+    signup_campaign: null,
+    signup_landing: "join",
+  });
+  const serialized = JSON.stringify(props);
+  for (const leak of ["ada@", "Ada", "s3cret"]) assert.ok(!serialized.includes(leak), `${leak} leaked into a property`);
+  // A returning manager with nothing stored is a sign-in, not a sign-up.
+  assert.deepEqual(signInProperties({ user: {} }, null), {
+    method: "google",
+    new_user: false,
+    signup_source: null,
+    signup_medium: null,
+    signup_campaign: null,
+    signup_landing: null,
+  });
 });

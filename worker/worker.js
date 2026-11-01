@@ -49,6 +49,7 @@ import {
   mergeFixtureUpdates,
 } from "../src/mapApiFootball.js";
 import { isFinished, isLive } from "../src/format.js";
+import { normalizeAttribution } from "../src/attribution.js";
 import { diffMatchEvents } from "../src/matchPushEvents.js";
 import { detailHasSubstance, detailSubstanceScore, DETAIL_SECTION_COUNT } from "../src/matchDetailSubstance.js";
 import {
@@ -1343,8 +1344,11 @@ async function handleGoogleAuth(request, env, cors) {
   if (!env.GOOGLE_CLIENT_ID) return json({ error: "sign-in not configured" }, 501, cors);
 
   let credential;
+  let attribution = null;
   try {
-    credential = String((await request.json())?.credential ?? "");
+    const body = await request.json();
+    credential = String(body?.credential ?? "");
+    attribution = normalizeAttribution(body?.attribution);
   } catch {
     return json({ error: "bad body" }, 400, cors);
   }
@@ -1380,12 +1384,12 @@ async function handleGoogleAuth(request, env, cors) {
   if (!isRealGoogleSub(info.sub)) return json({ error: "invalid credential" }, 401, cors);
 
   try {
-    await env.DB.prepare(
-      `INSERT INTO users (google_sub, email, name, avatar) VALUES (?1, ?2, ?3, ?4)
-       ON CONFLICT(google_sub) DO UPDATE SET email = ?2, name = ?3, avatar = ?4`,
-    )
-      .bind(info.sub, info.email ?? "", info.name ?? null, info.picture ?? null)
-      .run();
+    // Whether this sign-in CREATES the account is what the funnel needs
+    // (sign-ups versus returns) and the upsert cannot say: with ON CONFLICT DO
+    // UPDATE, D1 reports one change either way. One extra read per sign-in.
+    const existing = await env.DB.prepare("SELECT id FROM users WHERE google_sub = ?1").bind(info.sub).first();
+    const newUser = !existing;
+    await upsertUser(env, info, newUser ? attribution : null);
     const user = await env.DB.prepare("SELECT id, email, name, avatar, prefs FROM users WHERE google_sub = ?1")
       .bind(info.sub)
       .first();
@@ -1398,10 +1402,42 @@ async function handleGoogleAuth(request, env, cors) {
     // Opportunistic cleanup keeps the sessions table from accumulating forever.
     await env.DB.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
 
-    return json({ token, user: publicUser(user), follows: await userFollows(env, user.id) }, 200, cors);
+    return json({ token, user: publicUser(user), follows: await userFollows(env, user.id), newUser }, 200, cors);
   } catch {
     return json({ error: "accounts unavailable" }, 502, cors);
   }
+}
+
+// The users upsert. `attribution` (src/attribution.js, already normalised) is
+// written at INSERT only: the ON CONFLICT branch updates the profile fields
+// Google just vouched for and nothing else, so a returning manager's origin
+// can never be rewritten by a later visit, and the caller passes null for an
+// existing row anyway. If migration 014 has not been applied, the attributed
+// insert fails on the missing column and the plain insert runs instead:
+// sign-in must never depend on an analytics column existing.
+async function upsertUser(env, info, attribution) {
+  const profile = [info.sub, info.email ?? "", info.name ?? null, info.picture ?? null];
+  if (attribution) {
+    try {
+      await env.DB.prepare(
+        `INSERT INTO users (google_sub, email, name, avatar, signup_source, signup_medium, signup_campaign, signup_landing)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+         ON CONFLICT(google_sub) DO UPDATE SET email = ?2, name = ?3, avatar = ?4`,
+      )
+        .bind(...profile, attribution.source, attribution.medium, attribution.campaign, attribution.landing)
+        .run();
+      return;
+    } catch (error) {
+      if (!/no column named signup_/i.test(String(error?.message ?? error))) throw error;
+      console.warn("signup attribution dropped: worker/migrations/014-signup-attribution.sql not applied");
+    }
+  }
+  await env.DB.prepare(
+    `INSERT INTO users (google_sub, email, name, avatar) VALUES (?1, ?2, ?3, ?4)
+     ON CONFLICT(google_sub) DO UPDATE SET email = ?2, name = ?3, avatar = ?4`,
+  )
+    .bind(...profile)
+    .run();
 }
 
 async function handleLogout(request, env, cors) {

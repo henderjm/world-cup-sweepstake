@@ -28,6 +28,19 @@ CREATE TABLE IF NOT EXISTS users (
   -- See worker/migrations/003-bot-managers.sql for adding this to a database
   -- created before bot managers shipped (fresh databases get it from here).
   is_bot INTEGER NOT NULL DEFAULT 0,
+  -- Where the person came from when they FIRST signed in (src/attribution.js):
+  -- a utm_source, "invite" (a shared league link), "learn" (a pre-rendered
+  -- Learn page), a named referrer or its host, else "direct". medium and
+  -- campaign come only from utm_* parameters; landing is the hash section
+  -- they arrived on. Written at INSERT only, never updated and never
+  -- backfilled, so NULL means "signed up before this existed". Cleaned to
+  -- [a-z0-9._-] on both the client and the Worker, so safe to GROUP BY
+  -- (scripts/metrics/14-signups-by-source.sql). Migration 014 adds these to a
+  -- database created before they existed.
+  signup_source TEXT,
+  signup_medium TEXT,
+  signup_campaign TEXT,
+  signup_landing TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

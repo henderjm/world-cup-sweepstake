@@ -64,6 +64,10 @@ export const FUNNEL_EVENTS = Object.freeze({
   FANTASY_DRAFT_COMPLETED: "fantasy_draft_completed",
   FANTASY_LINEUP_SAVED: "fantasy_lineup_saved",
   FANTASY_CLAIM_SUBMITTED: "fantasy_claim_submitted",
+
+  // The account. `user_signed_in` predates this file (account.js sent it
+  // inline) and is listed here so its properties get a builder like the rest.
+  USER_SIGNED_IN: "user_signed_in",
 });
 
 // How a pick reached the board. The three sandbox sources are genuinely
@@ -258,5 +262,24 @@ export function claimSubmittedProperties(fantasy, flow) {
     mode: waivers?.mode ?? null,
     position: flow?.addPlayer?.position ?? null,
     has_bid: flow?.path === "waiver" && waivers?.mode === "faab",
+  };
+}
+
+// -- The account ---------------------------------------------------------------
+
+// `result` is the Worker's /auth/google response and `attribution` the record
+// src/attribution.js derived when the visitor landed (already cleaned, or
+// null). The account's email goes through identifyUser and nowhere else, and
+// an invite code a visitor arrived on is reduced to the source "invite" before
+// it can reach here. `new_user` is what splits sign-UPS from sign-INS, which
+// the event name alone cannot; the Worker decides it, the browser cannot.
+export function signInProperties(result, attribution) {
+  return {
+    method: "google",
+    new_user: Boolean(result?.newUser),
+    signup_source: attribution?.source ?? null,
+    signup_medium: attribution?.medium ?? null,
+    signup_campaign: attribution?.campaign ?? null,
+    signup_landing: attribution?.landing ?? null,
   };
 }
