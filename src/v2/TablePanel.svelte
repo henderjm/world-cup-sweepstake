@@ -7,7 +7,10 @@
   // League tables for every competition that has one, switchable with text
   // toggles. Full table by default; `compact` starts at the top six with a
   // "Full table" expand, for places where the table shares the screen.
-  let { feeds, follows = [], competition = null, oncompetition, compact = false, wide = false } = $props();
+  // `detailed` is the league page's full table (W/D/L/GF), `locked` hides the
+  // competition switcher there (the page is already one competition), and
+  // `leagueLink` adds the way into that page from the home screen.
+  let { feeds, follows = [], competition = null, oncompetition, compact = false, wide = false, detailed = false, locked = false, leagueLink = true } = $props();
 
   const available = $derived(feeds.filter(feed => feed.hasData && feed.tables?.some(table => table.rows?.length)));
   const selected = $derived(available.find(feed => feed.competition.code === competition) ?? available[0] ?? null);
@@ -22,11 +25,14 @@
 
 {#if selected}
   <section class="tables" aria-label="League tables">
-    <div class="section-h">
-      <h2>Table</h2>
-      {#if selected.tablesLive}<span class="chip live-chip">As it stands</span>{/if}
+    <div class="section-h" class:bare={locked && !selected.tablesLive}>
+      {#if locked}<span></span>{:else}<h2>Table</h2>{/if}
+      <span class="head-end">
+        {#if selected.tablesLive}<span class="chip live-chip">As it stands</span>{/if}
+        {#if leagueLink && !locked}<a href="#league/{selected.competition.code}">Fixtures &amp; stats</a>{/if}
+      </span>
     </div>
-    {#if available.length > 1}
+    {#if available.length > 1 && !locked}
       <div class="comps" role="group" aria-label="Competition">
         {#each available as feed (feed.competition.code)}
           <button class="toggle" class:on={feed === selected} aria-pressed={feed === selected}
@@ -39,10 +45,12 @@
 
     {#each tables as table, index (table.name ?? index)}
       {#if tables.length > 1}<div class="label group">{table.name}</div>{/if}
-      <div class="grid" class:wide role="table" aria-label="{table.name ?? selected.competition.name} table">
+      <div class="grid" class:wide class:detailed role="table" aria-label="{table.name ?? selected.competition.name} table">
         <div class="trow head" role="row">
           <span role="columnheader">#</span><span></span><span role="columnheader">Club</span>
-          <span class="num" role="columnheader">P</span><span class="num" role="columnheader">GD</span><span class="num" role="columnheader">Pts</span>
+          <span class="num" role="columnheader">P</span>
+          {#if detailed}<span class="num" role="columnheader">W</span><span class="num" role="columnheader">D</span><span class="num" role="columnheader">L</span><span class="num gf" role="columnheader">GF</span>{/if}
+          <span class="num" role="columnheader">GD</span><span class="num" role="columnheader">Pts</span>
           {#if wide}<span class="num" role="columnheader">Form</span>{/if}
         </div>
         {#each table.rows.slice(0, limit) as row (row.team)}
@@ -52,6 +60,9 @@
             <Crest team={row.team} size={18} />
             <span class="name" role="cell">{displayTeamName(row.team)}</span>
             <span class="num" role="cell">{row.played}</span>
+            {#if detailed}
+              <span class="num" role="cell">{row.won}</span><span class="num" role="cell">{row.drawn}</span><span class="num" role="cell">{row.lost}</span><span class="num gf" role="cell">{row.goalsFor}</span>
+            {/if}
             <span class="num" role="cell">{gd(row.goalDifference)}</span>
             <span class="num pts" role="cell">{row.points}</span>
             {#if wide}
@@ -84,6 +95,16 @@
   .grid { display: flex; flex-direction: column; }
   .trow { display: grid; grid-template-columns: 22px 18px minmax(0, 1fr) 28px 36px 32px; align-items: center; gap: 8px; min-height: 36px; border-bottom: 1px solid var(--line); font-size: 13px; position: relative; padding-left: 6px; }
   .wide .trow { grid-template-columns: 22px 18px minmax(0, 1fr) 28px 36px 32px 58px; }
+  /* Phone: P W D L GD Pts; GF joins from 480px, form on the wide layout. */
+  .detailed .trow { grid-template-columns: 22px 18px minmax(0, 1fr) repeat(4, 22px) 30px 30px; gap: 4px; }
+  .detailed .gf { display: none; }
+  @media (min-width: 480px) {
+    .detailed .trow { grid-template-columns: 22px 18px minmax(0, 1fr) repeat(5, 28px) 36px 32px; gap: 8px; }
+    .detailed .gf { display: block; }
+  }
+  .detailed.wide .trow { grid-template-columns: 22px 18px minmax(0, 1fr) repeat(5, 28px) 36px 32px 58px; gap: 8px; }
+  .section-h.bare { display: none; }
+  .head-end { display: inline-flex; align-items: center; gap: 12px; }
   .trow.head { min-height: 28px; color: var(--faint); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; }
   .trow::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px; border-radius: 1px; }
   .trow.zone-safe::before { background: var(--accent); }

@@ -1,5 +1,6 @@
 import { matchCentre } from "./sportmonksCentre.js";
 import { playerSeason } from "./sportmonksPlayers.js";
+import { leagueStats } from "./sportmonksLeagueStats.js";
 import { findSportmonksMatch, getSportmonksLive, isSportmonksCompetition, sportmonksMatchDetail } from "./sportmonksLive.js";
 import { sportmonksIdOf } from "../src/sportmonksFeed.js";
 import { TALK_ACTIONS, readBanter, talkAction } from "./talkStore.js";
@@ -678,6 +679,32 @@ export default {
           return json(season, 200, { ...cors, "Cache-Control": `public, max-age=${season.available ? 3600 : 300}` });
         } catch (error) {
           console.error(`route failed: /player/:id/season ${error.message}`);
+          return json({ available: false }, 200, { ...cors, "Cache-Control": "public, max-age=60" });
+        }
+      }
+
+      // Season leaderboards for the V2 league page's Stats tab
+      // (worker/sportmonksLeagueStats.js); current season of a covered
+      // competition only, same per-IP limiter as the player route.
+      const statsRoute = url.pathname.match(/^\/([A-Za-z]{2,6})\/stats$/);
+      if (statsRoute) {
+        const code = statsRoute[1].toUpperCase();
+        if (!COMPETITIONS[code]) return json({ error: "unknown competition" }, 404, cors);
+        if (!env.SPORTMONKS_API_KEY) return json({ error: "league stats not configured" }, 501, cors);
+        if (env.DETAIL_LIMITER) {
+          const ip = request.headers.get("CF-Connecting-IP") || "anon";
+          try {
+            const { success } = await env.DETAIL_LIMITER.limit({ key: ip });
+            if (!success) return json({ error: "rate limited" }, 429, { ...cors, "Retry-After": "30" });
+          } catch {
+            // limiter unavailable, fail open
+          }
+        }
+        try {
+          const stats = await leagueStats(env, code);
+          return json(stats, 200, { ...cors, "Cache-Control": `public, max-age=${stats.available ? 1800 : 300}` });
+        } catch (error) {
+          console.error(`route failed: /:comp/stats ${error.message}`);
           return json({ available: false }, 200, { ...cors, "Cache-Control": "public, max-age=60" });
         }
       }

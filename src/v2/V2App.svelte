@@ -1,10 +1,11 @@
 <script>
   import { onMount } from "svelte";
   import Home from "./Home.svelte";
+  import League from "./League.svelte";
   import MatchSheet from "./MatchSheet.svelte";
   import { currentAccount, onAccountChange, restoreAccount, toggleFollow } from "../account.js";
   import { switchVersion } from "../appVersion.js";
-  import { COMPETITION_CODES } from "../competitions.js";
+  import { COMPETITIONS, COMPETITION_CODES } from "../competitions.js";
   import { DATA_API, loadModel } from "../data.js";
   import { fantasyAvailable, listLeagues, loadMatchup } from "../fantasyApi.js";
   import { displayTeamName } from "../domain.js";
@@ -14,6 +15,7 @@
   import { createLocalFollows, uniqueFollows } from "../teamFollows.js";
   import { track } from "../telemetry.js";
   import { feedsFreshness } from "./matchCentre.js";
+  import { leagueHash, parseRoute, routeBase } from "./league.js";
 
   const SECTIONS = [
     { key: "live", label: "Live", icon: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>' },
@@ -54,11 +56,7 @@
   const fresh = $derived(feedsFreshness(feeds, now, isLive));
 
   function readRoute() {
-    const raw = location.hash.replace(/^#/, "");
-    const matchId = /^match\/(\d+)$/.exec(raw)?.[1] ?? null;
-    if (matchId) return { section: "live", matchId };
-    const section = raw.split("/")[0];
-    return { section: SECTIONS.some(entry => entry.key === section) ? section : "live", matchId: null };
+    return parseRoute(location.hash, SECTIONS.map(entry => entry.key));
   }
 
   function readBanner() {
@@ -79,11 +77,13 @@
   // match from an open panel REPLACES that entry, so close never walks back
   // through every match looked at. A match reached by deep link (a share or
   // a push notification) has no in-app entry behind it, so close goes to
-  // #live rather than history.back(), which would leave the site.
+  // #live rather than history.back(), which would leave the site. A match
+  // opened from a league page keeps the league in its hash, so the page stays
+  // underneath it and closing returns there.
   let openedInApp = false;
   function open(match) {
     track("v2_match_opened", { competition: match.competitionCode, status: match.status });
-    const hash = `#match/${match.id}`;
+    const hash = route.league ? leagueHash(route.league, route.tab, match.id) : `#match/${match.id}`;
     if (route.matchId) {
       history.replaceState(null, "", hash);
       route = readRoute();
@@ -97,9 +97,17 @@
       openedInApp = false;
       history.back();
     } else {
-      history.replaceState(null, "", "#live");
+      history.replaceState(null, "", routeBase(route));
       route = readRoute();
     }
+  }
+
+  // League tabs and the competition switch replace the entry rather than
+  // stacking one per tap, so back leaves the league page in one step.
+  function leagueNav(code, tab) {
+    history.replaceState(null, "", leagueHash(code, tab));
+    route = readRoute();
+    track("v2_league_viewed", { competition: code, tab });
   }
 
   // A score that changed since the last poll flashes its row and card once.
@@ -244,6 +252,7 @@
   $effect(() => {
     document.title = openMatch
       ? `${displayTeamName(openMatch.homeTeam)} v ${displayTeamName(openMatch.awayTeam)} · Kickoff Draft`
+      : route.league ? `${COMPETITIONS[route.league]?.name ?? route.league} · Kickoff Draft`
       : route.section === "live" ? "Kickoff Draft: live scores" : `${SECTIONS.find(entry => entry.key === route.section)?.label} · Kickoff Draft`;
   });
 
@@ -269,7 +278,7 @@
     {/if}
   </header>
 
-  {#if banner && route.section === "live"}
+  {#if banner && route.section === "live" && !route.league}
     <div class="banner">
       <span>You are on the new Kickoff Draft. Switch back any time in You.</span>
       <button aria-label="Dismiss" onclick={dismissBanner}>
@@ -280,7 +289,12 @@
 
   {#if route.section === "live"}
     <div class="live-wrap" class:with-panel={desktop && openMatch}>
-      <Home {matches} {feeds} {follows} {wire} {flashed} {desktop} {now} {matchup} openId={openMatch?.id ?? null} initialDay={deepLinkDay} onopen={open} />
+      {#if route.league}
+        <League code={route.league} tab={route.tab} {feeds} {follows} {flashed} {desktop} {now} onopen={open}
+          ontab={tab => leagueNav(route.league, tab)} oncompetition={code => leagueNav(code, route.tab)} />
+      {:else}
+        <Home {matches} {feeds} {follows} {wire} {flashed} {desktop} {now} {matchup} openId={openMatch?.id ?? null} initialDay={deepLinkDay} onopen={open} />
+      {/if}
       {#if openMatch}
         <MatchSheet match={openMatch} feed={openFeed} {follows} {now} {desktop} onclose={close} onfollow={follow} ontalksignin={() => go("#you")} />
       {/if}

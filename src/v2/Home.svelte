@@ -204,6 +204,10 @@
     {#each groups as group (group.code)}
       <div class="group-h">
         <span class="label strong">{COMPETITIONS[group.code].name}{#if group.matches[0]?.matchday}<span class="muted">{` · Matchday ${group.matches[0].matchday}`}</span>{/if}</span>
+        <a class="league-link" href="#league/{group.code}" aria-label="{COMPETITIONS[group.code].name}: table, fixtures and stats">
+          Table &amp; fixtures
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+        </a>
       </div>
       {#each group.matches as match (match.id)}
         <MatchRow {match} flash={flashed.has(match.id)} followed={isFollowed(match)} aside={isFollowed(match) ? "Your club" : ""} {onopen} />
@@ -289,6 +293,8 @@
   .group-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px 2px; }
   .desktop .group-h { padding: 18px 0 4px; }
   .strong { color: var(--text); font-weight: 700; }
+  .league-link { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; margin: -10px 0; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .league-link:hover { color: var(--text); }
   .filterbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 16px 0; }
   .filters { display: flex; gap: 16px; }
   .small { font-size: 13px; }
