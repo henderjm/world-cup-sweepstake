@@ -161,8 +161,12 @@ export function mapSportmonksFeed({ competition, season, fixtures, standings, la
 // Event and position type ids (verified on Serie A 2026/27).
 const EVENT = { goal: 14, ownGoal: 15, penalty: 16, sub: 18, yellow: 19, red: 20, yellowRed: 21 };
 const POSITION = { 24: "G", 25: "D", 26: "M", 27: "F" };
-const RATING = 118;
-const MINUTES = 119;
+// Per-player lineup detail type ids (verified on a Premier League fixture,
+// 21 November 2026). A figure Sportmonks did not send stays null, never 0.
+const PLAYER = { rating: 118, minutes: 119, tackles: 78, blocks: 97, interceptions: 100, shots: 42, shotsOnTarget: 86, keyPasses: 117, saves: 57 };
+const RATING = PLAYER.rating;
+const MINUTES = PLAYER.minutes;
+const ATTENDANCE = 578;
 
 function lineupDetail(entry, typeId) {
   const value = Number(entry.details?.find(detail => detail.type_id === typeId)?.data?.value);
@@ -235,7 +239,7 @@ export function mapSportmonksDetail(fixture) {
       name: normalizeTeamName(team?.name),
       crest: team?.image_path ?? null,
       formation: (fixture.formations ?? []).find(entry => entry.participant_id === team?.id)?.formation ?? null,
-      coach: null,
+      coach: (fixture.coaches ?? []).find(entry => entry.meta?.participant_id === team?.id)?.display_name ?? null,
       lineup: mine.filter(entry => entry.type_id === 11).map(player),
       bench: mine.filter(entry => entry.type_id === 12).map(player),
     };
@@ -243,6 +247,7 @@ export function mapSportmonksDetail(fixture) {
   const halfTime = scoreOf(fixture, "1ST_HALF");
   const penalties = scoreOf(fixture, "PENALTY_SHOOTOUT");
   const referee = (fixture.referees ?? []).find(entry => entry.type_id === 6)?.referee;
+  const attendance = Number((fixture.metadata ?? []).find(entry => entry.type_id === ATTENDANCE)?.values?.attendance);
 
   return {
     id: summary.id,
@@ -255,7 +260,7 @@ export function mapSportmonksDetail(fixture) {
     venue: summary.venue,
     city: summary.city,
     mapUrl: null,
-    attendance: null,
+    attendance: Number.isFinite(attendance) && attendance > 0 ? attendance : null,
     minute: summary.minute,
     score: {
       home: summary.score.home,
@@ -279,14 +284,14 @@ export function mapSportmonksDetail(fixture) {
         team: teamName.get(entry.team_id) ?? null,
         minutes: lineupDetail(entry, MINUTES) ?? 0,
         position: POSITION[entry.position_id] ?? null,
-        tackles: 0,
-        blocks: 0,
-        interceptions: 0,
+        tackles: lineupDetail(entry, PLAYER.tackles),
+        blocks: lineupDetail(entry, PLAYER.blocks),
+        interceptions: lineupDetail(entry, PLAYER.interceptions),
         rating: lineupDetail(entry, RATING),
-        shots: null,
-        shotsOnTarget: null,
-        keyPasses: null,
-        saves: null,
+        shots: lineupDetail(entry, PLAYER.shots),
+        shotsOnTarget: lineupDetail(entry, PLAYER.shotsOnTarget),
+        keyPasses: lineupDetail(entry, PLAYER.keyPasses),
+        saves: lineupDetail(entry, PLAYER.saves),
       })),
     source: "sportmonks",
   };

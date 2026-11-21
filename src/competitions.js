@@ -53,6 +53,32 @@ export const COMPETITIONS = {
       { from: 18, to: 20, tone: "out", label: "Relegation" },
     ],
   },
+  // Sportmonks-served like SA/PD (the Euro Club Tournaments plan). Both
+  // league phases are one 36-team table, the same bands as the CL.
+  EL: {
+    code: "EL",
+    provider: "sportmonks",
+    sportmonksLeagueId: 5,
+    name: "UEFA Europa League",
+    shortName: "Europa League",
+    zones: [
+      { from: 1, to: 8, tone: "safe", label: "Round of 16" },
+      { from: 9, to: 24, tone: "edge", label: "Knockout play-offs" },
+      { from: 25, to: 36, tone: "out", label: "Eliminated" },
+    ],
+  },
+  UECL: {
+    code: "UECL",
+    provider: "sportmonks",
+    sportmonksLeagueId: 2286,
+    name: "UEFA Conference League",
+    shortName: "Conference League",
+    zones: [
+      { from: 1, to: 8, tone: "safe", label: "Round of 16" },
+      { from: 9, to: 24, tone: "edge", label: "Knockout play-offs" },
+      { from: 25, to: 36, tone: "out", label: "Eliminated" },
+    ],
+  },
 };
 
 // The competitions Sportmonks serves on its own, in display order.

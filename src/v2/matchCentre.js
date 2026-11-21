@@ -49,6 +49,28 @@ const SHORT_NAMES = new Map([
   ["Tottenham Hotspur", "Tottenham"], ["West Ham United", "West Ham"], ["Wolverhampton Wanderers", "Wolves"],
 ]);
 
+// One club's matches in one competition, for the club sheet (the v1
+// Fixtures club filter, back in v2): "when do we play" and "how did we do".
+// Upcoming is soonest first with any live match at the top; results are
+// newest first. Each list is grouped by local day: [{ day, matches }].
+export function clubFixtures(matches, competitionCode, team) {
+  const mine = (matches ?? []).filter(match => match.competitionCode === competitionCode
+    && (match.homeTeam === team || match.awayTeam === team) && match.status !== "CANCELLED");
+  const time = match => Date.parse(match.utcDate ?? "") || 0;
+  const byDay = list => {
+    const days = new Map();
+    for (const match of list) {
+      const day = match.utcDate ? localDateKey(match.utcDate) : "";
+      days.set(day, [...(days.get(day) ?? []), match]);
+    }
+    return [...days].map(([day, dayMatches]) => ({ day, matches: dayMatches }));
+  };
+  const results = mine.filter(match => isFinished(match.status)).sort((a, b) => time(b) - time(a));
+  const upcoming = mine.filter(match => !isFinished(match.status))
+    .sort((a, b) => Number(isLive(b.status)) - Number(isLive(a.status)) || time(a) - time(b));
+  return { upcoming: byDay(upcoming), results: byDay(results), counts: { upcoming: upcoming.length, results: results.length } };
+}
+
 export function shortTeamName(name) {
   return SHORT_NAMES.get(name) ?? name;
 }

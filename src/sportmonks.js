@@ -14,7 +14,16 @@ import { normalizeTeamName } from "./domain.js";
 import { compactDetails } from "./playerStats.js";
 
 export const SPORTMONKS_LEAGUES = { PL: 8, CL: 2 };
-export const MATCH_CENTRE_INCLUDES = "participants;statistics;xGFixture;pressure;sidelined.sideline.player;sidelined.sideline.type;lineups.details";
+export const MATCH_CENTRE_INCLUDES = "participants;statistics;xGFixture;pressure;sidelined.sideline.player;sidelined.sideline.type;lineups.details;coaches;metadata";
+// Predictions are a separate add-on: an include the plan lacks 403s the WHOLE
+// request, so they are read on their own call and the centre survives without.
+export const PREDICTION_INCLUDES = "participants;predictions";
+
+// Metadata type ids (verified on a Premier League fixture, 21 November 2026).
+const META = { homeColours: 161, awayColours: 162, attendance: 578 };
+// Prediction type ids: model probabilities only. Valuebet (33) carries
+// bookmaker odds and is deliberately never read (no betting, PRD principles).
+const PREDICTION = { result: 237, btts: 231, over25: 235, correctScore: 240 };
 
 // Statistic type ids (verified against a real fixture on 31 October 2026).
 const STAT_TYPES = {
@@ -90,6 +99,15 @@ export function mapMatchCentre(fixture) {
     });
   }
   const team = side => fixture.participants?.find(entry => entry.meta?.location === side)?.name ?? null;
+  const coaches = { home: null, away: null };
+  for (const coach of fixture.coaches ?? []) {
+    const side = sideOf(fixture, coach.meta?.participant_id);
+    const name = String(coach.display_name ?? coach.common_name ?? coach.name ?? "").trim();
+    if (side && name) coaches[side] = name;
+  }
+  const meta = typeId => (fixture.metadata ?? []).find(entry => entry.type_id === typeId)?.values ?? null;
+  const colour = value => (/^#[0-9a-f]{6}$/i.test(String(value ?? "")) ? value : null);
+  const attendance = Number(meta(META.attendance)?.attendance);
   return {
     provider: "sportmonks",
     fixtureId: fixture.id,
@@ -99,7 +117,33 @@ export function mapMatchCentre(fixture) {
     teamStats,
     sidelined,
     players,
+    coaches,
+    attendance: Number.isFinite(attendance) && attendance > 0 ? attendance : null,
+    colours: { home: colour(meta(META.homeColours)?.participant), away: colour(meta(META.awayColours)?.participant) },
     pressure: [...byMinute.values()].sort((a, b) => a.minute - b.minute),
+  };
+}
+
+// The pre-match model for one fixture: full-time result, both teams to
+// score, over 2.5 goals and the likeliest exact score, all as percentages.
+// Null when Sportmonks sent no result probability (plan lapsed, minor
+// fixture), so the page simply omits the section.
+export function mapPredictions(fixture) {
+  const byType = new Map((fixture?.predictions ?? []).map(entry => [entry.type_id, entry.predictions]));
+  const pct = value => (Number.isFinite(Number(value)) ? Math.round(Number(value)) : null);
+  const result = byType.get(PREDICTION.result);
+  if (!result || pct(result.home) === null || pct(result.away) === null || pct(result.draw) === null) return null;
+  // "Other_1" style buckets are "any other score", not a score to show.
+  const scores = Object.entries(byType.get(PREDICTION.correctScore)?.scores ?? {})
+    .filter(([score, value]) => /^\d+-\d+$/.test(score) && Number.isFinite(Number(value)))
+    .sort((a, b) => b[1] - a[1]);
+  return {
+    home: pct(result.home),
+    draw: pct(result.draw),
+    away: pct(result.away),
+    btts: pct(byType.get(PREDICTION.btts)?.yes),
+    over25: pct(byType.get(PREDICTION.over25)?.yes),
+    likelyScore: scores[0] ? { score: scores[0][0], chance: pct(scores[0][1]) } : null,
   };
 }
 

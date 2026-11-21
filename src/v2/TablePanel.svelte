@@ -9,8 +9,9 @@
   // "Full table" expand, for places where the table shares the screen.
   // `detailed` is the league page's full table (W/D/L/GF), `locked` hides the
   // competition switcher there (the page is already one competition), and
-  // `leagueLink` adds the way into that page from the home screen.
-  let { feeds, follows = [], competition = null, oncompetition, compact = false, wide = false, detailed = false, locked = false, leagueLink = true } = $props();
+  // `leagueLink` adds the way into that page from the home screen. `onteam`
+  // makes each club name open that club's fixtures and results.
+  let { feeds, follows = [], competition = null, oncompetition, onteam = null, compact = false, wide = false, detailed = false, locked = false, leagueLink = true } = $props();
 
   const available = $derived(feeds.filter(feed => feed.hasData && feed.tables?.some(table => table.rows?.length)));
   const selected = $derived(available.find(feed => feed.competition.code === competition) ?? available[0] ?? null);
@@ -58,7 +59,9 @@
           <div class="trow zone-{row.zone?.tone ?? 'none'}" class:mine role="row" title={row.zone?.label ?? ""}>
             <span class="pos" role="cell">{row.position}</span>
             <Crest team={row.team} size={18} />
-            <span class="name" role="cell">{displayTeamName(row.team)}</span>
+            <span class="name" role="cell">
+              {#if onteam}<button class="club-link" onclick={() => onteam(selected.competition.code, row.team)} aria-label="{displayTeamName(row.team)} fixtures and results">{displayTeamName(row.team)}</button>{:else}{displayTeamName(row.team)}{/if}
+            </span>
             <span class="num" role="cell">{row.played}</span>
             {#if detailed}
               <span class="num" role="cell">{row.won}</span><span class="num" role="cell">{row.drawn}</span><span class="num" role="cell">{row.lost}</span><span class="num gf" role="cell">{row.goalsFor}</span>
@@ -87,6 +90,8 @@
 {/if}
 
 <style>
+  .club-link { font: inherit; color: inherit; text-align: left; padding: 0; min-height: 32px; width: 100%; }
+  .club-link:hover { text-decoration: underline; }
   .tables { padding: 8px 16px 0; }
   :global(.right) .tables, :global(.desktop) .tables { padding: 8px 0 0; }
   .comps { display: flex; gap: 20px; margin-bottom: 4px; }

@@ -55,7 +55,7 @@
   });
 
   // Sportmonks team statistics, xG, pressure and who is out (GET
-  // /match/:id/centre). Live it is re-read once a minute; after the whistle
+  // /match/:id/centre). Live it is re-read every 30 seconds; after the whistle
   // once, then again after ten minutes because Basic xG arrives after full
   // time; before kickoff once, for the injury list.
   let centre = $state(null);
@@ -65,7 +65,7 @@
     const id = match.id;
     if (!DATA_API || phase === "off") return;
     const age = Date.now() - centreAt;
-    if (centreFor === id && age < (phase === "live" ? 60_000 : phase === "post" ? 600_000 : 1_800_000)) return;
+    if (centreFor === id && age < (phase === "live" ? 30_000 : phase === "post" ? 600_000 : 1_800_000)) return;
     if (centreFor !== id) centre = null;
     centreFor = id;
     centreAt = Date.now();
@@ -75,6 +75,13 @@
       .catch(() => {});
   });
   const merged = $derived(centre ? { ...(detail ?? {}), teamStats: centre.teamStats } : detail);
+  // Sportmonks' pre-match model (null when the plan or fixture has none).
+  const model = $derived(phase === "pre" ? centre?.predictions ?? null : null);
+  const coaches = $derived({
+    home: detail?.home?.coach ?? centre?.coaches?.home ?? null,
+    away: detail?.away?.coach ?? centre?.coaches?.away ?? null,
+  });
+  const attendance = $derived(detail?.attendance ?? centre?.attendance ?? null);
   const momentum = $derived(momentumBars(centre?.pressure));
 
   const scorers = $derived(detail ? scorerLines(detail, match.homeTeam) : { home: [], away: [] });
@@ -179,8 +186,23 @@
       <p class="meta">
         {#if match.venue}<span>{match.venue}</span>{/if}
         {#if detail?.referee}<span>Referee {detail.referee}</span>{/if}
+        {#if coaches.home && coaches.away}<span>{coaches.home} v {coaches.away}</span>{/if}
         {#if !lineupsOut && lineupsDue}<span>Line-ups about {lineupsDue}</span>{/if}
       </p>
+      {#if model}
+        <section aria-label="Model prediction">
+          <div class="section-h"><h2>Model</h2><span class="muted small">Sportmonks</span></div>
+          <div class="wdl" role="img" aria-label="{home} win {model.home}%, draw {model.draw}%, {away} win {model.away}%">
+            <i class="h" style:width="{model.home}%"></i><i class="d" style:width="{model.draw}%"></i><i class="a" style:width="{model.away}%"></i>
+          </div>
+          <div class="wdl-key"><span><b>{model.home}%</b> {home}</span><span><b>{model.draw}%</b> Draw</span><span class="right"><b>{model.away}%</b> {away}</span></div>
+          <p class="meta">
+            {#if model.likelyScore}<span>Likeliest score {model.likelyScore.score} ({model.likelyScore.chance}%)</span>{/if}
+            {#if Number.isFinite(model.btts)}<span>Both score {model.btts}%</span>{/if}
+            {#if Number.isFinite(model.over25)}<span>3+ goals {model.over25}%</span>{/if}
+          </p>
+        </section>
+      {/if}
       <Predict {match} {home} {away} {ontalksignin} />
       {#if homeForm || awayForm}
         <section>
@@ -199,6 +221,14 @@
           </div>
         </section>
       {/if}
+    {/if}
+
+    {#if phase === "post" && (attendance || detail?.referee || match.venue)}
+      <p class="meta">
+        {#if match.venue}<span>{match.venue}</span>{/if}
+        {#if attendance}<span>Attendance {attendance.toLocaleString("en-GB")}</span>{/if}
+        {#if detail?.referee}<span>Referee {detail.referee}</span>{/if}
+      </p>
     {/if}
 
     {#if phase === "post" && analysis}
@@ -375,6 +405,14 @@
   .potm-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
   .potm .rating { height: 28px; min-width: 40px; font-size: 15px; }
   .pname { font-size: 17px; font-weight: 700; }
+  .wdl { display: flex; gap: 2px; height: 8px; margin-top: 8px; }
+  .wdl i { height: 8px; border-radius: 2px; min-width: 2px; }
+  .wdl .h { background: var(--accent); }
+  .wdl .d { background: var(--faint); }
+  .wdl .a { background: var(--text); }
+  .wdl-key { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .wdl-key b { color: var(--text); }
+  .wdl-key .right { text-align: right; }
   .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .form-head { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; margin-bottom: 4px; flex-wrap: wrap; }
   .dots { display: inline-flex; gap: 3px; }

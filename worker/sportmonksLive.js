@@ -7,7 +7,7 @@
 // Cadence (per isolate, both leagues): the season id twelve-hourly; the
 // fixture window (five weeks back for form, three ahead for the date strip)
 // every ten minutes, every two while a match is on or about to start; the
-// in-play list once a minute, and only while one is; the table every ten
+// in-play list every 30 seconds, and only while one is; the table every ten
 // minutes, every five while a match is on.
 
 import { COMPETITIONS, SPORTMONKS_COMPETITION_CODES } from "../src/competitions.js";
@@ -17,12 +17,12 @@ import { sportmonks, sportmonksBody, sportmonksPages } from "./sportmonksClient.
 const SEASON_TTL_MS = 12 * 60 * 60 * 1000;
 const WINDOW_TTL_MS = 10 * 60 * 1000;
 const HOT_WINDOW_TTL_MS = 2 * 60 * 1000;
-const INPLAY_TTL_MS = 60 * 1000;
+const INPLAY_TTL_MS = 30 * 1000;
 const TABLE_TTL_MS = 10 * 60 * 1000;
 const HOT_TABLE_TTL_MS = 5 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FEED_INCLUDES = "participants;state;scores;periods;round;venue";
-const DETAIL_INCLUDES = "participants;scores;state;periods;events;lineups.details;formations;venue;referees.referee;round";
+const DETAIL_INCLUDES = "participants;scores;state;periods;events;lineups.details;formations;venue;referees.referee;round;coaches;metadata";
 const ENDED = new Set(["FT", "AET", "FT_PEN", "POSTPONED", "CANCELLED", "ABANDONED", "DELETED", "AWARDED", "WO"]);
 
 export function isSportmonksCompetition(code) {
@@ -87,6 +87,6 @@ export async function findSportmonksMatch(env, id, now = Date.now()) {
 export async function sportmonksMatchDetail(env, match, now = Date.now()) {
   const id = sportmonksIdOf(match.id);
   const ttl = match.status === "FINISHED" ? 10 * 60 * 1000 : match.status === "TIMED" ? 5 * 60 * 1000 : 30 * 1000;
-  const fixture = await sportmonks(env, `/fixtures/${id}?include=${DETAIL_INCLUDES}&filters=lineupDetailTypes:118,119`, ttl, now);
+  const fixture = await sportmonks(env, `/fixtures/${id}?include=${DETAIL_INCLUDES}`, ttl, now);
   return fixture ? mapSportmonksDetail(fixture) : null;
 }

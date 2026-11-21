@@ -1,4 +1,5 @@
 <script>
+  import ClubSheet from "./ClubSheet.svelte";
   import Crest from "./Crest.svelte";
   import MatchRow from "./MatchRow.svelte";
   import StakeStrip from "./StakeStrip.svelte";
@@ -15,7 +16,15 @@
     defaultMatchDay, groupByCompetition, hasScore, latestKeyMoment, matchesOnDay, minuteText, redCards, untilKickoff,
   } from "./matchCentre.js";
 
-  let { matches, feeds, follows, wire, flashed, desktop, matchup = null, openId = null, initialDay = null, now, onopen } = $props();
+  let { matches, feeds, follows, wire, flashed, desktop, matchup = null, openId = null, initialDay = null, now, onopen, onfollow = null } = $props();
+
+  // The club sheet: one club's fixtures and results ({ code, team } or null).
+  let club = $state(null);
+  const openClub = (code, team) => (club = { code, team });
+  function openFromClub(match) {
+    club = null;
+    onopen(match);
+  }
 
   const today = $derived(localDateKey(now));
   const days = $derived(matchDays(matches));
@@ -113,6 +122,10 @@
   }
 </script>
 
+{#if club}
+  <ClubSheet {club} {matches} {follows} {desktop} onclose={() => (club = null)} onopen={openFromClub} {onfollow} />
+{/if}
+
 <div class="home" class:desktop>
   {#if desktop}
     <aside class="left">
@@ -126,7 +139,7 @@
       {/each}
       <div class="label gap">Your clubs</div>
       {#each follows as follow}
-        <div class="club"><Crest team={follow.team} /> <span>{displayTeamName(follow.team)}</span></div>
+        <button class="club" onclick={() => openClub(follow.competition, follow.team)} aria-label="{displayTeamName(follow.team)} fixtures and results"><Crest team={follow.team} /> <span>{displayTeamName(follow.team)}</span></button>
       {/each}
       <div class="label gap">Show</div>
       <button class="toggle" class:on={!liveOnly && !myTeams} aria-pressed={!liveOnly && !myTeams} onclick={() => { liveOnly = false; myTeams = false; }}>All matches</button>
@@ -188,7 +201,7 @@
     {/if}
 
     {#if tableFirst}
-      <TablePanel {feeds} {follows} competition={tableComp} oncompetition={code => (tableComp = code)} compact />
+      <TablePanel {feeds} {follows} competition={tableComp} oncompetition={code => (tableComp = code)} onteam={openClub} compact />
     {/if}
 
     {#if !desktop}
@@ -228,7 +241,7 @@
     {#if !desktop}
       <Wire items={wire} {follows} {onopen} {matches} />
       {#if !tableFirst}
-        <TablePanel {feeds} {follows} competition={tableComp} oncompetition={code => (tableComp = code)} compact />
+        <TablePanel {feeds} {follows} competition={tableComp} oncompetition={code => (tableComp = code)} onteam={openClub} compact />
       {/if}
     {/if}
   </main>
@@ -244,7 +257,7 @@
       {#if rightShows === "wire" && wire.length}
         <Wire items={wire} {follows} {onopen} {matches} expandedDefault />
       {:else}
-        <TablePanel {feeds} {follows} competition={tableComp} oncompetition={code => (tableComp = code)} wide />
+        <TablePanel {feeds} {follows} competition={tableComp} oncompetition={code => (tableComp = code)} onteam={openClub} wide />
       {/if}
     </aside>
   {/if}

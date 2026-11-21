@@ -9,8 +9,8 @@ import { sportmonks } from "./sportmonksClient.js";
 
 const SEASON_LIST_TTL_MS = 12 * 60 * 60 * 1000;
 const PLAYER_TTL_MS = 6 * 60 * 60 * 1000;
-// Premier League, Champions League, Serie A, La Liga.
-const LEAGUES = [8, 2, 384, 564];
+// Premier League, Champions League, Serie A, La Liga, Europa, Conference.
+const LEAGUES = [8, 2, 384, 564, 5, 2286];
 
 export async function currentSeasonIds(env, now = Date.now()) {
   const ids = new Set();
