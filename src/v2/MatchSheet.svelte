@@ -14,7 +14,7 @@
     clubForm, freshness, matchPhase, minuteText, momentumBars, moments, playerOfMatch, redCards, scorerLines, statRows, untilKickoff,
   } from "./matchCentre.js";
 
-  let { match, feed, follows, now, desktop, onclose, onfollow, ontalksignin } = $props();
+  let { match, feed, follows, now, desktop, onclose, onfollow, ontalksignin, onteam = null } = $props();
 
   const phase = $derived(matchPhase(match));
   const home = $derived(displayTeamName(match.homeTeam));
@@ -148,10 +148,12 @@
     <div class="score">
       {#each [["home", match.homeTeam, home], ["away", match.awayTeam, away]] as [side, team, name], i}
         <div class="team" style:order={i === 0 ? 0 : 2}>
-          <Crest {team} size={44} />
+          {#if onteam}
+            <button class="club-open" onclick={() => onteam(match.competitionCode, team)} aria-label="{name} fixtures and results" tabindex="-1"><Crest {team} size={44} /></button>
+          {:else}<Crest {team} size={44} />{/if}
           <span class="tname">
             {#if side === "away" && detail && redCards(detail, team)}<i class="redcard" role="img" aria-label="Red card"></i>{/if}
-            {name}
+            {#if onteam}<button class="club-open name" onclick={() => onteam(match.competitionCode, team)} aria-label="{name} fixtures and results">{name}</button>{:else}{name}{/if}
             {#if side === "home" && detail && redCards(detail, team)}<i class="redcard" role="img" aria-label="Red card"></i>{/if}
             <button class="star" class:on={isFollowed(team)} aria-pressed={isFollowed(team)} aria-label="{isFollowed(team) ? 'Unfollow' : 'Follow'} {name}" onclick={() => onfollow(match.competitionCode, team)}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill={isFollowed(team) ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.8 5.8 6.2.9-4.5 4.4 1.1 6.3L12 17.5 6.4 20.4l1.1-6.3L3 9.7l6.2-.9z" /></svg>
@@ -356,6 +358,9 @@
   .fresh.delayed { color: var(--gold); }
   .score { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; padding: 0 8px; }
   .team { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+  .club-open { padding: 0; font: inherit; color: inherit; border-radius: 50%; }
+  .club-open.name { border-radius: 4px; min-height: 32px; }
+  .club-open.name:hover { text-decoration: underline; }
   .tname { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; text-align: center; }
   .star { width: 44px; height: 44px; margin: -6px -10px; display: inline-flex; align-items: center; justify-content: center; color: var(--faint); }
   .star.on { color: var(--accent); }
