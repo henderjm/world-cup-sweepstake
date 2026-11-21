@@ -109,6 +109,16 @@ npm run mobile:apk
 npm run mobile:ios:simulator
 ```
 
+`npm run mobile:sync` (and so both build commands) refuses to run while Android
+lists the Firebase plugins without `android/app/google-services.json`, even for
+an iOS build. Without that file, build iOS with
+`npm run build && npx cap sync ios && node scripts/build-mobile.mjs ios-simulator`.
+
+The app opens on V2 (Home, Live). Fantasy, Play and You are V1 in a same-origin
+iframe; native detection works there (verified in the iOS Simulator), but
+Firebase plugin calls made from inside that frame are unverified until Firebase
+is configured: check sign-in and Enable on this device from You on a real phone.
+
 The APK is `mobile-builds/kickoff-draft-debug.apk`. Share it directly for Android
 testing; the recipient must allow installation from their download source. It
 uses a local debug signing key, not a production signing identity. Builds from

@@ -86,3 +86,29 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .bn-msg__tool:hover { color: var(--muted, #8b95a0); }
 .bn-msg__tool.is-done { cursor: default; display: inline-flex; align-items: center; }
 .bn__notice { color: var(--gold, #f5c542); }
+
+/* Native app (Capacitor, src/native.js adds .native-app): the page is drawn
+   edge to edge under the status bar, so the sticky header and the full-screen
+   sheets move below the safe area. :root raises specificity above the
+   components' scoped rules; the website never gets this class. */
+:root.native-app .top { padding-top: env(safe-area-inset-top); height: calc(52px + env(safe-area-inset-top)); }
+:root.native-app .tabs { top: calc(52px + env(safe-area-inset-top)); }
+:root.native-app .sheet:not(.desktop) { padding-top: env(safe-area-inset-top); }
+:root.native-app .sheet:not(.desktop) .sticky { top: env(safe-area-inset-top); }
+
+/* Foreground notification banner (src/nativePush.js). */
+.notification-alert {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top));
+  left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+  z-index: 100;
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+}
+.notification-alert button { background: none; border: 0; color: var(--text); font: inherit; text-align: left; }
+.notification-alert button:first-child { flex: 1; }
