@@ -4,9 +4,10 @@
 // API-Football allowance, which is the point: see the comment on SA/PD in
 // src/competitions.js.
 //
-// Cadence (per isolate, both leagues): the season id twelve-hourly; the
-// fixture window (five weeks back for form, three ahead for the date strip)
-// every ten minutes, every two while a match is on or about to start; the
+// Cadence (per isolate, per league): the season id twelve-hourly; the whole
+// season's fixtures six-hourly (club fixtures and results, the league
+// pages, form), the same cadence as the API-Football schedule; the fixture
+// window (five weeks back, three ahead) every ten minutes, every two while a match is on or about to start; the
 // in-play list every 30 seconds, and only while one is; the table every ten
 // minutes, every five while a match is on.
 
@@ -15,6 +16,10 @@ import { mapSportmonksDetail, mapSportmonksFeed, sportmonksIdOf, sportmonksInsta
 import { sportmonks, sportmonksBody, sportmonksPages } from "./sportmonksClient.js";
 
 const SEASON_TTL_MS = 12 * 60 * 60 * 1000;
+const SEASON_FIXTURES_TTL_MS = 6 * 60 * 60 * 1000;
+// The largest season seen is 8 pages of 50 (La Liga 380; the Conference
+// League's 366 including qualifying); headroom so a bigger one still fits.
+const SEASON_MAX_PAGES = 12;
 const WINDOW_TTL_MS = 10 * 60 * 1000;
 const HOT_WINDOW_TTL_MS = 2 * 60 * 1000;
 const INPLAY_TTL_MS = 30 * 1000;
@@ -58,6 +63,19 @@ export async function getSportmonksLive(env, code, now = Date.now()) {
     fixtures = fixtures.map(fixture => live.get(fixture.id) ?? fixture);
     fetchedAt = inplay.fetchedAt;
   }
+  // The window and the in-play list are newer than the season list, so they
+  // go last: mapSportmonksFeed keeps the last copy of each fixture id. A
+  // failed season read degrades to the window alone rather than failing
+  // the live feed.
+  let seasonFixtures = [];
+  if (season?.id) {
+    try {
+      seasonFixtures = (await sportmonksPages(env, `/fixtures?filters=fixtureSeasons:${season.id}&per_page=50&include=${FEED_INCLUDES}`, SEASON_FIXTURES_TTL_MS, now, SEASON_MAX_PAGES)).rows;
+    } catch (error) {
+      console.error(`sportmonks season fixtures ${code}: ${error.message}`);
+    }
+  }
+  fixtures = [...seasonFixtures, ...fixtures];
   const standings = season?.id
     ? (await sportmonks(env, `/standings/seasons/${season.id}?include=participant;details`, isHot ? HOT_TABLE_TTL_MS : TABLE_TTL_MS, now)) ?? []
     : [];

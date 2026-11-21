@@ -11,7 +11,7 @@ const env = { SPORTMONKS_API_KEY: "test-key" };
 const NOW = Date.parse("2026-11-01T15:00:00Z");
 
 let calls;
-function stub({ upcoming = null, live = [] } = {}) {
+function stub({ upcoming = null, live = [], season = [], seasonFails = false } = {}) {
   calls = [];
   globalThis.fetch = async (url, init) => {
     const path = String(url).replace("https://api.sportmonks.com/v3/football", "");
@@ -22,6 +22,10 @@ function stub({ upcoming = null, live = [] } = {}) {
     if (path.startsWith("/leagues/")) data = { id: 384, currentseason: { id: 27895, name: "2026/2027" } };
     else if (path.startsWith("/fixtures/between/")) data = [finished, ...(upcoming ? [upcoming] : [])];
     else if (path.startsWith("/livescores/inplay")) data = live;
+    else if (path.startsWith("/fixtures?filters=fixtureSeasons:")) {
+      if (seasonFails) return new Response("{}", { status: 500 });
+      data = season;
+    }
     else if (path.startsWith("/standings/")) data = standings;
     else if (path.startsWith("/fixtures/")) data = finished;
     return new Response(JSON.stringify({ data, pagination, rate_limit: { remaining: 2400, resets_in_seconds: 900, requested_entity: "Fixture" } }));
@@ -66,4 +70,21 @@ test("an offset id finds its match and its detail", async () => {
   const detail = await sportmonksMatchDetail(env, match, NOW);
   assert.equal(detail.goals.length, 3);
   assert.equal(await findSportmonksMatch(env, 1557450, NOW), null, "an API-Football id is never looked up here");
+});
+
+test("the whole season is in the feed, with the window's newer copy winning", async () => {
+  const later = { ...finished, id: 4242, starting_at: "2027-05-23 18:45:00", state: { developer_name: "NS" } };
+  const staleCopy = { ...finished, state: { developer_name: "NS" } };
+  stub({ season: [staleCopy, later] });
+  const feed = await getSportmonksLive(env, "SA", NOW);
+  assert.ok(feed.matches.some(entry => entry.id === appMatchId(4242)), "a fixture months out comes from the season list");
+  const known = feed.matches.filter(entry => entry.id === appMatchId(finished.id));
+  assert.equal(known.length, 1, "one row per fixture");
+  assert.equal(known[0].status, "FINISHED", "the window's copy beats the season's");
+});
+
+test("a failed season read falls back to the window", async () => {
+  stub({ seasonFails: true });
+  const feed = await getSportmonksLive(env, "SA", NOW);
+  assert.equal(feed.matches[0].homeTeam, "Bologna");
 });
