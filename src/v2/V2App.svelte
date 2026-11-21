@@ -290,7 +290,7 @@
   {#if route.section === "live"}
     <div class="live-wrap" class:with-panel={desktop && openMatch}>
       {#if route.league}
-        <League code={route.league} tab={route.tab} {feeds} {follows} {flashed} {desktop} {now} onopen={open}
+        <League code={route.league} tab={route.tab} {feeds} {follows} {flashed} {desktop} {now} onopen={open} onfollow={follow}
           ontab={tab => leagueNav(route.league, tab)} oncompetition={code => leagueNav(code, route.tab)} />
       {:else}
         <Home {matches} {feeds} {follows} {wire} {flashed} {desktop} {now} {matchup} openId={openMatch?.id ?? null} initialDay={deepLinkDay} onopen={open} onfollow={follow} />

@@ -1,5 +1,6 @@
 <script>
   import { untrack } from "svelte";
+  import ClubSheet from "./ClubSheet.svelte";
   import Crest from "./Crest.svelte";
   import MatchRow from "./MatchRow.svelte";
   import PlayerSheet from "./PlayerSheet.svelte";
@@ -14,7 +15,7 @@
   // One competition: its full table, every fixture and result the feed holds,
   // and Sportmonks season leaderboards. Opening a match keeps this page
   // underneath it, so closing the match comes straight back here.
-  let { code, tab = "table", feeds, follows = [], flashed = new Set(), desktop = false, now, ontab, oncompetition, onopen } = $props();
+  let { code, tab = "table", feeds, follows = [], flashed = new Set(), desktop = false, now, ontab, oncompetition, onopen, onfollow = null } = $props();
 
   const feed = $derived(feeds.find(entry => entry.competition.code === code) ?? null);
   const matches = $derived((feed?.matches ?? []).map(match => ({ ...match, competitionCode: code })));
@@ -33,6 +34,17 @@
   });
   const fixtures = $derived(firstDays(fixtureDays, fixtureCount));
   const results = $derived(firstDays(resultDays, resultCount));
+
+  // A club tapped in the table: its fixtures and results in this competition.
+  let club = $state(null);
+  $effect(() => {
+    code;
+    club = null;
+  });
+  function openFromClub(match) {
+    club = null;
+    onopen(match);
+  }
 
   const isFollowed = match => followsTeam(follows, code, match.homeTeam) || followsTeam(follows, code, match.awayTeam);
   const dayTitle = day => (day === today ? "Today" : new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" }).format(new Date(`${day}T12:00:00`)));
@@ -93,7 +105,7 @@
     <p class="empty">{feed?.loading ? "Loading…" : `${COMPETITIONS[code]?.name ?? code} is unavailable right now.`}</p>
   {:else if tab === "table"}
     {#if feed.tables?.some(table => table.rows?.length)}
-      <TablePanel feeds={[feed]} {follows} competition={code} detailed locked wide={desktop} />
+      <TablePanel feeds={[feed]} {follows} competition={code} detailed locked wide={desktop} onteam={(teamCode, team) => (club = { code: teamCode, team })} />
     {:else}
       <p class="empty">No table for {COMPETITIONS[code]?.name ?? code} yet.</p>
     {/if}
@@ -147,6 +159,10 @@
     {/if}
   {/if}
 </main>
+
+{#if club}
+  <ClubSheet {club} {matches} {follows} {desktop} onclose={() => (club = null)} onopen={openFromClub} {onfollow} />
+{/if}
 
 {#if selected}
   <PlayerSheet player={selected.player} team={selected.team} centrePlayer={selected.centrePlayer} seasonId={selected.seasonId} onclose={() => (selected = null)} />
