@@ -196,6 +196,13 @@
       </a>
     {/if}
 
+    <!-- Mobile: the Wire sits under the highlighted matches, where it is seen
+         without scrolling past the whole fixture list. Desktop has it in the
+         right column. -->
+    {#if !desktop}
+      <Wire items={wire} {follows} {onopen} {matches} />
+    {/if}
+
     {#if matchup?.me && selectedDay === today}
       <StakeStrip {matchup} {now} />
     {/if}
@@ -239,7 +246,6 @@
     {/each}
 
     {#if !desktop}
-      <Wire items={wire} {follows} {onopen} {matches} />
       {#if !tableFirst}
         <TablePanel {feeds} {follows} competition={tableComp} oncompetition={code => (tableComp = code)} onteam={openClub} compact />
       {/if}
