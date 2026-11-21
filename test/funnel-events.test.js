@@ -399,6 +399,7 @@ test("sign-in properties carry the acquisition source and never the person", () 
   );
   assert.deepEqual(props, {
     method: "google",
+    signin_surface: null,
     new_user: true,
     signup_source: "invite",
     signup_medium: "referral",
@@ -410,10 +411,13 @@ test("sign-in properties carry the acquisition source and never the person", () 
   // A returning manager with nothing stored is a sign-in, not a sign-up.
   assert.deepEqual(signInProperties({ user: {} }, null), {
     method: "google",
+    signin_surface: null,
     new_user: false,
     signup_source: null,
     signup_medium: null,
     signup_campaign: null,
     signup_landing: null,
   });
+  assert.equal(signInProperties({ user: {} }, null, "home_preview").signin_surface, "home_preview");
+  assert.equal(signInProperties({ user: {} }, null, "evil<script>").signin_surface, null);
 });
