@@ -14,6 +14,7 @@ import {
   hasNews,
   headlines,
   managerForm,
+  previewBriefing,
   settledSince,
   shouldLand,
   topAndFlop,
@@ -183,4 +184,18 @@ test("shouldLand: news lands you unless landing is switched off; a missing pref 
   assert.equal(shouldLand({ clubs: [], fantasy: [] }, {}), false);
   assert.equal(briefingPref(undefined, "clubs"), true);
   assert.equal(briefingPref({ homeClubs: false }, "clubs"), false);
+});
+
+test("previewBriefing: real results from the polled feeds, sample fantasy, never lands", () => {
+  const matches = [
+    { ...match(1, "Arsenal", "Spurs", "FINISHED", NOW - 20 * HOUR, [2, 1]), competitionCode: "PL" },
+    { ...match(2, "Napoli", "Roma", "FINISHED", NOW - 30 * HOUR, [4, 3]), competitionCode: "SA" },
+    { ...match(3, "Wolves", "Fulham", "IN_PLAY", NOW - HOUR, [0, 0]), competitionCode: "PL" },
+  ];
+  const preview = previewBriefing({ matches, follows: [{ competition: "PL", team: "Arsenal" }], now: NOW });
+  assert.equal(preview.sample, true);
+  assert.deepEqual(preview.clubs.map((row) => row.matchId), [1]);
+  assert.equal(preview.headlines.live, 1);
+  assert.deepEqual(preview.headlines.results.map((row) => row.matchId), [1, 2]);
+  assert.equal(preview.fantasy.length, 1);
 });

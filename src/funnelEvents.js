@@ -68,6 +68,7 @@ export const FUNNEL_EVENTS = Object.freeze({
   // The account. `user_signed_in` predates this file (account.js sent it
   // inline) and is listed here so its properties get a builder like the rest.
   USER_SIGNED_IN: "user_signed_in",
+  HOME_PREVIEW_VIEWED: "user_home_preview_viewed",
 });
 
 // How a pick reached the board. The three sandbox sources are genuinely
@@ -273,9 +274,15 @@ export function claimSubmittedProperties(fantasy, flow) {
 // an invite code a visitor arrived on is reduced to the source "invite" before
 // it can reach here. `new_user` is what splits sign-UPS from sign-INS, which
 // the event name alone cannot; the Worker decides it, the browser cannot.
-export function signInProperties(result, attribution) {
+// Where a sign-in button was pressed. Separate from first-touch attribution
+// (which says how the visitor reached the site): this says which screen
+// converted them. An unknown surface is dropped rather than recorded.
+export const SIGN_IN_SURFACES = ["home_preview"];
+
+export function signInProperties(result, attribution, surface = null) {
   return {
     method: "google",
+    signin_surface: SIGN_IN_SURFACES.includes(surface) ? surface : null,
     new_user: Boolean(result?.newUser),
     signup_source: attribution?.source ?? null,
     signup_medium: attribution?.medium ?? null,

@@ -244,3 +244,41 @@ export function hasNews(briefing) {
 export function settledSince(lastKickoff, since) {
   return Number.isFinite(lastKickoff) && lastKickoff >= since - RESULT_GRACE_MS;
 }
+
+// The signed-out Home: REAL results (league-wide, plus any clubs followed on
+// this device) from the feeds the page already polls, with the fantasy cards
+// filled by a fixed sample, so a visitor sees the actual screen they would
+// get. `matches` is the combined V2 model (each carries competitionCode).
+export const SAMPLE_FANTASY = [{
+  league: { id: 0, name: "Sample league" },
+  last: {
+    gameweek: 11, result: "W", score: { mine: 62, theirs: 48 },
+    opponent: { userId: 2, name: "Dan", isBot: false }, rank: { before: 5, after: 3 },
+    top: { playerId: 1, name: "Haaland", points: 14 }, flop: { playerId: 2, name: "Rice", points: 1, isCaptain: true },
+    isNew: true,
+  },
+  next: {
+    gameweek: 12, deadline: null, locked: false,
+    opponent: { userId: 3, name: "Sam", isBot: false, form: ["W", "W", "L"] },
+    blankStarters: [{ playerId: 3, name: "Mitoma", team: "Brighton" }], doubleTeams: [],
+  },
+}];
+
+export function previewBriefing({ matches, follows, now }) {
+  const byCompetition = new Map();
+  for (const match of matches ?? []) {
+    const code = match?.competitionCode;
+    if (!code) continue;
+    if (!byCompetition.has(code)) byCompetition.set(code, []);
+    byCompetition.get(code).push(match);
+  }
+  const feeds = [...byCompetition].map(([competition, list]) => ({ competition, matches: list }));
+  const since = now - DEFAULT_LOOKBACK_MS;
+  return {
+    sample: true,
+    since: new Date(since).toISOString(),
+    clubs: clubResults({ feeds, follows, since }),
+    headlines: headlines({ feeds, follows, since }),
+    fantasy: SAMPLE_FANTASY,
+  };
+}

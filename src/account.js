@@ -177,7 +177,7 @@ function loadGis() {
   return gisLoading;
 }
 
-export async function mountSignIn(container, { onSignedIn, onError }) {
+export async function mountSignIn(container, { onSignedIn, onError, surface = null }) {
   if (!container) return;
   try {
     await loadGis();
@@ -194,7 +194,7 @@ export async function mountSignIn(container, { onSignedIn, onError }) {
           consumeAttribution();
           account = { user: result.user, follows: result.follows };
           identifyUser(result.user.email, { name: result.user.name, email: result.user.email });
-          track(FUNNEL_EVENTS.USER_SIGNED_IN, signInProperties(result, attribution));
+          track(FUNNEL_EVENTS.USER_SIGNED_IN, signInProperties(result, attribution, surface));
           emit();
           onSignedIn?.(account);
         } catch (error) {

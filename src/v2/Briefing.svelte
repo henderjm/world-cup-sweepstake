@@ -1,30 +1,47 @@
 <script>
   import Crest from "./Crest.svelte";
-  import { briefingPref } from "../briefing.js";
+  import { mountSignIn } from "../account.js";
+  import { briefingPref, previewBriefing } from "../briefing.js";
+  import { FUNNEL_EVENTS } from "../funnelEvents.js";
+  import { track } from "../telemetry.js";
   import { COMPETITIONS } from "../competitions.js";
   import { displayTeamName } from "../domain.js";
 
-  let { briefing = null, loading = false, failed = false, signedIn = false, prefs = {}, matches = [], now, onopen, onpref } = $props();
+  let { briefing = null, loading = false, failed = false, signedIn = false, prefs = {}, matches = [], follows = [], now, onopen, onpref } = $props();
+
+  // Signed out, the same cards render from a preview: real results, sample
+  // fantasy. Built from the minute clock so it is not rebuilt every second.
+  const minute = $derived(Math.floor(now / 60_000) * 60_000);
+  const view = $derived(signedIn ? briefing : previewBriefing({ matches, follows, now: minute }));
+  const sample = $derived(!signedIn);
+
+  let signInBox = $state(null);
+  let signInFailed = $state(false);
+  $effect(() => {
+    if (!sample || !signInBox) return;
+    track(FUNNEL_EVENTS.HOME_PREVIEW_VIEWED, {});
+    mountSignIn(signInBox, { surface: "home_preview", onError: () => (signInFailed = true) });
+  });
 
   const CARD_LABELS = { fantasyNext: "This week", fantasyLast: "Last gameweek", clubs: "Your clubs", headlines: "Around the leagues" };
 
-  const shown = key => briefingPref(prefs, key);
+  const shown = key => sample || briefingPref(prefs, key);
   const hidden = $derived(Object.keys(CARD_LABELS).filter(key => !shown(key)));
-  const fantasy = $derived(briefing?.fantasy ?? []);
+  const fantasy = $derived(view?.fantasy ?? []);
   const nexts = $derived(fantasy.filter(entry => entry.next));
   const lasts = $derived(fantasy.filter(entry => entry.last));
-  const clubs = $derived(briefing?.clubs ?? []);
+  const clubs = $derived(view?.clubs ?? []);
   // A followed club's result already has its own card; repeat it here only
   // when that card is hidden.
-  const results = $derived((briefing?.headlines?.results ?? [])
+  const results = $derived((view?.headlines?.results ?? [])
     .filter(row => !(shown("clubs") && clubs.some(club => String(club.matchId) === String(row.matchId)))));
-  const live = $derived(briefing?.headlines?.live ?? 0);
+  const live = $derived(view?.headlines?.live ?? 0);
   const multiLeague = $derived(fantasy.length > 1);
   const anything = $derived((shown("fantasyNext") && nexts.length) || (shown("fantasyLast") && lasts.length)
     || (shown("clubs") && clubs.length) || (shown("headlines") && results.length));
 
-  const sinceText = $derived(briefing?.since
-    ? new Date(briefing.since).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })
+  const sinceText = $derived(view?.since
+    ? new Date(view.since).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })
     : "");
 
   function openResult(row) {
@@ -48,29 +65,30 @@
 </script>
 
 <section class="brief">
-  {#if !signedIn}
-    <div class="empty">
-      <h1>Home</h1>
-      <p class="muted">Sign in to get your clubs' results and your fantasy week here.</p>
-      <a class="btn" href="#you">Sign in</a>
-    </div>
-  {:else if loading && !briefing}
+  {#if signedIn && loading && !briefing}
     <p class="muted status" role="status">Loading…</p>
-  {:else if failed && !briefing}
+  {:else if signedIn && failed && !briefing}
     <p class="muted status" role="status">Home is unavailable right now.</p>
-  {:else if briefing}
+  {:else if view}
     <header class="head">
       <h1>Home</h1>
       {#if sinceText}<span class="label">Since {sinceText}</span>{/if}
     </header>
+
+    {#if sample}
+      <div class="join">
+        <h2>Your clubs and your fantasy week, the moment you open the app</h2>
+        {#if signInFailed}<a class="btn" href="#you">Sign in</a>{:else}<div class="gis" bind:this={signInBox}></div>{/if}
+      </div>
+    {/if}
 
     {#if live > 0}
       <a class="live-row" href="#live"><span class="dot pulse" aria-hidden="true"></span>{live} live now</a>
     {/if}
 
     {#if shown("fantasyNext") && nexts.length}
-      <article class="card stake">
-        <header><h2 class="label">{CARD_LABELS.fantasyNext}</h2><button class="hide" onclick={() => onpref("fantasyNext", false)}>Hide</button></header>
+      <article class="card stake" class:sample>
+        <header><h2 class="label">{CARD_LABELS.fantasyNext}</h2>{#if sample}<span class="label">Sample</span>{:else}<button class="hide" onclick={() => onpref("fantasyNext", false)}>Hide</button>{/if}</header>
         {#each nexts as { league, next }}
           <div class="row">
             {#if multiLeague}<span class="label">{league.name}</span>{/if}
@@ -89,15 +107,15 @@
               {/if}
               {#if next.doubleTeams.length}<span>Double: {next.doubleTeams.map(displayTeamName).join(", ")}</span>{/if}
             </div>
-            <a class="go" href="#fantasy">My team</a>
+            {#if !sample}<a class="go" href="#fantasy">My team</a>{/if}
           </div>
         {/each}
       </article>
     {/if}
 
     {#if shown("fantasyLast") && lasts.length}
-      <article class="card stake">
-        <header><h2 class="label">{CARD_LABELS.fantasyLast}</h2><button class="hide" onclick={() => onpref("fantasyLast", false)}>Hide</button></header>
+      <article class="card stake" class:sample>
+        <header><h2 class="label">{CARD_LABELS.fantasyLast}</h2>{#if sample}<span class="label">Sample</span>{:else}<button class="hide" onclick={() => onpref("fantasyLast", false)}>Hide</button>{/if}</header>
         {#each lasts as { league, last }}
           <div class="row">
             {#if multiLeague}<span class="label">{league.name}</span>{/if}
@@ -121,7 +139,7 @@
 
     {#if shown("clubs") && clubs.length}
       <article class="card">
-        <header><h2 class="label">{CARD_LABELS.clubs}</h2><button class="hide" onclick={() => onpref("clubs", false)}>Hide</button></header>
+        <header><h2 class="label">{CARD_LABELS.clubs}</h2>{#if !sample}<button class="hide" onclick={() => onpref("clubs", false)}>Hide</button>{/if}</header>
         {#each clubs as row}
           <button class="result" onclick={() => openResult(row)}>
             <span class="team"><Crest team={row.homeTeam} />{displayTeamName(row.homeTeam)}</span>
@@ -135,7 +153,7 @@
 
     {#if shown("headlines") && results.length}
       <article class="card">
-        <header><h2 class="label">{CARD_LABELS.headlines}</h2><button class="hide" onclick={() => onpref("headlines", false)}>Hide</button></header>
+        <header><h2 class="label">{CARD_LABELS.headlines}</h2>{#if !sample}<button class="hide" onclick={() => onpref("headlines", false)}>Hide</button>{/if}</header>
         {#each results as row}
           <button class="result" onclick={() => openResult(row)}>
             <span class="team"><Crest team={row.homeTeam} />{displayTeamName(row.homeTeam)}</span>
@@ -147,8 +165,9 @@
       </article>
     {/if}
 
-    {#if !anything}<p class="muted status">Nothing new since {sinceText}.</p>{/if}
+    {#if !anything && !sample}<p class="muted status">Nothing new since {sinceText}.</p>{/if}
 
+    {#if !sample}
     <footer class="prefs">
       {#each hidden as key}
         <button class="restore" onclick={() => onpref(key, true)}>Show {CARD_LABELS[key]}</button>
@@ -158,6 +177,7 @@
         Open here when there's news
       </label>
     </footer>
+    {/if}
   {/if}
 </section>
 
@@ -166,10 +186,12 @@
   h1 { margin: 0; font-size: 28px; font-weight: 900; font-style: italic; text-transform: uppercase; letter-spacing: -0.02em; }
   .head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
   .status { padding: 24px 0; }
-  .empty { padding: 24px 0; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
-  .empty p { margin: 0; }
   .btn { background: var(--accent); color: var(--accent-ink); font-weight: 700; padding: 0 18px; min-height: 44px; display: inline-flex; align-items: center; border-radius: 8px; }
   .live-row { display: inline-flex; align-items: center; gap: 8px; color: var(--accent); font-weight: 600; min-height: 44px; }
+  .join { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; padding: 4px 0 8px; }
+  .join h2 { margin: 0; font-size: 18px; font-weight: 700; line-height: 1.3; }
+  .gis { min-height: 44px; }
+  .card.sample { opacity: 0.75; }
   .card { background: var(--surface); border-radius: 12px; padding: 12px 16px; display: flex; flex-direction: column; }
   .card.stake { box-shadow: inset 3px 0 0 var(--violet); }
   .card header { display: flex; align-items: center; justify-content: space-between; }

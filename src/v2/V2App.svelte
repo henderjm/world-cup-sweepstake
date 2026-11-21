@@ -351,7 +351,7 @@
 
   {#if route.section === "home"}
     <Briefing {briefing} loading={briefingLoading} failed={briefingFailed} signedIn={Boolean(account)}
-      prefs={account?.user?.prefs ?? {}} {matches} {now} onopen={open} onpref={briefingPrefChange} />
+      prefs={account?.user?.prefs ?? {}} {matches} {follows} {now} onopen={open} onpref={briefingPrefChange} />
   {:else if route.section === "live"}
     <div class="live-wrap" class:with-panel={desktop && openMatch}>
       {#if route.league}
