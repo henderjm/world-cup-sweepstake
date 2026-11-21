@@ -1,12 +1,14 @@
-import { Capacitor, registerPlugin } from "@capacitor/core";
-import { App } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
+import { isFramed, nativePlugin, pluginAvailable } from "./native.js";
 import { DATA_API } from "./data.js";
 import { authHeaders, currentAccount } from "./account.js";
 import { createNativePushController, notificationPath } from "./nativePushController.js";
 
 // No web implementation: the website keeps its existing VAPID subscription.
-const sdk = registerPlugin("FirebaseMessaging");
-export const nativePushAvailable = () => Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("FirebaseMessaging");
+// Inside V2's iframe these are the top page's plugins (see src/nativePlugins.js).
+const sdk = nativePlugin("FirebaseMessaging");
+const App = nativePlugin("App");
+export const nativePushAvailable = () => Capacitor.isNativePlatform() && pluginAvailable("FirebaseMessaging");
 let controller;
 let resumeListener;
 
@@ -38,8 +40,10 @@ export function nativePush() {
       storage: window.localStorage,
       accountKey: () => currentAccount()?.user.email,
       platform: Capacitor.getPlatform(),
-      navigate: (path) => { window.location.href = path; },
-      received: (notification) => { showForegroundNotification(notification).catch(() => {}); },
+      // The top page's own controller handles taps and the foreground banner;
+      // a framed copy doing it too would navigate the iframe, not the app.
+      navigate: isFramed ? () => {} : (path) => { window.location.href = path; },
+      received: isFramed ? () => {} : (notification) => { showForegroundNotification(notification).catch(() => {}); },
       request: async (path, body) => {
         const response = await fetch(`${DATA_API}${path}`, {
           method: "POST",

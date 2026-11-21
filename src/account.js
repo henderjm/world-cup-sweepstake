@@ -9,10 +9,9 @@ import {
   parseStoredAttribution,
   serializeAttribution,
 } from "./attribution.js";
-import { isNative } from "./native.js";
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { isNative, nativePlugin, pluginAvailable } from "./native.js";
 
-const nativeAuth = registerPlugin("FirebaseAuthentication");
+const nativeAuth = () => nativePlugin("FirebaseAuthentication");
 
 async function resumeNotifications() {
   if (!isNative) return;
@@ -191,7 +190,7 @@ function loadGis() {
 export async function mountSignIn(container, { onSignedIn, onError, surface = null }) {
   if (!container) return;
   if (isNative) {
-    if (!Capacitor.isPluginAvailable("FirebaseAuthentication")) {
+    if (!pluginAvailable("FirebaseAuthentication")) {
       container.innerHTML = '<p>Sign-in and notifications are not configured in this build. Use <a href="https://kickoffdraft.com/#you" target="_blank" rel="noopener noreferrer">Kickoff Draft in your browser</a> for your account and leagues.</p>';
       return;
     }
@@ -201,7 +200,7 @@ export async function mountSignIn(container, { onSignedIn, onError, surface = nu
     button.onclick = async () => {
       button.disabled = true;
       try {
-        const result = await nativeAuth.signInWithGoogle();
+        const result = await nativeAuth().signInWithGoogle();
         if (!result.credential?.idToken) throw new Error("Google did not return an identity token");
         await finishSignIn(result.credential.idToken, surface);
         onSignedIn?.(account);
@@ -259,7 +258,7 @@ export async function signOut() {
     const { nativePush, nativePushAvailable } = await import("./nativePush.js");
     // Keep the session available for retry if the device cannot be detached.
     if (nativePushAvailable()) await nativePush().disable();
-    if (Capacitor.isPluginAvailable("FirebaseAuthentication")) await nativeAuth.signOut();
+    if (pluginAvailable("FirebaseAuthentication")) await nativeAuth().signOut();
   }
   try {
     if (session) await api("/auth/logout", { method: "POST" });
