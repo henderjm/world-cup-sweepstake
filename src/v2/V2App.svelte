@@ -1,9 +1,12 @@
 <script>
   import { onMount } from "svelte";
+  import Briefing from "./Briefing.svelte";
   import Home from "./Home.svelte";
   import League from "./League.svelte";
   import MatchSheet from "./MatchSheet.svelte";
-  import { currentAccount, onAccountChange, restoreAccount, toggleFollow } from "../account.js";
+  import { currentAccount, onAccountChange, restoreAccount, savePrefs, toggleFollow } from "../account.js";
+  import { BRIEFING_PREFS, shouldLand } from "../briefing.js";
+  import { loadBriefing, markBriefingSeen } from "../briefingApi.js";
   import { switchVersion } from "../appVersion.js";
   import { COMPETITIONS, COMPETITION_CODES } from "../competitions.js";
   import { DATA_API, loadModel } from "../data.js";
@@ -18,12 +21,16 @@
   import { leagueHash, parseRoute, routeBase } from "./league.js";
 
   const SECTIONS = [
+    { key: "home", label: "Home", icon: '<path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/>' },
     { key: "live", label: "Live", icon: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>' },
     { key: "fantasy", label: "Fantasy", icon: '<path d="M8 4h8l4 4-3 2v10H7V10L4 8z"/>' },
     { key: "play", label: "Play", icon: '<path d="M7 4v16l13-8z"/>' },
     { key: "you", label: "You", icon: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/>' },
   ];
   const BANNER_KEY = "kd-v2-banner-dismissed";
+  // Only a bare visit (no hash) may be redirected to Home: a deep link, a
+  // shared match or an explicit #live is where the visitor asked to go.
+  const landingCandidate = location.hash === "" || location.hash === "#";
 
   const scoreFeeds = createScoreFeeds(loadModel);
   const localFollows = createLocalFollows();
@@ -38,6 +45,9 @@
   let desktop = $state(false);
   let banner = $state(readBanner());
   let matchup = $state(null);
+  let briefing = $state(null);
+  let briefingLoading = $state(false);
+  let briefingFailed = $state(false);
   // The day a deep-linked match falls on, applied to the list once.
   const deepLinkId = readRoute().matchId;
   let deepLinkDay = $state(null);
@@ -189,6 +199,52 @@
     account = currentAccount() ? { ...currentAccount() } : null;
   }
 
+  // The Home briefing is fetched once per sign-in and held for the session, so
+  // going back to Home after marking it seen still shows what was new.
+  let briefingFor = null;
+  let landed = false;
+  async function refreshBriefing() {
+    const owner = currentAccount()?.user?.email ?? null;
+    if (!owner) { briefing = null; briefingFor = null; return; }
+    if (briefingFor === owner) return;
+    briefingFor = owner;
+    briefingLoading = true;
+    briefingFailed = false;
+    try {
+      const body = await loadBriefing();
+      if (currentAccount()?.user?.email !== owner) return;
+      briefing = body;
+      if (landingCandidate && !landed && route.section === "live" && !route.league && !route.matchId
+        && shouldLand(body, currentAccount()?.user?.prefs)) {
+        history.replaceState(null, "", "#home");
+        route = readRoute();
+        track("v2_home_landed", {});
+      }
+    } catch {
+      briefingFailed = true;
+      briefingFor = null;
+    } finally {
+      briefingLoading = false;
+      landed = true;
+    }
+  }
+
+  // Seen means "looked at Home and moved on": leaving the section, or the tab
+  // going away while on it. Marking on arrival would empty Home on a reload.
+  let viewedHome = false;
+  $effect(() => {
+    if (route.section === "home" && briefing) viewedHome = true;
+    else if (viewedHome) { viewedHome = false; markBriefingSeen(); }
+  });
+
+  async function briefingPrefChange(key, value) {
+    track("v2_home_pref", { key, value });
+    try {
+      await savePrefs({ [BRIEFING_PREFS[key]]: value });
+      account = currentAccount() ? { ...currentAccount() } : null;
+    } catch { /* the toggle reverts on the next account read */ }
+  }
+
   // The stake strip reads the first league that has drafted. Refreshed on the
   // poll at most once a minute, like V1's live matchup refresh.
   let stakeAt = 0;
@@ -233,7 +289,12 @@
       account = next ? { ...next } : null;
       if (next) mergeDeviceFollows(next.user?.email);
       loadStake();
+      refreshBriefing();
     });
+    const onHide = () => {
+      if (document.visibilityState === "hidden" && viewedHome) { viewedHome = false; markBriefingSeen(); }
+    };
+    document.addEventListener("visibilitychange", onHide);
     const tick = setInterval(() => (now = Date.now()), 1000);
     restoreAccount();
     refresh().then(schedule);
@@ -243,6 +304,7 @@
       removeEventListener("hashchange", onHash);
       removeEventListener("message", onFrameNav);
       removeEventListener("storage", onStorage);
+      document.removeEventListener("visibilitychange", onHide);
       offAccount();
       clearInterval(tick);
       clearTimeout(timer);
@@ -287,7 +349,10 @@
     </div>
   {/if}
 
-  {#if route.section === "live"}
+  {#if route.section === "home"}
+    <Briefing {briefing} loading={briefingLoading} failed={briefingFailed} signedIn={Boolean(account)}
+      prefs={account?.user?.prefs ?? {}} {matches} {now} onopen={open} onpref={briefingPrefChange} />
+  {:else if route.section === "live"}
     <div class="live-wrap" class:with-panel={desktop && openMatch}>
       {#if route.league}
         <League code={route.league} tab={route.tab} {feeds} {follows} {flashed} {desktop} {now} onopen={open} onfollow={follow}

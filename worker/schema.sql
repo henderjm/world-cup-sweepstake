@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS users (
   signup_medium TEXT,
   signup_campaign TEXT,
   signup_landing TEXT,
+  -- When the Home briefing was last read (src/briefing.js); NULL = never.
+  -- Migration 015 adds it to an older database.
+  last_briefed_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

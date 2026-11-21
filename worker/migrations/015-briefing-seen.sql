@@ -1,0 +1,13 @@
+-- The Home briefing (src/briefing.js): when this person last finished reading
+-- it. GET /briefing looks back to this instant for "what happened since you
+-- were here"; POST /briefing/seen stamps it. Server-side rather than
+-- localStorage so a phone and a laptop agree on what is already seen.
+--
+-- NULL means "never briefed", which briefingSince turns into a bounded
+-- default lookback. A Worker running before this is applied still serves the
+-- briefing (the read falls back to NULL) and answers /briefing/seen with 501.
+--
+-- Apply with:
+--   npx wrangler d1 execute squad-goals --remote --file worker/migrations/015-briefing-seen.sql
+-- Fresh databases get this column straight from worker/schema.sql instead.
+ALTER TABLE users ADD COLUMN last_briefed_at TEXT;
