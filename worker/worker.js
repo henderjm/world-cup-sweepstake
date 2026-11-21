@@ -1663,7 +1663,7 @@ async function briefingWeek(env, plMatches, now) {
 
 async function briefingLeagueEntry(env, league, userId, week, since) {
   const { gameweek, matches, timetable, clubCounts } = week;
-  const [memberRows, fixtureRows] = await Promise.all([
+  const [memberRows, fixtureRows, scoreRows] = await Promise.all([
     env.DB.prepare(
       `SELECT m.user_id, m.team_name, u.name, u.email, u.is_bot FROM fantasy_league_members m
        JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
@@ -1676,19 +1676,34 @@ async function briefingLeagueEntry(env, league, userId, week, since) {
     )
       .bind(league.id)
       .all(),
+    // The unpaired manager's own score, which is in no fixture row: needed to
+    // derive the Average opponent an odd league plays (src/fantasyAverage.js).
+    env.DB.prepare(
+      `SELECT gameweek, user_id, points FROM fantasy_gameweek_scores WHERE league_id = ?1 AND gameweek < ?2`,
+    )
+      .bind(league.id, gameweek)
+      .all(),
   ]);
-  const members = (memberRows.results ?? []).map((row) => ({
+  const realMembers = (memberRows.results ?? []).map((row) => ({
     userId: row.user_id,
     name: memberDisplayName(row),
     isBot: Boolean(row.is_bot),
   }));
-  const fixtures = (fixtureRows.results ?? []).map((row) => ({
+  const realFixtures = (fixtureRows.results ?? []).map((row) => ({
     gameweek: row.gameweek,
     homeUserId: row.home_user_id,
     awayUserId: row.away_user_id,
     homeScore: row.home_score,
     awayScore: row.away_score,
   }));
+  // The same Average-merged set the standings route builds its table from, so
+  // the briefing's rank and an opponent's form count Average results exactly
+  // as the Standings tab does. A no-op for an even league.
+  const { fixtures, members } = withAverageOpponent(
+    realFixtures,
+    realMembers,
+    (scoreRows.results ?? []).map((row) => ({ gameweek: row.gameweek, userId: row.user_id, points: row.points })),
+  );
 
   const lastGameweek = gameweek - 1;
   let last = null;

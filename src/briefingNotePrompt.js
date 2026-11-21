@@ -12,7 +12,7 @@ import { wireLineAcceptable } from "./liveWirePrompt.js";
 import { sanitizePromptText } from "./fantasyRecapPrompt.js";
 
 // Stored with each note, so a prompt change is attributable in the data.
-export const BRIEFING_NOTE_PROMPT_VERSION = 1;
+export const BRIEFING_NOTE_PROMPT_VERSION = 2;
 
 export const BRIEFING_NOTE_SCHEMA = {
   type: "object",
@@ -67,7 +67,9 @@ export function buildBriefingNotePrompt({ last = null, next = null }) {
           squadLocked: Boolean(next.locked),
           opponent: next.opponent ? name(next.opponent.name, "a rival") : "the league average",
           opponentIsBot: Boolean(next.opponent?.isBot),
-          opponentForm: next.opponent?.form ?? [],
+          // Spelled out and labelled: a bare ["W", "W", "L"] was read oldest
+          // first, so a side on a losing run was described as recovering.
+          opponentRecentResultsNewestFirst: (next.opponent?.form ?? []).map(result => ({ W: "won", L: "lost", D: "drew" }[result] ?? result)),
           startersWithNoMatch: (next.blankStarters ?? []).map(player => name(player.name, "a starter")),
           clubsPlayingTwice: next.doubleTeams ?? [],
         }

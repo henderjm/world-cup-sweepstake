@@ -19,6 +19,7 @@ test("buildBriefingNotePrompt: carries the card facts and flattens user names", 
   assert.equal(payload.lastGameweek.opponent.includes("\n"), false);
   assert.deepEqual(payload.thisGameweek.startersWithNoMatch, ["Mitoma"]);
   assert.equal(payload.thisGameweek.opponent, "Sam");
+  assert.deepEqual(payload.thisGameweek.opponentRecentResultsNewestFirst, ["won", "lost"]);
 });
 
 test("buildBriefingNotePrompt: an odd league's unpaired week faces the average", () => {
