@@ -46,3 +46,12 @@ test("day groups keep order and reveal a few at a time", () => {
   assert.equal(firstDays(groups, 2).more, true);
   assert.equal(firstDays(groups, 3).more, false);
 });
+
+test("a V1 link keeps its whole hash for the framed screen, so an invite code survives", () => {
+  const sections = ["live", "fantasy", "play", "you"];
+  assert.deepEqual(parseRoute("#join/ABC123", sections), { section: "fantasy", league: null, tab: null, matchId: null, frame: "join/ABC123" });
+  assert.equal(parseRoute("#fantasy/league/7", sections).frame, "fantasy/league/7");
+  assert.equal(parseRoute("#you", sections).frame, "you");
+  assert.equal(parseRoute("#tables", sections).frame, undefined);
+  assert.equal(parseRoute("#tables", sections).section, "live");
+});

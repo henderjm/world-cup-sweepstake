@@ -31,8 +31,13 @@ export function parseRoute(hash, sections = ["live"]) {
       matchId: league[3] ?? null,
     };
   }
-  const section = raw.split("/")[0];
-  return { section: sections.includes(section) ? section : "live", league: null, tab: null, matchId: null };
+  // A V1 link (an invite `#join/<code>`, `#fantasy/...`) keeps its whole hash
+  // as `frame`, which the framed V1 screen loads, so V2 being the default
+  // never drops an invite code. `join` is a Fantasy screen.
+  const head = raw.split("/")[0];
+  const section = head === "join" ? "fantasy" : head;
+  if (!sections.includes(section)) return { section: "live", league: null, tab: null, matchId: null };
+  return { section, league: null, tab: null, matchId: null, ...(section === "live" ? {} : { frame: raw }) };
 }
 
 export function leagueHash(code, tab = "table", matchId = null) {

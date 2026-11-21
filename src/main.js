@@ -4,8 +4,8 @@ import { chosenVersion, isEmbedded } from "./appVersion.js";
 import "./telemetry.js";
 import { captureAttribution } from "./account.js";
 
-// V1 stays the default and loads exactly as before; V2 is a separate bundle
-// chosen per device (src/appVersion.js), so neither app's styles or global
+// V2 is the default; V1 loads exactly as before for anyone who chose it. Each
+// is a separate bundle chosen per device (src/appVersion.js), so neither app's styles or global
 // listeners ever exist in the other's page.
 // Where this visit came from, recorded before either app can rewrite the URL
 // (V1 replaces the hash on its first render) and before any sign-in can

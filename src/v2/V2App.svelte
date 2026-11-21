@@ -309,7 +309,7 @@
     {#if !frameReady}<p class="frame-loading" role="status">Loading {route.section}…</p>{/if}
     {#key route.section}
       <iframe class="framed" class:you={route.section === "you"} class:ready={frameReady} title="{route.section} section"
-        src="./?embed=1#{route.section}" onload={() => (frameReady = true)}></iframe>
+        src="./?embed=1#{route.frame || route.section}" onload={() => (frameReady = true)}></iframe>
     {/key}
   {/if}
 
