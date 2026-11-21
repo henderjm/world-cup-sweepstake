@@ -115,9 +115,12 @@ an iOS build. Without that file, build iOS with
 `npm run build && npx cap sync ios && node scripts/build-mobile.mjs ios-simulator`.
 
 The app opens on V2 (Home, Live). Fantasy, Play and You are V1 in a same-origin
-iframe; native detection works there (verified in the iOS Simulator), but
-Firebase plugin calls made from inside that frame are unverified until Firebase
-is configured: check sign-in and Enable on this device from You on a real phone.
+iframe. Native detection works there, but plugin calls do NOT: in the iOS
+Simulator `App.getInfo()` answers from the top page and fails from the frame
+with `"App" plugin is not implemented on ios`, because Capacitor registers
+plugins in the top page only. So even with Firebase configured, the You
+screen's sign-in and Enable on this device will report "not configured" until
+those calls are relayed to the top page.
 
 The APK is `mobile-builds/kickoff-draft-debug.apk`. Share it directly for Android
 testing; the recipient must allow installation from their download source. It
