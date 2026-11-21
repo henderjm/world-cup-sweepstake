@@ -63,6 +63,11 @@ const TEAM_DISPLAY_NAMES = new Map(
   Object.entries({
     "Brighton Hove": "Brighton",
     Nottingham: "Nottm Forest",
+    "Atlético de Madrid": "Atlético",
+    "Deportivo A Coruña": "Deportivo",
+    "Deportivo Alavés": "Alavés",
+    "Racing Santander": "Racing",
+    "Rayo Vallecano": "Rayo",
   }),
 );
 
