@@ -109,7 +109,7 @@
 
   function compactLabel(pick) {
     const match = pick.match;
-    const lead = pick.reason === "followed" ? "Your club" : "Next";
+    const lead = pick.reason === "followed" ? "Following" : "Next";
     if (hasScore(match) && !isLive(match.status)) return `${lead} · ${statusLabel(match)}`;
     return `${lead} · ${match.utcDate && localDateKey(match.utcDate) === today ? timeLabel(match.utcDate) : `${dayLabel(match.utcDate)} ${timeLabel(match.utcDate)}`}`;
   }
@@ -127,7 +127,7 @@
           {COMPETITIONS[code].name}{#if live}<span class="live small">{live} live</span>{/if}
         </button>
       {/each}
-      <div class="label gap">Your clubs</div>
+      <div class="label gap">Following</div>
       {#each follows as follow}
         <button class="club" onclick={() => openClub(follow.competition, follow.team)} aria-label="{displayTeamName(follow.team)} fixtures and results"><Crest team={follow.team} /> <span>{displayTeamName(follow.team)}</span></button>
       {/each}
@@ -167,7 +167,7 @@
       {@const match = hero.match}
       <a class="card hero" class:flash={flashed.has(match.id)} href="#match/{match.id}" onclick={event => { event.preventDefault(); onopen(match); }}>
         <div class="hero-top">
-          <span class="label" class:live={hero.reason === "followed"}>{hero.reason === "followed" ? "Your club" : "Match of the moment"}</span>
+          <span class="label" class:live={hero.reason === "followed"}>{hero.reason === "followed" ? "Following" : "Match of the moment"}</span>
           <span class="live minute"><span class="dot pulse" aria-hidden="true"></span>{statusLabel(match)}</span>
         </div>
         <div class="hero-grid">
@@ -222,7 +222,7 @@
         </a>
       </div>
       {#each group.matches as match (match.id)}
-        <MatchRow {match} flash={flashed.has(match.id)} followed={isFollowed(match)} aside={isFollowed(match) ? "Your club" : ""} {onopen} />
+        <MatchRow {match} flash={flashed.has(match.id)} followHome={followsTeam(follows, match.competitionCode, match.homeTeam)} followAway={followsTeam(follows, match.competitionCode, match.awayTeam)} {onopen} />
       {/each}
     {:else}
       <p class="empty">
