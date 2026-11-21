@@ -8,11 +8,22 @@
   // about whether a scoreline may be shown yet.
   let { matchup, now } = $props();
 
-  const timing = $derived(matchupTiming(matchup, now));
-  const score = side => (timing.showScores ? String(side?.score ?? 0) : "-");
-  const summary = $derived(trackerSummary(matchup.me?.progress));
+  // A null matchup is the reserved slot shown while a returning manager's
+  // matchup loads: same box, no content, so its arrival moves nothing.
+  const timing = $derived(matchup ? matchupTiming(matchup, now) : null);
+  const score = side => (timing?.showScores ? String(side?.score ?? 0) : "-");
+  const summary = $derived(matchup ? trackerSummary(matchup.me?.progress) : "");
 </script>
 
+{#if !matchup}
+<div class="stake slot" aria-hidden="true">
+  <span class="dot"></span>
+  <div class="grow">
+    <div class="top"><span class="line">&nbsp;</span></div>
+    <div class="sub">&nbsp;</div>
+  </div>
+</div>
+{:else}
 <a class="stake" href="#fantasy" aria-label="Open your gameweek {matchup.gameweek} matchup">
   <span class="dot" aria-hidden="true"></span>
   <div class="grow">
@@ -27,8 +38,10 @@
     <div class="sub muted">{summary || timing.label}</div>
   </div>
 </a>
+{/if}
 
 <style>
+  .slot .dot { opacity: 0.3; }
   .stake { display: flex; align-items: center; gap: 12px; margin: 12px 16px 0; padding: 10px 0 12px; border-bottom: 1px solid var(--line); }
   :global(.desktop) .stake { margin: 12px 0 0; }
   .dot { background: var(--violet); }

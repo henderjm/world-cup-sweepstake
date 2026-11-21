@@ -5,7 +5,7 @@
   import Home from "./Home.svelte";
   import League from "./League.svelte";
   import MatchSheet from "./MatchSheet.svelte";
-  import { currentAccount, onAccountChange, restoreAccount, savePrefs, toggleFollow } from "../account.js";
+  import { currentAccount, onAccountChange, restoreAccount, savePrefs, sessionToken, toggleFollow } from "../account.js";
   import { BRIEFING_PREFS, shouldLand } from "../briefing.js";
   import { loadBriefing, markBriefingSeen } from "../briefingApi.js";
   import { switchVersion } from "../appVersion.js";
@@ -180,16 +180,48 @@
     }
   }
 
-  async function refresh() {
-    await Promise.all(COMPETITION_CODES.map(code => scoreFeeds.refresh(code)));
+  // Each league paints as soon as its own feed lands: waiting on all of them
+  // made the whole page as slow as the slowest provider (a 6s Bundesliga read
+  // once held every league, and the Wire, on "Loading matches…").
+  function applyFeeds() {
     feeds = scoreFeeds.values();
     if (deepLinkId && !deepLinkDay) {
       const linked = combinedScoreModel(feeds).matches.find(match => String(match.id) === deepLinkId);
       if (linked?.utcDate) deepLinkDay = localDateKey(linked.utcDate);
     }
-    noteScores(combinedScoreModel(feeds).matches);
+  }
+
+  let firstLoad = true;
+  async function refresh() {
     loadWire();
+    const started = performance.now();
+    const timings = {};
+    let firstScoresMs = null;
+    await Promise.all(COMPETITION_CODES.map(code => scoreFeeds.refresh(code).then(feed => {
+      timings[code] = Math.round(performance.now() - started);
+      if (firstScoresMs == null && feed.hasData) firstScoresMs = Math.round(performance.now());
+      applyFeeds();
+    })));
+    noteScores(combinedScoreModel(feeds).matches);
     if (anyLive) loadStake();
+    if (firstLoad) {
+      firstLoad = false;
+      reportScoresReady(firstScoresMs, timings);
+    }
+  }
+
+  // Web vitals cannot see this: LCP fires on the empty layout, before any
+  // score has arrived. This is the number a visitor actually waits for.
+  function reportScoresReady(firstScoresMs, timings) {
+    const [slowest, slowestMs] = Object.entries(timings).sort((a, b) => b[1] - a[1])[0] ?? [null, null];
+    track("v2_scores_ready", {
+      first_scores_ms: firstScoresMs,
+      all_feeds_ms: Math.round(performance.now()),
+      slowest_competition: slowest,
+      slowest_feed_ms: slowestMs,
+      ...Object.fromEntries(Object.entries(timings).map(([code, ms]) => [`feed_${code}_ms`, ms])),
+      route: route.section,
+    });
   }
 
   let wireCursor = null;
@@ -292,6 +324,21 @@
   // The stake strip reads the first league that has drafted. Refreshed on the
   // poll at most once a minute, like V1's live matchup refresh.
   let stakeAt = 0;
+  // Whether the last visit showed a matchup. The strip loads after the
+  // scores, so without a reserved slot it pushed the match list down (CLS
+  // 0.22 on its own); a returning manager gets the space held from first paint.
+  const STAKE_HINT_KEY = "kd-v2-stake";
+  let stakeHint = $state(readStakeHint());
+  function readStakeHint() {
+    try { return localStorage.getItem(STAKE_HINT_KEY) === "1"; } catch { return false; }
+  }
+  function writeStakeHint(value) {
+    stakeHint = value;
+    try { value ? localStorage.setItem(STAKE_HINT_KEY, "1") : localStorage.removeItem(STAKE_HINT_KEY); } catch { /* a hint only */ }
+  }
+  // No session means no matchup is coming: a stale hint must not hold an
+  // empty slot open for a signed-out visitor.
+  const stakePending = $derived(stakeHint && !matchup && Boolean(account || sessionToken()));
   async function loadStake() {
     if (!currentAccount() || !fantasyAvailable()) { matchup = null; return; }
     if (Date.now() - stakeAt < 60_000) return;
@@ -299,6 +346,7 @@
     try {
       const league = (await listLeagues()).find(entry => entry.draftStatus === "complete");
       matchup = league ? await loadMatchup(league.id) : null;
+      writeStakeHint(Boolean(matchup?.me));
     } catch { /* the strip is additive; keep the last good copy */ }
   }
 
@@ -343,6 +391,7 @@
     const offAccount = onAccountChange(next => {
       account = next ? { ...next } : null;
       if (next) mergeDeviceFollows(next.user?.email);
+      else writeStakeHint(false);
       loadStake();
       refreshBriefing();
     });
@@ -415,7 +464,7 @@
         <League code={route.league} tab={route.tab} {feeds} {follows} {flashed} {desktop} {now} onopen={open} onfollow={follow} onclub={openClub}
           ontab={tab => leagueNav(route.league, tab)} oncompetition={code => leagueNav(code, route.tab)} />
       {:else}
-        <Home {matches} {feeds} {follows} {wire} {flashed} {desktop} {now} {matchup} openId={openMatch?.id ?? null} initialDay={deepLinkDay} onopen={open} onfollow={follow} onclub={openClub} />
+        <Home {matches} {feeds} {follows} {wire} {flashed} {desktop} {now} {matchup} {stakePending} openId={openMatch?.id ?? null} initialDay={deepLinkDay} onopen={open} onfollow={follow} onclub={openClub} />
       {/if}
       {#if openMatch}
         <MatchSheet match={openMatch} feed={openFeed} {follows} {now} {desktop} onclose={close} onfollow={follow} ontalksignin={() => go("#you")}
