@@ -89,9 +89,10 @@
     {#if shown("fantasyNext") && nexts.length}
       <article class="card stake" class:sample>
         <header><h2 class="label">{CARD_LABELS.fantasyNext}</h2>{#if sample}<span class="label">Sample</span>{:else}<button class="hide" onclick={() => onpref("fantasyNext", false)}>Hide</button>{/if}</header>
-        {#each nexts as { league, next }}
+        {#each nexts as { league, next, note }}
           <div class="row">
             {#if multiLeague}<span class="label">{league.name}</span>{/if}
+            {#if note}<p class="note-ai">{note}</p>{/if}
             <div class="line">
               <span class="big">GW{next.gameweek} v {next.opponent ? next.opponent.name : "Average"}</span>
               {#if next.opponent?.isBot}<span class="chip">BOT</span>{/if}
@@ -200,6 +201,7 @@
   .row { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid var(--line); }
   .row:first-of-type { border-top: 0; }
   .line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .note-ai { margin: 0 0 4px; font-size: 15px; font-style: italic; line-height: 1.35; }
   .big { font-size: 18px; font-weight: 700; }
   .chip { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; color: var(--muted); border: 1px solid var(--line-2); border-radius: 4px; padding: 1px 4px; }
   .form { display: inline-flex; gap: 3px; }

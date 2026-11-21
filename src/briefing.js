@@ -251,6 +251,7 @@ export function settledSince(lastKickoff, since) {
 // get. `matches` is the combined V2 model (each carries competitionCode).
 export const SAMPLE_FANTASY = [{
   league: { id: 0, name: "Sample league" },
+  note: "Good win, but Mitoma has no match this week, so swap him out before the deadline.",
   last: {
     gameweek: 11, result: "W", score: { mine: 62, theirs: 48 },
     opponent: { userId: 2, name: "Dan", isBot: false }, rank: { before: 5, after: 3 },

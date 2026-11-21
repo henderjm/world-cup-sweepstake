@@ -722,3 +722,16 @@ CREATE TABLE IF NOT EXISTS live_wire_items (
 CREATE INDEX IF NOT EXISTS live_wire_items_day ON live_wire_items(match_day, updated_at);
 CREATE INDEX IF NOT EXISTS live_wire_items_match ON live_wire_items(match_id);
 CREATE INDEX IF NOT EXISTS live_wire_items_ai ON live_wire_items(ai_state, created_at);
+
+-- The Home briefing AI note ledger (migration 016, runScheduledBriefingNotes).
+CREATE TABLE IF NOT EXISTS briefing_notes (
+  league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  gameweek INTEGER NOT NULL,
+  state TEXT NOT NULL,          -- sending | done | rejected | failed
+  line TEXT,                    -- set only when state = done
+  prompt_version INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (league_id, user_id, gameweek)
+);
+CREATE INDEX IF NOT EXISTS briefing_notes_created ON briefing_notes(created_at);

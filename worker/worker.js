@@ -50,6 +50,13 @@ import {
   headlines,
   settledSince,
 } from "../src/briefing.js";
+import {
+  BRIEFING_NOTE_PROMPT_VERSION,
+  BRIEFING_NOTE_SCHEMA,
+  BRIEFING_NOTE_SYSTEM_PROMPT,
+  briefingNoteAcceptable,
+  buildBriefingNotePrompt,
+} from "../src/briefingNotePrompt.js";
 import { assertApiFootballPayload } from "../src/apiFootballPayload.js";
 import { createUpstreamPacer } from "../src/apiPacer.js";
 import {
@@ -958,6 +965,9 @@ export default {
         // ordering dependency is the xP blend above, whose table it reads; it
         // needs nothing from the scoring, waiver or recap passes.
         await runCronPass("draft-recaps", () => runScheduledDraftRecaps(env));
+        // The Home briefing's AI note. Discretionary like the recaps and
+        // capped per tick, so it trails them; it reads only settled results.
+        await runCronPass("briefing-notes", () => runScheduledBriefingNotes(env));
         // Dead last, after the recap. Every pass above spends API-Football
         // calls, so running the flush behind all of them is what lets one tick
         // record its own spend instead of leaving it for the next one. It is
@@ -1601,9 +1611,10 @@ async function briefingFeeds(env) {
   return settled.filter((entry) => entry.status === "fulfilled").map((entry) => entry.value);
 }
 
-// One entry per drafted league the caller is in: last gameweek's result and
-// the week ahead. Pending and drafting leagues have neither yet, so they are
-// left to the Fantasy tab.
+// One entry per drafted league the caller is in: last gameweek's result, the
+// week ahead, and this gameweek's AI note when the cron has written one.
+// Pending and drafting leagues have neither yet, so they are left to the
+// Fantasy tab.
 async function briefingFantasy(env, userId, plMatches, now, since) {
   const leagues = await env.DB.prepare(
     `SELECT l.id, l.name FROM fantasy_leagues l
@@ -1614,75 +1625,182 @@ async function briefingFantasy(env, userId, plMatches, now, since) {
     .all();
   if (!(leagues.results ?? []).length) return [];
 
-  const gameweek = await currentFantasyGameweek(env);
-  const matches = plMatches ? assignGameweeks(plMatches) : null;
-  const timetable = matches ? gameweekTimetable({ matches, gameweek, now }) : null;
-  const clubCounts = matches ? clubFixtureCounts(matches, gameweek) : null;
+  const week = await briefingWeek(env, plMatches, now);
+  const notes = await env.DB.prepare(
+    `SELECT league_id, line FROM briefing_notes WHERE user_id = ?1 AND gameweek = ?2 AND state = 'done'`,
+  )
+    .bind(userId, week.gameweek)
+    .all()
+    .then((rows) => new Map((rows.results ?? []).map((row) => [row.league_id, row.line])))
+    .catch(() => new Map()); // migration 016 not applied yet: no notes
 
   return Promise.all(
-    leagues.results.map(async (league) => {
-      const [memberRows, fixtureRows] = await Promise.all([
-        env.DB.prepare(
-          `SELECT m.user_id, m.team_name, u.name, u.email, u.is_bot FROM fantasy_league_members m
-           JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
-        )
-          .bind(league.id)
-          .all(),
-        env.DB.prepare(
-          `SELECT gameweek, home_user_id, away_user_id, home_score, away_score
-           FROM fantasy_h2h_fixtures WHERE league_id = ?1`,
-        )
-          .bind(league.id)
-          .all(),
-      ]);
-      const members = (memberRows.results ?? []).map((row) => ({
-        userId: row.user_id,
-        name: memberDisplayName(row),
-        isBot: Boolean(row.is_bot),
-      }));
-      const fixtures = (fixtureRows.results ?? []).map((row) => ({
-        gameweek: row.gameweek,
-        homeUserId: row.home_user_id,
-        awayUserId: row.away_user_id,
-        homeScore: row.home_score,
-        awayScore: row.away_score,
-      }));
-
-      const lastGameweek = gameweek - 1;
-      let last = null;
-      if (lastGameweek >= 1) {
-        const { roster, starters } = await resolveManagerLineup(env, league.id, userId, lastGameweek);
-        last = fantasyResult({
-          fixtures,
-          members,
-          userId,
-          gameweek: lastGameweek,
-          players: await starterPoints(env, roster, starters, lastGameweek),
-        });
-        if (last) last.isNew = settledSince(matches ? lastKickoffInGameweek(matches, lastGameweek) : null, since);
-      }
-
-      const { roster, starters } = await resolveManagerLineup(env, league.id, userId, gameweek);
-      const byId = new Map(roster.map((player) => [player.id, player]));
-      const starterPlayers = starters
-        .map((entry) => byId.get(entry.playerId))
-        .filter(Boolean)
-        .map((player) => ({ playerId: player.id, name: player.name, team: player.team }));
-      const next = fantasyPreview({
-        fixtures,
-        members,
-        userId,
-        gameweek,
-        deadline: timetable?.squad.deadline ?? null,
-        locked: timetable?.squad.locked ?? false,
-        starters: starterPlayers,
-        roster: roster.map((player) => ({ playerId: player.id, name: player.name, team: player.team })),
-        clubCounts,
-      });
-
-      return { league: { id: league.id, name: league.name }, last, next };
-    }),
+    leagues.results.map(async (league) => ({
+      ...(await briefingLeagueEntry(env, league, userId, week, since)),
+      note: notes.get(league.id) ?? null,
+    })),
   );
+}
+
+// The gameweek-level facts every league entry shares. `plMatches` may be null
+// (feed unreadable): blanks, doubles and the deadline are then unknown rather
+// than guessed.
+async function briefingWeek(env, plMatches, now) {
+  const gameweek = await currentFantasyGameweek(env);
+  const matches = plMatches ? assignGameweeks(plMatches) : null;
+  return {
+    gameweek,
+    matches,
+    timetable: matches ? gameweekTimetable({ matches, gameweek, now }) : null,
+    clubCounts: matches ? clubFixtureCounts(matches, gameweek) : null,
+  };
+}
+
+async function briefingLeagueEntry(env, league, userId, week, since) {
+  const { gameweek, matches, timetable, clubCounts } = week;
+  const [memberRows, fixtureRows] = await Promise.all([
+    env.DB.prepare(
+      `SELECT m.user_id, m.team_name, u.name, u.email, u.is_bot FROM fantasy_league_members m
+       JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
+    )
+      .bind(league.id)
+      .all(),
+    env.DB.prepare(
+      `SELECT gameweek, home_user_id, away_user_id, home_score, away_score
+       FROM fantasy_h2h_fixtures WHERE league_id = ?1`,
+    )
+      .bind(league.id)
+      .all(),
+  ]);
+  const members = (memberRows.results ?? []).map((row) => ({
+    userId: row.user_id,
+    name: memberDisplayName(row),
+    isBot: Boolean(row.is_bot),
+  }));
+  const fixtures = (fixtureRows.results ?? []).map((row) => ({
+    gameweek: row.gameweek,
+    homeUserId: row.home_user_id,
+    awayUserId: row.away_user_id,
+    homeScore: row.home_score,
+    awayScore: row.away_score,
+  }));
+
+  const lastGameweek = gameweek - 1;
+  let last = null;
+  if (lastGameweek >= 1) {
+    const { roster, starters } = await resolveManagerLineup(env, league.id, userId, lastGameweek);
+    last = fantasyResult({
+      fixtures,
+      members,
+      userId,
+      gameweek: lastGameweek,
+      players: await starterPoints(env, roster, starters, lastGameweek),
+    });
+    if (last) last.isNew = settledSince(matches ? lastKickoffInGameweek(matches, lastGameweek) : null, since);
+  }
+
+  const { roster, starters } = await resolveManagerLineup(env, league.id, userId, gameweek);
+  const byId = new Map(roster.map((player) => [player.id, player]));
+  const starterPlayers = starters
+    .map((entry) => byId.get(entry.playerId))
+    .filter(Boolean)
+    .map((player) => ({ playerId: player.id, name: player.name, team: player.team }));
+  const next = fantasyPreview({
+    fixtures,
+    members,
+    userId,
+    gameweek,
+    deadline: timetable?.squad.deadline ?? null,
+    locked: timetable?.squad.locked ?? false,
+    starters: starterPlayers,
+    roster: roster.map((player) => ({ playerId: player.id, name: player.name, team: player.team })),
+    clubCounts,
+  });
+
+  return { league: { id: league.id, name: league.name }, last, next };
+}
+
+// The Home briefing's AI note: one line per human manager per league per
+// gameweek, written once the previous gameweek has settled in that league so
+// the note can speak to the result. Same discipline as the Wire: the model
+// sees only the card facts (src/briefingNotePrompt.js), a line stating a
+// figure the payload lacked is rejected, and the claim is the ledger row's
+// primary key (INSERT OR IGNORE as 'sending') so overlapping ticks never pay
+// twice. Capped per tick and per day because the cost scales with managers,
+// and nothing depends on it: a failed or rejected note leaves the cards alone
+// and is not retried.
+const BRIEFING_NOTES_PER_TICK = 8;
+const BRIEFING_NOTES_DAILY_CAP = 300;
+
+async function runScheduledBriefingNotes(env) {
+  if (!env.DB || !env.ANTHROPIC_API_KEY) return;
+  const now = Date.now();
+  const week = await briefingWeek(env, await currentFantasyMatches(env), now);
+  const lastGameweek = week.gameweek - 1;
+
+  let spent;
+  try {
+    spent = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM briefing_notes WHERE created_at >= datetime('now', '-1 day')`,
+    ).first();
+  } catch {
+    return; // migration 016 not applied yet
+  }
+  const budget = Math.min(BRIEFING_NOTES_PER_TICK, BRIEFING_NOTES_DAILY_CAP - Number(spent?.n ?? 0));
+  if (budget <= 0) return;
+
+  const candidates = await env.DB.prepare(
+    `SELECT m.league_id, l.name, m.user_id FROM fantasy_league_members m
+     JOIN fantasy_leagues l ON l.id = m.league_id
+     JOIN users u ON u.id = m.user_id
+     WHERE l.draft_status = 'complete' AND COALESCE(u.is_bot, 0) = 0
+       AND NOT EXISTS (SELECT 1 FROM briefing_notes n
+         WHERE n.league_id = m.league_id AND n.user_id = m.user_id AND n.gameweek = ?1)
+       AND (?2 < 1 OR EXISTS (SELECT 1 FROM fantasy_h2h_fixtures f
+         WHERE f.league_id = m.league_id AND f.gameweek = ?2 AND f.home_score IS NOT NULL))
+     ORDER BY m.league_id, m.user_id LIMIT ?3`,
+  )
+    .bind(week.gameweek, lastGameweek, budget)
+    .all();
+  const rows = candidates.results ?? [];
+  if (!rows.length) return;
+
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 20_000 });
+  const model = env.BRIEFING_MODEL || WIRE_DEFAULT_MODEL;
+  for (const row of rows) {
+    const claim = await env.DB.prepare(
+      `INSERT OR IGNORE INTO briefing_notes (league_id, user_id, gameweek, state, prompt_version)
+       VALUES (?1, ?2, ?3, 'sending', ?4)`,
+    )
+      .bind(row.league_id, row.user_id, week.gameweek, BRIEFING_NOTE_PROMPT_VERSION)
+      .run();
+    if (!claim.meta?.changes) continue;
+    let state = "failed";
+    let line = null;
+    try {
+      const { last, next } = await briefingLeagueEntry(env, { id: row.league_id, name: row.name }, row.user_id, week, now);
+      const payload = buildBriefingNotePrompt({ last, next });
+      const response = await client.messages.create({
+        model,
+        max_tokens: 1000,
+        output_config: { effort: "low", format: { type: "json_schema", schema: BRIEFING_NOTE_SCHEMA } },
+        system: BRIEFING_NOTE_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: payload }],
+      });
+      if (response.stop_reason === "refusal") throw Error("refused");
+      const text = response.content.find((block) => block.type === "text")?.text ?? "";
+      line = briefingNoteAcceptable(JSON.parse(text).line, payload);
+      state = line ? "done" : "rejected";
+      console.log(`briefing-note ${state} league ${row.league_id} gw ${week.gameweek} (in ${response.usage?.input_tokens ?? "?"}, out ${response.usage?.output_tokens ?? "?"})`);
+    } catch (error) {
+      console.error(`briefing-note failed league ${row.league_id}: ${error?.message ?? error}`);
+    }
+    await env.DB.prepare(
+      `UPDATE briefing_notes SET state = ?1, line = ?2 WHERE league_id = ?3 AND user_id = ?4 AND gameweek = ?5`,
+    )
+      .bind(state, line, row.league_id, row.user_id, week.gameweek)
+      .run();
+  }
 }
 
 // The caller's starters with their settled points for one gameweek, summed
