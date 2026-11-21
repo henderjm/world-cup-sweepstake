@@ -1,4 +1,5 @@
 import test from "node:test";
+import { withAverageOpponent } from "../src/fantasyAverage.js";
 import assert from "node:assert/strict";
 
 import {
@@ -207,4 +208,25 @@ test("noteFactsKey: changes when a blank starter is fixed or the squad locks, no
   assert.notEqual(noteFactsKey(next), noteFactsKey({ locked: false, blankStarters: [{ playerId: 3 }] }));
   assert.notEqual(noteFactsKey(next), noteFactsKey({ ...next, locked: true }));
   assert.equal(noteFactsKey(null), "none");
+});
+
+test("odd league: form and rank include the Average opponent once fixtures are merged", () => {
+  const trio = [{ userId: 1, name: "A" }, { userId: 4, name: "B" }, { userId: 11, name: "C" }];
+  const stored = [
+    { gameweek: 1, homeUserId: 1, awayUserId: 4, homeScore: 40, awayScore: 22 }, // 11 unpaired
+    { gameweek: 2, homeUserId: 11, awayUserId: 4, homeScore: 33, awayScore: 22 }, // 1 unpaired
+    { gameweek: 3, homeUserId: 11, awayUserId: 1, homeScore: 29, awayScore: 37 }, // 4 unpaired
+  ];
+  const scores = [
+    { gameweek: 1, userId: 11, points: 50 }, { gameweek: 1, userId: 1, points: 40 }, { gameweek: 1, userId: 4, points: 22 },
+    { gameweek: 2, userId: 1, points: 10 }, { gameweek: 2, userId: 11, points: 33 }, { gameweek: 2, userId: 4, points: 22 },
+    { gameweek: 3, userId: 4, points: 20 }, { gameweek: 3, userId: 11, points: 29 }, { gameweek: 3, userId: 1, points: 37 },
+  ];
+  assert.deepEqual(managerForm(stored, 11, 4), ["L", "W"]);
+  const merged = withAverageOpponent(stored, trio, scores);
+  assert.deepEqual(managerForm(merged.fixtures, 11, 4), ["L", "W", "W"]);
+  // Manager 4 sat out GW3 and lost 20 to the median of 29 and 37.
+  const result = fantasyResult({ fixtures: merged.fixtures, members: merged.members, userId: 4, gameweek: 3 });
+  assert.equal(result.result, "L");
+  assert.deepEqual(result.score, { mine: 20, theirs: 33 });
 });
