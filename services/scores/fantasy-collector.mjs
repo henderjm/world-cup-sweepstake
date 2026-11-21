@@ -60,10 +60,14 @@ export class FantasyCollector {
       phase = 'validation';
       let data;
       if (dataset === 'squads') {
-        squadPlayers([payload], [job.clubs[run.index]]);
+        squadPlayers([payload], [job.clubs[run.index]], new Set());
         run.pages.push(payload); run.index++;
-        if (run.index === job.clubs.length) data = { players: squadPlayers(run.pages, job.clubs), complete: true,
-          clubIds: job.clubs.map(club => club.id), requestCount: run.requestCount };
+        if (run.index === job.clubs.length) {
+          const excludedIds = new Set();
+          const players = squadPlayers(run.pages, job.clubs, excludedIds);
+          data = { players, excludedPlayerIds: [...excludedIds], complete: true,
+            clubIds: job.clubs.map(club => club.id), requestCount: run.requestCount };
+        }
       } else if (!run.fixtures) {
         validateHistoryPage(payload, league, season, run.index + 1, run.total, run.identities);
         run.total ??= payload.paging.total; run.pages.push(payload); run.index++;

@@ -28,6 +28,22 @@ CREATE TABLE IF NOT EXISTS users (
   -- See worker/migrations/003-bot-managers.sql for adding this to a database
   -- created before bot managers shipped (fresh databases get it from here).
   is_bot INTEGER NOT NULL DEFAULT 0,
+  -- Where the person came from when they FIRST signed in (src/attribution.js):
+  -- a utm_source, "invite" (a shared league link), "learn" (a pre-rendered
+  -- Learn page), a named referrer or its host, else "direct". medium and
+  -- campaign come only from utm_* parameters; landing is the hash section
+  -- they arrived on. Written at INSERT only, never updated and never
+  -- backfilled, so NULL means "signed up before this existed". Cleaned to
+  -- [a-z0-9._-] on both the client and the Worker, so safe to GROUP BY
+  -- (scripts/metrics/14-signups-by-source.sql). Migration 014 adds these to a
+  -- database created before they existed.
+  signup_source TEXT,
+  signup_medium TEXT,
+  signup_campaign TEXT,
+  signup_landing TEXT,
+  -- When the Home briefing was last read (src/briefing.js); NULL = never.
+  -- Migration 015 adds it to an older database.
+  last_briefed_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -62,6 +78,33 @@ CREATE TABLE IF NOT EXISTS banter_messages (
 );
 CREATE INDEX IF NOT EXISTS banter_messages_match ON banter_messages(match_id, id);
 
+-- Talk moderation (src/talkModeration.js, migration 013): reports, moderator
+-- hides, muted accounts, and the hand-set moderator list.
+CREATE TABLE IF NOT EXISTS banter_reports (
+  message_id INTEGER NOT NULL REFERENCES banter_messages(id) ON DELETE CASCADE,
+  reporter_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (message_id, reporter_user_id)
+);
+CREATE TABLE IF NOT EXISTS talk_hidden (
+  message_id INTEGER PRIMARY KEY REFERENCES banter_messages(id) ON DELETE CASCADE,
+  hidden_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS talk_mutes (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  muted_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- Set by hand, never from the app: INSERT INTO talk_moderators (user_id)
+-- SELECT id FROM users WHERE email = '<the owner's email>';
+CREATE TABLE IF NOT EXISTS talk_moderators (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- The per-account rate limit reads a user's latest post.
+CREATE INDEX IF NOT EXISTS banter_messages_user ON banter_messages(user_id, id);
+
 CREATE TABLE IF NOT EXISTS banter_reactions (
   match_id INTEGER NOT NULL,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -80,6 +123,28 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS push_subs_user ON push_subscriptions(user_id);
+
+-- One row per push the Worker decided to send, so "what did we send for this
+-- match?" has an answer. Per EVENT, not per device: recipients is how many
+-- devices the prefs allowed and accepted how many push services took it (a
+-- push service accepting is not the phone displaying it). A match event with
+-- recipients = 0 is still logged, because "nobody follows either club" is the
+-- answer too. scope is 'match' (ref_id = fixture id) or 'league' (ref_id =
+-- league id). Pruned to PUSH_LOG_RETENTION_DAYS by the cron. Never read on a
+-- request path; it is for debugging from wrangler d1 execute.
+CREATE TABLE IF NOT EXISTS push_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  scope TEXT NOT NULL,
+  ref_id INTEGER,
+  pref TEXT NOT NULL,
+  tag TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  recipients INTEGER NOT NULL,
+  accepted INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS push_log_ref ON push_log(scope, ref_id, created_at);
 
 -- Last-notified state per match, so the notification cron only announces changes.
 CREATE TABLE IF NOT EXISTS notify_state (
@@ -625,3 +690,49 @@ CREATE TABLE IF NOT EXISTS prediction_entries (
 );
 CREATE INDEX IF NOT EXISTS prediction_entries_match ON prediction_entries(match_id);
 CREATE INDEX IF NOT EXISTS prediction_entries_gameweek ON prediction_entries(gameweek);
+
+-- The Wire: the live commentary timeline across every match being played
+-- (src/liveWire.js is the logic, worker/liveWireStore.js the cron pass).
+-- Append-only like the league feed: item_key is the event's stable identity,
+-- so the minute cron re-derives every watched match and INSERT OR IGNOREs, and
+-- nothing is ever announced twice. `facts` is JSON carrying FACTS, never
+-- pre-rendered prose; the template wording is produced at read time.
+--
+-- ai_state: NULL = not a moment for the model; 'pending' -> 'sending' (claimed
+-- by one cron tick with a guarded UPDATE so overlapping ticks cannot both call
+-- the model) -> 'done' | 'rejected' (the line stated a figure the payload did
+-- not contain) | 'failed' | 'expired' (too old to be worth writing).
+--
+-- A goal ruled out keeps its row (the reader saw it) with its key renamed to
+-- free the ordinal slot for the next real goal; see reconcileWire.
+CREATE TABLE IF NOT EXISTS live_wire_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_key TEXT NOT NULL UNIQUE,
+  match_id INTEGER NOT NULL,
+  competition TEXT NOT NULL,
+  match_day TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  facts TEXT NOT NULL,
+  ai_line TEXT,
+  ai_state TEXT,
+  ai_version INTEGER,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS live_wire_items_day ON live_wire_items(match_day, updated_at);
+CREATE INDEX IF NOT EXISTS live_wire_items_match ON live_wire_items(match_id);
+CREATE INDEX IF NOT EXISTS live_wire_items_ai ON live_wire_items(ai_state, created_at);
+
+-- The Home briefing AI note ledger (migration 016, runScheduledBriefingNotes).
+CREATE TABLE IF NOT EXISTS briefing_notes (
+  league_id INTEGER NOT NULL REFERENCES fantasy_leagues(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  gameweek INTEGER NOT NULL,
+  state TEXT NOT NULL,          -- sending | done | rejected | failed
+  line TEXT,                    -- set only when state = done
+  prompt_version INTEGER,
+  facts_key TEXT,               -- noteFactsKey at writing time; shown only while it still matches
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (league_id, user_id, gameweek)
+);
+CREATE INDEX IF NOT EXISTS briefing_notes_created ON briefing_notes(created_at);

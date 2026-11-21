@@ -44,11 +44,17 @@ function age(body, now, failed = false) {
     stale: failed || Boolean(body.stale) || ageMs > (active ? 45000 : 6 * 3600000), staleAgeMs: ageMs };
 }
 
-export function createStoredScoreReader({ fetcher = (...args) => fetch(...args), now = Date.now, timeoutMs = 4000 } = {}) {
-  const saved = new Map(), inflight = new Map();
+// freshMs reuses a successful read for that long instead of asking the score
+// service again. Without it every browser poll and drawer open was its own
+// Lambda invocation, so reader traffic grew with users against a gateway capped
+// at 10 requests a second. The collector refreshes a live batch every 15s, so a
+// few seconds of reuse costs no freshness worth having.
+export function createStoredScoreReader({ fetcher = (...args) => fetch(...args), now = () => Date.now(), timeoutMs = 4000, freshMs = 0 } = {}) {
+  const saved = new Map(), inflight = new Map(), fetchedAt = new Map();
   return async function read(comp, configuredOrigin) {
     const origin = storedOrigin(configuredOrigin);
     const key = `${origin}/${comp.code}/${comp.season}`;
+    if (saved.has(key) && now() - fetchedAt.get(key) < freshMs) return age(saved.get(key), now());
     let request = inflight.get(key);
     if (!request) {
       request = (async () => {
@@ -61,8 +67,8 @@ export function createStoredScoreReader({ fetcher = (...args) => fetch(...args),
             || body.snapshot.collectorEpoch < previous.snapshot.collectorEpoch
             || previous.matches.some(match => !ids.has(match.id))))
             throw Error("Stored score snapshot regressed");
-          saved.set(key, body);
-          if (saved.size > 4) saved.delete(saved.keys().next().value);
+          saved.set(key, body); fetchedAt.set(key, now());
+          if (saved.size > 4) { const first = saved.keys().next().value; saved.delete(first); fetchedAt.delete(first); }
           return age(body, now());
         } catch (error) {
           const previous = saved.get(key);

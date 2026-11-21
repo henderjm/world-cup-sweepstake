@@ -73,13 +73,19 @@ test("complete fresh stored detail preserves referee and halftime with only stro
   assert.equal(await store.readBudget(), null);
 });
 
-test("unknown played-player statistics remain null and block settlement", async t => {
+test("null defensive statistics stay null but do not block settlement; a missing position does", async t => {
   const { complete, publish, handler } = await setup(t);
   await complete();
-  await publish("players", [{ team: { id: 1 }, players: [{ player: { id: 1, name: "Player 1" },
-    statistics: [{ games: { minutes: 90, position: "D" }, tackles: { total: null } }] }] }]);
-  const detail = JSON.parse((await handler(event())).body);
+  // Full squads, as the provider sends a keeper's stats: no tackles, blocks or interceptions at all.
+  const players = position => [1, 2].map(id => ({ team: { id }, players: Array.from({ length: 11 }, (_, n) => ({
+    player: { id: id * 100 + n, name: `Player ${id}-${n}` },
+    statistics: [{ games: { minutes: 90, position: n === 0 ? position : "D" }, tackles: { total: null, blocks: null, interceptions: null } }] })) }));
+  await publish("players", players("D"));
+  let detail = JSON.parse((await handler(event())).body);
   assert.equal(detail.playerStats[0].tackles, null); assert.equal(detail.playerStats[0].blocks, null);
+  assert.notEqual(detail.coverage.players.state, "partial");
+  await publish("players", players(null));
+  detail = JSON.parse((await handler(event())).body);
   assert.equal(detail.coverage.players.state, "partial"); assert.equal(isSettleableDetail(detail), false);
 });
 
@@ -95,13 +101,16 @@ test("newer canonical score wins without refreshing old timeline or player times
   assert.equal(isSettleableDetail(detail), false);
 });
 
-test("an expired section and an expired score keep their own ages", async t => {
+test("a final result's complete detail and score keep their ages but never expire", async t => {
+  // Expiring them after six hours left finished matches unsettleable for good
+  // once the optional allowance closed (seven PL matches on 2026-10-21).
   const { complete, handler, advance, clock } = await setup(t);
   await complete(); const observed = clock(); advance(6 * 3600000 + 1);
   const detail = JSON.parse((await handler(event())).body);
-  assert.equal(detail.coverage.players.state, "stale"); assert.equal(detail.coverage.players.observedAt, observed);
-  assert.equal(detail.stale, true); assert.equal(detail.staleAgeMs, 6 * 3600000 + 1);
-  assert.equal(isSettleableDetail(detail), false);
+  assert.equal(detail.coverage.players.state, "complete"); assert.equal(detail.coverage.players.observedAt, observed);
+  assert.equal(detail.stale, false); assert.equal(detail.staleAgeMs, 6 * 3600000 + 1);
+  assert.deepEqual(detail.degraded, []);
+  assert.equal(isSettleableDetail(detail), true);
 });
 
 test("database failure is unavailable, not missing or empty detail", async () => {

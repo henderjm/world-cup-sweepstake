@@ -60,10 +60,11 @@ test("result transition and correction invalidate previously complete terminal d
   assert.equal(detailCoverage(settled, { ...final, minute: 95 }, clock()).events.state, "complete");
   const correction = { ...final, score: { home: 0, away: 0 } };
   assert.equal(detailCoverage(settled, correction, clock()).events.state, "outdated-result");
-  assert.equal(detailCoverage(settled, final, clock() + 6 * 3600000).events.state, "stale");
+  assert.equal(detailCoverage(settled, final, clock() + 6 * 3600000).events.state, "complete");
   assert.equal(detailCoverage(settled, final, clock() - 1).events.state, "invalid");
   const partial = await store.publishDetail(lease, { ...observation("lineups", 2), coverage: "partial", subject: detailSubject(final) });
   assert.equal(detailCoverage(partial, final, clock()).lineups.state, "partial");
+  assert.equal(detailCoverage(partial, final, clock() + 6 * 3600000).lineups.state, "stale");
 });
 
 test("only one concurrent section write commits against the same manifest version", async t => {

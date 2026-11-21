@@ -22,6 +22,8 @@ const controller = new AbortController();
 for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => controller.abort());
 try {
   await collector.run({ signal: controller.signal, onEvent: event => {
-    if (!["idle", "standby", "deferred"].includes(event.state)) console.log(JSON.stringify({ at: new Date().toISOString(), ...event }));
+    // Deferred is logged too: a budget refusal is exactly what explains a feed
+    // that stopped moving. Idle and standby are the resting states and are not.
+    if (!["idle", "standby"].includes(event.state)) console.log(JSON.stringify({ at: new Date().toISOString(), ...event }));
   } });
 } finally { db.destroy(); }

@@ -1,6 +1,14 @@
+import { matchCentre } from "./sportmonksCentre.js";
+import { playerSeason } from "./sportmonksPlayers.js";
+import { leagueStats } from "./sportmonksLeagueStats.js";
+import { clubStats } from "./sportmonksClubStats.js";
+import { findSportmonksMatch, getSportmonksLive, isSportmonksCompetition, sportmonksMatchDetail } from "./sportmonksLive.js";
+import { sportmonksIdOf } from "../src/sportmonksFeed.js";
+import { TALK_ACTIONS, readBanter, talkAction } from "./talkStore.js";
 import { nativeEndpoint, nativePushConfigured, sendNativePush } from "./native-push.js";
 import { createStoredDetailReader } from "./stored-detail.js";
 import { createStoredScoreReader } from "./stored-scores.js";
+import { WIRE_DEFAULT_MODEL, handleLiveWire, runLiveWirePass } from "./liveWireStore.js";
 
 // Goon Squad data API (Cloudflare Worker).
 //
@@ -32,6 +40,24 @@ import { createStoredScoreReader } from "./stored-scores.js";
 import Anthropic from "@anthropic-ai/sdk";
 import { buildPushHTTPRequest } from "@pushforge/builder";
 import { COMPETITIONS } from "../src/competitions.js";
+import {
+  briefingSince,
+  clubResults,
+  d1TimeToIso,
+  fantasyPreview,
+  fantasyResult,
+  hasNews,
+  headlines,
+  noteFactsKey,
+  settledSince,
+} from "../src/briefing.js";
+import {
+  BRIEFING_NOTE_PROMPT_VERSION,
+  BRIEFING_NOTE_SCHEMA,
+  BRIEFING_NOTE_SYSTEM_PROMPT,
+  briefingNoteAcceptable,
+  buildBriefingNotePrompt,
+} from "../src/briefingNotePrompt.js";
 import { assertApiFootballPayload } from "../src/apiFootballPayload.js";
 import { createUpstreamPacer } from "../src/apiPacer.js";
 import {
@@ -43,6 +69,8 @@ import {
   mergeFixtureUpdates,
 } from "../src/mapApiFootball.js";
 import { isFinished, isLive } from "../src/format.js";
+import { normalizeAttribution } from "../src/attribution.js";
+import { diffMatchEvents } from "../src/matchPushEvents.js";
 import { detailHasSubstance, detailSubstanceScore, DETAIL_SECTION_COUNT } from "../src/matchDetailSubstance.js";
 import {
   MATCH_DETAIL_LIVE,
@@ -96,7 +124,7 @@ import {
 import { validateTeamName } from "../src/fantasyTeamName.js";
 import { isChampionId, validateChampionChoice } from "../src/fantasyChampion.js";
 import { headToHeadFor } from "../src/fantasyHeadToHead.js";
-import { assignGameweeks, clubFixtureCounts, firstKickoffInGameweek, gameweekOf } from "../src/fantasyCalendar.js";
+import { assignGameweeks, clubFixtureCounts, firstKickoffInGameweek, gameweekOf, lastKickoffInGameweek } from "../src/fantasyCalendar.js";
 import { trackGameweek } from "../src/fantasyGameweekTracker.js";
 import {
   DEFAULT_FAAB_BUDGET,
@@ -129,7 +157,7 @@ import {
 } from "../src/fantasyBots.js";
 import { PICK_VIA } from "../src/draftLogic.js";
 import { dueDraftReminder, validateDraftSchedule } from "../src/fantasyScheduling.js";
-import { blendWithCurrentSeason } from "../src/fantasyExpectedPoints.js";
+import { blendXpThrough } from "./xpBlend.js";
 import {
   CHAT_EVENTS,
   CHAT_PAGE_SIZE,
@@ -225,8 +253,13 @@ const PAPER_RUN_TTL = 90 * 24 * 60 * 60; // 90 days
 // failure was served as a never-changing 200 for the life of the isolate, which
 // suppressed the browser's own static fallback (see src/liveStale.js).
 const lastLive = new Map();
-const readStoredScores = createStoredScoreReader();
-const readStoredDetail = createStoredDetailReader();
+// Reuse windows for stored score-service reads (see createStoredScoreReader).
+// A live match's detail moves on the collector's own 15s cadence; a final
+// result's is permanent bar a correction, which a minute's reuse barely delays.
+const STORED_FEED_FRESH_MS = 5000;
+const storedDetailFreshMs = detail => isLive(detail.status) ? 5000 : isFinished(detail.status) ? 60000 : 15000;
+const readStoredScores = createStoredScoreReader({ freshMs: STORED_FEED_FRESH_MS });
+const readStoredDetail = createStoredDetailReader({ freshMs: storedDetailFreshMs });
 
 // Per-match detail is 3 upstream requests; pacing between matches keeps a busy
 // multi-match minute-tick under the Ultra tier's ~7 req/sec ceiling instead of
@@ -269,6 +302,20 @@ function parseCompetitions(env) {
 // one, not 4. On a warm isolate the memo in fetchJson makes every one of them
 // free and only the match-detail payloads are actually spent.
 async function findKnownMatch(competitions, id, token, env = null) {
+  // Serie A and La Liga ids are offset Sportmonks ids (src/sportmonksFeed.js);
+  // they are never in an API-Football feed, so they are looked up there only.
+  if (sportmonksIdOf(id)) return env ? findSportmonksMatch(env, id) : null;
+  // Stored feeds cost no provider allowance, so there is nothing to save by
+  // stopping at the first hit: read them together. One after the other, a
+  // Champions League drawer waited for the whole Premier League feed first.
+  if (env?.SCORE_READ_ORIGIN) {
+    const feeds = await Promise.allSettled(competitions.map(comp => getLive(comp, token, env)));
+    for (const [index, feed] of feeds.entries()) {
+      const match = feed.value?.matches.find((entry) => entry.id === id);
+      if (match) return { ...match, competition: competitions[index].code };
+    }
+    return null;
+  }
   for (const comp of competitions) {
     try {
       const live = await getLive(comp, token, env);
@@ -326,6 +373,15 @@ export default {
     }
     if (url.pathname === "/me" && request.method === "GET") {
       return handleMe(request, env, cors);
+    }
+    // The Home briefing (src/briefing.js): everything new since this person
+    // last read it. Read-only aggregation of data the app already stores and
+    // feeds the cron already keeps warm; POST /briefing/seen stamps the read.
+    if (url.pathname === "/briefing" && request.method === "GET") {
+      return handleBriefing(request, env, cors);
+    }
+    if (url.pathname === "/briefing/seen" && request.method === "POST") {
+      return handleBriefingSeen(request, env, cors);
     }
     if (url.pathname === "/follows/toggle" && request.method === "POST") {
       return handleFollowToggle(request, env, cors);
@@ -597,8 +653,21 @@ export default {
       // /:comp/live, plus legacy /live serving the default (first) competition.
       const liveRoute = url.pathname.match(/^\/(?:([A-Za-z0-9]{2,6})\/)?live$/);
       if (liveRoute) {
+        const requested = liveRoute[1]?.toUpperCase();
+        if (requested && isSportmonksCompetition(requested)) {
+          // Served by Sportmonks end to end (worker/sportmonksLive.js). A
+          // failure is a 502 so the browser falls back exactly as it would for
+          // an API-Football outage.
+          if (!env.SPORTMONKS_API_KEY) return json({ error: "competition not configured" }, 501, cors);
+          try {
+            return json(await getSportmonksLive(env, requested), 200, { ...cors, "Cache-Control": "public, max-age=15" });
+          } catch (error) {
+            console.error(`route failed: /${requested}/live ${error.message}`);
+            return json({ error: "upstream unavailable" }, 502, cors);
+          }
+        }
         const comp = liveRoute[1]
-          ? competitions.find((entry) => entry.code === liveRoute[1].toUpperCase())
+          ? competitions.find((entry) => entry.code === requested)
           : competitions[0];
         if (!comp) return json({ error: "unknown competition" }, 404, cors);
         const data = await getLive(comp, token, env);
@@ -617,6 +686,108 @@ export default {
           return json({ error: "upstream unavailable" }, 502, cors);
         }
         return json(data, 200, { ...cors, "Cache-Control": env.SCORE_READ_ORIGIN ? "no-store" : "public, max-age=15" });
+      }
+
+      // A player's season figures for the V2 player sheet
+      // (worker/sportmonksPlayers.js); current seasons of covered leagues only.
+      const playerRoute = url.pathname.match(/^\/player\/(\d{1,12})\/season\/(\d{1,9})$/);
+      if (playerRoute) {
+        if (!env.SPORTMONKS_API_KEY) return json({ error: "player stats not configured" }, 501, cors);
+        if (env.DETAIL_LIMITER) {
+          const ip = request.headers.get("CF-Connecting-IP") || "anon";
+          try {
+            const { success } = await env.DETAIL_LIMITER.limit({ key: ip });
+            if (!success) return json({ error: "rate limited" }, 429, { ...cors, "Retry-After": "30" });
+          } catch {
+            // limiter unavailable, fail open
+          }
+        }
+        try {
+          const season = await playerSeason(env, Number(playerRoute[1]), Number(playerRoute[2]));
+          return json(season, 200, { ...cors, "Cache-Control": `public, max-age=${season.available ? 3600 : 300}` });
+        } catch (error) {
+          console.error(`route failed: /player/:id/season ${error.message}`);
+          return json({ available: false }, 200, { ...cors, "Cache-Control": "public, max-age=60" });
+        }
+      }
+
+      // Season leaderboards for the V2 league page's Stats tab
+      // (worker/sportmonksLeagueStats.js); current season of a covered
+      // competition only, same per-IP limiter as the player route.
+      const statsRoute = url.pathname.match(/^\/([A-Za-z]{2,6})\/stats$/);
+      if (statsRoute) {
+        const code = statsRoute[1].toUpperCase();
+        if (!COMPETITIONS[code]) return json({ error: "unknown competition" }, 404, cors);
+        if (!env.SPORTMONKS_API_KEY) return json({ error: "league stats not configured" }, 501, cors);
+        if (env.DETAIL_LIMITER) {
+          const ip = request.headers.get("CF-Connecting-IP") || "anon";
+          try {
+            const { success } = await env.DETAIL_LIMITER.limit({ key: ip });
+            if (!success) return json({ error: "rate limited" }, 429, { ...cors, "Retry-After": "30" });
+          } catch {
+            // limiter unavailable, fail open
+          }
+        }
+        try {
+          const stats = await leagueStats(env, code);
+          return json(stats, 200, { ...cors, "Cache-Control": `public, max-age=${stats.available ? 1800 : 300}` });
+        } catch (error) {
+          console.error(`route failed: /:comp/stats ${error.message}`);
+          return json({ available: false }, 200, { ...cors, "Cache-Control": "public, max-age=60" });
+        }
+      }
+
+      // One club's season player stats for the V2 club sheet
+      // (worker/sportmonksClubStats.js); the club is matched by name against
+      // the current standings, so only a resolved id reaches Sportmonks.
+      const clubRoute = url.pathname.match(/^\/([A-Za-z]{2,6})\/club$/);
+      if (clubRoute) {
+        const code = clubRoute[1].toUpperCase();
+        if (!COMPETITIONS[code]) return json({ error: "unknown competition" }, 404, cors);
+        if (!env.SPORTMONKS_API_KEY) return json({ error: "club stats not configured" }, 501, cors);
+        if (env.DETAIL_LIMITER) {
+          const ip = request.headers.get("CF-Connecting-IP") || "anon";
+          try {
+            const { success } = await env.DETAIL_LIMITER.limit({ key: ip });
+            if (!success) return json({ error: "rate limited" }, 429, { ...cors, "Retry-After": "30" });
+          } catch {
+            // limiter unavailable, fail open
+          }
+        }
+        try {
+          const stats = await clubStats(env, code, String(url.searchParams.get("team") ?? "").trim());
+          return json(stats, 200, { ...cors, "Cache-Control": `public, max-age=${stats.available ? 1800 : 300}` });
+        } catch (error) {
+          console.error(`route failed: /:comp/club ${error.message}`);
+          return json({ available: false }, 200, { ...cors, "Cache-Control": "public, max-age=60" });
+        }
+      }
+
+      // Sportmonks team statistics, xG and pressure for the V2 Match page
+      // (worker/sportmonksCentre.js). Same per-IP detail limiter: it is the
+      // other unauthenticated route that can spend a provider allowance.
+      const centreRoute = url.pathname.match(/^\/match\/(\d{1,12})\/centre$/);
+      if (centreRoute) {
+        if (!env.SPORTMONKS_API_KEY) return json({ error: "match centre not configured" }, 501, cors);
+        if (env.DETAIL_LIMITER) {
+          const ip = request.headers.get("CF-Connecting-IP") || "anon";
+          try {
+            const { success } = await env.DETAIL_LIMITER.limit({ key: ip });
+            if (!success) return json({ error: "rate limited" }, 429, { ...cors, "Retry-After": "30" });
+          } catch {
+            // limiter unavailable, fail open
+          }
+        }
+        const known = await findKnownMatch(competitions, Number(centreRoute[1]), token, env);
+        if (!known) return json({ error: "unknown match" }, 404, cors);
+        try {
+          const centre = await matchCentre(env, known);
+          const maxAge = isLive(known.status) ? 30 : 300;
+          return json(centre, 200, { ...cors, "Cache-Control": `public, max-age=${maxAge}` });
+        } catch (error) {
+          console.error(`route failed: /match/:id/centre ${error.message}`);
+          return json({ available: false }, 200, { ...cors, "Cache-Control": "public, max-age=30" });
+        }
       }
 
       const detailRoute = url.pathname.match(/^\/match\/(\d{1,12})$/);
@@ -642,6 +813,16 @@ export default {
         const known = await findKnownMatch(competitions, id, token, env);
         if (!known) {
           return json({ error: "unknown match" }, 404, cors);
+        }
+        if (sportmonksIdOf(id)) {
+          try {
+            const detail = await sportmonksMatchDetail(env, known);
+            if (!detail) return json({ error: "unknown match" }, 404, cors);
+            return json(detail, 200, { ...cors, "Cache-Control": `public, max-age=${isLive(known.status) ? 20 : 120}` });
+          } catch (error) {
+            console.error(`route failed: /match/:id (sportmonks) ${error.message}`);
+            return json({ error: "upstream unavailable" }, 502, cors);
+          }
         }
         const profile = matchDetailCacheProfile(known);
         // Cost scales with TRAFFIC here, unlike every cron pass, whose cost is
@@ -683,6 +864,12 @@ export default {
         // cannot outlive itself in every reader's cache.
         const browserMaxAge = matchDetailBrowserMaxAge(profile, Boolean(detail.degraded));
         return json(detail, 200, { ...cors, "Cache-Control": env.SCORE_READ_ORIGIN ? "no-store" : `public, max-age=${browserMaxAge}` });
+      }
+
+      // The Wire: one live commentary timeline across every match. A pure D1
+      // read; the cron writes it (runScheduledLiveWire), visits never do.
+      if (url.pathname === "/wire") {
+        return handleLiveWire(request, env, cors, json);
       }
 
       const analysisRoute = url.pathname.match(/^\/analysis\/(\d{1,12})$/);
@@ -743,6 +930,12 @@ export default {
         // costs nothing upstream. Ahead of scoring so a match that finishes this
         // tick is settled by the pass below and its provisional row cleared.
         await runCronPass("live-points", () => runScheduledLivePoints(env));
+        // The Wire, behind the passes that read the same match detail so it
+        // rides their memo (and in stored mode spends no API-Football call at
+        // all). Ahead of scoring because commentary is only worth anything
+        // while it is live; its model calls are capped per tick and per day,
+        // and it is isolated like every pass, so it cannot hold scoring up.
+        await runCronPass("live-wire", () => runScheduledLiveWire(env));
         await runCronPass("fantasy-scoring", () => runScheduledFantasyScoring(env));
         // Behind fantasy scoring so a tick that settles both a match's player
         // points and its predictions recomputes the gameweek once with
@@ -773,6 +966,9 @@ export default {
         // ordering dependency is the xP blend above, whose table it reads; it
         // needs nothing from the scoring, waiver or recap passes.
         await runCronPass("draft-recaps", () => runScheduledDraftRecaps(env));
+        // The Home briefing's AI note. Discretionary like the recaps and
+        // capped per tick, so it trails them; it reads only settled results.
+        await runCronPass("briefing-notes", () => runScheduledBriefingNotes(env));
         // Dead last, after the recap. Every pass above spends API-Football
         // calls, so running the flush behind all of them is what lets one tick
         // record its own spend instead of leaving it for the next one. It is
@@ -1046,6 +1242,32 @@ async function handleAnalysis(env, id, cors) {
   return json(stored.body, 200, { ...cors, "Cache-Control": "public, max-age=60" });
 }
 
+// The Wire's cron pass. Commentary is display-only, so it is shed with the
+// other live-detail extras when the allowance is low (stored mode spends no
+// allowance, so it always runs there). Without ANTHROPIC_API_KEY the timeline
+// still runs on templates alone.
+async function runScheduledLiveWire(env) {
+  if (!env.DB || !scoreSourceConfigured(env)) return;
+  const summary = await runLiveWirePass({
+    db: env.DB,
+    competitions: parseCompetitions(env),
+    getLive: (comp) => getLive(comp, env.API_FOOTBALL_KEY, env),
+    // Stored reads cost nothing upstream, so a finished match keeps being read
+    // until its last-minute goals land; a direct provider read is spent only on
+    // live matches, and only while the allowance has room.
+    fetchDetail: (match, comp) => env.SCORE_READ_ORIGIN
+      || (isLive(match.status) && allowsLiveEventDetail(currentAllowanceLevel()))
+      ? fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY, { env, comp }) : null,
+    // An empty or events-degraded read is a failed read, never a goal being
+    // ruled out: see reconcileWire.
+    isDetailTrusted: (detail) => detailHasSubstance(detail) && !detail.degraded?.includes("/fixtures/events"),
+    createClient: env.ANTHROPIC_API_KEY
+      ? () => new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 20_000 }) : null,
+    model: env.WIRE_MODEL || WIRE_DEFAULT_MODEL,
+  });
+  if (summary.inserted || summary.ai || summary.retired) console.log("live-wire", JSON.stringify(summary));
+}
+
 async function runScheduledAnalysis(env) {
   if (!env.ANTHROPIC_API_KEY || !env.ANALYSIS_CACHE || !scoreSourceConfigured(env)) return;
   // First pass to be shed when the allowance runs low, and by a distance. It
@@ -1206,8 +1428,11 @@ async function handleGoogleAuth(request, env, cors) {
   if (!env.GOOGLE_CLIENT_ID) return json({ error: "sign-in not configured" }, 501, cors);
 
   let credential;
+  let attribution = null;
   try {
-    credential = String((await request.json())?.credential ?? "");
+    const body = await request.json();
+    credential = String(body?.credential ?? "");
+    attribution = normalizeAttribution(body?.attribution);
   } catch {
     return json({ error: "bad body" }, 400, cors);
   }
@@ -1243,12 +1468,12 @@ async function handleGoogleAuth(request, env, cors) {
   if (!isRealGoogleSub(info.sub)) return json({ error: "invalid credential" }, 401, cors);
 
   try {
-    await env.DB.prepare(
-      `INSERT INTO users (google_sub, email, name, avatar) VALUES (?1, ?2, ?3, ?4)
-       ON CONFLICT(google_sub) DO UPDATE SET email = ?2, name = ?3, avatar = ?4`,
-    )
-      .bind(info.sub, info.email ?? "", info.name ?? null, info.picture ?? null)
-      .run();
+    // Whether this sign-in CREATES the account is what the funnel needs
+    // (sign-ups versus returns) and the upsert cannot say: with ON CONFLICT DO
+    // UPDATE, D1 reports one change either way. One extra read per sign-in.
+    const existing = await env.DB.prepare("SELECT id FROM users WHERE google_sub = ?1").bind(info.sub).first();
+    const newUser = !existing;
+    await upsertUser(env, info, newUser ? attribution : null);
     const user = await env.DB.prepare("SELECT id, email, name, avatar, prefs FROM users WHERE google_sub = ?1")
       .bind(info.sub)
       .first();
@@ -1261,10 +1486,42 @@ async function handleGoogleAuth(request, env, cors) {
     // Opportunistic cleanup keeps the sessions table from accumulating forever.
     await env.DB.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
 
-    return json({ token, user: publicUser(user), follows: await userFollows(env, user.id) }, 200, cors);
+    return json({ token, user: publicUser(user), follows: await userFollows(env, user.id), newUser }, 200, cors);
   } catch {
     return json({ error: "accounts unavailable" }, 502, cors);
   }
+}
+
+// The users upsert. `attribution` (src/attribution.js, already normalised) is
+// written at INSERT only: the ON CONFLICT branch updates the profile fields
+// Google just vouched for and nothing else, so a returning manager's origin
+// can never be rewritten by a later visit, and the caller passes null for an
+// existing row anyway. If migration 014 has not been applied, the attributed
+// insert fails on the missing column and the plain insert runs instead:
+// sign-in must never depend on an analytics column existing.
+async function upsertUser(env, info, attribution) {
+  const profile = [info.sub, info.email ?? "", info.name ?? null, info.picture ?? null];
+  if (attribution) {
+    try {
+      await env.DB.prepare(
+        `INSERT INTO users (google_sub, email, name, avatar, signup_source, signup_medium, signup_campaign, signup_landing)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+         ON CONFLICT(google_sub) DO UPDATE SET email = ?2, name = ?3, avatar = ?4`,
+      )
+        .bind(...profile, attribution.source, attribution.medium, attribution.campaign, attribution.landing)
+        .run();
+      return;
+    } catch (error) {
+      if (!/no column named signup_/i.test(String(error?.message ?? error))) throw error;
+      console.warn("signup attribution dropped: worker/migrations/014-signup-attribution.sql not applied");
+    }
+  }
+  await env.DB.prepare(
+    `INSERT INTO users (google_sub, email, name, avatar) VALUES (?1, ?2, ?3, ?4)
+     ON CONFLICT(google_sub) DO UPDATE SET email = ?2, name = ?3, avatar = ?4`,
+  )
+    .bind(...profile)
+    .run();
 }
 
 async function handleLogout(request, env, cors) {
@@ -1287,6 +1544,319 @@ async function handleMe(request, env, cors) {
   const user = await sessionUser(request, env);
   if (!user) return json({ error: "signed out" }, 401, cors);
   return json({ user: publicUser(user), follows: await userFollows(env, user.id) }, 200, cors);
+}
+
+// GET /briefing: the Home screen's cards for the signed-in caller. Costs no
+// upstream call of its own: every feed comes through getLive /
+// getSportmonksLive, which the minute cron already keeps memoised and in the
+// colo cache. A feed that fails is simply absent from the headlines rather
+// than failing the briefing, because one league being down is no reason to
+// hide a manager's fantasy result.
+async function handleBriefing(request, env, cors) {
+  if (!env.DB) return json({ error: "accounts not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+
+  try {
+    const now = Date.now();
+    const seenRow = await env.DB.prepare("SELECT last_briefed_at FROM users WHERE id = ?1")
+      .bind(user.id)
+      .first()
+      .catch(() => null); // migration 015 not applied yet: treat as never briefed
+    const lastBriefedAt = d1TimeToIso(seenRow?.last_briefed_at);
+    const since = briefingSince(lastBriefedAt, now);
+    const follows = await userFollows(env, user.id);
+
+    const feeds = await briefingFeeds(env);
+    const clubRows = clubResults({ feeds, follows, since });
+    // Analysis headlines are a KV read per followed result, a handful at most.
+    await Promise.all(
+      clubRows.map(async (row) => {
+        const analysis = await readLatestAnalysis(env, row.matchId).catch(() => null);
+        row.headline = analysis?.headline ?? null;
+      }),
+    );
+
+    const plMatches = feeds.find((feed) => feed.competition === "PL")?.matches ?? null;
+    const fantasy = await briefingFantasy(env, user.id, plMatches, now, since);
+
+    const briefing = {
+      since: new Date(since).toISOString(),
+      lastBriefedAt,
+      generatedAt: new Date(now).toISOString(),
+      clubs: clubRows,
+      fantasy,
+      headlines: headlines({ feeds, follows, since }),
+    };
+    briefing.hasNews = hasNews(briefing);
+    return json(briefing, 200, { ...cors, "Cache-Control": "private, no-store" });
+  } catch (error) {
+    console.error(`route failed: /briefing ${error.message}`);
+    return json({ error: "briefing unavailable" }, 502, cors);
+  }
+}
+
+async function briefingFeeds(env) {
+  const sources = [];
+  if (scoreSourceConfigured(env)) {
+    for (const comp of parseCompetitions(env)) {
+      sources.push(getLive(comp, env.API_FOOTBALL_KEY, env).then((live) => ({ competition: comp.code, matches: live.matches ?? [] })));
+    }
+  }
+  if (env.SPORTMONKS_API_KEY) {
+    for (const code of Object.keys(COMPETITIONS).filter(isSportmonksCompetition)) {
+      sources.push(getSportmonksLive(env, code).then((live) => ({ competition: code, matches: live.matches ?? [] })));
+    }
+  }
+  const settled = await Promise.allSettled(sources);
+  return settled.filter((entry) => entry.status === "fulfilled").map((entry) => entry.value);
+}
+
+// One entry per drafted league the caller is in: last gameweek's result, the
+// week ahead, and this gameweek's AI note when the cron has written one.
+// Pending and drafting leagues have neither yet, so they are left to the
+// Fantasy tab.
+async function briefingFantasy(env, userId, plMatches, now, since) {
+  const leagues = await env.DB.prepare(
+    `SELECT l.id, l.name FROM fantasy_leagues l
+     JOIN fantasy_league_members m ON m.league_id = l.id
+     WHERE m.user_id = ?1 AND l.draft_status = 'complete'`,
+  )
+    .bind(userId)
+    .all();
+  if (!(leagues.results ?? []).length) return [];
+
+  const week = await briefingWeek(env, plMatches, now);
+  const notes = await env.DB.prepare(
+    `SELECT league_id, line, facts_key FROM briefing_notes WHERE user_id = ?1 AND gameweek = ?2 AND state = 'done'`,
+  )
+    .bind(userId, week.gameweek)
+    .all()
+    .then((rows) => new Map((rows.results ?? []).map((row) => [row.league_id, row])))
+    .catch(() => new Map()); // migration 016 not applied yet: no notes
+
+  return Promise.all(
+    leagues.results.map(async (league) => {
+      const entry = await briefingLeagueEntry(env, league, userId, week, since);
+      const stored = notes.get(league.id);
+      // A note whose facts have since changed (a blank starter swapped, the
+      // deadline passed) is withheld rather than shown stale.
+      const note = stored && stored.facts_key === noteFactsKey(entry.next) ? stored.line : null;
+      return { ...entry, note };
+    }),
+  );
+}
+
+// The gameweek-level facts every league entry shares. `plMatches` may be null
+// (feed unreadable): blanks, doubles and the deadline are then unknown rather
+// than guessed.
+async function briefingWeek(env, plMatches, now) {
+  const gameweek = await currentFantasyGameweek(env);
+  const matches = plMatches ? assignGameweeks(plMatches) : null;
+  return {
+    gameweek,
+    matches,
+    timetable: matches ? gameweekTimetable({ matches, gameweek, now }) : null,
+    clubCounts: matches ? clubFixtureCounts(matches, gameweek) : null,
+  };
+}
+
+async function briefingLeagueEntry(env, league, userId, week, since) {
+  const { gameweek, matches, timetable, clubCounts } = week;
+  const [memberRows, fixtureRows, scoreRows] = await Promise.all([
+    env.DB.prepare(
+      `SELECT m.user_id, m.team_name, u.name, u.email, u.is_bot FROM fantasy_league_members m
+       JOIN users u ON u.id = m.user_id WHERE m.league_id = ?1`,
+    )
+      .bind(league.id)
+      .all(),
+    env.DB.prepare(
+      `SELECT gameweek, home_user_id, away_user_id, home_score, away_score
+       FROM fantasy_h2h_fixtures WHERE league_id = ?1`,
+    )
+      .bind(league.id)
+      .all(),
+    // The unpaired manager's own score, which is in no fixture row: needed to
+    // derive the Average opponent an odd league plays (src/fantasyAverage.js).
+    env.DB.prepare(
+      `SELECT gameweek, user_id, points FROM fantasy_gameweek_scores WHERE league_id = ?1 AND gameweek < ?2`,
+    )
+      .bind(league.id, gameweek)
+      .all(),
+  ]);
+  const realMembers = (memberRows.results ?? []).map((row) => ({
+    userId: row.user_id,
+    name: memberDisplayName(row),
+    isBot: Boolean(row.is_bot),
+  }));
+  const realFixtures = (fixtureRows.results ?? []).map((row) => ({
+    gameweek: row.gameweek,
+    homeUserId: row.home_user_id,
+    awayUserId: row.away_user_id,
+    homeScore: row.home_score,
+    awayScore: row.away_score,
+  }));
+  // The same Average-merged set the standings route builds its table from, so
+  // the briefing's rank and an opponent's form count Average results exactly
+  // as the Standings tab does. A no-op for an even league.
+  const { fixtures, members } = withAverageOpponent(
+    realFixtures,
+    realMembers,
+    (scoreRows.results ?? []).map((row) => ({ gameweek: row.gameweek, userId: row.user_id, points: row.points })),
+  );
+
+  const lastGameweek = gameweek - 1;
+  let last = null;
+  if (lastGameweek >= 1) {
+    const { roster, starters } = await resolveManagerLineup(env, league.id, userId, lastGameweek);
+    last = fantasyResult({
+      fixtures,
+      members,
+      userId,
+      gameweek: lastGameweek,
+      players: await starterPoints(env, roster, starters, lastGameweek),
+    });
+    if (last) last.isNew = settledSince(matches ? lastKickoffInGameweek(matches, lastGameweek) : null, since);
+  }
+
+  const { roster, starters } = await resolveManagerLineup(env, league.id, userId, gameweek);
+  const byId = new Map(roster.map((player) => [player.id, player]));
+  const starterPlayers = starters
+    .map((entry) => byId.get(entry.playerId))
+    .filter(Boolean)
+    .map((player) => ({ playerId: player.id, name: player.name, team: player.team }));
+  const next = fantasyPreview({
+    fixtures,
+    members,
+    userId,
+    gameweek,
+    deadline: timetable?.squad.deadline ?? null,
+    locked: timetable?.squad.locked ?? false,
+    starters: starterPlayers,
+    roster: roster.map((player) => ({ playerId: player.id, name: player.name, team: player.team })),
+    clubCounts,
+  });
+
+  return { league: { id: league.id, name: league.name }, last, next };
+}
+
+// The Home briefing's AI note: one line per human manager per league per
+// gameweek, written once the previous gameweek has settled in that league so
+// the note can speak to the result. Same discipline as the Wire: the model
+// sees only the card facts (src/briefingNotePrompt.js), a line stating a
+// figure the payload lacked is rejected, and the claim is the ledger row's
+// primary key (INSERT OR IGNORE as 'sending') so overlapping ticks never pay
+// twice. Capped per tick and per day because the cost scales with managers,
+// and nothing depends on it: a failed or rejected note leaves the cards alone
+// and is not retried.
+const BRIEFING_NOTES_PER_TICK = 8;
+const BRIEFING_NOTES_DAILY_CAP = 300;
+
+async function runScheduledBriefingNotes(env) {
+  if (!env.DB || !env.ANTHROPIC_API_KEY) return;
+  const now = Date.now();
+  const week = await briefingWeek(env, await currentFantasyMatches(env), now);
+  const lastGameweek = week.gameweek - 1;
+
+  let spent;
+  try {
+    spent = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM briefing_notes WHERE created_at >= datetime('now', '-1 day')`,
+    ).first();
+  } catch {
+    return; // migration 016 not applied yet
+  }
+  const budget = Math.min(BRIEFING_NOTES_PER_TICK, BRIEFING_NOTES_DAILY_CAP - Number(spent?.n ?? 0));
+  if (budget <= 0) return;
+
+  const candidates = await env.DB.prepare(
+    `SELECT m.league_id, l.name, m.user_id FROM fantasy_league_members m
+     JOIN fantasy_leagues l ON l.id = m.league_id
+     JOIN users u ON u.id = m.user_id
+     WHERE l.draft_status = 'complete' AND COALESCE(u.is_bot, 0) = 0
+       AND NOT EXISTS (SELECT 1 FROM briefing_notes n
+         WHERE n.league_id = m.league_id AND n.user_id = m.user_id AND n.gameweek = ?1)
+       AND (?2 < 1 OR EXISTS (SELECT 1 FROM fantasy_h2h_fixtures f
+         WHERE f.league_id = m.league_id AND f.gameweek = ?2 AND f.home_score IS NOT NULL))
+     ORDER BY m.league_id, m.user_id LIMIT ?3`,
+  )
+    .bind(week.gameweek, lastGameweek, budget)
+    .all();
+  const rows = candidates.results ?? [];
+  if (!rows.length) return;
+
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 20_000 });
+  const model = env.BRIEFING_MODEL || WIRE_DEFAULT_MODEL;
+  for (const row of rows) {
+    const claim = await env.DB.prepare(
+      `INSERT OR IGNORE INTO briefing_notes (league_id, user_id, gameweek, state, prompt_version)
+       VALUES (?1, ?2, ?3, 'sending', ?4)`,
+    )
+      .bind(row.league_id, row.user_id, week.gameweek, BRIEFING_NOTE_PROMPT_VERSION)
+      .run();
+    if (!claim.meta?.changes) continue;
+    let state = "failed";
+    let line = null;
+    let factsKey = null;
+    try {
+      const { last, next } = await briefingLeagueEntry(env, { id: row.league_id, name: row.name }, row.user_id, week, now);
+      const payload = buildBriefingNotePrompt({ last, next });
+      factsKey = noteFactsKey(next);
+      const response = await client.messages.create({
+        model,
+        max_tokens: 1000,
+        output_config: { effort: "low", format: { type: "json_schema", schema: BRIEFING_NOTE_SCHEMA } },
+        system: BRIEFING_NOTE_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: payload }],
+      });
+      if (response.stop_reason === "refusal") throw Error("refused");
+      const text = response.content.find((block) => block.type === "text")?.text ?? "";
+      line = briefingNoteAcceptable(JSON.parse(text).line, payload);
+      state = line ? "done" : "rejected";
+      console.log(`briefing-note ${state} league ${row.league_id} gw ${week.gameweek} (in ${response.usage?.input_tokens ?? "?"}, out ${response.usage?.output_tokens ?? "?"})`);
+    } catch (error) {
+      console.error(`briefing-note failed league ${row.league_id}: ${error?.message ?? error}`);
+    }
+    await env.DB.prepare(
+      `UPDATE briefing_notes SET state = ?1, line = ?2, facts_key = ?6 WHERE league_id = ?3 AND user_id = ?4 AND gameweek = ?5`,
+    )
+      .bind(state, line, row.league_id, row.user_id, week.gameweek, factsKey)
+      .run();
+  }
+}
+
+// The caller's starters with their settled points for one gameweek, summed
+// across a double gameweek's matches (sumPlayerPoints), undoubled.
+async function starterPoints(env, roster, starters, gameweek) {
+  if (!starters.length) return [];
+  const ids = starters.map((entry) => entry.playerId);
+  const rows = await env.DB.prepare(
+    `SELECT player_id, points FROM fantasy_player_match_scores
+     WHERE gameweek = ?1 AND player_id IN (${ids.map((_, index) => `?${index + 2}`).join(",")})`,
+  )
+    .bind(gameweek, ...ids)
+    .all();
+  const totals = sumPlayerPoints((rows.results ?? []).map((row) => ({ playerId: row.player_id, points: row.points })));
+  const byId = new Map(roster.map((player) => [player.id, player]));
+  return starters.map((entry) => ({
+    playerId: entry.playerId,
+    name: byId.get(entry.playerId)?.name ?? null,
+    points: totals.get(entry.playerId) ?? 0,
+    isCaptain: Boolean(entry.isCaptain),
+  }));
+}
+
+async function handleBriefingSeen(request, env, cors) {
+  if (!env.DB) return json({ error: "accounts not configured" }, 501, cors);
+  const user = await sessionUser(request, env);
+  if (!user) return json({ error: "signed out" }, 401, cors);
+  try {
+    await env.DB.prepare("UPDATE users SET last_briefed_at = datetime('now') WHERE id = ?1").bind(user.id).run();
+    return json({ ok: true }, 200, cors);
+  } catch {
+    // Most likely migration 015 is not applied yet.
+    return json({ error: "briefing not configured" }, 501, cors);
+  }
 }
 
 async function handleFollowToggle(request, env, cors) {
@@ -1335,7 +1905,12 @@ async function handleFollowToggle(request, env, cors) {
 // "draft" (draft-day reminders, Phase 4.5) defaults true - see DEFAULT_PREFS
 // and publicUser's merge below for why an account created before this key
 // existed still reads it as on rather than off.
-const PREF_KEYS = new Set(["goals", "kickoff", "fulltime", "red", "analysis", "draft", "recap"]);
+// The home* keys are the Home briefing's own switches (src/briefing.js
+// BRIEFING_PREFS): whether the app lands there, and which cards it shows.
+const PREF_KEYS = new Set([
+  "goals", "kickoff", "fulltime", "red", "analysis", "draft", "recap",
+  "homeLanding", "homeFantasyNext", "homeFantasyLast", "homeClubs", "homeHeadlines",
+]);
 
 async function handlePrefs(request, env, cors) {
   if (!env.DB) return json({ error: "accounts not configured" }, 501, cors);
@@ -2479,15 +3054,16 @@ function shuffle(list) {
 // seeding attempt failed) heals itself on the next cron tick rather than
 // waiting for a commissioner to discover it at draft time. Ordered before
 // runScheduledDraftReminders in the tick so a scheduled auto-start later in
-// the same tick finds a pool already there. Gated on a COUNT rather than
+// the same tick finds a pool already there. Gated on an emptiness check rather than
 // refreshing unconditionally: this runs every minute, and re-upserting ~556
 // rows a minute would be pure waste. Squad churn is picked up by the draft
 // start's own refresh and the nightly bake, not here.
 async function ensureFantasyPlayerPool(env) {
   if (!env.DB) return;
   try {
-    const row = await env.DB.prepare(`SELECT COUNT(*) AS count FROM fantasy_players`).first();
-    if ((row?.count ?? 0) > 0) return;
+    // An existence check, not COUNT(*): a count reads every row (710 a
+    // minute, about a million a day) to answer a yes/no question.
+    if (await env.DB.prepare(`SELECT 1 AS ok FROM fantasy_players LIMIT 1`).first()) return;
     await upsertFantasyPlayerPool(env);
   } catch {
     // nothing here is load-bearing for this tick: the next one retries, and
@@ -2521,8 +3097,7 @@ async function upsertFantasyPlayerPool(env) {
   }
 
   if (!players.length) {
-    const existing = await env.DB.prepare(`SELECT COUNT(*) AS count FROM fantasy_players`).first();
-    if ((existing?.count ?? 0) > 0) return;
+    if (await env.DB.prepare(`SELECT 1 AS ok FROM fantasy_players LIMIT 1`).first()) return;
     throw new Error("EMPTY_PLAYER_POOL");
   }
 
@@ -3429,78 +4004,13 @@ async function recomputeLeagueGameweek(env, leagueId, gameweek, playerPoints) {
 // pure waste.
 async function runScheduledFantasyXpBlend(env) {
   if (!env.DB || !scoreSourceConfigured(env)) return;
-  try {
-    const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
-    if (!comp) return; // fantasy is PL-only; nothing to blend without PL configured
-
-    // Reuses the same /live fetch runScheduledFantasyScoring already made
-    // this tick (same edge cache, same reasoning as the scheduled() handler's
-    // own docstring on why these passes run sequentially rather than in
-    // parallel).
-    const live = await getLive(comp, env.API_FOOTBALL_KEY, env);
-    const currentGameweek = currentGameweekFromMatches(live.matches, Date.now());
-    const latestCompleted = currentGameweek - 1;
-    if (latestCompleted < 1) return; // season hasn't produced a completed gameweek yet
-
-    const state = await env.DB.prepare(`SELECT last_completed_gameweek FROM fantasy_xp_state WHERE id = 1`).first();
-    if ((state?.last_completed_gameweek ?? 0) >= latestCompleted) return; // nothing new to blend
-
-    const [playersResult, scoresResult] = await Promise.all([
-      env.DB.prepare(`SELECT id, historical_xp, historical_basis FROM fantasy_players WHERE active = 1`).all(),
-      // Aggregated in SQL rather than row by row: the underlying table is one
-      // row per player per MATCH, and blendWithCurrentSeason divides by
-      // gameweeks played, so a double gameweek's two matches must count as one
-      // gameweek (COUNT(DISTINCT gameweek)) while contributing both scores
-      // (SUM(points)). Counting rows would quietly halve such a player's
-      // per-gameweek average.
-      env.DB.prepare(
-        `SELECT player_id, SUM(points) AS points, COUNT(DISTINCT gameweek) AS gameweeks
-         FROM fantasy_player_match_scores WHERE gameweek <= ?1 GROUP BY player_id`,
-      )
-        .bind(latestCompleted)
-        .all(),
-    ]);
-
-    const pointsByPlayer = new Map();
-    const gameweeksByPlayer = new Map();
-    for (const row of scoresResult.results ?? []) {
-      pointsByPlayer.set(row.player_id, row.points);
-      gameweeksByPlayer.set(row.player_id, row.gameweeks);
-    }
-
-    const CHUNK = 100;
-    const players = playersResult.results ?? [];
-    for (let i = 0; i < players.length; i += CHUNK) {
-      const chunk = players.slice(i, i + CHUNK);
-      try {
-        await env.DB.batch(
-          chunk.map((player) => {
-            const gameweeksPlayed = gameweeksByPlayer.get(player.id) ?? 0;
-            const currentSeasonPoints = pointsByPlayer.get(player.id) ?? 0;
-            const blended = blendWithCurrentSeason(player.historical_xp, currentSeasonPoints, gameweeksPlayed);
-            const basis = gameweeksPlayed > 0 ? "blended" : player.historical_basis;
-            return env.DB.prepare(
-              `UPDATE fantasy_player_xp SET xp = ?2, xp_basis = ?3, updated_at = datetime('now') WHERE player_id = ?1`,
-            ).bind(player.id, blended, basis);
-          }),
-        );
-      } catch {
-        // one bad chunk must not block the others; the next gameweek's blend
-        // (or a later tick, once fantasy_xp_state hasn't advanced) retries it
-      }
-    }
-
-    await env.DB.prepare(
-      `INSERT INTO fantasy_xp_state (id, last_completed_gameweek, updated_at) VALUES (1, ?1, datetime('now'))
-       ON CONFLICT(id) DO UPDATE SET last_completed_gameweek = ?1, updated_at = datetime('now')`,
-    )
-      .bind(latestCompleted)
-      .run();
-  } catch {
-    // best-effort, same discipline as the bake's own historical enrichment:
-    // xP is a display figure, never a new single point of failure for the
-    // rest of the cron (see the comment on its call site in scheduled())
-  }
+  const comp = parseCompetitions(env).find((entry) => entry.code === "PL");
+  if (!comp) return; // fantasy is PL-only; nothing to blend without PL configured
+  // Reuses the same /live fetch runScheduledFantasyScoring already made this
+  // tick. Errors propagate to runCronPass so a broken blend is logged rather
+  // than silently retried every minute (see worker/xpBlend.js for why).
+  const live = await getLive(comp, env.API_FOOTBALL_KEY, env);
+  await blendXpThrough(env, currentGameweekFromMatches(live.matches, Date.now()) - 1);
 }
 
 // GET /fantasy/players/xp: every active player's current xp/xpBasis, public
@@ -5401,7 +5911,6 @@ async function sendLeaguePush(env, memberIds, { title, body, leagueId, tag, pref
     const prefs = safePrefs(sub.prefs);
     return prefs[pref] ?? DEFAULT_PREFS[pref] ?? false;
   });
-  if (!recipients.length) return;
   const payload = {
     title,
     body,
@@ -5412,7 +5921,8 @@ async function sendLeaguePush(env, memberIds, { title, body, leagueId, tag, pref
     url: `${env.SITE_ORIGIN ?? ""}/#fantasy`,
     tag: `league-${leagueId}-${tag}`,
   };
-  await Promise.all(recipients.map((sub) => sendPush(env, sub, payload)));
+  const results = await Promise.all(recipients.map((sub) => sendPush(env, sub, payload)));
+  await recordPushLog(env, { scope: "league", refId: leagueId, pref, payload, results });
 }
 
 // -- AI weekly league recap (Phase 4.6) ---------------------------------------
@@ -6079,6 +6589,11 @@ const DEFAULT_PREFS = {
   analysis: false,
   draft: true,
   recap: true,
+  homeLanding: true,
+  homeFantasyNext: true,
+  homeFantasyLast: true,
+  homeClubs: true,
+  homeHeadlines: true,
 };
 
 function pushConfigured(env) {
@@ -6283,39 +6798,13 @@ async function notifyCompetition(env, comp) {
       .run();
     if (!prevRow) continue; // first sighting is a baseline, never a burst of catch-up pushes
 
-    const events = diffMatchEvents(prev, state, match, lastRed, detailMinute);
+    const events = diffMatchEvents(prev, state, match, lastRed, detailMinute, { stale: Boolean(live.stale) });
     await sendMatchEvents(env, comp, match, events);
   }
 }
 
-function diffMatchEvents(prev, cur, match, lastRed, detailMinute) {
-  const events = [];
-  const score = `${cur.home ?? 0}-${cur.away ?? 0}`;
-  const fixture = `${match.homeTeam} v ${match.awayTeam}`;
-  const scoreline = `${match.homeTeam} ${score} ${match.awayTeam}`;
-  const minute = detailMinute ?? match.minute;
-
-  if (!isLive(prev.status) && isLive(cur.status)) {
-    events.push({ pref: "kickoff", title: `Kick-off: ${fixture}`, body: "They're off." });
-  }
-  if ((cur.home ?? 0) > (prev.home ?? 0) || (cur.away ?? 0) > (prev.away ?? 0)) {
-    events.push({ pref: "goals", title: `⚽ ${scoreline}`, body: minute ? `${minute}'` : "Goal!" });
-  }
-  if ((cur.reds ?? 0) > (prev.reds ?? 0)) {
-    events.push({
-      pref: "red",
-      title: `🟥 Red card in ${fixture}`,
-      body: lastRed ? `${lastRed.player} (${lastRed.team}) is off.` : "Down to ten.",
-    });
-  }
-  if (cur.status === "FINISHED" && prev.status !== "FINISHED") {
-    events.push({ pref: "fulltime", title: `FT: ${scoreline}`, body: "Full time." });
-  }
-  return events;
-}
-
 // Sends every event for one match on one tick against a single subscriber lookup
-// (diffMatchEvents can emit up to four events for the same match/tick, and the
+// (diffMatchEvents can emit up to five events for the same match/tick, and the
 // follows x users x push_subscriptions join is identical across all of them), and
 // fans each event's sends out concurrently rather than one device at a time.
 async function sendMatchEvents(env, comp, match, events) {
@@ -6329,7 +6818,6 @@ async function sendMatchEvents(env, comp, match, events) {
     .bind(comp.code, match.homeTeam, match.awayTeam)
     .all();
   const subscribers = subs.results ?? [];
-  if (!subscribers.length) return;
 
   for (const event of events) {
     const payload = {
@@ -6342,7 +6830,23 @@ async function sendMatchEvents(env, comp, match, events) {
       const prefs = safePrefs(sub.prefs);
       return prefs[event.pref] ?? DEFAULT_PREFS[event.pref];
     });
-    await Promise.all(recipients.map((sub) => sendPush(env, sub, payload)));
+    const results = await Promise.all(recipients.map((sub) => sendPush(env, sub, payload)));
+    await recordPushLog(env, { scope: "match", refId: match.id, pref: event.pref, payload, results });
+  }
+}
+
+// Logging is after the fact and can never cost a push: a missing push_log
+// table (migration not applied yet) or a D1 blip is a console line, nothing more.
+async function recordPushLog(env, { scope, refId, pref, payload, results }) {
+  try {
+    await env.DB.prepare(
+      `INSERT INTO push_log (scope, ref_id, pref, tag, title, body, recipients, accepted)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+    )
+      .bind(scope, refId ?? null, pref, payload.tag, payload.title, payload.body ?? "", results.length, results.filter(Boolean).length)
+      .run();
+  } catch (error) {
+    console.error("push log write failed", error?.message ?? error);
   }
 }
 
@@ -6383,7 +6887,6 @@ async function sendPush(env, sub, payload) {
 // messages came from list() lagging behind puts. Reads are public; posting
 // requires a signed-in account, which also makes names unspoofable.
 
-const MAX_BANTER_MESSAGES_PER_MATCH = 500;
 
 async function handleBanter(request, env, id, competitions, token, cors) {
   if (!env.DB) return json({ error: "banter not configured" }, 503, cors);
@@ -6420,64 +6923,18 @@ async function handleBanter(request, env, id, competitions, token, cors) {
           .bind(id, user.id, body.emoji)
           .run();
       }
-    } else if (body.action === "message") {
-      const text = cleanText(body.text);
-      if (!text) return json({ error: "empty message" }, 400, cors);
-      const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM banter_messages WHERE match_id = ?1")
-        .bind(id)
-        .first();
-      if ((count?.n ?? 0) >= MAX_BANTER_MESSAGES_PER_MATCH) {
-        return json({ error: "banter is full for this match" }, 400, cors);
+    } else if (body.action === "message" || TALK_ACTIONS.includes(body.action)) {
+      const outcome = await talkAction(env, id, user, body, cleanText);
+      if (outcome.error) {
+        return json({ error: outcome.error, ...(outcome.reason ? { reason: outcome.reason } : {}) }, outcome.status,
+          outcome.status === 429 ? { ...cors, "Retry-After": "10" } : cors);
       }
-      await env.DB.prepare("INSERT INTO banter_messages (match_id, user_id, text) VALUES (?1, ?2, ?3)")
-        .bind(id, user.id, text)
-        .run();
     } else {
       return json({ error: "bad action" }, 400, cors);
     }
     return json(await readBanter(env, id, user.id), 200, cors);
   }
   return json({ error: "method not allowed" }, 405, cors);
-}
-
-async function readBanter(env, id, userId) {
-  const [counts, mine, msgs] = await Promise.all([
-    env.DB.prepare("SELECT emoji, COUNT(*) AS n FROM banter_reactions WHERE match_id = ?1 GROUP BY emoji")
-      .bind(id)
-      .all(),
-    userId
-      ? env.DB.prepare("SELECT emoji FROM banter_reactions WHERE match_id = ?1 AND user_id = ?2")
-          .bind(id, userId)
-          .all()
-      : Promise.resolve({ results: [] }),
-    env.DB.prepare(
-      `SELECT m.id, m.text, m.created_at, u.name, u.email FROM banter_messages m
-       JOIN users u ON u.id = m.user_id
-       WHERE m.match_id = ?1 ORDER BY m.id DESC LIMIT 50`,
-    )
-      .bind(id)
-      .all(),
-  ]);
-
-  const countMap = {};
-  (counts.results ?? []).forEach((row) => {
-    countMap[row.emoji] = row.n;
-  });
-  return {
-    reactions: {
-      counts: countMap,
-      mine: (mine.results ?? []).map((row) => row.emoji),
-    },
-    messages: (msgs.results ?? [])
-      .reverse()
-      .map((row) => ({
-        id: row.id,
-        name: row.name || String(row.email ?? "").split("@")[0] || "Someone",
-        text: row.text,
-        ts: row.created_at,
-      })),
-    signedIn: Boolean(userId),
-  };
 }
 
 // -- Prediction game (D1-backed) ----------------------------------------------
@@ -7604,6 +8061,20 @@ async function runScheduledApiUsage(env) {
   // holding ninety-odd stale payloads until it is recycled.
   pruneCache(responseCache, Date.now());
   await pruneApiUsage(env);
+  await prunePushLog(env);
+}
+
+const PUSH_LOG_RETENTION_DAYS = 30;
+
+async function prunePushLog(env) {
+  if (!env?.DB) return;
+  try {
+    await env.DB.prepare(`DELETE FROM push_log WHERE created_at < datetime('now', ?1)`)
+      .bind(`-${PUSH_LOG_RETENTION_DAYS} days`)
+      .run();
+  } catch (error) {
+    console.error("push log prune failed", error?.message ?? error);
+  }
 }
 
 // Unauthenticated and read-only, the same call as /health/draft-ready: the body

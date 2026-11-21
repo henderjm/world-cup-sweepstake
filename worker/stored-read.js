@@ -10,7 +10,7 @@ export async function fetchStoredJson(url, { fetcher, timeoutMs, maxBytes }) {
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeoutMs);
   let reader;
   try {
-    const response = await fetcher(url, { signal: controller.signal, redirect: "error", headers: { Accept: "application/json" } });
+    const response = await fetcher(url, { signal: controller.signal, redirect: "manual", headers: { Accept: "application/json" } });
     if (!response.ok) throw Error("Stored service unavailable");
     reader = response.body?.getReader();
     if (!reader) throw Error("Stored service has no body");

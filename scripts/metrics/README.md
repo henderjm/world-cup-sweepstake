@@ -48,6 +48,7 @@ answers and how to read the result.
 | `11-waiver-activity.sql` | Whether the mid-season habit loop is being used, and whether runs work. |
 | `12-league-health.sql` | Per running league: is scoring, the H2H season and the recap cron actually working. |
 | `13-draft-engagement.sql` | Whether anyone was actually AT the draft. Bot seats excluded from every percentage. |
+| `14-signups-by-source.sql` | Which acquisition source produces managers rather than sign-ups. `unknown` is everyone from before attribution existed; it is not a channel. |
 
 ### Two numbers to read carefully
 

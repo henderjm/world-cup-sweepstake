@@ -455,7 +455,7 @@ export function renderMiniTable(model, { competitions = [] } = {}) {
       ${model.loading ? '<p class="note" role="status">Loading standings…</p>'
         : model.error ? `<p class="note" role="status">Standings unavailable.</p><button class="seg" data-score-feed-retry="${code}">Retry standings</button>`
         : `${renderStandingsNotice(model)}
-          ${model.standingsDelayed || model.standingsUnavailable ? "" : `<p class="score-league__freshness">Updated <span data-feed-age="${code}"></span></p>`}
+          ${model.standingsDelayed || model.standingsUnavailable ? "" : `<p class="score-league__freshness">Updated <span data-standings-age="${code}"></span></p>`}
           ${rows ? `<table class="mini-table" aria-label="${esc(model.competition.shortName)} standings"><thead><tr><th scope="col" aria-label="Position">#</th><th scope="col">Club</th><th scope="col" aria-label="Played">P</th><th scope="col" aria-label="Points">Pts</th></tr></thead><tbody>${rows}</tbody></table>` : model.standingsUnavailable ? "" : '<p class="note">No standings published yet.</p>'}
           ${model.tablesLive ? '<p class="note">As it stands, including live matches.</p>' : ""}
           ${rows && legend ? `<div class="aside__legend">${legend}</div>` : ""}`}
@@ -673,7 +673,7 @@ export function renderSignedOut({ available, configured }) {
       : `<div class="you__gis" id="gisButton"></div>`;
   return `
     <div class="you you--signin">
-      <span class="brand__mark you__mark">KD</span>
+      <img class="brand__mark you__mark" src="assets/favicon.svg" alt="" />
       <h2 class="you__title">Sign in to Kickoff Draft</h2>
       <p class="note">Get goal alerts, save followed teams to your account, and run your fantasy squad. One tap with Google.</p>
       ${cta}
@@ -760,5 +760,6 @@ export function renderFooter(model) {
   return `
     <p>Data: ${esc(model.source)}${model.lastUpdated ? ` · updated ${dateLabel(model.lastUpdated)}` : ""} · Kickoff Draft is a Goon Squad production · Not affiliated with the Premier League or UEFA.</p>
     ${footerLearnLinks()}
+    <p class="footer__support"><a href="?v=2">Try the new Kickoff Draft</a></p>
     <p class="footer__support"><a href="https://www.buymeacoffee.com/henderjm" target="_blank" rel="noopener noreferrer">Support Kickoff Draft</a></p>`;
 }

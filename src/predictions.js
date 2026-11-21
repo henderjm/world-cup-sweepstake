@@ -25,6 +25,8 @@
 // kickoff, an unparseable one, or any status other than pre-match is not
 // predictable, full stop.
 
+import { sportmonksIdOf } from "./sportmonksFeed.js";
+
 export const PREDICTION_POINTS = Object.freeze({
   exact: 3, // predicted the scoreline
   result: 1, // predicted only the outcome (home win / draw / away win)
@@ -78,6 +80,11 @@ export function validatePredictionInput(input) {
 // no match, no kickoff, kickoff passed, live, finished, postponed - is closed.
 export function canPredict(match, now = Date.now()) {
   if (!match || !PREDICTABLE_STATUSES.has(match.status)) return false;
+  // Serie A and La Liga (Sportmonks-served, offset ids) are not settled by
+  // the scoring cron yet, which reads the API-Football feeds only. Refused
+  // here, the one rule V1, V2 and the Worker share, rather than accepting a
+  // pick that could never be scored.
+  if (sportmonksIdOf(match.id)) return false;
   const kickoff = new Date(match.utcDate ?? "").getTime();
   return Number.isFinite(kickoff) && kickoff > now;
 }

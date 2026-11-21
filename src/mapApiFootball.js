@@ -224,6 +224,7 @@ function buildMatchDetail(summary, fixture, lineupsPayload, eventsPayload, playe
       if (event.team?.id === fixture.teams?.home?.id) homeGoals += 1;
       else if (event.team?.id === fixture.teams?.away?.id) awayGoals += 1;
       goals.push({
+        teamId: event.team?.id ?? null,
         minute: event.time?.elapsed ?? null,
         injuryTime: event.time?.extra ?? null,
         type: goalType(event.detail),
@@ -235,6 +236,8 @@ function buildMatchDetail(summary, fixture, lineupsPayload, eventsPayload, playe
         home: homeGoals,
         away: awayGoals,
       });
+    } else if (eventType === "var" && VAR_GOAL_CANCELLED.test(event.detail ?? "")) {
+      cancelGoal(goals, event);
     } else if (eventType === "card") {
       const playerId = event.player?.id ?? null;
       let card = cardType(event.detail);
@@ -265,6 +268,17 @@ function buildMatchDetail(summary, fixture, lineupsPayload, eventsPayload, playe
         out: decodeEntities(event.player?.name ?? ""),
       });
     }
+  }
+
+  trimGoalsToScore(goals, summary, fixture);
+  homeGoals = 0;
+  awayGoals = 0;
+  for (const goal of goals) {
+    if (goal.teamId === fixture.teams?.home?.id) homeGoals += 1;
+    else if (goal.teamId === fixture.teams?.away?.id) awayGoals += 1;
+    goal.home = homeGoals;
+    goal.away = awayGoals;
+    delete goal.teamId;
   }
 
   const mapSide = (team) => {
@@ -312,7 +326,7 @@ function buildMatchDetail(summary, fixture, lineupsPayload, eventsPayload, playe
 
 function mapLineupPlayer(player) {
   return {
-    id: player?.id ?? null,
+    id: player?.id || null,
     name: decodeEntities(player?.name ?? ""),
     pos: player?.pos ?? null,
     num: player?.number ?? null,
@@ -323,12 +337,19 @@ function mapLineupPlayer(player) {
   };
 }
 
+function finiteOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function mapPlayerStats(payload, teamNames) {
   return (payload.response ?? []).flatMap((team) =>
     (team.players ?? []).map((entry) => {
       const stats = entry.statistics?.[0] ?? {};
       return {
-        playerId: entry.player?.id ?? null,
+        // An unregistered player arrives as id 0 here (null in lineups).
+        playerId: entry.player?.id || null,
         player: decodeEntities(entry.player?.name ?? ""),
         team: teamNames.get(team.team?.id) ?? normalizeTeamName(team.team?.name),
         minutes: stats.games?.minutes ?? 0,
@@ -336,9 +357,57 @@ function mapPlayerStats(payload, teamNames) {
         tackles: stats.tackles?.total ?? 0,
         blocks: stats.tackles?.blocks ?? 0,
         interceptions: stats.tackles?.interceptions ?? 0,
+        // Match-centre fields (V2). Null when the provider sent none, never a
+        // made-up zero: a rating of 0 and "not rated yet" are different facts.
+        rating: finiteOrNull(stats.games?.rating),
+        shots: finiteOrNull(stats.shots?.total),
+        shotsOnTarget: finiteOrNull(stats.shots?.on),
+        keyPasses: finiteOrNull(stats.passes?.key),
+        saves: finiteOrNull(stats.goals?.saves),
       };
     }),
   );
+}
+
+// API-Football keeps a disallowed goal's "Goal" event and adds a "Var" event
+// ("Goal cancelled", "Goal Disallowed - offside") rather than deleting it.
+const VAR_GOAL_CANCELLED = /goal (cancelled|disallowed)/i;
+// How long after a goal a VAR overturn may arrive and still be matched to it
+// when the Var event names no player.
+const VAR_REVIEW_WINDOW_MINUTES = 10;
+
+function cancelGoal(goals, varEvent) {
+  const teamId = varEvent.team?.id ?? null;
+  const playerId = varEvent.player?.id ?? null;
+  const minute = varEvent.time?.elapsed ?? null;
+  for (let i = goals.length - 1; i >= 0; i -= 1) {
+    const goal = goals[i];
+    if (goal.teamId !== teamId) continue;
+    // If upstream already deleted the goal itself, a player-scoped Var event
+    // must not take an earlier, legitimate goal down with it.
+    if (playerId !== null && goal.scorerId !== null && goal.scorerId !== playerId) continue;
+    if (minute !== null && goal.minute !== null && (goal.minute > minute || minute - goal.minute > VAR_REVIEW_WINDOW_MINUTES)) continue;
+    goals.splice(i, 1);
+    return;
+  }
+}
+
+// The fixture's score is the truth (the Wire and the scoreboard both trust
+// it); an events read that claims more goals than the score is a disallowed
+// goal upstream never labelled, so drop that side's latest excess goals.
+// Skipped for shootouts, whose kicks also arrive as Goal events.
+function trimGoalsToScore(goals, summary, fixture) {
+  if (summary.penalties || summary.providerStatus === "PEN") return;
+  for (const [side, scored] of [["home", summary.score?.home], ["away", summary.score?.away]]) {
+    if (!Number.isInteger(scored)) continue;
+    const teamId = fixture.teams?.[side]?.id;
+    let excess = goals.filter((goal) => goal.teamId === teamId).length - scored;
+    for (let i = goals.length - 1; i >= 0 && excess > 0; i -= 1) {
+      if (goals[i].teamId !== teamId) continue;
+      goals.splice(i, 1);
+      excess -= 1;
+    }
+  }
 }
 
 function goalType(detail) {

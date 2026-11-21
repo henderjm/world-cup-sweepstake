@@ -1,5 +1,8 @@
 # AWS score-service trial
 
+> October 4 update: the owner approved and completed AWS provisioning and public score cutover. See `live-score-evidence/2026-10-04-aws-cutover.json` for actual artifacts, rollback identity and runtime evidence. Preparation and approval gates below describe the runbook; do not repeat budget initialization. Independent monitoring and sustained SLO proof remain outstanding.
+
+
 Draft, 4 October 2026. PL and CL only. Local candidate: `cf5787c` plus subsequent
 repository documentation. No AWS resources, subscription changes or deployment
 are authorized by this document. Do not request spending approval until the

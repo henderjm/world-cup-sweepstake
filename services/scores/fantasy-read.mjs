@@ -28,6 +28,13 @@ export function storedPlayerPool(squads, history, season, now) {
     || players.some(player => !positive(player.id) || !named(player.name) || !named(player.team)
       || !['GK', 'DEF', 'MID', 'FWD'].includes(player.position)) || new Set(players.map(player => player.id)).size !== players.length)
     throw Error('Invalid stored squad pool');
+  const excluded = squads.data.excludedPlayerIds ?? [];
+  if (!Array.isArray(excluded) || excluded.length > 4000 || excluded.some(id => !positive(id))
+    || new Set(excluded).size !== excluded.length || players.some(player => excluded.includes(player.id)))
+    throw Error('Invalid excluded squad identities');
+  coverage.squads.excludedPlayerIds = excluded;
+  const stale = coverage.squads.state === 'stale';
+  if (excluded.length && !stale) coverage.squads.state = 'partial';
   let requestCount = 0;
   const perSeason = previousSeasonsFor(season, 3).map(year => {
     const empty = { season: year, statsIndex: null, clubAppearances: null, cleanSheetRates: new Map() };
@@ -51,8 +58,8 @@ export function storedPlayerPool(squads, history, season, now) {
   const tiers = deriveTiersFromSeason(players, perSeason[0]);
   const xp = enrichPoolWithHistoricalXp(tiers.players, perSeason, requestCount);
   return { source: 'stored-score-service', competition: 'PL', season, complete: true,
-    lastUpdated: new Date(squads.observedAt).toISOString(), stale: coverage.squads.state !== 'complete', coverage,
-    degraded: Object.entries(coverage.history).filter(([, value]) => value.state !== 'complete').map(([year]) => year),
+    lastUpdated: new Date(squads.observedAt).toISOString(), stale, coverage,
+    degraded: [...(excluded.length ? ['squads'] : []), ...Object.entries(coverage.history).filter(([, value]) => value.state !== 'complete').map(([year]) => year)],
     priorSeasonStats: tiers.header, xpStats: xp.header, players: sortPlayerPool(xp.players) };
 }
 
@@ -70,6 +77,9 @@ export function createFantasyReadApi({ store, seasons, now = Date.now }) {
       ]);
       if (!squads) return json({ error: 'squads not collected yet' }, 503);
       return json(storedPlayerPool(squads, Object.fromEntries(previousSeasonsFor(season, 3).map((year, i) => [year, history[i]])), season, now()));
-    } catch { return json({ error: 'stored player pool unavailable' }, 503); }
+    } catch (error) {
+      console.error(JSON.stringify({ at: new Date().toISOString(), route: 'player-pool', error: error?.name, message: String(error?.message ?? '').slice(0, 160) }));
+      return json({ error: 'stored player pool unavailable' }, 503);
+    }
   };
 }

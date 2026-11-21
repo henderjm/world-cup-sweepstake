@@ -1,6 +1,6 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
-  "Description": "Dedicated Kickoff Draft score artifacts and one-time credential transfer. Approved 4 October 2026.",
+  "Description": "Dedicated Kickoff Draft score artifacts. One-time credential transfer completed; transfer role removed.",
   "Rules": {
     "SelectedAccount": {
       "Assertions": [
@@ -80,47 +80,6 @@
         "Name": "kickoff-draft/api-football-key",
         "Description": "Existing Kickoff Draft provider credential; transferred through scoped GitHub OIDC."
       }
-    },
-    "CredentialTransfer": {
-      "Type": "AWS::IAM::Role",
-      "Properties": {
-        "RoleName": "kickoff-draft-credential-transfer",
-        "AssumeRolePolicyDocument": {
-          "Version": "2012-10-17",
-          "Statement": [
-            {
-              "Effect": "Allow",
-              "Principal": {
-                "Federated": "arn:aws:iam::134471064301:oidc-provider/token.actions.githubusercontent.com"
-              },
-              "Action": "sts:AssumeRoleWithWebIdentity",
-              "Condition": {
-                "StringEquals": {
-                  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-                  "token.actions.githubusercontent.com:sub": "repo:henderjm/world-cup-sweepstake:ref:refs/heads/codex/aws-credential-transfer"
-                }
-              }
-            }
-          ]
-        },
-        "Policies": [
-          {
-            "PolicyName": "OnlyTransferProviderKey",
-            "PolicyDocument": {
-              "Version": "2012-10-17",
-              "Statement": [
-                {
-                  "Effect": "Allow",
-                  "Action": "secretsmanager:PutSecretValue",
-                  "Resource": {
-                    "Ref": "ProviderKey"
-                  }
-                }
-              ]
-            }
-          }
-        ]
-      }
     }
   },
   "Outputs": {
@@ -148,14 +107,6 @@
     "ProviderSecretArn": {
       "Value": {
         "Ref": "ProviderKey"
-      }
-    },
-    "TransferRoleArn": {
-      "Value": {
-        "Fn::GetAtt": [
-          "CredentialTransfer",
-          "Arn"
-        ]
       }
     }
   }

@@ -24,7 +24,65 @@ export const COMPETITIONS = {
       { from: 25, to: 36, tone: "out", label: "Eliminated" },
     ],
   },
+  // Served by Sportmonks end to end (src/sportmonksFeed.js,
+  // worker/sportmonksLive.js), not API-Football: adding them to the
+  // API-Football collector would have cost about two more Premier Leagues of
+  // calls a weekend against a 7,500 daily cap that the Premier League and
+  // fantasy depend on. Their match ids are offset (SPORTMONKS_ID_OFFSET).
+  SA: {
+    code: "SA",
+    provider: "sportmonks",
+    sportmonksLeagueId: 384,
+    name: "Serie A",
+    shortName: "Serie A",
+    zones: [
+      { from: 1, to: 4, tone: "safe", label: "Champions League" },
+      { from: 5, to: 6, tone: "edge", label: "Europa and Conference League" },
+      { from: 18, to: 20, tone: "out", label: "Relegation" },
+    ],
+  },
+  PD: {
+    code: "PD",
+    provider: "sportmonks",
+    sportmonksLeagueId: 564,
+    name: "La Liga",
+    shortName: "La Liga",
+    zones: [
+      { from: 1, to: 4, tone: "safe", label: "Champions League" },
+      { from: 5, to: 6, tone: "edge", label: "Europa and Conference League" },
+      { from: 18, to: 20, tone: "out", label: "Relegation" },
+    ],
+  },
+  // Sportmonks-served like SA/PD (the Euro Club Tournaments plan). Both
+  // league phases are one 36-team table, the same bands as the CL.
+  EL: {
+    code: "EL",
+    provider: "sportmonks",
+    sportmonksLeagueId: 5,
+    name: "UEFA Europa League",
+    shortName: "Europa League",
+    zones: [
+      { from: 1, to: 8, tone: "safe", label: "Round of 16" },
+      { from: 9, to: 24, tone: "edge", label: "Knockout play-offs" },
+      { from: 25, to: 36, tone: "out", label: "Eliminated" },
+    ],
+  },
+  UECL: {
+    code: "UECL",
+    provider: "sportmonks",
+    sportmonksLeagueId: 2286,
+    name: "UEFA Conference League",
+    shortName: "Conference League",
+    zones: [
+      { from: 1, to: 8, tone: "safe", label: "Round of 16" },
+      { from: 9, to: 24, tone: "edge", label: "Knockout play-offs" },
+      { from: 25, to: 36, tone: "out", label: "Eliminated" },
+    ],
+  },
 };
+
+// The competitions Sportmonks serves on its own, in display order.
+export const SPORTMONKS_COMPETITION_CODES = Object.keys(COMPETITIONS).filter(code => COMPETITIONS[code].provider === "sportmonks");
 
 // The competitions the switcher offers, in display order. The first is the default
 // for new visitors and for legacy unprefixed data paths.

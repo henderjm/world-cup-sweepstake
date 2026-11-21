@@ -36,7 +36,8 @@ test('trial starts no collectors, preserves durable coordination, and isolates t
     const service = resources[`Collector${suffix}`].Properties;
     assert.deepEqual(service.DesiredCount, { 'Fn::If': ['CollectionEnabled', 1, 0] });
     assert.deepEqual(service.NetworkConfiguration.AwsvpcConfiguration.Subnets, [{ Ref: `Subnet${suffix}` }]);
-    assert.equal(service.DeploymentConfiguration.MaximumPercent, 100);
+    assert.equal(service.DeploymentConfiguration.MinimumHealthyPercent, 100);
+    assert.equal(service.DeploymentConfiguration.MaximumPercent, 200);
   }
   assert.equal(resources.Scores.DeletionPolicy, 'Retain');
   assert.equal(resources.Scores.UpdateReplacePolicy, 'Retain');

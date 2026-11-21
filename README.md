@@ -58,7 +58,7 @@ game is live) and updates in place, no deploy involved.
 1. `cd worker`
 2. `npx wrangler login`
 3. `npx wrangler secret put API_FOOTBALL_KEY` and paste your key.
-4. `npx wrangler deploy`. Note the URL it prints, e.g.
+4. `SCORE_READ_ORIGIN=<origin> node scripts/deploy-score-worker.mjs --deploy` (or push to `main`; a bare `npx wrangler deploy` drops `SCORE_READ_ORIGIN` and breaks every feed). Note the URL it prints, e.g.
    `https://goon-squad-data.<your-subdomain>.workers.dev`.
 5. Set `DATA_API` in `src/data.js` to that URL and push.
 
@@ -87,7 +87,7 @@ people are watching. To enable it:
    the `ANALYSIS_CACHE` block in `wrangler.toml`.
 3. `npx wrangler secret put ANTHROPIC_API_KEY` and paste an Anthropic API key
    (create one at https://platform.claude.com/).
-4. `npx wrangler deploy`
+4. `SCORE_READ_ORIGIN=<origin> node scripts/deploy-score-worker.mjs --deploy` (or push to `main`; a bare `npx wrangler deploy` drops `SCORE_READ_ORIGIN` and breaks every feed)
 
 Without the secret or the KV namespace nothing is generated and the site simply
 hides the card. The prompt is built server-side from feed data only, so the endpoint
@@ -111,7 +111,7 @@ follows live in Cloudflare D1 next to the Worker. To enable it:
 4. Put the client id in **both** places: `GOOGLE_CLIENT_ID` in
    `worker/wrangler.toml` and the `GOOGLE_CLIENT_ID` constant in
    `src/account.js`.
-5. `npx wrangler deploy` and push the site.
+5. `SCORE_READ_ORIGIN=<origin> node scripts/deploy-score-worker.mjs --deploy` (or push to `main`; a bare `npx wrangler deploy` drops `SCORE_READ_ORIGIN` and breaks every feed) and push the site.
 
 Until step 4 the You section shows sign-in as not configured and everything else
 works. Sessions are opaque bearer tokens (only their hash is stored); Google is
@@ -131,7 +131,7 @@ via Web Push (VAPID); no polling, no third-party service. To enable it:
    `npx wrangler secret put VAPID_PRIVATE_JWK`, and the public
    applicationServerKey in **both** `VAPID_PUBLIC_KEY` in `worker/wrangler.toml`
    and the constant in `src/push.js`. Set `PUSH_CONTACT` and `SITE_ORIGIN` too.
-2. `npx wrangler deploy` and push the site (the service worker is `sw.js`).
+2. `SCORE_READ_ORIGIN=<origin> node scripts/deploy-score-worker.mjs --deploy` (or push to `main`; a bare `npx wrangler deploy` drops `SCORE_READ_ORIGIN` and breaks every feed) and push the site (the service worker is `sw.js`).
 
 Each signed-in user gets a "Send test" button to verify their device end to end.
 

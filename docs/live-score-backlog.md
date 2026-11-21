@@ -1,7 +1,77 @@
 # Daily live-score product backlog
 
-Updated: 2026-10-04. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
+Updated: 2026-10-11. Owner: ongoing Codex task. Branch: `codex/live-score-quality`.
 Starting revision: `bfaf0a66e03febeda47647789e275853155ef638`.
+
+## October 11 recurrence — repaired by 06fd597
+
+Liverpool–Man City (1557424) finished 0–3 while its timeline retained only the
+minute-8 card. Last event observation: 15:41:34 UTC (16:41 Irish time), roughly
+11 minutes after kickoff. Measured shared usage was 4916/7500; the internal
+4500 current-detail cutoff, rather than exhaustion of the daily allowance,
+blocked refreshes. All stored detail sections are outdated-result; players missing.
+The October 10 repair restored one match but did not solve daily capacity.
+
+Do not recommend a paid upgrade from this evidence alone. Required next work:
+reduce empty pre-match and repeated historical polling; model full busy-day demand;
+allocate score/detail capacity against that demand; ensure final-whistle reconciliation;
+show stale timeline age clearly. Acceptance includes complete final goals and
+substitutions, hard quota enforcement, and real browser recovery after exhaustion.
+Release 06fd597 repairs the request waste and removes the fixed detail cutoff.
+The 24-hour 28-match simulation uses 4585/7500 requests with final reconciliation
+within 149 seconds, including two minutes of provider delay. A late-day recovery
+run starting at 4916 ends at 6772. All 132 affected tests and headless UI checks pass.
+Production Liverpool–City now has all three goals, nine substitutions and 40
+player-stat entries; every detail section is complete. Desktop and mobile show
+the recovered timeline and clear the stale warning. Pages run 38172976067 passed.
+See `live-score-evidence/2026-10-11-busy-matchday.md` and
+`live-score-evidence/2026-10-11-production-recovery.json` for scope and evidence.
+
+## October 10 live detail repair
+
+Man United–Tottenham (1557425) had no stored detail at 17:46 UTC despite current
+scores. Shared usage was 2962/7500: the 1500 supplementary cutoff blocked every
+detail section. Current fixture identity, events and lineups now have a bounded
+middle allowance up to 4500 total requests; the final 3000 remain score-only.
+Historical detail and player statistics retain the 1500 cutoff. Current means
+live, within two hours before kickoff, or up to four hours after kickoff for
+scheduled/recently finished fixtures. Admission changes use separate retry keys.
+This restores access, not unlimited freshness: middle-tier exhaustion can still
+defer details, and provider availability is independently validated.
+
+Acceptance: current fixture/events/lineups publish after optional exhaustion;
+player stats and historical detail cannot use that allowance; live scores run
+first and retain their final reserve; all calls obey the daily cap; headless
+production drawer shows provider-confirmed detail. Rolling deployments must start
+replacement tasks before stopping existing collectors (100% minimum, 200% maximum).
+Verified: 85 score-service and four infrastructure tests pass; headless drawer
+state checks pass at 320/390/1440px. AWS rollout completed; real desktop/mobile
+drawers show both starting elevens, one card and three substitutions. 60 public
+score probes recorded 59 successful reads and one timeout; maximum successful-read source age 25.227s. Player statistics remain
+missing. Evidence: `live-score-evidence/2026-10-10-live-detail-recovery.json`.
+
+## Current production state after approved AWS cutover
+
+October 4: the owner approved provisioning, cutover and the provider-key transfer.
+Production PL/CL score reads now use AWS in account 134471064301, eu-west-1.
+Two collectors share the fenced lease and provider budget. The Cloudflare Worker
+has no provider key; the GitHub detail feeder skips when the AWS origin is set.
+Frontend 56309fb and collector 1a7527e are deployed; the reader remains bb79bf0.
+Evidence: `live-score-evidence/2026-10-04-aws-cutover.json` and
+`live-score-evidence/2026-10-04-aws-takeover.json`. The controlled stop observed
+standby lease takeover within 15.916 seconds and twelve successful public feed
+reads. This is a quiet-day drill, not a busy-matchday availability measurement.
+Earlier dated preparation notes below are historical, not current deployment state.
+Hourly automation stays paused.
+
+| Priority | Remaining work | Acceptance |
+| --- | --- | --- |
+| P0 | Independent matchday monitoring and paging | Supervised collector-independent checks, monitor-loss watchdog, durable alerts and an approved receiver; preserve missing observations and measure the existing SLOs. No new paid service without approval. |
+| P0 | Busy-day provider budget | Model PL/CL score, standings and current detail demand across a full busy day, including retries. Preserve the tested protected score/detail workload and hard provider limits, expose admission failures, and measure missing sections; do not purchase a plan upgrade without approval. |
+| P0 | Public read capacity | Verify representative concurrent mobile/desktop clients against the 10 RPS / burst 20 AWS ceiling, including static exports. Demonstrate a cache/rate-limit strategy that meets agreed traffic and freshness targets before claiming capacity. |
+| P1 | Supplementary collection quality | Finish all three fantasy history seasons without touching the 6000-request score reserve. Stop repeated invalid archived-detail retries starving history. Log bounded validation reasons and fixture IDs. Verify cached exports retain source age and never invent player positions or xP. |
+| P1 | Provider squad conflicts | Player 416250 appears twice in Aston Villa with conflicting positions. The stored pool excludes every ambiguous ID and reports them in coverage. Publish unambiguous players, retain a recent complete export where possible, and verify eventual provider correction. |
+| P1 | Runtime permission evidence | Exercise denied provider/write operations under the actual reader role and verify least privilege without changing production data. |
 
 ## Mandate and continuation
 
@@ -1955,3 +2025,12 @@ records. Uses inherited `flock` in the stock Node container; Python wrapper
 recovery remains separately tested. See `score-monitoring-trial.md` for the
 serial two-test command and limits. No production writes or provider requests.
 Retention, external supervision, watchdog and human paging remain next gates.
+
+## October 4 — repair post-cutover standings delay
+
+Released collector 1a7527e and frontend 56309fb after the reported delayed-table
+warning. Standings admission now survives supplementary exhaustion while live
+scores retain scheduling priority; hard provider caps are unchanged. Sidebar
+age now uses the table observation instead of the score observation. PL and CL
+recovered automatically in open headless production pages. Regression and
+runtime evidence: `live-score-evidence/2026-10-04-standings-delay.json`.

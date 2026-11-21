@@ -109,3 +109,40 @@ test('stored-mode script attempts the stored service before the legacy provider-
   });
   assert.equal(await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve); }), 7);
 });
+
+test('ambiguous squad identities remain visible in coverage without marking fresh data stale', () => {
+  const { squads, history } = fixtures();
+  squads.data.excludedPlayerIds = [416250];
+  const body = storedPlayerPool(squads, history, '2026', now);
+  assert.equal(body.coverage.squads.state, 'partial');
+  assert.deepEqual(body.coverage.squads.excludedPlayerIds, [416250]);
+  assert.deepEqual(body.degraded, ['squads']);
+  assert.equal(body.stale, false);
+  squads.data.excludedPlayerIds = [1];
+  assert.throws(() => storedPlayerPool(squads, history, '2026', now));
+});
+
+test('scheduled export can retain a recent complete pool during explicit provider degradation', async t => {
+  const { path, run, read } = await setup(t); await run(pool()); const before = await read();
+  const { squads } = fixtures(); squads.data.excludedPlayerIds = [416250];
+  const partial = storedPlayerPool(squads, {}, '2026', now);
+  const result = await exportStoredPlayerPool({ origin: 'https://stored.invalid', competition: 'PL', season: '2026', path,
+    now: () => now, retainLastGood: true, fetcher: async () => Response.json(partial) });
+  assert.equal(result.retained, true); assert.ok(result.degraded.includes('squads'));
+  assert.equal(await read(), before);
+  await assert.rejects(exportStoredPlayerPool({ origin: 'https://stored.invalid', competition: 'PL', season: '2026', path,
+    now: () => now + 3 * 86400000, retainLastGood: true, fetcher: async () => Response.json(partial) }));
+});
+
+test('a fresh explicitly partial pool can replace an expired legacy pool without carrying stale estimates forward', async t => {
+  const { path, read } = await setup(t);
+  await writeFile(path, JSON.stringify({ source: 'API-Football (squads)', complete: true, players,
+    lastUpdated: new Date(now - 3 * 86400000).toISOString() }));
+  const { squads } = fixtures(); squads.data.excludedPlayerIds = [416250];
+  const partial = storedPlayerPool(squads, {}, '2026', now);
+  await exportStoredPlayerPool({ origin: 'https://stored.invalid', competition: 'PL', season: '2026', path,
+    now: () => now, retainLastGood: true, fetcher: async () => Response.json(partial) });
+  const result = JSON.parse(await read());
+  assert.equal(result.source, 'stored-score-service'); assert.deepEqual(result.degraded, ['squads', '2023', '2024', '2025']);
+  assert.ok(result.players.every(player => player.xp === null));
+});

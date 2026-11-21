@@ -1,5 +1,14 @@
 import { DATA_API } from "./data.js";
 import { track, identifyUser, resetIdentity } from "./telemetry.js";
+import { FUNNEL_EVENTS, signInProperties } from "./funnelEvents.js";
+import {
+  ATTRIBUTION_KEY,
+  deriveAttribution,
+  mergeAttribution,
+  normalizeAttribution,
+  parseStoredAttribution,
+  serializeAttribution,
+} from "./attribution.js";
 import { isNative } from "./native.js";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 
@@ -79,6 +88,49 @@ function storeSession(token) {
   }
 }
 
+// -- Acquisition attribution ----------------------------------------------------
+//
+// Captured once per page load (src/main.js, before either app mounts) and
+// held in localStorage until a sign-in consumes it. The rules for what wins
+// and what a value may contain live in src/attribution.js; this is only the
+// browser glue. Storage being blocked costs the attribution and nothing else.
+
+function readAttribution() {
+  try {
+    return parseStoredAttribution(window.localStorage.getItem(ATTRIBUTION_KEY));
+  } catch {
+    return null;
+  }
+}
+
+export function captureAttribution() {
+  try {
+    const stored = readAttribution();
+    const fresh = deriveAttribution({
+      search: window.location.search,
+      hash: window.location.hash,
+      referrer: document.referrer,
+      host: window.location.hostname,
+    });
+    const next = mergeAttribution(stored, fresh);
+    const raw = next === stored ? null : serializeAttribution(next);
+    if (raw) window.localStorage.setItem(ATTRIBUTION_KEY, raw);
+    return next;
+  } catch {
+    return null;
+  }
+}
+
+// A sign-in consumes the record: the next visit starts attribution afresh, so
+// a second account on a shared device never inherits the first one's origin.
+function consumeAttribution() {
+  try {
+    window.localStorage.removeItem(ATTRIBUTION_KEY);
+  } catch {
+    // storage blocked; nothing was stored to clear
+  }
+}
+
 async function api(path, options = {}) {
   const headers = { ...(options.headers ?? {}) };
   if (session) headers.Authorization = `Bearer ${session}`;
@@ -136,7 +188,7 @@ function loadGis() {
   return gisLoading;
 }
 
-export async function mountSignIn(container, { onSignedIn, onError }) {
+export async function mountSignIn(container, { onSignedIn, onError, surface = null }) {
   if (!container) return;
   if (isNative) {
     if (!Capacitor.isPluginAvailable("FirebaseAuthentication")) {
@@ -151,7 +203,7 @@ export async function mountSignIn(container, { onSignedIn, onError }) {
       try {
         const result = await nativeAuth.signInWithGoogle();
         if (!result.credential?.idToken) throw new Error("Google did not return an identity token");
-        await finishSignIn(result.credential.idToken);
+        await finishSignIn(result.credential.idToken, surface);
         onSignedIn?.(account);
       } catch (error) {
         onError?.(error);
@@ -168,7 +220,7 @@ export async function mountSignIn(container, { onSignedIn, onError }) {
       client_id: GOOGLE_CLIENT_ID,
       callback: async (response) => {
         try {
-          await finishSignIn(response.credential);
+          await finishSignIn(response.credential, surface);
           onSignedIn?.(account);
         } catch (error) {
           onError?.(error);
@@ -187,15 +239,17 @@ export async function mountSignIn(container, { onSignedIn, onError }) {
   }
 }
 
-async function finishSignIn(credential) {
+async function finishSignIn(credential, surface) {
+  const attribution = normalizeAttribution(readAttribution());
   const result = await api("/auth/google", {
     method: "POST",
-    body: JSON.stringify({ credential }),
+    body: JSON.stringify({ credential, attribution }),
   });
   storeSession(result.token);
+  consumeAttribution();
   account = { user: result.user, follows: result.follows };
   identifyUser(result.user.email, { name: result.user.name, email: result.user.email });
-  track("user_signed_in", { method: "google" });
+  track(FUNNEL_EVENTS.USER_SIGNED_IN, signInProperties(result, attribution, surface));
   await resumeNotifications();
   emit();
 }

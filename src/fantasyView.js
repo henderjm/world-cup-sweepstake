@@ -207,7 +207,7 @@ function renderRankCell(player) {
 export function renderFantasySignedOut() {
   return `
     <div class="you you--signin">
-      <span class="brand__mark you__mark">KD</span>
+      <img class="brand__mark you__mark" src="assets/favicon.svg" alt="" />
       <h2 class="you__title">Sign in for Fantasy</h2>
       <p class="note">Create or join a head-to-head draft league with your mates: sign in to get started.</p>
       <button class="seg" type="button" data-section-nav="you">Go to sign in →</button>
@@ -223,7 +223,7 @@ export function renderFantasySignedOut() {
 export function renderFantasySessionExpired() {
   return `
     <div class="you you--signin">
-      <span class="brand__mark you__mark">KD</span>
+      <img class="brand__mark you__mark" src="assets/favicon.svg" alt="" />
       <h2 class="you__title">Your session expired</h2>
       <p class="note">Sign in again from the You section to keep using Fantasy.</p>
       <button class="seg" type="button" data-section-nav="you">Go to sign in →</button>

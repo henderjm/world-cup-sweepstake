@@ -74,6 +74,24 @@ test("provider quota can reduce allowance but higher or missing readings never r
   assert.equal(reserve(reduced, start + 70000).reason, "daily-limit");
 });
 
+test("a reading further ahead than the minute limit allows is refused, not ratcheted in for the day", () => {
+  const busy = { dailyLimit: 7500, minuteLimit: 300, scoreReserve: 6000 };
+  let state = initialBudget(busy, 2100, start);
+  const admitted = reserveRequest(state, { now: start + 60000, priority: "scores", id: "a", admissionTimeoutMs: 3000 });
+  state = finishRequest(admitted.next, admitted.permit, { ok: true,
+    headers: new Headers({ "x-ratelimit-requests-limit": "7500", "x-ratelimit-requests-remaining": "0" }) }, start + 61000);
+  assert.equal(state.used, 2101);
+  assert.equal(state.syncedAt, start);
+  assert.equal(state.rejectedReading.reported, 7500);
+  const next = reserveRequest(state, { now: state.nextAt, priority: "scores", id: "b", admissionTimeoutMs: 3000 });
+  assert.equal(next.allowed, true);
+  // Plausible readings, including other consumers' spend, still sync.
+  state = finishRequest(next.next, next.permit, { ok: true,
+    headers: new Headers({ "x-ratelimit-requests-limit": "7500", "x-ratelimit-requests-remaining": "5000" }) }, state.nextAt + 1);
+  assert.equal(state.used, 2500);
+  assert.equal(state.syncedAt, next.next.updatedAt + 1);
+});
+
 test("failures back off, and UTC rollover preserves pacing without carrying daily usage", () => {
   let state = initial(0);
   for (const delay of [1000, 2000, 4000]) {

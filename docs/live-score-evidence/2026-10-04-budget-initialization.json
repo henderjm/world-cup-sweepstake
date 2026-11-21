@@ -1,0 +1,14 @@
+{
+  "tableArn": "arn:aws:dynamodb:eu-west-1:134471064301:table/kickoff-draft-scores-Scores-6U0100YCH5AF",
+  "observedAt": 1791132349423,
+  "consumersStoppedAt": 1791132339248,
+  "consumersStopped": true,
+  "evidence": "GitHub run 37217714056 cancelled; three workflows disabled; Worker stored mode deployed, provider key deleted; no local collector process; two provider status observations flat 10s apart. See 2026-10-04-aws-cutover.json.",
+  "used": 64,
+  "uncertainRequests": 300,
+  "policy": {
+    "dailyLimit": 7500,
+    "minuteLimit": 300,
+    "scoreReserve": 6000
+  }
+}

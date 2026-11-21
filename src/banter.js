@@ -13,6 +13,10 @@ import { track } from "./telemetry.js";
 
 export const REACTIONS = ["🔥", "😂", "😱", "🧂", "🐐", "💀"];
 
+// Spoken names for the reaction buttons, which are otherwise named only by
+// the emoji itself.
+const REACTION_NAMES = { "🔥": "Fire", "😂": "Laughing", "😱": "Shocked", "🧂": "Salty", "🐐": "GOAT", "💀": "Dead" };
+
 export function banterAvailable() {
   return Boolean(DATA_API);
 }
@@ -23,6 +27,7 @@ let data = null;
 let timer = null;
 let unsubscribeAccount = null;
 let inflight = 0; // posts in the air; refreshes are dropped while > 0
+let notice = ""; // why the last post or action was refused, shown once
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -68,6 +73,7 @@ export function unmountBanter() {
   matchId = null;
   data = null;
   inflight = 0;
+  notice = "";
 }
 
 async function refresh() {
@@ -116,6 +122,13 @@ async function send(body) {
     } else if (response.status === 401) {
       renderSkeleton();
       renderLive();
+    } else {
+      // A refusal (rate limit, moderator-only action) says why; the optimistic
+      // message is dropped and the next refresh restores the true list.
+      const reason = await response.json().catch(() => ({}));
+      notice = reason.error || "That didn't go through. Try again in a moment.";
+      if (data?.messages) data.messages = data.messages.filter((message) => !message.pending);
+      renderLive();
     }
   } catch {
     // optimistic state stands; the next refresh reconciles
@@ -125,6 +138,18 @@ async function send(body) {
 }
 
 function onClick(event) {
+  const action = event.target.closest("[data-talk-action]");
+  if (action && isSignedIn()) {
+    const messageId = Number(action.dataset.messageId);
+    if (action.dataset.talkAction === "report") {
+      const message = data?.messages?.find((entry) => entry.id === messageId);
+      if (message) message.reported = true;
+      renderLive();
+    }
+    track("banter_moderation_action", { match_id: matchId, action: action.dataset.talkAction });
+    send({ action: action.dataset.talkAction, messageId });
+    return;
+  }
   const button = event.target.closest("[data-react]");
   if (!button || !isSignedIn()) return;
   const emoji = button.dataset.react;
@@ -154,6 +179,7 @@ function onSubmit(event) {
   const text = (textInput.value || "").trim();
   if (!text) return;
   textInput.value = "";
+  notice = "";
   if (!data || data.disabled || data.error) data = { reactions: { counts: {}, mine: [] }, messages: [] };
   data.messages = [...(data.messages ?? []), { name: "You", text, pending: true }].slice(-50);
   renderLive();
@@ -166,17 +192,14 @@ function renderSkeleton() {
   if (!node) return;
   const compose = isSignedIn()
     ? `<form class="bn__compose" data-banter-form>
-        <input class="bn__text" data-banter-text maxlength="140" placeholder="say something…" autocomplete="off" aria-label="Your banter" />
+        <input class="bn__text" data-banter-text maxlength="140" placeholder="Say something" autocomplete="off" aria-label="Your banter" />
         <button class="btn bn__send" type="submit">Send</button>
-      </form>
-      <p class="bn__note">Posting as your Kickoff Draft account, shared with everyone.</p>`
-    : `<p class="bn__note bn__note--signin">Reading is open to all; joining in needs an account.
-        <button class="seg" type="button" data-section-nav="you" data-md-close>Sign in</button>
-      </p>`;
+      </form>`
+    : `<p class="bn__note bn__note--signin"><button class="seg" type="button" data-section-nav="you" data-md-close>Sign in to post</button></p>`;
   node.innerHTML = `
     <div class="bn">
       <div class="bn__react" data-bn-react></div>
-      <div class="bn__feed" data-bn-feed><p class="md-note">Loading banter…</p></div>
+      <div class="bn__feed" data-bn-feed></div>
       ${compose}
     </div>`;
 }
@@ -189,12 +212,12 @@ function renderLive() {
 
   if (data?.disabled) {
     react.innerHTML = "";
-    feed.innerHTML = `<p class="md-note">Banter isn't switched on yet.</p>`;
+    feed.innerHTML = "";
     return;
   }
   if (data?.error) {
     react.innerHTML = "";
-    feed.innerHTML = `<p class="md-note">Couldn't reach banter. Retrying…</p>`;
+    feed.innerHTML = `<p class="md-note">Comments unavailable</p>`;
     return;
   }
 
@@ -203,18 +226,51 @@ function renderLive() {
   const mine = new Set(data?.reactions?.mine ?? []);
   react.innerHTML = REACTIONS.map((emoji) => {
     const count = counts[emoji] ?? 0;
-    return `<button type="button" class="bn-react ${mine.has(emoji) ? "is-mine" : ""}" data-react="${emoji}" aria-pressed="${mine.has(emoji)}" ${signedIn ? "" : `disabled title="Sign in to react"`}>${emoji}${count ? `<span>${count}</span>` : ""}</button>`;
+    return `<button type="button" class="bn-react ${mine.has(emoji) ? "is-mine" : ""}" data-react="${emoji}" aria-label="${REACTION_NAMES[emoji] ?? emoji}${count ? `, ${count}` : ""}" aria-pressed="${mine.has(emoji)}" ${signedIn ? "" : `disabled title="Sign in to react"`}>${emoji}${count ? `<span>${count}</span>` : ""}</button>`;
   }).join("");
 
   const messages = data?.messages ?? [];
-  feed.innerHTML = messages.length
-    ? messages
-        .map(
-          (message) =>
-            `<div class="bn-msg ${message.pending ? "is-pending" : ""}"><span class="bn-msg__name">${esc(message.name)}</span><span class="bn-msg__text">${esc(message.text)}</span></div>`,
-        )
-        .join("")
-    : `<p class="md-note">No banter yet. Get it started.</p>`;
+  const moderator = Boolean(data?.moderator);
+  feed.innerHTML = (messages.length
+    ? messages.map((message) => renderMessage(message, { signedIn, moderator, moderation: Boolean(data?.moderation) })).join("")
+    : "")
+    + (notice ? `<p class="md-note bn__notice" role="status">${esc(notice)}</p>` : "");
+}
+
+// One comment, with the quiet moderation controls the PRD asks for: a report
+// link on other people's comments, a label on your own when it is hidden,
+// and hide/mute for a moderator. The Worker has already removed anything
+// this viewer may not see (src/talkModeration.js), so nothing here hides.
+const STATE_LABELS = {
+  pending: "Hidden pending review",
+  removed: "Removed by a moderator",
+  muted: "Author muted",
+};
+
+export function renderMessage(message, { signedIn, moderator, moderation }) {
+  const label = message.state && message.state !== "visible" ? STATE_LABELS[message.state] : "";
+  const tools = [];
+  if (moderation && signedIn && message.id != null && !message.mine && !moderator) {
+    tools.push(message.reported
+      ? `<span class="bn-msg__tool is-done">Reported</span>`
+      : `<button type="button" class="bn-msg__tool" data-talk-action="report" data-message-id="${message.id}">Report</button>`);
+  }
+  if (moderator && message.id != null) {
+    if (message.reports) tools.push(`<span class="bn-msg__tool is-done">${message.reports} report${message.reports === 1 ? "" : "s"}</span>`);
+    tools.push(message.state === "removed"
+      ? `<button type="button" class="bn-msg__tool" data-talk-action="unhide" data-message-id="${message.id}">Unhide</button>`
+      : `<button type="button" class="bn-msg__tool" data-talk-action="hide" data-message-id="${message.id}">Hide</button>`);
+    if (!message.mine) {
+      tools.push(message.state === "muted"
+        ? `<button type="button" class="bn-msg__tool" data-talk-action="unmute" data-message-id="${message.id}">Unmute author</button>`
+        : `<button type="button" class="bn-msg__tool" data-talk-action="mute" data-message-id="${message.id}">Mute author</button>`);
+    }
+  }
+  return `<div class="bn-msg ${message.pending ? "is-pending" : ""} ${label ? "is-hidden" : ""}">`
+    + `<span class="bn-msg__name">${esc(message.name)}</span><span class="bn-msg__text">${esc(message.text)}</span>`
+    + (label ? `<span class="bn-msg__state">${label}</span>` : "")
+    + (tools.length ? `<span class="bn-msg__tools">${tools.join("")}</span>` : "")
+    + `</div>`;
 }
 
 function scrollFeed() {

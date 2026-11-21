@@ -16,7 +16,7 @@ function page(payload, current, total) {
     throw Error('Incomplete or inconsistent fantasy data page');
 }
 
-export function squadPlayers(payloads, clubs) {
+export function squadPlayers(payloads, clubs, excludedIds) {
   if (!clubs.length || payloads.length !== clubs.length || new Set(clubs.map(club => club.id)).size !== clubs.length)
     throw Error('Incomplete squad collection');
   const players = [], ids = new Set();
@@ -27,15 +27,20 @@ export function squadPlayers(payloads, clubs) {
       || !named(squad.team.name) || !Array.isArray(squad.players) || squad.players.length < 11 || squad.players.length > 100)
       throw Error('Squad does not cover the requested club');
     for (const member of squad.players) {
-      if (!positive(member.id) || ids.has(member.id) || !named(member.name)
+      if (!positive(member.id) || !named(member.name)
         || !['Goalkeeper', 'Defender', 'Defence', 'Midfielder', 'Midfield', 'Attacker', 'Offence'].includes(member.position))
         throw Error('Invalid or ambiguous squad player');
+      if (ids.has(member.id)) {
+        if (!excludedIds) throw Error('Invalid or ambiguous squad player');
+        excludedIds.add(member.id);
+      }
       ids.add(member.id);
       players.push({ id: member.id, name: decodeEntities(member.name), team: normalizeTeamName(squad.team.name),
         position: bucketPosition(member.position), crest: squad.team.logo ?? club.logo ?? null });
     }
   }
-  return players;
+  // Conflicting identities cannot safely be assigned a club or fantasy position.
+  return excludedIds ? players.filter(player => !excludedIds.has(player.id)) : players;
 }
 
 export function validateHistoryPage(payload, leagueId, season, current, total, identities) {

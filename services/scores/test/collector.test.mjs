@@ -16,12 +16,12 @@ function fixture(id, league = 2, now = start) {
     teams: { home: { name: "Arsenal" }, away: { name: "Real Madrid" } }, goals: { home: 1, away: 0 } };
 }
 
-async function setup(t, records = [fixture(900001)], { at = start, bootstrapAt = at - 61000 } = {}) {
+async function setup(t, records = [fixture(900001)], { at = start, bootstrapAt = at - 61000, used = 0 } = {}) {
   const db = client(), tableName = await createTable(db);
   let now = bootstrapAt;
   const clock = () => now, calls = [], state = { records, alter: body => body };
   const store = new DynamoScoreStore({ client: db, tableName, now: clock });
-  await store.initializeBudget(await store.claim("bootstrap"), { dailyLimit: 1000, minuteLimit: 300, scoreReserve: 100 }, 0);
+  await store.initializeBudget(await store.claim("bootstrap"), { dailyLimit: 1000, minuteLimit: 300, scoreReserve: 100 }, used);
   now = at;
   const server = createServer((req, res) => {
     const url = new URL(req.url, "http://localhost"); calls.push(url.pathname + url.search);
@@ -42,7 +42,7 @@ async function setup(t, records = [fixture(900001)], { at = start, bootstrapAt =
   return { db, tableName, store, provider, collector, state, calls, clock, providerEndpoint, advance: ms => { now += ms; } };
 }
 
-test("live batches precede optional jobs and one failed batch retains its individual observations", async t => {
+test("live batches precede optional jobs and a partial batch keeps the missing fixture's last observation", async t => {
   const records = Array.from({ length: 22 }, (_, i) => fixture(900001 + i));
   const { store, collector, state, calls, clock, advance } = await setup(t, records);
   assert.equal((await collector.step()).kind, "discovery");
@@ -51,8 +51,11 @@ test("live batches precede optional jobs and one failed batch retains its indivi
   state.records = records.map(row => ({ ...row, goals: { home: 2, away: 0 } }));
   state.alter = (body, url) => url.searchParams.get("ids")?.startsWith("900001")
     ? { ...body, response: body.response.slice(1), results: body.results - 1 } : body;
-  const failed = await collector.step();
-  assert.equal(failed.state, "failed"); assert.equal(failed.kind, "live");
+  // A batch answers for what it returned: one missing fixture no longer fails
+  // its nineteen siblings (the 2026-10-20 CL freeze, see collector-ghost.test.mjs).
+  const partial = await collector.step();
+  assert.equal(partial.state, "published"); assert.equal(partial.kind, "live");
+  assert.deepEqual(partial.missing, [900001]);
   advance(1000);
   assert.equal((await collector.step()).state, "published");
   const stored = await store.read("CL", "2026");
@@ -158,7 +161,7 @@ test("halftime, extra time and penalties keep polling; terminal scores stop live
   assert.equal((await store.read("CL", "2026")).fixtures[0].match.score.home, 0);
 });
 
-test("supplementary standings preserve score ages and reject incomplete tables", async t => {
+test("standings preserve score ages and reject incomplete tables", async t => {
   const finished = fixture(900001); finished.fixture.status.short = "FT";
   const { collector, store, state, advance } = await setup(t, [finished]);
   await collector.step();
@@ -182,6 +185,32 @@ test("supplementary standings preserve score ages and reject incomplete tables",
   assert.deepEqual((await store.read("CL", "2026")).standings, saved.standings);
 });
 
+test("one id-less standings row takes the one known team it replaced; two cannot be told apart", async t => {
+  const finished = fixture(900001); finished.fixture.status.short = "FT";
+  const { collector, store, state, advance } = await setup(t, [finished]);
+  await collector.step();
+  const row = id => ({ rank: id, team: { id, name: `Team ${id}` }, points: 0, goalsDiff: 0,
+    all: { played: 0, win: 0, draw: 0, lose: 0, goals: { for: 0, against: 0 } } });
+  let table = [1, 2, 3].map(row);
+  state.alter = (body, url) => url.pathname === "/standings"
+    ? { ...body, results: 1, response: [{ league: { id: 2, season: 2026, standings: [table] } }] } : body;
+  advance(1000);
+  assert.equal((await collector.step()).state, "published");
+  // Sabah FA became "Sabah FC" with team id null on 2026-10-21.
+  table = [row(1), { ...row(2), team: { id: null, name: "Renamed" }, points: 3 }, row(3)];
+  advance(15 * 60000);
+  assert.equal((await collector.step()).kind, "discovery");
+  advance(1000);
+  assert.equal((await collector.step()).state, "published");
+  const repaired = (await store.read("CL", "2026")).standings.rows[0].table;
+  assert.deepEqual(repaired.map(entry => [entry.team.id, entry.points]), [[1, 0], [2, 3], [3, 0]]);
+  table = [row(1), { ...row(2), team: { id: null, name: "A" } }, { ...row(3), team: { id: null, name: "B" } }];
+  advance(15 * 60000);
+  assert.equal((await collector.step()).kind, "discovery");
+  advance(1000);
+  assert.equal((await collector.step()).phase, "validation");
+});
+
 test("the collector CLI runs real collection and exits cleanly on SIGTERM", async t => {
   const at = Date.now();
   const { tableName, store, providerEndpoint } = await setup(t, [fixture(900001, 2, at)], { at });
@@ -202,4 +231,37 @@ test("the collector CLI runs real collection and exits cleanly on SIGTERM", asyn
   const [code] = await exit;
   assert.equal(code, 0);
   assert.equal((await store.read("CL", "2026")).fixtures[0].match.score.home, 1);
+});
+
+test("standings keep refreshing after supplementary admission closes, behind due live scores", async t => {
+  const { collector, store, provider, state, advance, calls } = await setup(t, [fixture(900001)], { used: 899 });
+  await collector.step();
+  const table = [1, 2].map(id => ({ rank: id, team: { id, name: `Team ${id}` }, points: 0, goalsDiff: 0,
+    all: { played: 0, win: 0, draw: 0, lose: 0, goals: { for: 0, against: 0 } } }));
+  state.alter = (body, url) => url.pathname === "/standings"
+    ? { ...body, results: 1, response: [{ league: { id: 2, season: 2026, standings: [table] } }] } : body;
+  advance(16000);
+  const live = await collector.step();
+  assert.equal(live.kind, "live"); assert.equal(live.state, "published");
+  const before = await store.read("CL", "2026");
+  advance(1000);
+  const optional = await provider.request(await store.claim("collector"), "/players/squads?team=42");
+  assert.equal(optional.allowed, false); assert.equal(optional.reason, "score-reserve");
+  const standings = await collector.step();
+  assert.equal(standings.kind, "standings"); assert.equal(standings.state, "published");
+  const after = await store.read("CL", "2026");
+  assert.deepEqual(after.fixtures, before.fixtures);
+  assert.equal(after.standings.rows[0].table.length, 2);
+  assert.equal((await store.readBudget()).used, 902);
+  assert.equal(calls.length, 3);
+});
+
+test("standings still respect the absolute daily provider limit", async t => {
+  const finished = fixture(900001); finished.fixture.status.short = "FT";
+  const { collector, store, advance, calls } = await setup(t, [finished], { used: 999 });
+  await collector.step(); advance(1000);
+  const event = await collector.step();
+  assert.equal(event.kind, "standings"); assert.equal(event.state, "deferred");
+  assert.equal(event.reason, "daily-limit"); assert.equal(calls.length, 1);
+  assert.equal((await store.readBudget()).used, 1000);
 });

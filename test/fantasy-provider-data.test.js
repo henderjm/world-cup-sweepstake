@@ -106,3 +106,24 @@ test('unexpected execution failures propagate instead of silently degrading', as
   await assert.rejects(fetchFantasyHistory({ leagueId: 39, season: '2026', request: async () => { throw failure; },
     unexpected: error => error.code === 2 }), error => error === failure);
 });
+
+test('stored collection excludes every copy of ambiguous identities without blocking valid players', () => {
+  const payload = squad(), excluded = new Set();
+  payload.response[0].players.push({ id: 2, name: 'Full Player Name', position: 'Midfielder' });
+  const players = squadPlayers([payload], [club], excluded);
+  assert.deepEqual([...excluded], [2]);
+  assert.equal(players.length, 10);
+  assert.ok(players.every(player => player.id !== 2));
+  payload.response[0].players[0].position = 'Unknown';
+  assert.throws(() => squadPlayers([payload], [club], new Set()));
+});
+
+test('duplicate identities across clubs are excluded from both clubs', () => {
+  const other = squad(); other.response[0].team = { id: 49, name: 'Chelsea' };
+  other.response[0].players.forEach(player => { player.id += 100; });
+  other.response[0].players[0].id = 2;
+  const excluded = new Set();
+  const players = squadPlayers([squad(), other], [club, other.response[0].team], excluded);
+  assert.deepEqual([...excluded], [2]);
+  assert.equal(players.length, 20);
+});

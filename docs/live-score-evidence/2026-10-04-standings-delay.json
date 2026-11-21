@@ -1,0 +1,63 @@
+{
+  "cause": "Standings used supplementary admission and were deferred until UTC midnight once accounted use reached dailyLimit minus scoreReserve. Scores continued under protected admission.",
+  "before": {
+    "PL": "2026-10-04T17:02:51.547Z",
+    "CL": "2026-10-04T17:02:51.254Z",
+    "standingsDelayed": true,
+    "accountedUsageAtDiagnosis": 1504
+  },
+  "collectorCommit": "1a7527e263fc2767d5cd2711196c2739da4d7079",
+  "collectorImage": "134471064301.dkr.ecr.eu-west-1.amazonaws.com/kickoff-draft-scores@sha256:2c7e8b9e0576133ea0656285e26b721b1dc4d124e3b6ffaa5512a05439cc2f0d",
+  "fix": "Standings use protected score admission below due live jobs; daily/minute caps and cooldowns unchanged. No budget reset.",
+  "tests": {
+    "before": "Both new regression tests failed against old code.",
+    "after": "82 score-service tests passed, including supplementary closure and absolute daily cap; 17 related UI tests passed.",
+    "headlessAge": "Independent score/standings age, league selection and elapsed age through polling passed."
+  },
+  "liveRecovery": [
+    {
+      "code": "CL",
+      "before": "LEAGUE PHASE\nFull table \u2192\nCompetition\nPremier League\nChampions League\n\nStandings updates delayed. Showing the saved table from 04 Oct, 18:02. Retry\n\n#\tClub\tP\tPts\n1\t\nParis Saint Germain\n\t1\t3\n2\t\nBayern M\u00fcnchen\n\t1\t3\n3\t\nBarcelona\n\t1\t3\n4\t\nMan United\n\t1\t3\n5\t\nComo\n\t1\t3\n6\t\nVfB Stuttgart\n\t1\t3\n7\t\nSporting CP\n\t1\t3\n8\t\nMan City\n\t1\t3\n9\t\nAston Villa\n\t1\t3\n10\t\nLens\n\t1\t3\n11\t\nReal Betis\n\t1\t3\n12\t\nBorussia Dortmund\n\t1\t3\n13\t\nLiverpool\n\t1\t3\n14\t\nReal Madrid\n\t1\t3\n15\t\nArsenal\n\t1\t3\n16\t\nAEK Athens FC\n\t1\t3\n17\t\nAS Roma\n\t1\t1\n18\t\nShakhtar Donetsk\n\t1\t1\n19\t\nPSV Eindhoven\n\t1\t1\n20\t\nFenerbah\u00e7e\n\t1\t1\n21\t\nVillarreal\n\t1\t0\n22\t\nLille\n\t1\t0\n23\t\nSlavia Praha\n\t1\t0\n24\t\nClub Brugge KV\n\t1\t0\n25\t\nInter\n\t1\t0\n26\t\nAtletico Madrid\n\t1\t0\n27\t\nNapoli\n\t1\t0\n28\t\nLask Linz\n\t1\t0\n29\t\nViking\n\t1\t0\n30\t\nGalatasaray\n\t1\t0\n31\t\nFC Porto\n\t1\t0\n32\t\nRB Leipzig\n\t1\t0\n33\t\nFeyenoord\n\t1\t0\n34\t\nSabah FA\n\t1\t0\n35\t\nSlovan Bratislava\n\t1\t0\n36\t\nBodo/Glimt\n\t1\t0\nRound of 16\nKnockout play-offs\nEliminated",
+      "after": "LEAGUE PHASE\nFull table \u2192\nCompetition\nPremier League\nChampions League\n\nUpdated 9m ago\n\n#\tClub\tP\tPts\n1\t\nParis Saint Germain\n\t1\t3\n2\t\nBayern M\u00fcnchen\n\t1\t3\n3\t\nBarcelona\n\t1\t3\n4\t\nMan United\n\t1\t3\n5\t\nComo\n\t1\t3\n6\t\nVfB Stuttgart\n\t1\t3\n7\t\nSporting CP\n\t1\t3\n8\t\nMan City\n\t1\t3\n9\t\nAston Villa\n\t1\t3\n10\t\nLens\n\t1\t3\n11\t\nReal Betis\n\t1\t3\n12\t\nBorussia Dortmund\n\t1\t3\n13\t\nLiverpool\n\t1\t3\n14\t\nReal Madrid\n\t1\t3\n15\t\nArsenal\n\t1\t3\n16\t\nAEK Athens FC\n\t1\t3\n17\t\nAS Roma\n\t1\t1\n18\t\nShakhtar Donetsk\n\t1\t1\n19\t\nPSV Eindhoven\n\t1\t1\n20\t\nFenerbah\u00e7e\n\t1\t1\n21\t\nVillarreal\n\t1\t0\n22\t\nLille\n\t1\t0\n23\t\nSlavia Praha\n\t1\t0\n24\t\nClub Brugge KV\n\t1\t0\n25\t\nInter\n\t1\t0\n26\t\nAtletico Madrid\n\t1\t0\n27\t\nNapoli\n\t1\t0\n28\t\nLask Linz\n\t1\t0\n29\t\nViking\n\t1\t0\n30\t\nGalatasaray\n\t1\t0\n31\t\nFC Porto\n\t1\t0\n32\t\nRB Leipzig\n\t1\t0\n33\t\nFeyenoord\n\t1\t0\n34\t\nSabah FA\n\t1\t0\n35\t\nSlovan Bratislava\n\t1\t0\n36\t\nBodo/Glimt\n\t1\t0\nRound of 16\nKnockout play-offs\nEliminated",
+      "standingsUpdatedAt": "2026-10-04T17:41:55.092Z",
+      "standingsDelayed": false,
+      "version": 7,
+      "epoch": 7,
+      "errors": [],
+      "recoveredAt": "2026-10-04T17:42:30.027Z"
+    },
+    {
+      "code": "PL",
+      "before": "LEAGUE TABLE\nFull table \u2192\nCompetition\nPremier League\nChampions League\n\nStandings updates delayed. Showing the saved table from 04 Oct, 18:02. Retry\n\n#\tClub\tP\tPts\n1\t\nMan City\n\t5\t15\n2\t\nArsenal\n\t5\t12\n3\t\nBrighton\n\t5\t10\n4\t\nBrentford\n\t5\t9\n5\t\nLeeds United\n\t5\t9\n6\t\nLiverpool\n\t5\t9\n7\t\nEverton\n\t5\t9\n8\t\nHull City\n\t5\t8\n9\t\nNewcastle\n\t5\t8\n10\t\nChelsea\n\t5\t7\n11\t\nIpswich Town\n\t5\t6\n12\t\nMan United\n\t5\t5\n13\t\nNottm Forest\n\t5\t5\n14\t\nSunderland\n\t5\t4\n15\t\nCrystal Palace\n\t5\t4\n16\t\nAston Villa\n\t5\t4\n17\t\nBournemouth\n\t5\t3\n18\t\nCoventry City\n\t5\t3\n19\t\nFulham\n\t5\t2\n20\t\nTottenham\n\t5\t2\nEuropean places\nRelegation",
+      "after": "LEAGUE TABLE\nFull table \u2192\nCompetition\nPremier League\nChampions League\n\nUpdated 9m ago\n\n#\tClub\tP\tPts\n1\t\nMan City\n\t5\t15\n2\t\nArsenal\n\t5\t12\n3\t\nBrighton\n\t5\t10\n4\t\nBrentford\n\t5\t9\n5\t\nLeeds United\n\t5\t9\n6\t\nLiverpool\n\t5\t9\n7\t\nEverton\n\t5\t9\n8\t\nHull City\n\t5\t8\n9\t\nNewcastle\n\t5\t8\n10\t\nChelsea\n\t5\t7\n11\t\nIpswich Town\n\t5\t6\n12\t\nMan United\n\t5\t5\n13\t\nNottm Forest\n\t5\t5\n14\t\nSunderland\n\t5\t4\n15\t\nCrystal Palace\n\t5\t4\n16\t\nAston Villa\n\t5\t4\n17\t\nBournemouth\n\t5\t3\n18\t\nCoventry City\n\t5\t3\n19\t\nFulham\n\t5\t2\n20\t\nTottenham\n\t5\t2\nEuropean places\nRelegation",
+      "standingsUpdatedAt": "2026-10-04T17:41:55.774Z",
+      "standingsDelayed": false,
+      "version": 7,
+      "epoch": 7,
+      "errors": [],
+      "recoveredAt": "2026-10-04T17:42:31.010Z"
+    }
+  ],
+  "uiCommit": "56309fb",
+  "uiStatus": "deployed",
+  "uiRun": 37221760923,
+  "stackStatus": "UPDATE_COMPLETE",
+  "liveAgeLabels": [
+    {
+      "code": "PL",
+      "label": "5m ago",
+      "scoreLabel": "14m ago",
+      "standingsUpdatedAt": "2026-10-04T17:41:55.774Z",
+      "standingsDelayed": false,
+      "errors": []
+    },
+    {
+      "code": "CL",
+      "label": "5m ago",
+      "scoreLabel": "14m ago",
+      "standingsUpdatedAt": "2026-10-04T17:41:55.092Z",
+      "standingsDelayed": false,
+      "errors": []
+    }
+  ]
+}

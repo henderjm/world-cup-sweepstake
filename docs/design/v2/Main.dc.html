@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Home, live, signed in</title>
+<link rel="stylesheet" href="kd.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400..900;1,400..900&display=swap">
+<style>
+body { margin: 0; }
+a { color: #edf2ee; } a:hover { color: #c8f542; }
+</style>
+</helmet>
+<div class="kd" style="width: 390px; height: 844px; position: relative; overflow: hidden; background: #0a0e14;">
+
+  <header style="height: 52px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between;">
+    <a href="Main.dc.html" aria-label="Kickoff Draft home" style="font-size: 22px; font-weight: 900; font-style: italic; letter-spacing: -0.04em; color: #c8f542;">KD</a>
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #8b95a0;" aria-live="polite">
+      <span class="dot pulse" aria-hidden="true"></span>
+      <span>Updated 8s ago</span>
+    </div>
+  </header>
+
+  <div style="margin: 0 16px; padding: 8px 0 10px; display: flex; align-items: center; gap: 10px; font-size: 13px; color: #8b95a0; border-bottom: 1px solid rgba(255,255,255,0.07);">
+    <span style="flex: 1;">You are on the new Kickoff Draft. Switch back any time in You.</span>
+    <button aria-label="Dismiss" style="width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; color: #8b95a0;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+
+  <nav aria-label="Matchdays" style="height: 56px; display: flex; align-items: stretch; gap: 4px; padding: 0 8px; overflow: hidden;">
+    <a href="Main.dc.html" style="flex: none; width: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #8b95a0;"><span class="label" style="font-size: 10px;">Wed</span><span style="font-size: 15px; font-weight: 600;">21</span></a>
+    <a href="Main.dc.html" style="flex: none; width: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #8b95a0;"><span class="label" style="font-size: 10px;">Sat</span><span style="font-size: 15px; font-weight: 600;">24</span></a>
+    <a href="Main.dc.html" aria-current="date" style="flex: none; width: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #edf2ee; box-shadow: inset 0 -2px 0 #c8f542;"><span class="label" style="font-size: 10px; color: #c8f542;">Today</span><span style="font-size: 15px; font-weight: 700;">31</span></a>
+    <a href="Main.dc.html" style="flex: none; width: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #8b95a0;"><span class="label" style="font-size: 10px;">Tue</span><span style="font-size: 15px; font-weight: 600;">3</span></a>
+    <a href="Main.dc.html" style="flex: none; width: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #8b95a0;"><span class="label" style="font-size: 10px;">Wed</span><span style="font-size: 15px; font-weight: 600;">4</span></a>
+    <a href="Main.dc.html" style="flex: none; width: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #8b95a0;"><span class="label" style="font-size: 10px;">Sat</span><span style="font-size: 15px; font-weight: 600;">7</span></a>
+    <a href="Main.dc.html" style="flex: none; width: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #8b95a0;"><span class="label" style="font-size: 10px;">Sun</span><span style="font-size: 15px; font-weight: 600;">8</span></a>
+    <a href="Main.dc.html" style="flex: none; width: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #8b95a0;"><span class="label" style="font-size: 10px;">Sat</span><span style="font-size: 15px; font-weight: 600;">21</span></a>
+  </nav>
+
+  <a href="Match-Pre.dc.html" style="display: flex; align-items: center; gap: 12px; margin: 4px 16px 0; padding: 10px 0 12px; border-bottom: 1px solid rgba(255,255,255,0.07);">
+    <img class="crest" src="../../../assets/crests/arsenal.png" alt="" style="width: 28px; height: 28px;">
+    <div style="flex: 1; min-width: 0;">
+      <div class="label" style="color: #c8f542;">Your club · 17:30</div>
+      <div style="font-size: 15px; font-weight: 600; margin-top: 2px;">Liverpool v Arsenal <span style="color: #8b95a0; font-weight: 400;">· Anfield · line-ups about 16:30</span></div>
+    </div>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5a646e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+  </a>
+
+  <a href="Match-Live.dc.html" class="card" style="display: block; margin: 12px 16px 0; padding: 14px 16px 12px;">
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <span class="label">Match of the moment</span>
+      <span class="live" style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700;"><span class="dot pulse" aria-hidden="true"></span>78'</span>
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-top: 12px;">
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+        <img class="crest-lg" src="../../../assets/crests/chelsea.png" alt="">
+        <span style="font-size: 13px; font-weight: 600;">Chelsea</span>
+      </div>
+      <div class="hero-num" aria-label="Chelsea 2, Manchester United 1" style="display: flex; gap: 14px; align-items: baseline;"><span>2</span><span style="color: #5a646e; font-weight: 400; font-style: normal; font-size: 28px;">:</span><span>1</span></div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+        <img class="crest-lg" src="../../../assets/crests/man-united.png" alt="">
+        <span style="font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">Man Utd <i aria-label="One red card" style="width: 8px; height: 11px; background: #ff4d5e; border-radius: 1px; display: inline-block;"></i></span>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; color: #8b95a0;">
+      <span style="color: #edf2ee; font-weight: 700;">71'</span>
+      <span>Goal ruled out, offside · Mbeumo</span>
+      <span class="chip" style="margin-left: auto; height: 20px; font-size: 10px;">VAR</span>
+    </div>
+  </a>
+
+  <a href="Shell-Fantasy.dc.html" style="display: flex; align-items: center; gap: 12px; margin: 12px 16px 0; padding: 10px 0 12px; border-bottom: 1px solid rgba(255,255,255,0.07);">
+    <span class="dot" style="background: #a78bfa;" aria-hidden="true"></span>
+    <div style="flex: 1; min-width: 0;">
+      <div style="display: flex; align-items: baseline; gap: 8px;">
+        <span class="label" style="color: #a78bfa;">Your matchup · GW10</span>
+        <span style="font-size: 15px; font-weight: 700;">You 38 <span style="color: #8b95a0; font-weight: 400;">v</span> Dave 31</span>
+      </div>
+      <div style="font-size: 13px; color: #8b95a0; margin-top: 2px;">3 of yours on now: Palmer 7 · Fernandes 2 · Cunha 1</div>
+    </div>
+  </a>
+
+  <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 2px;">
+    <span class="label" style="color: #edf2ee;">Premier League <span style="color: #8b95a0;">· Matchday 9</span></span>
+    <div style="display: flex; gap: 16px;">
+      <button class="toggle" style="min-height: 32px; padding: 0;">Live only</button>
+      <button class="toggle" style="min-height: 32px; padding: 0;">My teams</button>
+    </div>
+  </div>
+
+  <a href="Match-Live.dc.html" class="row is-live flash" aria-label="Live, 78 minutes: Chelsea 2, Manchester United 1">
+    <span class="when">78'</span>
+    <img class="crest" src="../../../assets/crests/chelsea.png" alt="">
+    <span class="team">Chelsea</span>
+    <span class="score">2 - 1</span>
+    <span class="team" style="text-align: right;">Man Utd</span>
+    <img class="crest" src="../../../assets/crests/man-united.png" alt="">
+  </a>
+  <a href="Match-Pre.dc.html" class="row">
+    <span class="when">15:00</span>
+    <img class="crest" src="../../../assets/crests/newcastle.png" alt="">
+    <span class="team">Newcastle</span>
+    <span class="score" style="color: #5a646e; font-weight: 400;">v</span>
+    <span class="team" style="text-align: right;">Everton</span>
+    <img class="crest" src="../../../assets/crests/everton.png" alt="">
+  </a>
+  <a href="Match-Pre.dc.html" class="row">
+    <span class="when">15:00</span>
+    <img class="crest" src="../../../assets/crests/man-city.png" alt="">
+    <span class="team">Man City</span>
+    <span class="score" style="color: #5a646e; font-weight: 400;">v</span>
+    <span class="team" style="text-align: right;">Brighton</span>
+    <img class="crest" src="../../../assets/crests/brighton-hove.png" alt="">
+  </a>
+  <a href="Match-Pre.dc.html" class="row">
+    <span class="when">15:00</span>
+    <img class="crest" src="../../../assets/crests/bournemouth.png" alt="">
+    <span class="team">Bournemouth</span>
+    <span class="score" style="color: #5a646e; font-weight: 400;">v</span>
+    <span class="team" style="text-align: right;">Leeds</span>
+    <img class="crest" src="../../../assets/crests/leeds-united.png" alt="">
+  </a>
+  <a href="Match-Pre.dc.html" class="row">
+    <span class="when">15:00</span>
+    <img class="crest" src="../../../assets/crests/coventry-city.png" alt="">
+    <span class="team">Coventry</span>
+    <span class="score" style="color: #5a646e; font-weight: 400;">v</span>
+    <span class="team" style="text-align: right;">Sunderland</span>
+    <img class="crest" src="../../../assets/crests/sunderland.png" alt="">
+  </a>
+  <a href="Match-Pre.dc.html" class="row">
+    <span class="when">15:00</span>
+    <img class="crest" src="../../../assets/crests/tottenham.png" alt="">
+    <span class="team">Tottenham</span>
+    <span class="score" style="color: #5a646e; font-weight: 400;">v</span>
+    <span class="team" style="text-align: right;">Palace</span>
+    <img class="crest" src="../../../assets/crests/crystal-palace.png" alt="">
+  </a>
+  <a href="Match-Pre.dc.html" class="row">
+    <span class="when">15:00</span>
+    <img class="crest" src="../../../assets/crests/aston-villa.png" alt="">
+    <span class="team">Aston Villa</span>
+    <span class="score" style="color: #5a646e; font-weight: 400;">v</span>
+    <span class="team" style="text-align: right;">Fulham</span>
+    <img class="crest" src="../../../assets/crests/fulham.png" alt="">
+  </a>
+  <a href="Match-Pre.dc.html" class="row">
+    <span class="when">15:00</span>
+    <img class="crest" src="../../../assets/crests/hull-city.png" alt="">
+    <span class="team">Hull</span>
+    <span class="score" style="color: #5a646e; font-weight: 400;">v</span>
+    <span class="team" style="text-align: right;">Ipswich</span>
+    <img class="crest" src="../../../assets/crests/ipswich-town.png" alt="">
+  </a>
+
+  <nav class="nav" aria-label="Sections">
+    <a href="Main.dc.html" class="on" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg><span>Live</span></a>
+    <a href="Shell-Fantasy.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8l4 4-3 2v10H7V10L4 8z"/></svg><span>Fantasy</span></a>
+    <a href="Main.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg><span>Play</span></a>
+    <a href="Main.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg><span>You</span></a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

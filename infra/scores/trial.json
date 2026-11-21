@@ -519,8 +519,8 @@
         "LaunchType": "FARGATE",
         "PlatformVersion": "1.4.0",
         "DeploymentConfiguration": {
-          "MinimumHealthyPercent": 0,
-          "MaximumPercent": 100,
+          "MinimumHealthyPercent": 100,
+          "MaximumPercent": 200,
           "DeploymentCircuitBreaker": {
             "Enable": true,
             "Rollback": true
@@ -562,8 +562,8 @@
         "LaunchType": "FARGATE",
         "PlatformVersion": "1.4.0",
         "DeploymentConfiguration": {
-          "MinimumHealthyPercent": 0,
-          "MaximumPercent": 100,
+          "MinimumHealthyPercent": 100,
+          "MaximumPercent": 200,
           "DeploymentCircuitBreaker": {
             "Enable": true,
             "Rollback": true

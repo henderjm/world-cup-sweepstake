@@ -24,7 +24,7 @@ const matchesDir = new URL("matches/", dataDir);
 const playersFile = new URL("players.json", dataDir);
 
 if (process.env.SCORE_READ_ORIGIN) {
-  console.log(await exportStoredPlayerPool({ origin: process.env.SCORE_READ_ORIGIN, competition, season, path: fileURLToPath(playersFile) }));
+  console.log(await exportStoredPlayerPool({ origin: process.env.SCORE_READ_ORIGIN, competition, season, path: fileURLToPath(playersFile), retainLastGood: true }));
   process.exit(0);
 }
 

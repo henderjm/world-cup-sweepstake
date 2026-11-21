@@ -1,0 +1,730 @@
+{
+  "probedAt": "2026-10-31T16:44:12.333Z",
+  "calls": 3,
+  "subscription": [
+    {
+      "meta": {
+        "current_timestamp": 1793465051,
+        "next_billing_cycle": "2026-11-14T17:41:07 UTC"
+      },
+      "plans": [
+        {
+          "plan": "Starter - Trialing until 2026-11-14 17:41:07",
+          "sport": "Football",
+          "category": "Advanced"
+        },
+        {
+          "plan": "Euro Club Tournaments",
+          "sport": "Football",
+          "category": "All-in"
+        }
+      ],
+      "add_ons": [],
+      "widgets": [],
+      "bundles": []
+    }
+  ],
+  "rateLimit": {
+    "resets_in_seconds": 3599,
+    "remaining": 2497,
+    "requested_entity": "Fixture"
+  },
+  "coverage": {
+    "todayStatus": 200,
+    "todayMessage": null,
+    "leaguesToday": [
+      "PL"
+    ],
+    "fixturesToday": [
+      {
+        "id": 19722120,
+        "league": "PL",
+        "kickoff": "2026-10-31 12:30:00",
+        "state": "FT",
+        "minute": null,
+        "home": "Chelsea",
+        "away": "Manchester United",
+        "score": {
+          "home": 2,
+          "away": 0
+        }
+      },
+      {
+        "id": 19722116,
+        "league": "PL",
+        "kickoff": "2026-10-31 15:00:00",
+        "state": "INPLAY_2ND_HALF",
+        "minute": 85,
+        "home": "Manchester City",
+        "away": "Brighton & Hove Albion",
+        "score": {
+          "home": 0,
+          "away": 1
+        }
+      },
+      {
+        "id": 19722118,
+        "league": "PL",
+        "kickoff": "2026-10-31 15:00:00",
+        "state": "INPLAY_2ND_HALF",
+        "minute": 84,
+        "home": "Hull City",
+        "away": "Ipswich Town",
+        "score": {
+          "home": 2,
+          "away": 2
+        }
+      },
+      {
+        "id": 19722119,
+        "league": "PL",
+        "kickoff": "2026-10-31 15:00:00",
+        "state": "INPLAY_2ND_HALF",
+        "minute": 86,
+        "home": "Coventry City",
+        "away": "Sunderland",
+        "score": {
+          "home": 3,
+          "away": 1
+        }
+      },
+      {
+        "id": 19722121,
+        "league": "PL",
+        "kickoff": "2026-10-31 15:00:00",
+        "state": "INPLAY_2ND_HALF",
+        "minute": 87,
+        "home": "Brentford",
+        "away": "Nottingham Forest",
+        "score": {
+          "home": 2,
+          "away": 0
+        }
+      },
+      {
+        "id": 19722123,
+        "league": "PL",
+        "kickoff": "2026-10-31 15:00:00",
+        "state": "INPLAY_2ND_HALF",
+        "minute": 83,
+        "home": "AFC Bournemouth",
+        "away": "Leeds United",
+        "score": {
+          "home": 1,
+          "away": 0
+        }
+      },
+      {
+        "id": 19722114,
+        "league": "PL",
+        "kickoff": "2026-10-31 17:30:00",
+        "state": "NS",
+        "minute": null,
+        "home": "Tottenham Hotspur",
+        "away": "Crystal Palace",
+        "score": {
+          "home": 0,
+          "away": 0
+        }
+      },
+      {
+        "id": 19722122,
+        "league": "PL",
+        "kickoff": "2026-10-31 20:00:00",
+        "state": "NS",
+        "minute": null,
+        "home": "Aston Villa",
+        "away": "Fulham",
+        "score": {
+          "home": null,
+          "away": null
+        }
+      }
+    ],
+    "inplayStatus": 200,
+    "live": [
+      {
+        "id": 19722116,
+        "league": "PL",
+        "kickoff": "2026-10-31 15:00:00",
+        "state": "INPLAY_2ND_HALF",
+        "minute": 85,
+        "home": "Manchester City",
+        "away": "Brighton & Hove Albion",
+        "score": {
+          "home": 0,
+          "away": 1
+        }
+      },
+      {
+        "id": 19722123,
+        "league": "PL",
+        "kickoff": "2026-10-31 15:00:00",
+        "state": "INPLAY_2ND_HALF",
+        "minute": 83,
+        "home": "AFC Bournemouth",
+        "away": "Leeds United",
+        "score": {
+          "home": 1,
+          "away": 0
+        }
+      },
+      {
+        "id": 19722118,
+        "league": "PL",
+        "kickoff": "2026-10-31 15:00:00",
+        "state": "INPLAY_2ND_HALF",
+        "minute": 84,
+        "home": "Hull City",
+        "away": "Ipswich Town",
+        "score": {
+          "home": 2,
+          "away": 2
+        }
+      },
+      {
+        "id": 19722119,
+        "league": "PL",
+        "kickoff": "2026-10-31 15:00:00",
+        "state": "INPLAY_2ND_HALF",
+        "minute": 86,
+        "home": "Coventry City",
+        "away": "Sunderland",
+        "score": {
+          "home": 3,
+          "away": 1
+        }
+      },
+      {
+        "id": 19722121,
+        "league": "PL",
+        "kickoff": "2026-10-31 15:00:00",
+        "state": "INPLAY_2ND_HALF",
+        "minute": 87,
+        "home": "Brentford",
+        "away": "Nottingham Forest",
+        "score": {
+          "home": 2,
+          "away": 0
+        }
+      }
+    ]
+  },
+  "fixture": {
+    "id": 19722116,
+    "league": "PL",
+    "kickoff": "2026-10-31 15:00:00",
+    "state": "INPLAY_2ND_HALF",
+    "minute": 85,
+    "home": "Manchester City",
+    "away": "Brighton & Hove Albion",
+    "score": {
+      "home": 0,
+      "away": 1
+    }
+  },
+  "includes": {
+    "participants": {
+      "served": true,
+      "type": "array",
+      "length": 2,
+      "sample": {
+        "id": 78,
+        "sport_id": 1,
+        "country_id": 462,
+        "venue_id": 480,
+        "gender": "male",
+        "name": "Brighton & Hove Albion",
+        "short_code": "BHA",
+        "image_path": "https://cdn.sportmonks.com/images/soccer/teams/14/78.png",
+        "founded": 1901,
+        "type": "domestic",
+        "placeholder": false,
+        "last_played_at": "2026-10-28 19:30:00",
+        "meta": {
+          "location": "away",
+          "winner": null,
+          "position": 3
+        }
+      }
+    },
+    "scores": {
+      "served": true,
+      "type": "array",
+      "length": 8,
+      "sample": {
+        "id": 37080302,
+        "fixture_id": 19722116,
+        "type_id": 1,
+        "participant_id": 9,
+        "score": {
+          "goals": 0,
+          "participant": "home"
+        },
+        "description": "1ST_HALF"
+      }
+    },
+    "state": {
+      "served": true,
+      "type": "object",
+      "keys": [
+        "id",
+        "state",
+        "name",
+        "short_name",
+        "developer_name"
+      ]
+    },
+    "periods": {
+      "served": true,
+      "type": "array",
+      "length": 2,
+      "sample": {
+        "id": 7204054,
+        "fixture_id": 19722116,
+        "type_id": 1,
+        "started": 1793458861,
+        "ended": 1793461702,
+        "counts_from": 0,
+        "ticking": false,
+        "sort_order": 1,
+        "description": "1st-half",
+        "time_added": 1,
+        "period_length": 45,
+        "minutes": 47,
+        "seconds": 21,
+        "has_timer": false
+      }
+    },
+    "events": {
+      "served": true,
+      "type": "array",
+      "length": 13,
+      "sample": {
+        "id": 158477532,
+        "fixture_id": 19722116,
+        "period_id": 7204054,
+        "participant_id": 78,
+        "type_id": 14,
+        "section": "event",
+        "player_id": 37526157,
+        "related_player_id": 23269659,
+        "player_name": "Yasin Ayari",
+        "related_player_name": "Maxim De Cuyper",
+        "result": "0-1",
+        "info": "Right foot shot",
+        "addition": "1st Goal",
+        "minute": 11,
+        "extra_minute": null,
+        "injured": null,
+        "on_bench": false,
+        "coach_id": null,
+        "sub_type_id": 1522,
+        "detailed_period_id": 7204054,
+        "rescinded": null,
+        "sort_order": 1
+      }
+    },
+    "lineups.details": {
+      "served": true,
+      "type": "array",
+      "length": 40,
+      "sample": {
+        "id": 14675155113,
+        "sport_id": 1,
+        "fixture_id": 19722116,
+        "player_id": 129771,
+        "team_id": 9,
+        "position_id": 24,
+        "formation_field": "1:1",
+        "type_id": 11,
+        "formation_position": 1,
+        "player_name": "Gianluigi Donnarumma",
+        "jersey_number": 1,
+        "details": [
+          {
+            "id": 2329928359,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 117172,
+            "data": {
+              "value": 86
+            }
+          },
+          {
+            "id": 2329988886,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 1535,
+            "data": {
+              "value": 1
+            }
+          },
+          {
+            "id": 2329925181,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 118,
+            "data": {
+              "value": 6.79
+            }
+          },
+          {
+            "id": 2329928361,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 116,
+            "data": {
+              "value": 30
+            }
+          },
+          {
+            "id": 2329928360,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 80,
+            "data": {
+              "value": 37
+            }
+          },
+          {
+            "id": 2329928364,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 120,
+            "data": {
+              "value": 44
+            }
+          },
+          {
+            "id": 2329928362,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 122,
+            "data": {
+              "value": 13
+            }
+          },
+          {
+            "id": 2329928363,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 123,
+            "data": {
+              "value": 7
+            }
+          },
+          {
+            "id": 2329945593,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 119,
+            "data": {
+              "value": 81
+            }
+          },
+          {
+            "id": 2329949704,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 1584,
+            "data": {
+              "value": 80
+            }
+          },
+          {
+            "id": 2329965350,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 103,
+            "data": {
+              "value": 1
+            }
+          },
+          {
+            "id": 2329979020,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 101,
+            "data": {
+              "value": 1
+            }
+          },
+          {
+            "id": 2329995984,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 88,
+            "data": {
+              "value": 1
+            }
+          },
+          {
+            "id": 2330043400,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 27271,
+            "data": {
+              "value": 8
+            }
+          },
+          {
+            "id": 2330043407,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 27270,
+            "data": {
+              "value": 54
+            }
+          },
+          {
+            "id": 2330073806,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 27273,
+            "data": {
+              "value": 7
+            }
+          },
+          {
+            "id": 2330167025,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 57,
+            "data": {
+              "value": 2
+            }
+          },
+          {
+            "id": 2330211708,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 104,
+            "data": {
+              "value": 2
+            }
+          },
+          {
+            "id": 2330497152,
+            "fixture_id": 19722116,
+            "player_id": 129771,
+            "team_id": 9,
+            "lineup_id": 14675155113,
+            "type_id": 27269,
+            "data": {
+              "value": 1
+            }
+          }
+        ]
+      }
+    },
+    "statistics": {
+      "served": true,
+      "type": "array",
+      "length": 84,
+      "sample": {
+        "id": 1083719269,
+        "fixture_id": 19722116,
+        "type_id": 34,
+        "participant_id": 78,
+        "data": {
+          "value": 1
+        },
+        "location": "away"
+      }
+    },
+    "xGFixture": {
+      "served": true,
+      "type": "undefined"
+    },
+    "pressure": {
+      "served": true,
+      "type": "array",
+      "length": 0,
+      "sample": null
+    },
+    "predictions": {
+      "served": true,
+      "type": "array",
+      "length": 0,
+      "sample": null
+    },
+    "sidelined": {
+      "served": true,
+      "type": "array",
+      "length": 6,
+      "sample": {
+        "id": 8390240,
+        "fixture_id": 19722116,
+        "sideline_id": 762584,
+        "participant_id": 78,
+        "player_id": 37601748,
+        "type_id": 557
+      }
+    },
+    "referees": {
+      "served": true,
+      "type": "array",
+      "length": 4,
+      "sample": {
+        "id": 6091879,
+        "fixture_id": 19722116,
+        "referee_id": 15293,
+        "type_id": 6
+      }
+    },
+    "venue": {
+      "served": true,
+      "type": "object",
+      "keys": [
+        "id",
+        "country_id",
+        "city_id",
+        "name",
+        "address",
+        "zipcode",
+        "latitude",
+        "longitude",
+        "capacity",
+        "image_path",
+        "city_name",
+        "surface",
+        "national_team"
+      ]
+    },
+    "formations": {
+      "served": true,
+      "type": "array",
+      "length": 2,
+      "sample": {
+        "id": 8819066,
+        "fixture_id": 19722116,
+        "participant_id": 78,
+        "formation": "4-2-3-1",
+        "location": "away"
+      }
+    }
+  },
+  "ratingPresent": true,
+  "xgPresent": false,
+  "pressurePresent": false,
+  "delay": null,
+  "nameMap": [
+    {
+      "sportmonks": "Chelsea",
+      "canonical": "Chelsea",
+      "changed": false
+    },
+    {
+      "sportmonks": "Manchester United",
+      "canonical": "Man United",
+      "changed": true
+    },
+    {
+      "sportmonks": "Manchester City",
+      "canonical": "Man City",
+      "changed": true
+    },
+    {
+      "sportmonks": "Brighton & Hove Albion",
+      "canonical": "Brighton Hove",
+      "changed": true
+    },
+    {
+      "sportmonks": "Hull City",
+      "canonical": "Hull City",
+      "changed": false
+    },
+    {
+      "sportmonks": "Ipswich Town",
+      "canonical": "Ipswich Town",
+      "changed": false
+    },
+    {
+      "sportmonks": "Coventry City",
+      "canonical": "Coventry City",
+      "changed": false
+    },
+    {
+      "sportmonks": "Sunderland",
+      "canonical": "Sunderland",
+      "changed": false
+    },
+    {
+      "sportmonks": "Brentford",
+      "canonical": "Brentford",
+      "changed": false
+    },
+    {
+      "sportmonks": "Nottingham Forest",
+      "canonical": "Nottingham",
+      "changed": true
+    },
+    {
+      "sportmonks": "AFC Bournemouth",
+      "canonical": "Bournemouth",
+      "changed": true
+    },
+    {
+      "sportmonks": "Leeds United",
+      "canonical": "Leeds United",
+      "changed": false
+    },
+    {
+      "sportmonks": "Tottenham Hotspur",
+      "canonical": "Tottenham",
+      "changed": true
+    },
+    {
+      "sportmonks": "Crystal Palace",
+      "canonical": "Crystal Palace",
+      "changed": false
+    },
+    {
+      "sportmonks": "Aston Villa",
+      "canonical": "Aston Villa",
+      "changed": false
+    },
+    {
+      "sportmonks": "Fulham",
+      "canonical": "Fulham",
+      "changed": false
+    }
+  ]
+}

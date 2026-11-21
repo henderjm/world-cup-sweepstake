@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { setTimeout as pause } from "node:timers/promises";
 import { createStoredScoreReader } from "../../worker/stored-scores.js";
 import { createStoredDetailReader } from "../../worker/stored-detail.js";
 import { aggregateScorers } from "../../src/scorers.js";
@@ -42,6 +43,8 @@ export async function exportStoredScores({ competitions, origin, rootDir, fetche
       await Promise.all(Array.from({ length: Math.min(4, relevant.length) }, async () => {
         while (index < relevant.length) {
           const match = relevant[index++];
+          // Four workers stay below the reader's ten-request/second ceiling.
+          await pause(1000);
           try {
             const detail = await readDetail(comp, match.id, origin);
             const path = join(matchesDir, `${match.id}.json`), oldDetail = await previous(path);

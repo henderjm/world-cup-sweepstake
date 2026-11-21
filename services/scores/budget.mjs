@@ -17,7 +17,7 @@ function validPolicy(policy) {
 export function initialBudget(policy, used, now) {
   if (!integer(now) || !integer(used) || !validPolicy(policy) || used > policy.dailyLimit)
     throw Error("Verified initial usage and explicit provider budget policy are required");
-  return { version: 1, policy: { ...policy }, day: day(now), used, updatedAt: now,
+  return { version: 1, policy: { ...policy }, day: day(now), used, updatedAt: now, syncedAt: now,
     nextAt: now + 60000, blockedUntil: 0, failures: 0, permit: null };
 }
 
@@ -58,8 +58,20 @@ export function finishRequest(previous, permit, { ok, status, headers, errors },
   if (integer(quota.dailyLimit) && quota.dailyLimit > 0) next.policy.dailyLimit = Math.min(next.policy.dailyLimit, quota.dailyLimit);
   if (integer(quota.minuteLimit) && quota.minuteLimit > 0) next.policy.minuteLimit = Math.min(next.policy.minuteLimit, quota.minuteLimit);
   next.policy.scoreReserve = Math.min(next.policy.scoreReserve, next.policy.dailyLimit);
-  if (permit.day === next.day && integer(quota.dailyRemaining))
-    next.used = Math.max(next.used, (integer(quota.dailyLimit) && quota.dailyLimit > 0 ? quota.dailyLimit : next.policy.dailyLimit) - quota.dailyRemaining);
+  if (permit.day === next.day && integer(quota.dailyRemaining)) {
+    const reported = (integer(quota.dailyLimit) && quota.dailyLimit > 0 ? quota.dailyLimit : next.policy.dailyLimit) - quota.dailyRemaining;
+    // The day's usage only ratchets up, so one bogus "remaining: 0" used to pin
+    // scores at daily-limit until midnight (2026-10-21: 7,500 believed, 2,180
+    // real). The key cannot spend faster than its minute limit, so a reading
+    // further ahead than that since the last accepted one is refused.
+    const since = integer(previous.syncedAt) && previous.syncedAt <= now ? previous.syncedAt : null;
+    const ceiling = since === null ? Infinity
+      : next.used + next.policy.minuteLimit * (Math.ceil((now - since) / 60000) + 1);
+    if (reported <= ceiling) {
+      next.used = Math.max(next.used, reported);
+      next.syncedAt = now;
+    } else next.rejectedReading = { reported, ceiling, at: now };
+  }
   next.failures = ok ? 0 : Math.min(6, next.failures + 1);
   const retry = headers?.get?.("retry-after");
   const retryMs = retry == null ? 0 : /^\d+(\.\d+)?$/.test(retry.trim()) ? Number(retry) * 1000 : Date.parse(retry) - now;

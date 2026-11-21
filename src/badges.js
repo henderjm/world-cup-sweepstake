@@ -84,6 +84,13 @@ export function abbrFor(team) {
   return key.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase();
 }
 
+// The crest image for a club, or null when only the TLA ring is known. V2
+// renders its own <img>, so it needs the URL rather than badgeFor's markup.
+export function crestFor(team) {
+  const key = normalizeTeamName(team);
+  return LOCAL_CRESTS.get(key) ?? TEAMS.get(key)?.crest ?? null;
+}
+
 // Circular team badge. size: "" (22px), "lg" (24px), "xl" (38px, drawer header).
 export function badgeFor(team, size = "") {
   const key = normalizeTeamName(team);

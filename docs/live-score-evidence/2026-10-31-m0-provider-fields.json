@@ -1,0 +1,1881 @@
+{
+  "probedAt": "2026-10-31T14:23:22.020Z",
+  "fixtureId": 1557450,
+  "fixture": {
+    "home": "Chelsea",
+    "away": "Manchester United",
+    "status": "2H",
+    "elapsed": 90
+  },
+  "quotaAfter": {
+    "dailyLimit": "7500",
+    "dailyRemaining": "6317",
+    "minuteRemaining": "293"
+  },
+  "statistics": {
+    "status": 200,
+    "errors": null,
+    "results": 2,
+    "teams": [
+      {
+        "team": "Chelsea",
+        "stats": {
+          "expected_goals": "2.06",
+          "Passes accurate": 424,
+          "Shots insidebox": 11,
+          "Shots outsidebox": 5,
+          "Blocked Shots": 3,
+          "Free Kicks": 19,
+          "Shots on Goal": 9,
+          "Goalkeeper Saves": 2,
+          "Shots off Goal": 5,
+          "Offsides": 3,
+          "Total passes": 482,
+          "Total Shots": 17,
+          "Corner Kicks": 7,
+          "Yellow Cards": 1,
+          "Red Cards": 0,
+          "Fouls": 7,
+          "Ball Possession": "57%"
+        }
+      },
+      {
+        "team": "Manchester United",
+        "stats": {
+          "expected_goals": "1.13",
+          "Passes accurate": 279,
+          "Shots insidebox": 6,
+          "Shots outsidebox": 4,
+          "Blocked Shots": 2,
+          "Free Kicks": 7,
+          "Shots on Goal": 4,
+          "Goalkeeper Saves": 7,
+          "Shots off Goal": 5,
+          "Offsides": 2,
+          "Total passes": 360,
+          "Total Shots": 11,
+          "Corner Kicks": 7,
+          "Yellow Cards": 4,
+          "Red Cards": 1,
+          "Fouls": 19,
+          "Ball Possession": "43%"
+        }
+      }
+    ]
+  },
+  "players": {
+    "status": 200,
+    "errors": null,
+    "results": 2,
+    "playerEntries": 40,
+    "fieldNonNullCounts": {
+      "cards.red": 40,
+      "cards.yellow": 40,
+      "dribbles.attempts": 40,
+      "dribbles.past": 0,
+      "dribbles.success": 40,
+      "duels.total": 40,
+      "duels.won": 40,
+      "fouls.committed": 40,
+      "fouls.drawn": 40,
+      "games.captain": 40,
+      "games.minutes": 40,
+      "games.number": 40,
+      "games.position": 40,
+      "games.rating": 40,
+      "games.substitute": 40,
+      "goals.assists": 40,
+      "goals.conceded": 0,
+      "goals.saves": 40,
+      "goals.total": 40,
+      "offsides": 40,
+      "passes.accuracy": 40,
+      "passes.key": 40,
+      "passes.total": 40,
+      "penalty.commited": 0,
+      "penalty.missed": 0,
+      "penalty.saved": 0,
+      "penalty.scored": 40,
+      "penalty.won": 0,
+      "shots.on": 40,
+      "shots.total": 40,
+      "tackles.blocks": 40,
+      "tackles.interceptions": 40,
+      "tackles.total": 40
+    },
+    "topRated": [
+      {
+        "player": "M. Rogers",
+        "team": "Chelsea",
+        "rating": "8.2"
+      },
+      {
+        "player": "C. Palmer",
+        "team": "Chelsea",
+        "rating": "7.88"
+      },
+      {
+        "player": "R. Lavia",
+        "team": "Chelsea",
+        "rating": "7.7"
+      }
+    ]
+  },
+  "predictions": {
+    "status": 200,
+    "errors": null,
+    "results": 1,
+    "fields": [
+      "comparison.att.away",
+      "comparison.att.home",
+      "comparison.def.away",
+      "comparison.def.home",
+      "comparison.form.away",
+      "comparison.form.home",
+      "comparison.goals.away",
+      "comparison.goals.home",
+      "comparison.h2h.away",
+      "comparison.h2h.home",
+      "comparison.poisson_distribution.away",
+      "comparison.poisson_distribution.home",
+      "comparison.total.away",
+      "comparison.total.home",
+      "h2h",
+      "league.country",
+      "league.flag",
+      "league.id",
+      "league.logo",
+      "league.name",
+      "league.season",
+      "predictions.advice",
+      "predictions.goals.away",
+      "predictions.goals.home",
+      "predictions.percent.away",
+      "predictions.percent.draw",
+      "predictions.percent.home",
+      "predictions.under_over",
+      "predictions.win_or_draw",
+      "predictions.winner.comment",
+      "predictions.winner.id",
+      "predictions.winner.name",
+      "teams.away.id",
+      "teams.away.last_5.att",
+      "teams.away.last_5.def",
+      "teams.away.last_5.form",
+      "teams.away.last_5.goals.against.average",
+      "teams.away.last_5.goals.against.total",
+      "teams.away.last_5.goals.for.average",
+      "teams.away.last_5.goals.for.total",
+      "teams.away.last_5.played",
+      "teams.away.league.biggest.goals.against.away",
+      "teams.away.league.biggest.goals.against.home",
+      "teams.away.league.biggest.goals.for.away",
+      "teams.away.league.biggest.goals.for.home",
+      "teams.away.league.biggest.loses.away",
+      "teams.away.league.biggest.loses.home",
+      "teams.away.league.biggest.streak.draws",
+      "teams.away.league.biggest.streak.loses",
+      "teams.away.league.biggest.streak.wins",
+      "teams.away.league.biggest.wins.away",
+      "teams.away.league.biggest.wins.home",
+      "teams.away.league.cards.red.0-15.percentage",
+      "teams.away.league.cards.red.0-15.total",
+      "teams.away.league.cards.red.106-120.percentage",
+      "teams.away.league.cards.red.106-120.total",
+      "teams.away.league.cards.red.16-30.percentage",
+      "teams.away.league.cards.red.16-30.total",
+      "teams.away.league.cards.red.31-45.percentage",
+      "teams.away.league.cards.red.31-45.total",
+      "teams.away.league.cards.red.46-60.percentage",
+      "teams.away.league.cards.red.46-60.total",
+      "teams.away.league.cards.red.61-75.percentage",
+      "teams.away.league.cards.red.61-75.total",
+      "teams.away.league.cards.red.76-90.percentage",
+      "teams.away.league.cards.red.76-90.total",
+      "teams.away.league.cards.red.91-105.percentage",
+      "teams.away.league.cards.red.91-105.total",
+      "teams.away.league.cards.yellow.0-15.percentage",
+      "teams.away.league.cards.yellow.0-15.total",
+      "teams.away.league.cards.yellow.106-120.percentage",
+      "teams.away.league.cards.yellow.106-120.total",
+      "teams.away.league.cards.yellow.16-30.percentage",
+      "teams.away.league.cards.yellow.16-30.total",
+      "teams.away.league.cards.yellow.31-45.percentage",
+      "teams.away.league.cards.yellow.31-45.total",
+      "teams.away.league.cards.yellow.46-60.percentage",
+      "teams.away.league.cards.yellow.46-60.total",
+      "teams.away.league.cards.yellow.61-75.percentage",
+      "teams.away.league.cards.yellow.61-75.total",
+      "teams.away.league.cards.yellow.76-90.percentage",
+      "teams.away.league.cards.yellow.76-90.total",
+      "teams.away.league.cards.yellow.91-105.percentage",
+      "teams.away.league.cards.yellow.91-105.total",
+      "teams.away.league.clean_sheet.away",
+      "teams.away.league.clean_sheet.home",
+      "teams.away.league.clean_sheet.total",
+      "teams.away.league.failed_to_score.away",
+      "teams.away.league.failed_to_score.home",
+      "teams.away.league.failed_to_score.total",
+      "teams.away.league.fixtures.draws.away",
+      "teams.away.league.fixtures.draws.home",
+      "teams.away.league.fixtures.draws.total",
+      "teams.away.league.fixtures.loses.away",
+      "teams.away.league.fixtures.loses.home",
+      "teams.away.league.fixtures.loses.total",
+      "teams.away.league.fixtures.played.away",
+      "teams.away.league.fixtures.played.home",
+      "teams.away.league.fixtures.played.total",
+      "teams.away.league.fixtures.wins.away",
+      "teams.away.league.fixtures.wins.home",
+      "teams.away.league.fixtures.wins.total",
+      "teams.away.league.form",
+      "teams.away.league.goals.against.average.away",
+      "teams.away.league.goals.against.average.home",
+      "teams.away.league.goals.against.average.total",
+      "teams.away.league.goals.against.minute.0-15.percentage",
+      "teams.away.league.goals.against.minute.0-15.total",
+      "teams.away.league.goals.against.minute.106-120.percentage",
+      "teams.away.league.goals.against.minute.106-120.total",
+      "teams.away.league.goals.against.minute.16-30.percentage",
+      "teams.away.league.goals.against.minute.16-30.total",
+      "teams.away.league.goals.against.minute.31-45.percentage",
+      "teams.away.league.goals.against.minute.31-45.total",
+      "teams.away.league.goals.against.minute.46-60.percentage",
+      "teams.away.league.goals.against.minute.46-60.total",
+      "teams.away.league.goals.against.minute.61-75.percentage",
+      "teams.away.league.goals.against.minute.61-75.total",
+      "teams.away.league.goals.against.minute.76-90.percentage",
+      "teams.away.league.goals.against.minute.76-90.total",
+      "teams.away.league.goals.against.minute.91-105.percentage",
+      "teams.away.league.goals.against.minute.91-105.total",
+      "teams.away.league.goals.against.total.away",
+      "teams.away.league.goals.against.total.home",
+      "teams.away.league.goals.against.total.total",
+      "teams.away.league.goals.against.under_over.0.5.over",
+      "teams.away.league.goals.against.under_over.0.5.under",
+      "teams.away.league.goals.against.under_over.1.5.over",
+      "teams.away.league.goals.against.under_over.1.5.under",
+      "teams.away.league.goals.against.under_over.2.5.over",
+      "teams.away.league.goals.against.under_over.2.5.under",
+      "teams.away.league.goals.against.under_over.3.5.over",
+      "teams.away.league.goals.against.under_over.3.5.under",
+      "teams.away.league.goals.against.under_over.4.5.over",
+      "teams.away.league.goals.against.under_over.4.5.under",
+      "teams.away.league.goals.for.average.away",
+      "teams.away.league.goals.for.average.home",
+      "teams.away.league.goals.for.average.total",
+      "teams.away.league.goals.for.minute.0-15.percentage",
+      "teams.away.league.goals.for.minute.0-15.total",
+      "teams.away.league.goals.for.minute.106-120.percentage",
+      "teams.away.league.goals.for.minute.106-120.total",
+      "teams.away.league.goals.for.minute.16-30.percentage",
+      "teams.away.league.goals.for.minute.16-30.total",
+      "teams.away.league.goals.for.minute.31-45.percentage",
+      "teams.away.league.goals.for.minute.31-45.total",
+      "teams.away.league.goals.for.minute.46-60.percentage",
+      "teams.away.league.goals.for.minute.46-60.total",
+      "teams.away.league.goals.for.minute.61-75.percentage",
+      "teams.away.league.goals.for.minute.61-75.total",
+      "teams.away.league.goals.for.minute.76-90.percentage",
+      "teams.away.league.goals.for.minute.76-90.total",
+      "teams.away.league.goals.for.minute.91-105.percentage",
+      "teams.away.league.goals.for.minute.91-105.total",
+      "teams.away.league.goals.for.total.away",
+      "teams.away.league.goals.for.total.home",
+      "teams.away.league.goals.for.total.total",
+      "teams.away.league.goals.for.under_over.0.5.over",
+      "teams.away.league.goals.for.under_over.0.5.under",
+      "teams.away.league.goals.for.under_over.1.5.over",
+      "teams.away.league.goals.for.under_over.1.5.under",
+      "teams.away.league.goals.for.under_over.2.5.over",
+      "teams.away.league.goals.for.under_over.2.5.under",
+      "teams.away.league.goals.for.under_over.3.5.over",
+      "teams.away.league.goals.for.under_over.3.5.under",
+      "teams.away.league.goals.for.under_over.4.5.over",
+      "teams.away.league.goals.for.under_over.4.5.under",
+      "teams.away.league.lineups",
+      "teams.away.league.penalty.missed.percentage",
+      "teams.away.league.penalty.missed.total",
+      "teams.away.league.penalty.scored.percentage",
+      "teams.away.league.penalty.scored.total",
+      "teams.away.league.penalty.total",
+      "teams.away.logo",
+      "teams.away.name",
+      "teams.home.id",
+      "teams.home.last_5.att",
+      "teams.home.last_5.def",
+      "teams.home.last_5.form",
+      "teams.home.last_5.goals.against.average",
+      "teams.home.last_5.goals.against.total",
+      "teams.home.last_5.goals.for.average",
+      "teams.home.last_5.goals.for.total",
+      "teams.home.last_5.played",
+      "teams.home.league.biggest.goals.against.away",
+      "teams.home.league.biggest.goals.against.home",
+      "teams.home.league.biggest.goals.for.away",
+      "teams.home.league.biggest.goals.for.home",
+      "teams.home.league.biggest.loses.away",
+      "teams.home.league.biggest.loses.home",
+      "teams.home.league.biggest.streak.draws",
+      "teams.home.league.biggest.streak.loses",
+      "teams.home.league.biggest.streak.wins",
+      "teams.home.league.biggest.wins.away",
+      "teams.home.league.biggest.wins.home",
+      "teams.home.league.cards.red.0-15.percentage",
+      "teams.home.league.cards.red.0-15.total",
+      "teams.home.league.cards.red.106-120.percentage",
+      "teams.home.league.cards.red.106-120.total",
+      "teams.home.league.cards.red.16-30.percentage",
+      "teams.home.league.cards.red.16-30.total",
+      "teams.home.league.cards.red.31-45.percentage",
+      "teams.home.league.cards.red.31-45.total",
+      "teams.home.league.cards.red.46-60.percentage",
+      "teams.home.league.cards.red.46-60.total",
+      "teams.home.league.cards.red.61-75.percentage",
+      "teams.home.league.cards.red.61-75.total",
+      "teams.home.league.cards.red.76-90.percentage",
+      "teams.home.league.cards.red.76-90.total",
+      "teams.home.league.cards.red.91-105.percentage",
+      "teams.home.league.cards.red.91-105.total",
+      "teams.home.league.cards.yellow.0-15.percentage",
+      "teams.home.league.cards.yellow.0-15.total",
+      "teams.home.league.cards.yellow.106-120.percentage",
+      "teams.home.league.cards.yellow.106-120.total",
+      "teams.home.league.cards.yellow.16-30.percentage",
+      "teams.home.league.cards.yellow.16-30.total",
+      "teams.home.league.cards.yellow.31-45.percentage",
+      "teams.home.league.cards.yellow.31-45.total",
+      "teams.home.league.cards.yellow.46-60.percentage",
+      "teams.home.league.cards.yellow.46-60.total",
+      "teams.home.league.cards.yellow.61-75.percentage",
+      "teams.home.league.cards.yellow.61-75.total",
+      "teams.home.league.cards.yellow.76-90.percentage",
+      "teams.home.league.cards.yellow.76-90.total",
+      "teams.home.league.cards.yellow.91-105.percentage",
+      "teams.home.league.cards.yellow.91-105.total",
+      "teams.home.league.clean_sheet.away",
+      "teams.home.league.clean_sheet.home",
+      "teams.home.league.clean_sheet.total",
+      "teams.home.league.failed_to_score.away",
+      "teams.home.league.failed_to_score.home",
+      "teams.home.league.failed_to_score.total",
+      "teams.home.league.fixtures.draws.away",
+      "teams.home.league.fixtures.draws.home",
+      "teams.home.league.fixtures.draws.total",
+      "teams.home.league.fixtures.loses.away",
+      "teams.home.league.fixtures.loses.home",
+      "teams.home.league.fixtures.loses.total",
+      "teams.home.league.fixtures.played.away",
+      "teams.home.league.fixtures.played.home",
+      "teams.home.league.fixtures.played.total",
+      "teams.home.league.fixtures.wins.away",
+      "teams.home.league.fixtures.wins.home",
+      "teams.home.league.fixtures.wins.total",
+      "teams.home.league.form",
+      "teams.home.league.goals.against.average.away",
+      "teams.home.league.goals.against.average.home",
+      "teams.home.league.goals.against.average.total",
+      "teams.home.league.goals.against.minute.0-15.percentage",
+      "teams.home.league.goals.against.minute.0-15.total",
+      "teams.home.league.goals.against.minute.106-120.percentage",
+      "teams.home.league.goals.against.minute.106-120.total",
+      "teams.home.league.goals.against.minute.16-30.percentage",
+      "teams.home.league.goals.against.minute.16-30.total",
+      "teams.home.league.goals.against.minute.31-45.percentage",
+      "teams.home.league.goals.against.minute.31-45.total",
+      "teams.home.league.goals.against.minute.46-60.percentage",
+      "teams.home.league.goals.against.minute.46-60.total",
+      "teams.home.league.goals.against.minute.61-75.percentage",
+      "teams.home.league.goals.against.minute.61-75.total",
+      "teams.home.league.goals.against.minute.76-90.percentage",
+      "teams.home.league.goals.against.minute.76-90.total",
+      "teams.home.league.goals.against.minute.91-105.percentage",
+      "teams.home.league.goals.against.minute.91-105.total",
+      "teams.home.league.goals.against.total.away",
+      "teams.home.league.goals.against.total.home",
+      "teams.home.league.goals.against.total.total",
+      "teams.home.league.goals.against.under_over.0.5.over",
+      "teams.home.league.goals.against.under_over.0.5.under",
+      "teams.home.league.goals.against.under_over.1.5.over",
+      "teams.home.league.goals.against.under_over.1.5.under",
+      "teams.home.league.goals.against.under_over.2.5.over",
+      "teams.home.league.goals.against.under_over.2.5.under",
+      "teams.home.league.goals.against.under_over.3.5.over",
+      "teams.home.league.goals.against.under_over.3.5.under",
+      "teams.home.league.goals.against.under_over.4.5.over",
+      "teams.home.league.goals.against.under_over.4.5.under",
+      "teams.home.league.goals.for.average.away",
+      "teams.home.league.goals.for.average.home",
+      "teams.home.league.goals.for.average.total",
+      "teams.home.league.goals.for.minute.0-15.percentage",
+      "teams.home.league.goals.for.minute.0-15.total",
+      "teams.home.league.goals.for.minute.106-120.percentage",
+      "teams.home.league.goals.for.minute.106-120.total",
+      "teams.home.league.goals.for.minute.16-30.percentage",
+      "teams.home.league.goals.for.minute.16-30.total",
+      "teams.home.league.goals.for.minute.31-45.percentage",
+      "teams.home.league.goals.for.minute.31-45.total",
+      "teams.home.league.goals.for.minute.46-60.percentage",
+      "teams.home.league.goals.for.minute.46-60.total",
+      "teams.home.league.goals.for.minute.61-75.percentage",
+      "teams.home.league.goals.for.minute.61-75.total",
+      "teams.home.league.goals.for.minute.76-90.percentage",
+      "teams.home.league.goals.for.minute.76-90.total",
+      "teams.home.league.goals.for.minute.91-105.percentage",
+      "teams.home.league.goals.for.minute.91-105.total",
+      "teams.home.league.goals.for.total.away",
+      "teams.home.league.goals.for.total.home",
+      "teams.home.league.goals.for.total.total",
+      "teams.home.league.goals.for.under_over.0.5.over",
+      "teams.home.league.goals.for.under_over.0.5.under",
+      "teams.home.league.goals.for.under_over.1.5.over",
+      "teams.home.league.goals.for.under_over.1.5.under",
+      "teams.home.league.goals.for.under_over.2.5.over",
+      "teams.home.league.goals.for.under_over.2.5.under",
+      "teams.home.league.goals.for.under_over.3.5.over",
+      "teams.home.league.goals.for.under_over.3.5.under",
+      "teams.home.league.goals.for.under_over.4.5.over",
+      "teams.home.league.goals.for.under_over.4.5.under",
+      "teams.home.league.lineups",
+      "teams.home.league.penalty.missed.percentage",
+      "teams.home.league.penalty.missed.total",
+      "teams.home.league.penalty.scored.percentage",
+      "teams.home.league.penalty.scored.total",
+      "teams.home.league.penalty.total",
+      "teams.home.logo",
+      "teams.home.name"
+    ],
+    "sample": {
+      "predictions": {
+        "winner": {
+          "id": 49,
+          "name": "Chelsea",
+          "comment": "Win or draw"
+        },
+        "win_or_draw": true,
+        "under_over": null,
+        "goals": {
+          "home": "-3.5",
+          "away": "-2.5"
+        },
+        "advice": "Double chance : Chelsea or draw",
+        "percent": {
+          "home": "45%",
+          "draw": "45%",
+          "away": "10%"
+        }
+      },
+      "league": {
+        "id": 39,
+        "name": "Premier League",
+        "country": "England",
+        "logo": "https://media.api-sports.io/football/leagues/39.png",
+        "flag": "https://media.api-sports.io/flags/gb-eng.svg",
+        "season": 2026
+      },
+      "teams": {
+        "home": {
+          "id": 49,
+          "name": "Chelsea",
+          "logo": "https://media.api-sports.io/football/teams/49.png",
+          "last_5": {
+            "played": 5,
+            "form": "47%",
+            "att": "100%",
+            "def": "11%",
+            "goals": {
+              "for": {
+                "total": 9,
+                "average": "1.8"
+              },
+              "against": {
+                "total": 8,
+                "average": "1.6"
+              }
+            }
+          },
+          "league": {
+            "form": "WWLDLWWL",
+            "fixtures": {
+              "played": {
+                "home": 4,
+                "away": 4,
+                "total": 8
+              },
+              "wins": {
+                "home": 2,
+                "away": 2,
+                "total": 4
+              },
+              "draws": {
+                "home": 1,
+                "away": 0,
+                "total": 1
+              },
+              "loses": {
+                "home": 1,
+                "away": 2,
+                "total": 3
+              }
+            },
+            "goals": {
+              "for": {
+                "total": {
+                  "home": 11,
+                  "away": 6,
+                  "total": 17
+                },
+                "average": {
+                  "home": "2.8",
+                  "away": "1.5",
+                  "total": "2.1"
+                },
+                "minute": {
+                  "0-15": {
+                    "total": 7,
+                    "percentage": "36.84%"
+                  },
+                  "16-30": {
+                    "total": null,
+                    "percentage": null
+                  },
+                  "31-45": {
+                    "total": 2,
+                    "percentage": "10.53%"
+                  },
+                  "46-60": {
+                    "total": 3,
+                    "percentage": "15.79%"
+                  },
+                  "61-75": {
+                    "total": 5,
+                    "percentage": "26.32%"
+                  },
+                  "76-90": {
+                    "total": 2,
+                    "percentage": "10.53%"
+                  },
+                  "91-105": {
+                    "total": null,
+                    "percentage": null
+                  },
+                  "106-120": {
+                    "total": null,
+                    "percentage": null
+                  }
+                },
+                "under_over": {
+                  "0.5": {
+                    "over": 6,
+                    "under": 2
+                  },
+                  "1.5": {
+                    "over": 5,
+                    "under": 3
+                  },
+                  "2.5": {
+                    "over": 3,
+                    "under": 5
+                  },
+                  "3.5": {
+                    "over": 2,
+                    "under": 6
+                  },
+                  "4.5": {
+                    "over": 1,
+                    "under": 7
+                  }
+                }
+              },
+              "against": {
+                "total": {
+                  "home": 8,
+                  "away": 7,
+                  "total": 15
+                },
+                "average": {
+                  "home": "2.0",
+                  "away": "1.8",
+                  "total": "1.9"
+                },
+                "minute": {
+                  "0-15": {
+                    "total": null,
+                    "percentage": null
+                  },
+                  "16-30": {
+                    "total": 3,
+                    "percentage": "23.08%"
+                  },
+                  "31-45": {
+                    "total": 2,
+                    "percentage": "15.38%"
+                  },
+                  "46-60": {
+                    "total": 3,
+                    "percentage": "23.08%"
+                  },
+                  "61-75": {
+                    "total": 1,
+                    "percentage": "7.69%"
+                  },
+                  "76-90": {
+                    "total": 3,
+                    "percentage": "23.08%"
+                  },
+                  "91-105": {
+                    "total": 1,
+                    "percentage": "7.69%"
+                  },
+                  "106-120": {
+                    "total": null,
+                    "percentage": null
+                  }
+                },
+                "under_over": {
+                  "0.5": {
+                    "over": 7,
+                    "under": 1
+                  },
+                  "1.5": {
+                    "over": 6,
+                    "under": 2
+                  },
+                  "2.5": {
+                    "over": 2,
+                    "under": 6
+                  },
+                  "3.5": {
+                    "over": 0,
+                    "under": 8
+                  },
+                  "4.5": {
+                    "over": 0,
+                    "under": 8
+                  }
+                }
+              }
+            },
+            "biggest": {
+              "streak": {
+                "wins": 2,
+                "draws": 1,
+                "loses": 1
+              },
+              "wins": {
+                "home": "5-1",
+                "away": "0-2"
+              },
+              "loses": {
+                "home": "0-2",
+                "away": "3-0"
+              },
+              "goals": {
+                "for": {
+                  "home": 5,
+                  "away": 3
+                },
+                "against": {
+                  "home": 3,
+                  "away": 3
+                }
+              }
+            },
+            "clean_sheet": {
+              "home": 0,
+              "away": 1,
+              "total": 1
+            },
+            "failed_to_score": {
+              "home": 1,
+              "away": 1,
+              "total": 2
+            },
+            "penalty": {
+              "scored": {
+                "total": 0,
+                "percentage": "0%"
+              },
+              "missed": {
+                "total": 0,
+                "percentage": "0%"
+              },
+              "total": 0
+            },
+            "lineups": [
+              {
+                "formation": "3-4-2-1",
+                "played": 5
+              },
+              {
+                "formation": "4-2-3-1",
+                "played": 3
+              }
+            ],
+            "cards": {
+              "yellow": {
+                "0-15": {
+                  "total": 3,
+                  "percentage": "17.65%"
+                },
+                "16-30": {
+                  "total": 1,
+                  "percentage": "5.88%"
+                },
+                "31-45": {
+                  "total": 3,
+                  "percentage": "17.65%"
+                },
+                "46-60": {
+                  "total": 2,
+                  "percentage": "11.76%"
+                },
+                "61-75": {
+                  "total": 3,
+                  "percentage": "17.65%"
+                },
+                "76-90": {
+                  "total": 4,
+                  "percentage": "23.53%"
+                },
+                "91-105": {
+                  "total": 1,
+                  "percentage": "5.88%"
+                },
+                "106-120": {
+                  "total": null,
+                  "percentage": null
+                }
+              },
+              "red": {
+                "0-15": {
+                  "total": null,
+                  "percentage": null
+                },
+                "16-30": {
+                  "total": null,
+                  "percentage": null
+                },
+                "31-45": {
+                  "total": null,
+                  "percentage": null
+                },
+                "46-60": {
+                  "total": null,
+                  "percentage": null
+                },
+                "61-75": {
+                  "total": null,
+                  "percentage": null
+                },
+                "76-90": {
+                  "total": 1,
+                  "percentage": "100.00%"
+                },
+                "91-105": {
+                  "total": null,
+                  "percentage": null
+                },
+                "106-120": {
+                  "total": null,
+                  "percentage": null
+                }
+              }
+            }
+          }
+        },
+        "away": {
+          "id": 33,
+          "name": "Manchester United",
+          "logo": "https://media.api-sports.io/football/teams/33.png",
+          "last_5": {
+            "played": 5,
+            "form": "20%",
+            "att": "33%",
+            "def": "22%",
+            "goals": {
+              "for": {
+                "total": 3,
+                "average": "0.6"
+              },
+              "against": {
+                "total": 7,
+                "average": "1.4"
+              }
+            }
+          },
+          "league": {
+            "form": "LWDLDDDL",
+            "fixtures": {
+              "played": {
+                "home": 4,
+                "away": 4,
+                "total": 8
+              },
+              "wins": {
+                "home": 1,
+                "away": 0,
+                "total": 1
+              },
+              "draws": {
+                "home": 1,
+                "away": 3,
+                "total": 4
+              },
+              "loses": {
+                "home": 2,
+                "away": 1,
+                "total": 3
+              }
+            },
+            "goals": {
+              "for": {
+                "total": {
+                  "home": 6,
+                  "away": 4,
+                  "total": 10
+                },
+                "average": {
+                  "home": "1.5",
+                  "away": "1.0",
+                  "total": "1.3"
+                },
+                "minute": {
+                  "0-15": {
+                    "total": null,
+                    "percentage": null
+                  },
+                  "16-30": {
+                    "total": null,
+                    "percentage": null
+                  },
+                  "31-45": {
+                    "total": 2,
+                    "percentage": "20.00%"
+                  },
+                  "46-60": {
+                    "total": 1,
+                    "percentage": "10.00%"
+                  },
+                  "61-75": {
+                    "total": 4,
+                    "percentage": "40.00%"
+                  },
+                  "76-90": {
+                    "total": 3,
+                    "percentage": "30.00%"
+                  },
+                  "91-105": {
+                    "total": null,
+                    "percentage": null
+                  },
+                  "106-120": {
+                    "total": null,
+                    "percentage": null
+                  }
+                },
+                "under_over": {
+                  "0.5": {
+                    "over": 5,
+                    "under": 3
+                  },
+                  "1.5": {
+                    "over": 2,
+                    "under": 6
+                  },
+                  "2.5": {
+                    "over": 1,
+                    "under": 7
+                  },
+                  "3.5": {
+                    "over": 1,
+                    "under": 7
+                  },
+                  "4.5": {
+                    "over": 1,
+                    "under": 7
+                  }
+                }
+              },
+              "against": {
+                "total": {
+                  "home": 7,
+                  "away": 6,
+                  "total": 13
+                },
+                "average": {
+                  "home": "1.8",
+                  "away": "1.5",
+                  "total": "1.6"
+                },
+                "minute": {
+                  "0-15": {
+                    "total": null,
+                    "percentage": null
+                  },
+                  "16-30": {
+                    "total": 2,
+                    "percentage": "15.38%"
+                  },
+                  "31-45": {
+                    "total": 3,
+                    "percentage": "23.08%"
+                  },
+                  "46-60": {
+                    "total": 3,
+                    "percentage": "23.08%"
+                  },
+                  "61-75": {
+                    "total": 1,
+                    "percentage": "7.69%"
+                  },
+                  "76-90": {
+                    "total": 3,
+                    "percentage": "23.08%"
+                  },
+                  "91-105": {
+                    "total": 1,
+                    "percentage": "7.69%"
+                  },
+                  "106-120": {
+                    "total": null,
+                    "percentage": null
+                  }
+                },
+                "under_over": {
+                  "0.5": {
+                    "over": 8,
+                    "under": 0
+                  },
+                  "1.5": {
+                    "over": 4,
+                    "under": 4
+                  },
+                  "2.5": {
+                    "over": 1,
+                    "under": 7
+                  },
+                  "3.5": {
+                    "over": 0,
+                    "under": 8
+                  },
+                  "4.5": {
+                    "over": 0,
+                    "under": 8
+                  }
+                }
+              }
+            },
+            "biggest": {
+              "streak": {
+                "wins": 1,
+                "draws": 3,
+                "loses": 1
+              },
+              "wins": {
+                "home": "5-2",
+                "away": null
+              },
+              "loses": {
+                "home": "0-3",
+                "away": "2-0"
+              },
+              "goals": {
+                "for": {
+                  "home": 5,
+                  "away": 2
+                },
+                "against": {
+                  "home": 3,
+                  "away": 2
+                }
+              }
+            },
+            "clean_sheet": {
+              "home": 0,
+              "away": 0,
+              "total": 0
+            },
+            "failed_to_score": {
+              "home": 2,
+              "away": 1,
+              "total": 3
+            },
+            "penalty": {
+              "scored": {
+                "total": 1,
+                "percentage": "100.00%"
+              },
+              "missed": {
+                "total": 0,
+                "percentage": "0%"
+              },
+              "total": 1
+            },
+            "lineups": [
+              {
+                "formation": "4-2-3-1",
+                "played": 8
+              }
+            ],
+            "cards": {
+              "yellow": {
+                "0-15": {
+                  "total": null,
+                  "percentage": null
+                },
+                "16-30": {
+                  "total": 2,
+                  "percentage": "12.50%"
+                },
+                "31-45": {
+                  "total": 3,
+                  "percentage": "18.75%"
+                },
+                "46-60": {
+                  "total": 1,
+                  "percentage": "6.25%"
+                },
+                "61-75": {
+                  "total": 1,
+                  "percentage": "6.25%"
+                },
+                "76-90": {
+                  "total": 6,
+                  "percentage": "37.50%"
+                },
+                "91-105": {
+                  "total": 3,
+                  "percentage": "18.75%"
+                },
+                "106-120": {
+                  "total": null,
+                  "percentage": null
+                }
+              },
+              "red": {
+                "0-15": {
+                  "total": null,
+                  "percentage": null
+                },
+                "16-30": {
+                  "total": null,
+                  "percentage": null
+                },
+                "31-45": {
+                  "total": null,
+                  "percentage": null
+                },
+                "46-60": {
+                  "total": null,
+                  "percentage": null
+                },
+                "61-75": {
+                  "total": null,
+                  "percentage": null
+                },
+                "76-90": {
+                  "total": null,
+                  "percentage": null
+                },
+                "91-105": {
+                  "total": null,
+                  "percentage": null
+                },
+                "106-120": {
+                  "total": null,
+                  "percentage": null
+                }
+              }
+            }
+          }
+        }
+      },
+      "comparison": {
+        "form": {
+          "home": "70%",
+          "away": "30%"
+        },
+        "att": {
+          "home": "75%",
+          "away": "25%"
+        },
+        "def": {
+          "home": "47%",
+          "away": "53%"
+        },
+        "poisson_distribution": {
+          "home": "63%",
+          "away": "37%"
+        },
+        "h2h": {
+          "home": "50%",
+          "away": "50%"
+        },
+        "goals": {
+          "home": "50%",
+          "away": "50%"
+        },
+        "total": {
+          "home": "59.2%",
+          "away": "40.8%"
+        }
+      },
+      "h2h": [
+        {
+          "fixture": {
+            "id": 1379291,
+            "referee": "M. Oliver",
+            "timezone": "UTC",
+            "date": "2026-04-18T19:00:00+00:00",
+            "timestamp": 1776538800,
+            "periods": {
+              "first": 1776538800,
+              "second": 1776542400
+            },
+            "venue": {
+              "id": 519,
+              "name": "Stamford Bridge",
+              "city": "London"
+            },
+            "status": {
+              "long": "Match Finished",
+              "short": "FT",
+              "elapsed": 90,
+              "extra": 5
+            }
+          },
+          "league": {
+            "id": 39,
+            "name": "Premier League",
+            "country": "England",
+            "logo": "https://media.api-sports.io/football/leagues/39.png",
+            "flag": "https://media.api-sports.io/flags/gb-eng.svg",
+            "season": 2025,
+            "round": "Regular Season - 33",
+            "standings": true
+          },
+          "teams": {
+            "home": {
+              "id": 49,
+              "name": "Chelsea",
+              "logo": "https://media.api-sports.io/football/teams/49.png",
+              "winner": false
+            },
+            "away": {
+              "id": 33,
+              "name": "Manchester United",
+              "logo": "https://media.api-sports.io/football/teams/33.png",
+              "winner": true
+            }
+          },
+          "goals": {
+            "home": 0,
+            "away": 1
+          },
+          "score": {
+            "halftime": {
+              "home": 0,
+              "away": 1
+            },
+            "fulltime": {
+              "home": 0,
+              "away": 1
+            },
+            "extratime": {
+              "home": null,
+              "away": null
+            },
+            "penalty": {
+              "home": null,
+              "away": null
+            }
+          }
+        },
+        {
+          "fixture": {
+            "id": 1379015,
+            "referee": "P. Bankes",
+            "timezone": "UTC",
+            "date": "2025-09-20T16:30:00+00:00",
+            "timestamp": 1758385800,
+            "periods": {
+              "first": 1758385800,
+              "second": 1758389400
+            },
+            "venue": {
+              "id": 556,
+              "name": "Old Trafford",
+              "city": "Manchester"
+            },
+            "status": {
+              "long": "Match Finished",
+              "short": "FT",
+              "elapsed": 90,
+              "extra": 7
+            }
+          },
+          "league": {
+            "id": 39,
+            "name": "Premier League",
+            "country": "England",
+            "logo": "https://media.api-sports.io/football/leagues/39.png",
+            "flag": "https://media.api-sports.io/flags/gb-eng.svg",
+            "season": 2025,
+            "round": "Regular Season - 5",
+            "standings": true
+          },
+          "teams": {
+            "home": {
+              "id": 33,
+              "name": "Manchester United",
+              "logo": "https://media.api-sports.io/football/teams/33.png",
+              "winner": true
+            },
+            "away": {
+              "id": 49,
+              "name": "Chelsea",
+              "logo": "https://media.api-sports.io/football/teams/49.png",
+              "winner": false
+            }
+          },
+          "goals": {
+            "home": 2,
+            "away": 1
+          },
+          "score": {
+            "halftime": {
+              "home": 2,
+              "away": 0
+            },
+            "fulltime": {
+              "home": 2,
+              "away": 1
+            },
+            "extratime": {
+              "home": null,
+              "away": null
+            },
+            "penalty": {
+              "home": null,
+              "away": null
+            }
+          }
+        },
+        {
+          "fixture": {
+            "id": 1208387,
+            "referee": "C. Kavanagh",
+            "timezone": "UTC",
+            "date": "2025-05-16T19:15:00+00:00",
+            "timestamp": 1747422900,
+            "periods": {
+              "first": 1747422900,
+              "second": 1747426500
+            },
+            "venue": {
+              "id": 519,
+              "name": "Stamford Bridge",
+              "city": "London"
+            },
+            "status": {
+              "long": "Match Finished",
+              "short": "FT",
+              "elapsed": 90,
+              "extra": 9
+            }
+          },
+          "league": {
+            "id": 39,
+            "name": "Premier League",
+            "country": "England",
+            "logo": "https://media.api-sports.io/football/leagues/39.png",
+            "flag": "https://media.api-sports.io/flags/gb-eng.svg",
+            "season": 2024,
+            "round": "Regular Season - 37",
+            "standings": true
+          },
+          "teams": {
+            "home": {
+              "id": 49,
+              "name": "Chelsea",
+              "logo": "https://media.api-sports.io/football/teams/49.png",
+              "winner": true
+            },
+            "away": {
+              "id": 33,
+              "name": "Manchester United",
+              "logo": "https://media.api-sports.io/football/teams/33.png",
+              "winner": false
+            }
+          },
+          "goals": {
+            "home": 1,
+            "away": 0
+          },
+          "score": {
+            "halftime": {
+              "home": 0,
+              "away": 0
+            },
+            "fulltime": {
+              "home": 1,
+              "away": 0
+            },
+            "extratime": {
+              "home": null,
+              "away": null
+            },
+            "penalty": {
+              "home": null,
+              "away": null
+            }
+          }
+        },
+        {
+          "fixture": {
+            "id": 1208117,
+            "referee": "R. Jones",
+            "timezone": "UTC",
+            "date": "2024-11-03T16:30:00+00:00",
+            "timestamp": 1730651400,
+            "periods": {
+              "first": 1730651400,
+              "second": 1730655000
+            },
+            "venue": {
+              "id": 556,
+              "name": "Old Trafford",
+              "city": "Manchester"
+            },
+            "status": {
+              "long": "Match Finished",
+              "short": "FT",
+              "elapsed": 90,
+              "extra": 7
+            }
+          },
+          "league": {
+            "id": 39,
+            "name": "Premier League",
+            "country": "England",
+            "logo": "https://media.api-sports.io/football/leagues/39.png",
+            "flag": "https://media.api-sports.io/flags/gb-eng.svg",
+            "season": 2024,
+            "round": "Regular Season - 10",
+            "standings": true
+          },
+          "teams": {
+            "home": {
+              "id": 33,
+              "name": "Manchester United",
+              "logo": "https://media.api-sports.io/football/teams/33.png",
+              "winner": null
+            },
+            "away": {
+              "id": 49,
+              "name": "Chelsea",
+              "logo": "https://media.api-sports.io/football/teams/49.png",
+              "winner": null
+            }
+          },
+          "goals": {
+            "home": 1,
+            "away": 1
+          },
+          "score": {
+            "halftime": {
+              "home": 0,
+              "away": 0
+            },
+            "fulltime": {
+              "home": 1,
+              "away": 1
+            },
+            "extratime": {
+              "home": null,
+              "away": null
+            },
+            "penalty": {
+              "home": null,
+              "away": null
+            }
+          }
+        },
+        {
+          "fixture": {
+            "id": 1035480,
+            "referee": "J. Gillett",
+            "timezone": "UTC",
+            "date": "2024-04-04T19:15:00+00:00",
+            "timestamp": 1712258100,
+            "periods": {
+              "first": 1712258100,
+              "second": 1712261700
+            },
+            "venue": {
+              "id": 519,
+              "name": "Stamford Bridge",
+              "city": "London"
+            },
+            "status": {
+              "long": "Match Finished",
+              "short": "FT",
+              "elapsed": 90,
+              "extra": null
+            }
+          },
+          "league": {
+            "id": 39,
+            "name": "Premier League",
+            "country": "England",
+            "logo": "https://media.api-sports.io/football/leagues/39.png",
+            "flag": "https://media.api-sports.io/flags/gb-eng.svg",
+            "season": 2023,
+            "round": "Regular Season - 31",
+            "standings": true
+          },
+          "teams": {
+            "home": {
+              "id": 49,
+              "name": "Chelsea",
+              "logo": "https://media.api-sports.io/football/teams/49.png",
+              "winner": true
+            },
+            "away": {
+              "id": 33,
+              "name": "Manchester United",
+              "logo": "https://media.api-sports.io/football/teams/33.png",
+              "winner": false
+            }
+          },
+          "goals": {
+            "home": 4,
+            "away": 3
+          },
+          "score": {
+            "halftime": {
+              "home": 2,
+              "away": 2
+            },
+            "fulltime": {
+              "home": 4,
+              "away": 3
+            },
+            "extratime": {
+              "home": null,
+              "away": null
+            },
+            "penalty": {
+              "home": null,
+              "away": null
+            }
+          }
+        },
+        {
+          "fixture": {
+            "id": 1035323,
+            "referee": "C. Kavanagh",
+            "timezone": "UTC",
+            "date": "2023-12-06T20:15:00+00:00",
+            "timestamp": 1701893700,
+            "periods": {
+              "first": 1701893700,
+              "second": 1701897300
+            },
+            "venue": {
+              "id": 556,
+              "name": "Old Trafford",
+              "city": "Manchester"
+            },
+            "status": {
+              "long": "Match Finished",
+              "short": "FT",
+              "elapsed": 90,
+              "extra": null
+            }
+          },
+          "league": {
+            "id": 39,
+            "name": "Premier League",
+            "country": "England",
+            "logo": "https://media.api-sports.io/football/leagues/39.png",
+            "flag": "https://media.api-sports.io/flags/gb-eng.svg",
+            "season": 2023,
+            "round": "Regular Season - 15",
+            "standings": true
+          },
+          "teams": {
+            "home": {
+              "id": 33,
+              "name": "Manchester United",
+              "logo": "https://media.api-sports.io/football/teams/33.png",
+              "winner": true
+            },
+            "away": {
+              "id": 49,
+              "name": "Chelsea",
+              "logo": "https://media.api-sports.io/football/teams/49.png",
+              "winner": false
+            }
+          },
+          "goals": {
+            "home": 2,
+            "away": 1
+          },
+          "score": {
+            "halftime": {
+              "home": 1,
+              "away": 1
+            },
+            "fulltime": {
+              "home": 2,
+              "away": 1
+            },
+            "extratime": {
+              "home": null,
+              "away": null
+            },
+            "penalty": {
+              "home": null,
+              "away": null
+            }
+          }
+        },
+        {
+          "fixture": {
+            "id": 868264,
+            "referee": "S. Attwell",
+            "timezone": "UTC",
+            "date": "2023-05-25T19:00:00+00:00",
+            "timestamp": 1685041200,
+            "periods": {
+              "first": 1685041200,
+              "second": 1685044800
+            },
+            "venue": {
+              "id": 556,
+              "name": "Old Trafford",
+              "city": "Manchester"
+            },
+            "status": {
+              "long": "Match Finished",
+              "short": "FT",
+              "elapsed": 90,
+              "extra": null
+            }
+          },
+          "league": {
+            "id": 39,
+            "name": "Premier League",
+            "country": "England",
+            "logo": "https://media.api-sports.io/football/leagues/39.png",
+            "flag": "https://media.api-sports.io/flags/gb-eng.svg",
+            "season": 2022,
+            "round": "Regular Season - 32",
+            "standings": true
+          },
+          "teams": {
+            "home": {
+              "id": 33,
+              "name": "Manchester United",
+              "logo": "https://media.api-sports.io/football/teams/33.png",
+              "winner": true
+            },
+            "away": {
+              "id": 49,
+              "name": "Chelsea",
+              "logo": "https://media.api-sports.io/football/teams/49.png",
+              "winner": false
+            }
+          },
+          "goals": {
+            "home": 4,
+            "away": 1
+          },
+          "score": {
+            "halftime": {
+              "home": 2,
+              "away": 0
+            },
+            "fulltime": {
+              "home": 4,
+              "away": 1
+            },
+            "extratime": {
+              "home": null,
+              "away": null
+            },
+            "penalty": {
+              "home": null,
+              "away": null
+            }
+          }
+        },
+        {
+          "fixture": {
+            "id": 868067,
+            "referee": "S. Attwell",
+            "timezone": "UTC",
+            "date": "2022-10-22T16:30:00+00:00",
+            "timestamp": 1666456200,
+            "periods": {
+              "first": 1666456200,
+              "second": 1666459800
+            },
+            "venue": {
+              "id": 519,
+              "name": "Stamford Bridge",
+              "city": "London"
+            },
+            "status": {
+              "long": "Match Finished",
+              "short": "FT",
+              "elapsed": 90,
+              "extra": null
+            }
+          },
+          "league": {
+            "id": 39,
+            "name": "Premier League",
+            "country": "England",
+            "logo": "https://media.api-sports.io/football/leagues/39.png",
+            "flag": "https://media.api-sports.io/flags/gb-eng.svg",
+            "season": 2022,
+            "round": "Regular Season - 13",
+            "standings": true
+          },
+          "teams": {
+            "home": {
+              "id": 49,
+              "name": "Chelsea",
+              "logo": "https://media.api-sports.io/football/teams/49.png",
+              "winner": null
+            },
+            "away": {
+              "id": 33,
+              "name": "Manchester United",
+              "logo": "https://media.api-sports.io/football/teams/33.png",
+              "winner": null
+            }
+          },
+          "goals": {
+            "home": 1,
+            "away": 1
+          },
+          "score": {
+            "halftime": {
+              "home": 0,
+              "away": 0
+            },
+            "fulltime": {
+              "home": 1,
+              "away": 1
+            },
+            "extratime": {
+              "home": null,
+              "away": null
+            },
+            "penalty": {
+              "home": null,
+              "away": null
+            }
+          }
+        },
+        {
+          "fixture": {
+            "id": 710919,
+            "referee": "M. Dean",
+            "timezone": "UTC",
+            "date": "2022-04-28T18:45:00+00:00",
+            "timestamp": 1651171500,
+            "periods": {
+              "first": 1651171500,
+              "second": 1651175100
+            },
+            "venue": {
+              "id": 556,
+              "name": "Old Trafford",
+              "city": "Manchester"
+            },
+            "status": {
+              "long": "Match Finished",
+              "short": "FT",
+              "elapsed": 90,
+              "extra": null
+            }
+          },
+          "league": {
+            "id": 39,
+            "name": "Premier League",
+            "country": "England",
+            "logo": "https://media.api-sports.io/football/leagues/39.png",
+            "flag": "https://media.api-sports.io/flags/gb-eng.svg",
+            "season": 2021,
+            "round": "Regular Season - 37",
+            "standings": true
+          },
+          "teams": {
+            "home": {
+              "id": 33,
+              "name": "Manchester United",
+              "logo": "https://media.api-sports.io/football/teams/33.png",
+              "winner": null
+            },
+            "away": {
+              "id": 49,
+              "name": "Chelsea",
+              "logo": "https://media.api-sports.io/football/teams/49.png",
+              "winner": null
+            }
+          },
+          "goals": {
+            "home": 1,
+            "away": 1
+          },
+          "score": {
+            "halftime": {
+              "home": 0,
+              "away": 0
+            },
+            "fulltime": {
+              "home": 1,
+              "away": 1
+            },
+            "extratime": {
+              "home": null,
+              "away": null
+            },
+            "penalty": {
+              "home": null,
+              "away": null
+            }
+          }
+        },
+        {
+          "fixture": {
+            "id": 710680,
+            "referee": "A. Taylor",
+            "timezone": "UTC",
+            "date": "2021-11-28T16:30:00+00:00",
+            "timestamp": 1638117000,
+            "periods": {
+              "first": 1638117000,
+              "second": 1638120600
+            },
+            "venue": {
+              "id": 519,
+              "name": "Stamford Bridge",
+              "city": "London"
+            },
+            "status": {
+              "long": "Match Finished",
+              "short": "FT",
+              "elapsed": 90,
+              "extra": null
+            }
+          },
+          "league": {
+            "id": 39,
+            "name": "Premier League",
+            "country": "England",
+            "logo": "https://media.api-sports.io/football/leagues/39.png",
+            "flag": "https://media.api-sports.io/flags/gb-eng.svg",
+            "season": 2021,
+            "round": "Regular Season - 13",
+            "standings": true
+          },
+          "teams": {
+            "home": {
+              "id": 49,
+              "name": "Chelsea",
+              "logo": "https://media.api-sports.io/football/teams/49.png",
+              "winner": null
+            },
+            "away": {
+              "id": 33,
+              "name": "Manchester United",
+              "logo": "https://media.api-sports.io/football/teams/33.png",
+              "winner": null
+            }
+          },
+          "goals": {
+            "home": 1,
+            "away": 1
+          },
+          "score": {
+            "halftime": {
+              "home": 0,
+              "away": 0
+            },
+            "fulltime": {
+              "home": 1,
+              "away": 1
+            },
+            "extratime": {
+              "home": null,
+              "away": null
+            },
+            "penalty": {
+              "home": null,
+              "away": null
+            }
+          }
+        }
+      ]
+    }
+  },
+  "injuries": {
+    "status": 200,
+    "errors": null,
+    "results": 26,
+    "fields": [
+      "fixture.date",
+      "fixture.id",
+      "fixture.timestamp",
+      "fixture.timezone",
+      "league.country",
+      "league.flag",
+      "league.id",
+      "league.logo",
+      "league.name",
+      "league.season",
+      "player.id",
+      "player.name",
+      "player.photo",
+      "player.reason",
+      "player.type",
+      "team.id",
+      "team.logo",
+      "team.name"
+    ],
+    "sample": {
+      "player": {
+        "id": 422780,
+        "name": "A. Anselmino",
+        "photo": "https://media.api-sports.io/football/players/422780.png",
+        "type": "Missing Fixture",
+        "reason": "Injury"
+      },
+      "team": {
+        "id": 49,
+        "name": "Chelsea",
+        "logo": "https://media.api-sports.io/football/teams/49.png"
+      },
+      "fixture": {
+        "id": 1557450,
+        "timezone": "UTC",
+        "date": "2026-10-31T12:30:00+00:00",
+        "timestamp": 1793449800
+      },
+      "league": {
+        "id": 39,
+        "season": 2026,
+        "name": "Premier League",
+        "country": "England",
+        "logo": "https://media.api-sports.io/football/leagues/39.png",
+        "flag": "https://media.api-sports.io/flags/gb-eng.svg"
+      }
+    }
+  }
+}
