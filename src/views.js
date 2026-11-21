@@ -236,17 +236,24 @@ export function renderFollowNotice({ message = "", persistent = true } = {}) {
     ${!persistent ? '<p class="note" role="status">Saved for this visit only. Device storage is unavailable.</p>' : ""}`;
 }
 
+// Every club a competition's feed knows about (fixtures and table), plus any
+// already followed there, so a follow never vanishes from its own picker.
+export function followableTeams(feed, follows = [], search = "") {
+  const code = feed.competition.code;
+  return [...new Set([
+    ...(feed.matches ?? []).flatMap(match => [match.homeTeam, match.awayTeam]),
+    ...(feed.tables ?? []).flatMap(table => table.rows.map(row => row.team)),
+    ...follows.filter(follow => follow.competition === code).map(follow => follow.team),
+  ])].filter(Boolean).filter(team => displayTeamName(team).toLocaleLowerCase().includes(search))
+    .sort((a, b) => displayTeamName(a).localeCompare(displayTeamName(b)));
+}
+
 function renderFollowControls(feeds, options) {
   const { follows, followingOnly, followOpen, followSearch = "", signedIn, localCount, busy } = options;
   const search = followSearch.trim().toLocaleLowerCase();
   const sections = followOpen ? feeds.map(feed => {
     const code = feed.competition.code;
-    const teams = [...new Set([
-      ...(feed.matches ?? []).flatMap(match => [match.homeTeam, match.awayTeam]),
-      ...(feed.tables ?? []).flatMap(table => table.rows.map(row => row.team)),
-      ...follows.filter(follow => follow.competition === code).map(follow => follow.team),
-    ])].filter(Boolean).filter(team => displayTeamName(team).toLocaleLowerCase().includes(search))
-      .sort((a, b) => displayTeamName(a).localeCompare(displayTeamName(b)));
+    const teams = followableTeams(feed, follows, search);
     if (search && !teams.length) return "";
     return `<section><h3 class="card__title">${esc(feed.competition.shortName)}</h3>
       <div class="follow-picker__teams">${teams.map(team => renderScoreFollowButton(code, team, follows, { busy })).join("")}</div>
@@ -683,24 +690,28 @@ export function renderSignedOut({ available, configured }) {
     </div>`;
 }
 
-// Signed-in: profile, followed clubs (the active competition's teams as toggle
-// chips), and notification preferences (stored now, delivered by push in Phase 3).
-export function renderSignedIn(model, account, isFollowed, { busy = false } = {}) {
+// Signed-in: profile, followed clubs (every supported competition, one block of
+// toggle chips each), and notification preferences.
+export function renderSignedIn(feeds, account, isFollowed, { busy = false } = {}) {
   const user = account.user;
   const initial = (user.name ?? user.email ?? "?").trim()[0]?.toUpperCase() ?? "?";
-  const teams = (model.tables?.[0]?.rows ?? []).map((row) => row.team);
-  const comp = model.competition.code;
+  const follows = account.follows ?? [];
 
-  const chips = teams
-    .map((team) => {
+  const clubs = feeds.map((feed) => {
+    const comp = feed.competition.code;
+    const teams = followableTeams(feed, follows);
+    // data-follow-team stays the canonical join key: it is what POST
+    // /follows/toggle stores and what push targeting matches against.
+    const chips = teams.map((team) => {
       const on = isFollowed(comp, team);
-      // data-follow-team stays the canonical join key: it is what POST
-      // /follows/toggle stores and what push targeting matches against.
-      return `<button class="compchip ${on ? "is-active" : ""}" type="button" data-follow-team="${esc(team)}" aria-pressed="${on}" aria-disabled="${busy}">${badgeFor(team)} ${esc(displayTeamName(team))}</button>`;
-    })
-    .join("");
-
-  const otherFollows = (account.follows ?? []).filter((f) => f.competition !== comp);
+      return `<button class="compchip ${on ? "is-active" : ""}" type="button" data-follow-team="${esc(team)}" data-follow-competition="${esc(comp)}" aria-pressed="${on}" aria-disabled="${busy}">${badgeFor(team)} ${esc(displayTeamName(team))}</button>`;
+    }).join("");
+    const count = follows.filter((f) => f.competition === comp).length;
+    return `<details class="you__comp" ${count ? "open" : ""}>
+        <summary class="card__title">${esc(feed.competition.shortName)}${count ? ` · ${count}` : ""}</summary>
+        <div class="you__chips">${chips || `<p class="note">${feed.loading ? "Loading teams…" : "No teams available yet."}</p>`}</div>
+      </details>`;
+  }).join("");
 
   const prefs = PREF_LABELS.map(([key, label]) => {
     const on = Boolean(user.prefs?.[key]);
@@ -722,10 +733,8 @@ export function renderSignedIn(model, account, isFollowed, { busy = false } = {}
         <button class="seg" type="button" data-sign-out>Sign out</button>
       </section>
       <section class="card">
-        <h3 class="card__title">Followed clubs · ${esc(model.competition.shortName)}</h3>
-        <p class="note" style="margin:0 0 12px;">Goal and result alerts for these clubs, sent as push notifications.</p>
-        <div class="you__chips">${chips || `<p class="note">No clubs to follow until the feed opens the season.</p>`}</div>
-        ${otherFollows.length ? `<p class="note--dim" style="margin-top:10px;">Also following: ${otherFollows.map((f) => esc(displayTeamName(f.team))).join(", ")}</p>` : ""}
+        <h3 class="card__title">Followed clubs</h3>
+        ${clubs}
       </section>
       <section class="card">
         <h3 class="card__title">Notifications</h3>
