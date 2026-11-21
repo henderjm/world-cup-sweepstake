@@ -70,7 +70,7 @@
         <button class="toggle" class:on={followed} aria-pressed={followed} onclick={() => onfollow(club.code, club.team)}>{followed ? "Following" : "Follow"}</button>
       {/if}
     </div>
-    <div class="segs" role="group" aria-label="Show">
+    <div class="segs pills" role="group" aria-label="Show">
       <button class="toggle" class:on={shown === "upcoming"} aria-pressed={shown === "upcoming"} onclick={() => (view = "upcoming")}>Fixtures ({lists.counts.upcoming})</button>
       <button class="toggle" class:on={shown === "results"} aria-pressed={shown === "results"} onclick={() => (view = "results")}>Results ({lists.counts.results})</button>
       <button class="toggle" class:on={shown === "players"} aria-pressed={shown === "players"} onclick={() => (view = "players")}>Players</button>
@@ -84,7 +84,7 @@
       {:else if !squad.available || !board.length}
         <p class="empty">Player stats for {name} are unavailable right now{squad.failed ? ". Try again shortly" : ""}.</p>
       {:else}
-        <div class="sorts" role="group" aria-label="Sort players by">
+        <div class="sorts pills" role="group" aria-label="Sort players by">
           {#each sorts as sort (sort.key)}
             <button class="toggle" class:on={sort.key === activeSort} aria-pressed={sort.key === activeSort} onclick={() => (sortKey = sort.key)}>{sort.label}</button>
           {/each}
@@ -137,9 +137,7 @@
   .body { padding: 0 16px 48px; }
   .day { margin: 16px 0 4px; }
   .empty { color: var(--muted); font-size: 15px; margin-top: 24px; }
-  .segs { flex-wrap: wrap; }
-  .sorts { display: flex; gap: 6px; overflow-x: auto; padding: 12px 0 4px; scrollbar-width: none; }
-  .sorts .toggle { flex: none; }
+  .sorts { padding: 12px 0 4px; }
   .squad { list-style: none; margin: 0; padding: 0; }
   .prow { width: 100%; display: grid; grid-template-columns: 22px 36px 1fr auto; align-items: center; gap: 10px; min-height: 56px; padding: 6px 0; border-bottom: 1px solid var(--line); text-align: left; }
   .rank { font-size: 13px; color: var(--muted); text-align: right; }

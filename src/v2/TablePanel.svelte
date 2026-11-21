@@ -24,7 +24,7 @@
   // Keep the chosen league's pill on screen when it sits past the row's edge.
   // Scrolls the row only, never the page (scrollIntoView would move both).
   const revealSelected = feed => row => {
-    const pill = feed && row.querySelector(".pill.on");
+    const pill = feed && row.querySelector(".toggle.on");
     if (!pill) return;
     const left = pill.offsetLeft - row.offsetLeft;
     if (left < row.scrollLeft || left + pill.offsetWidth > row.scrollLeft + row.clientWidth) {
@@ -44,9 +44,9 @@
       </span>
     </div>
     {#if available.length > 1 && !locked}
-      <div class="comps" role="group" aria-label="Competition" {@attach revealSelected(selected)}>
+      <div class="comps pills" role="group" aria-label="Competition" {@attach revealSelected(selected)}>
         {#each available as feed (feed.competition.code)}
-          <button class="pill" class:on={feed === selected} aria-pressed={feed === selected}
+          <button class="toggle" class:on={feed === selected} aria-pressed={feed === selected}
             onclick={() => { expanded = false; oncompetition?.(feed.competition.code); }}>
             {COMPETITIONS[feed.competition.code]?.shortName ?? feed.competition.name}
           </button>
@@ -104,10 +104,7 @@
   .club-link:hover { text-decoration: underline; }
   .tables { padding: 8px 16px 0; }
   :global(.right) .tables, :global(.desktop) .tables { padding: 8px 0 0; }
-  .comps { display: flex; gap: 8px; margin: 0 -16px 8px; padding: 4px 16px; overflow-x: auto; scrollbar-width: none; scroll-padding-inline: 16px; }
-  .comps::-webkit-scrollbar { display: none; }
-  .pill { flex: none; height: 32px; padding: 0 14px; border-radius: 16px; font-size: 13px; font-weight: 600; white-space: nowrap; color: var(--muted); background: var(--surface-2); }
-  .pill.on { color: var(--accent-ink); background: var(--accent); }
+  .comps { margin: 0 -16px 8px; padding: 4px 16px; }
   .live-chip { color: var(--accent); }
   .group { margin: 12px 0 2px; }
   .grid { display: flex; flex-direction: column; }

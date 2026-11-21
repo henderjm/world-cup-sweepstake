@@ -173,7 +173,7 @@
       {#each hidden as key}
         <button class="restore" onclick={() => onpref(key, true)}>Show {CARD_LABELS[key]}</button>
       {/each}
-      <label class="toggle">
+      <label class="check">
         <input type="checkbox" checked={briefingPref(prefs, "landing")} onchange={event => onpref("landing", event.currentTarget.checked)} />
         Open here when there's news
       </label>
@@ -225,6 +225,6 @@
   .score { font-weight: 700; }
   .note { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
   .prefs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding-top: 4px; }
-  .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); min-height: 44px; }
-  .toggle input { accent-color: var(--accent); width: 18px; height: 18px; }
+  .check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); min-height: 44px; }
+  .check input { accent-color: var(--accent); width: 18px; height: 18px; }
 </style>

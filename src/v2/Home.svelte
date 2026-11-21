@@ -214,7 +214,7 @@
     {#if !desktop}
       <div class="filterbar">
         <span class="label strong">Matches</span>
-        <span class="filters">
+        <span class="filters pills">
           <button class="toggle" class:on={liveOnly} aria-pressed={liveOnly} onclick={() => (liveOnly = !liveOnly)}>Live only</button>
           <button class="toggle" class:on={myTeams} aria-pressed={myTeams} onclick={() => (myTeams = !myTeams)}>My teams</button>
         </span>
@@ -255,7 +255,7 @@
   {#if desktop && !openId}
     <aside class="right">
       {#if wire.length}
-        <div class="tabs" role="group" aria-label="Right column">
+        <div class="tabs pills" role="group" aria-label="Right column">
           <button class="toggle" class:on={rightShows === "wire"} aria-pressed={rightShows === "wire"} onclick={() => (rightTab = "wire")}>The Wire</button>
           <button class="toggle" class:on={rightShows === "table"} aria-pressed={rightShows === "table"} onclick={() => (rightTab = "table")}>Table</button>
         </div>
@@ -274,12 +274,13 @@
   .home.desktop { display: grid; grid-template-columns: 240px minmax(0, 1fr) 380px; min-height: calc(100vh - 56px); }
   .left { border-right: 1px solid var(--line); padding: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
   .left .gap { margin-top: 20px; }
+  .left .toggle { margin-top: 6px; }
   .comp, .club { min-height: 44px; display: flex; align-items: center; gap: 8px; width: 100%; font-size: 15px; text-align: left; }
   .comp { color: var(--muted); }
   .comp.on { color: var(--text); box-shadow: inset 2px 0 0 var(--accent); padding-left: 10px; }
   .comp .small { margin-left: auto; font-size: 12px; font-weight: 600; }
   .right { border-left: 1px solid var(--line); padding: 8px 16px; max-height: calc(100vh - 56px); overflow-y: auto; position: sticky; top: 56px; }
-  .tabs { display: flex; gap: 20px; }
+  .tabs { margin-bottom: 8px; }
   /* Tall enough that a swipe anywhere below a short list still changes day. */
   .centre { min-width: 0; padding-bottom: 24px; min-height: calc(100vh - 120px); }
   .desktop .centre { padding: 0 24px 24px; }
@@ -315,7 +316,7 @@
   .league-link { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; margin: -10px 0; font-size: 12px; color: var(--muted); white-space: nowrap; }
   .league-link:hover { color: var(--text); }
   .filterbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 16px 0; }
-  .filters { display: flex; gap: 16px; }
+
   .small { font-size: 13px; }
   .desktop :global(.row) { padding: 0 8px; }
   .empty { padding: 24px 16px; color: var(--muted); font-size: 15px; }
