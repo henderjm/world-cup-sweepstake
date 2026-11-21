@@ -9,6 +9,7 @@ import { nativeEndpoint, nativePushConfigured, sendNativePush } from "./native-p
 import { createStoredDetailReader } from "./stored-detail.js";
 import { createStoredScoreReader } from "./stored-scores.js";
 import { WIRE_DEFAULT_MODEL, handleLiveWire, runLiveWirePass } from "./liveWireStore.js";
+import { WIRE_BRIEF_DEFAULT_MODEL } from "./wireBrief.js";
 
 // Goon Squad data API (Cloudflare Worker).
 //
@@ -1264,6 +1265,8 @@ async function runScheduledLiveWire(env) {
     createClient: env.ANTHROPIC_API_KEY
       ? () => new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 20_000 }) : null,
     model: env.WIRE_MODEL || WIRE_DEFAULT_MODEL,
+    briefStore: env.ANALYSIS_CACHE ?? null,
+    briefModel: env.WIRE_BRIEF_MODEL || WIRE_BRIEF_DEFAULT_MODEL,
   });
   if (summary.inserted || summary.ai || summary.retired) console.log("live-wire", JSON.stringify(summary));
 }
@@ -1910,6 +1913,7 @@ async function handleFollowToggle(request, env, cors) {
 const PREF_KEYS = new Set([
   "goals", "kickoff", "fulltime", "red", "analysis", "draft", "recap",
   "homeLanding", "homeFantasyNext", "homeFantasyLast", "homeClubs", "homeHeadlines",
+  "wireShoutout",
 ]);
 
 async function handlePrefs(request, env, cors) {
@@ -6594,6 +6598,10 @@ const DEFAULT_PREFS = {
   homeFantasyLast: true,
   homeClubs: true,
   homeHeadlines: true,
+  // On by default (an explicit product call, 21 Nov 2026): a shout-out puts
+  // the user's FIRST name on the public Wire, and the toggle in You turns it
+  // off. A stored false always wins; liveWireStore treats a missing key as on.
+  wireShoutout: true,
 };
 
 function pushConfigured(env) {
