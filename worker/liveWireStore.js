@@ -191,8 +191,9 @@ async function syncMatch({ db, comp, match, table, fetchDetail, isDetailTrusted,
 }
 
 // WIRE_TARGETS_PER_TEAM opted-in followers of each club, picked once per match
-// when its brief is built. The `wireShoutout` pref defaults OFF: /wire is
-// public, so a name appears there only because its owner switched this on.
+// when its brief is built. The `wireShoutout` pref defaults ON (DEFAULT_PREFS):
+// a missing key reads as on, an explicit false is honoured. /wire is public,
+// so turning it off in You is how a fan keeps their name off it.
 // Bots are excluded (a bot seat is nobody's to shout out). First names only.
 export const WIRE_TARGETS_PER_TEAM = 2;
 const FIRST_NAME = /^[\p{L}][\p{L}'-]{0,23}$/u;
@@ -202,7 +203,7 @@ export async function pickMatchTargets(db, competition, match) {
   for (const team of [match.homeTeam, match.awayTeam].filter(Boolean)) {
     const rows = (await db.prepare(`SELECT u.id, u.name FROM follows f JOIN users u ON u.id = f.user_id
       WHERE f.competition = ? AND f.team = ?
-        AND COALESCE(u.is_bot, 0) = 0 AND json_extract(u.prefs, '$.wireShoutout') = 1
+        AND COALESCE(u.is_bot, 0) = 0 AND COALESCE(json_extract(u.prefs, '$.wireShoutout'), 1) = 1
       ORDER BY RANDOM() LIMIT ?`).bind(competition, team, WIRE_TARGETS_PER_TEAM * 3).all()).results ?? [];
     for (const row of rows) {
       const name = String(row.name ?? "").trim().split(/\s+/)[0] ?? "";
@@ -222,7 +223,7 @@ export async function stillOptedIn(db, targets) {
   if (!targets.length) return [];
   try {
     const rows = (await db.prepare(`SELECT id FROM users
-      WHERE id IN (${targets.map(() => "?").join(",")}) AND json_extract(prefs, '$.wireShoutout') = 1`)
+      WHERE id IN (${targets.map(() => "?").join(",")}) AND COALESCE(json_extract(prefs, '$.wireShoutout'), 1) = 1`)
       .bind(...targets.map(t => t.userId)).all()).results ?? [];
     const on = new Set(rows.map(row => row.id));
     return targets.filter(t => on.has(t.userId));

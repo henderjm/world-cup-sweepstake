@@ -989,6 +989,8 @@ button { font-family: inherit; cursor: pointer; }
 
 .you__chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .you__chips .compchip { cursor: pointer; }
+.you__comp + .you__comp { margin-top: 12px; }
+.you__comp > summary { cursor: pointer; margin-bottom: 8px; }
 
 .you__prefrow {
   display: flex;

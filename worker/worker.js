@@ -6598,8 +6598,10 @@ const DEFAULT_PREFS = {
   homeFantasyLast: true,
   homeClubs: true,
   homeHeadlines: true,
-  // Off: a shout-out puts the user's first name on the public Wire.
-  wireShoutout: false,
+  // On by default (an explicit product call, 21 Nov 2026): a shout-out puts
+  // the user's FIRST name on the public Wire, and the toggle in You turns it
+  // off. A stored false always wins; liveWireStore treats a missing key as on.
+  wireShoutout: true,
 };
 
 function pushConfigured(env) {

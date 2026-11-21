@@ -614,11 +614,16 @@ function wireFollowControls() {
   });
 }
 
-function scoresSignature() {
-  return (allScores() ? scoreFeeds.values() : [model]).map(modelSignature).join("|");
+// You lists every competition's clubs, so it needs every feed, like All scores.
+function needsAllFeeds() {
+  return allScores() || state.section === "you";
 }
 
-async function refreshScores(codes = allScores() ? COMPETITION_CODES : [state.competition]) {
+function scoresSignature() {
+  return (needsAllFeeds() ? scoreFeeds.values() : [model]).map(modelSignature).join("|");
+}
+
+async function refreshScores(codes = needsAllFeeds() ? COMPETITION_CODES : [state.competition]) {
   await Promise.all(codes.map(async code => {
     await scoreFeeds.refresh(code);
     model = scoreFeeds.get(state.competition);
@@ -1004,7 +1009,7 @@ function renderLayoutContent() {
     elements.layout.className = "layout";
     const account = currentAccount();
     elements.layout.innerHTML = account
-      ? `${renderFollowNotice(scoreFollowOptions())}${renderSignedIn(model, account, isFollowed, { busy: state.followBusy })}`
+      ? `${renderFollowNotice(scoreFollowOptions())}${renderSignedIn(scoreFeeds.values(), account, isFollowed, { busy: state.followBusy })}`
       : renderSignedOut({ available: accountAvailable(), configured: Boolean(GOOGLE_CLIENT_ID) });
     if (account) updatePushControls();
     if (!account && accountAvailable() && GOOGLE_CLIENT_ID) {
@@ -4160,6 +4165,8 @@ function setSection(section) {
   // A nav click always lands on that section's own default view: Learn's is
   // the tutorials index, not wherever a previous visit left off.
   if (section === "learn") state.learn.slug = null;
+  // You lists clubs from every competition; load the feeds not yet fetched.
+  if (section === "you") refreshScores();
   // pushState for top-level section moves, so the browser's Back button walks
   // back through sections instead of leaving the site. Sub-navigation inside a
   // section (scores tabs, fantasy sub-tabs) stays replaceState so tabs never
@@ -4763,7 +4770,7 @@ function wireLayoutControls() {
     }
     const followButton = event.target.closest("[data-follow-team]");
     if (followButton) {
-      const competition = model.competition.code;
+      const competition = followButton.dataset.followCompetition || model.competition.code;
       const team = followButton.dataset.followTeam;
       const following = !isFollowed(competition, team);
       const owner = currentAccount()?.user.email;
