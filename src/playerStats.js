@@ -5,13 +5,13 @@
 // send is left out; nothing is drawn as 0 unless Sportmonks said 0.
 
 // Match detail values are plain numbers; season values are objects
-// ({ total }, { average }), compacted to one number per type before they
-// leave the Worker.
+// ({ total }, { average }, and season xG's { expected, actual }), compacted
+// to one number per type before they leave the Worker.
 export function compactDetails(details) {
   const out = {};
   for (const detail of details ?? []) {
     const raw = detail.data?.value ?? detail.value;
-    const value = typeof raw === "object" && raw !== null ? raw.total ?? raw.average ?? null : raw;
+    const value = typeof raw === "object" && raw !== null ? raw.total ?? raw.average ?? raw.expected ?? null : raw;
     // Flags (captain: true) are not figures.
     if (typeof value !== "number" && typeof value !== "string") continue;
     const number = Number(value);

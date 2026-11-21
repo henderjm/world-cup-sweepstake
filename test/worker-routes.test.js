@@ -202,6 +202,8 @@ const ROUTES = [
   ["GET", "/player/28912747/season/28083"],
   ["GET", "/PL/stats"],
   ["GET", "/XX/stats"],
+  ["GET", "/PL/club?team=Arsenal"],
+  ["GET", "/XX/club?team=Arsenal"],
   ["GET", "/PL/live"],
   ["GET", "/nope-not-a-route"],
 ];

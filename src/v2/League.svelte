@@ -35,8 +35,15 @@
   const fixtures = $derived(firstDays(fixtureDays, fixtureCount));
   const results = $derived(firstDays(resultDays, resultCount));
 
-  // A club tapped in the table: its fixtures and results in this competition.
+  // A club tapped in the table or the Stats tab's picker: its fixtures,
+  // results and player stats in this competition.
   let club = $state(null);
+  // Table order when there is a table, else alphabetical from the feed.
+  const clubs = $derived.by(() => {
+    const ranked = (feed?.tables ?? []).flatMap(table => (table.rows ?? []).map(row => row.team)).filter(Boolean);
+    const named = ranked.length ? ranked : matches.flatMap(match => [match.homeTeam, match.awayTeam]).filter(Boolean).sort((a, b) => a.localeCompare(b));
+    return [...new Set(named)];
+  });
   $effect(() => {
     code;
     club = null;
@@ -136,15 +143,27 @@
         {/each}
       </div>
       {#if category}
+        {@const leader = category.rows[0]}
+        {@const best = leader?.total || 0}
+        <button class="leader" onclick={() => openPlayer(leader)} aria-label="{category.label} leader: {leader.name}, {leader.total}">
+          {#if leader.image}<img class="lphoto" src={leader.image} alt="" loading="lazy" />{:else}<span class="lphoto"></span>{/if}
+          <span class="who">
+            <span class="label">{category.label} leader</span>
+            <span class="lname">{leader.name}</span>
+            {#if leader.team}<span class="pteam"><Crest team={leader.team} size={14} />{displayTeamName(leader.team)}</span>{/if}
+          </span>
+          <span class="lvalue">{leader.total}</span>
+        </button>
         <ol class="board" aria-label="{category.label} leaderboard">
-          {#each category.rows.slice(0, statRows) as row, index (row.playerId)}
+          {#each category.rows.slice(1, statRows) as row, index (row.playerId)}
             <li>
               <button class="prow" onclick={() => openPlayer(row)}>
-                <span class="rank">{row.position ?? index + 1}</span>
+                <span class="rank">{row.position ?? index + 2}</span>
                 {#if row.image}<img class="photo" src={row.image} alt="" loading="lazy" />{:else}<span class="photo"></span>{/if}
                 <span class="who">
                   <span class="pname">{row.name}</span>
                   {#if row.team}<span class="pteam"><Crest team={row.team} size={14} />{displayTeamName(row.team)}</span>{/if}
+                  {#if best > 0}<span class="bar" aria-hidden="true"><i style:width="{(row.total / best) * 100}%"></i></span>{/if}
                 </span>
                 <span class="total">{row.total}</span>
               </button>
@@ -157,11 +176,21 @@
         <p class="note">Season to date · Sportmonks</p>
       {/if}
     {/if}
+    {#if tab === "stats" && feed?.hasData && clubs.length}
+      <section class="clubs" aria-label="Club player stats">
+        <div class="label strong">Club player stats</div>
+        <div class="clubgrid">
+          {#each clubs as team (team)}
+            <button class="clubchip" onclick={() => (club = { code, team, view: "players" })}><Crest {team} size={20} /><span>{displayTeamName(team)}</span></button>
+          {/each}
+        </div>
+      </section>
+    {/if}
   {/if}
 </main>
 
 {#if club}
-  <ClubSheet {club} {matches} {follows} {desktop} onclose={() => (club = null)} onopen={openFromClub} {onfollow} />
+  <ClubSheet {club} {matches} {follows} {desktop} initialView={club.view ?? null} onclose={() => (club = null)} onopen={openFromClub} {onfollow} />
 {/if}
 
 {#if selected}
@@ -171,6 +200,16 @@
 <style>
   .league { min-width: 0; padding: 0 16px 24px; }
   .league.desktop { padding: 0 24px 24px; max-width: 880px; width: 100%; margin: 0 auto; }
+  .leader { width: 100%; display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 14px; margin: 12px 0 4px; padding: 14px; border-radius: 12px; background: var(--surface); text-align: left; }
+  .lphoto { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; background: var(--line); display: block; }
+  .lname { font-size: 19px; font-weight: 800; }
+  .lvalue { font-size: 34px; font-weight: 900; color: var(--accent); }
+  .bar { display: block; height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; margin-top: 2px; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+  .clubs { margin: 16px 0 8px; }
+  .clubgrid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .clubchip { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 18px; font-size: 13px; }
+  .clubchip:hover { border-color: var(--line-2); }
   .lhead { display: flex; align-items: center; gap: 4px; min-height: 52px; }
   .lhead h1 { margin: 0; font-size: 22px; font-weight: 900; font-style: italic; text-transform: uppercase; letter-spacing: -0.01em; }
   .back { width: 44px; height: 44px; margin-left: -12px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
@@ -197,5 +236,4 @@
   .pname { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pteam { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
   .total { font-size: 17px; font-weight: 800; min-width: 28px; text-align: right; }
-  li:first-child .total { color: var(--accent); }
 </style>

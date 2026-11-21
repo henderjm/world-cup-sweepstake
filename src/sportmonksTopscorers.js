@@ -1,5 +1,5 @@
 // Season leaderboards for the V2 league page (Stats tab): top scorers, top
-// assists and most yellow cards, from Sportmonks' season topscorers endpoint.
+// assists, most yellow and red cards, from Sportmonks' season topscorers endpoint.
 // Pure and shared by the Worker (mapping) and the tests. A leaderboard
 // Sportmonks did not return is absent, never an empty list drawn as "nobody".
 
@@ -12,6 +12,7 @@ export const TOPSCORER_CATEGORIES = [
   { key: "goals", label: "Goals", typeId: 208 },
   { key: "assists", label: "Assists", typeId: 209 },
   { key: "yellowCards", label: "Yellow cards", typeId: 84 },
+  { key: "redCards", label: "Red cards", typeId: 83 },
 ];
 
 export const TOPSCORER_LIMIT = 20;

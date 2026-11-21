@@ -1,6 +1,7 @@
 import { matchCentre } from "./sportmonksCentre.js";
 import { playerSeason } from "./sportmonksPlayers.js";
 import { leagueStats } from "./sportmonksLeagueStats.js";
+import { clubStats } from "./sportmonksClubStats.js";
 import { findSportmonksMatch, getSportmonksLive, isSportmonksCompetition, sportmonksMatchDetail } from "./sportmonksLive.js";
 import { sportmonksIdOf } from "../src/sportmonksFeed.js";
 import { TALK_ACTIONS, readBanter, talkAction } from "./talkStore.js";
@@ -705,6 +706,32 @@ export default {
           return json(stats, 200, { ...cors, "Cache-Control": `public, max-age=${stats.available ? 1800 : 300}` });
         } catch (error) {
           console.error(`route failed: /:comp/stats ${error.message}`);
+          return json({ available: false }, 200, { ...cors, "Cache-Control": "public, max-age=60" });
+        }
+      }
+
+      // One club's season player stats for the V2 club sheet
+      // (worker/sportmonksClubStats.js); the club is matched by name against
+      // the current standings, so only a resolved id reaches Sportmonks.
+      const clubRoute = url.pathname.match(/^\/([A-Za-z]{2,6})\/club$/);
+      if (clubRoute) {
+        const code = clubRoute[1].toUpperCase();
+        if (!COMPETITIONS[code]) return json({ error: "unknown competition" }, 404, cors);
+        if (!env.SPORTMONKS_API_KEY) return json({ error: "club stats not configured" }, 501, cors);
+        if (env.DETAIL_LIMITER) {
+          const ip = request.headers.get("CF-Connecting-IP") || "anon";
+          try {
+            const { success } = await env.DETAIL_LIMITER.limit({ key: ip });
+            if (!success) return json({ error: "rate limited" }, 429, { ...cors, "Retry-After": "30" });
+          } catch {
+            // limiter unavailable, fail open
+          }
+        }
+        try {
+          const stats = await clubStats(env, code, String(url.searchParams.get("team") ?? "").trim());
+          return json(stats, 200, { ...cors, "Cache-Control": `public, max-age=${stats.available ? 1800 : 300}` });
+        } catch (error) {
+          console.error(`route failed: /:comp/club ${error.message}`);
           return json({ available: false }, 200, { ...cors, "Cache-Control": "public, max-age=60" });
         }
       }

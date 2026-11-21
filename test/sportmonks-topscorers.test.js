@@ -48,7 +48,7 @@ test("leaderboards come from the current season, and an empty or failed one is l
   const stats = await leagueStats({ SPORTMONKS_API_KEY: "k" }, "PL");
   assert.equal(stats.available, true);
   assert.equal(stats.seasonId, 28083);
-  assert.deepEqual(stats.categories.map(c => c.key), ["goals"]);
+  assert.deepEqual(stats.categories.map(c => c.key), ["goals", "redCards"]);
   assert.ok(calls.every(path => !path.includes("/topscorers/") || path.includes("/seasons/28083")));
 });
 
