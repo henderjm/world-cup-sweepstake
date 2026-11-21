@@ -40,7 +40,7 @@ import { WIRE_BRIEF_DEFAULT_MODEL } from "./wireBrief.js";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { buildPushHTTPRequest } from "@pushforge/builder";
-import { COMPETITIONS } from "../src/competitions.js";
+import { COMPETITIONS, SPORTMONKS_COMPETITION_CODES } from "../src/competitions.js";
 import {
   briefingSince,
   clubResults,
@@ -1247,18 +1247,34 @@ async function handleAnalysis(env, id, cors) {
 // other live-detail extras when the allowance is low (stored mode spends no
 // allowance, so it always runs there). Without ANTHROPIC_API_KEY the timeline
 // still runs on templates alone.
+// Sportmonks leagues ride the same pass: their feed and detail already map to
+// the API-Football shapes, and their reads spend the Sportmonks allowance
+// (guarded by sportmonksClient's own floor), never API-Football's.
 async function runScheduledLiveWire(env) {
-  if (!env.DB || !scoreSourceConfigured(env)) return;
+  if (!env.DB) return;
+  const competitions = [
+    ...(scoreSourceConfigured(env) ? parseCompetitions(env) : []),
+    ...(env.SPORTMONKS_API_KEY ? SPORTMONKS_COMPETITION_CODES.map((code) => ({ code })) : []),
+  ];
+  if (!competitions.length) return;
   const summary = await runLiveWirePass({
     db: env.DB,
-    competitions: parseCompetitions(env),
-    getLive: (comp) => getLive(comp, env.API_FOOTBALL_KEY, env),
+    competitions,
+    getLive: (comp) => isSportmonksCompetition(comp.code)
+      ? getSportmonksLive(env, comp.code)
+      : getLive(comp, env.API_FOOTBALL_KEY, env),
     // Stored reads cost nothing upstream, so a finished match keeps being read
     // until its last-minute goals land; a direct provider read is spent only on
-    // live matches, and only while the allowance has room.
-    fetchDetail: (match, comp) => env.SCORE_READ_ORIGIN
-      || (isLive(match.status) && allowsLiveEventDetail(currentAllowanceLevel()))
-      ? fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY, { env, comp }) : null,
+    // live matches, and only while the allowance has room. A Sportmonks match
+    // is read while live and for its full-time item, on its own allowance.
+    fetchDetail: (match, comp) => {
+      if (isSportmonksCompetition(comp.code)) {
+        return isLive(match.status) || isFinished(match.status) ? sportmonksMatchDetail(env, match) : null;
+      }
+      return env.SCORE_READ_ORIGIN
+        || (isLive(match.status) && allowsLiveEventDetail(currentAllowanceLevel()))
+        ? fetchLiveMatchDetail(match, env.API_FOOTBALL_KEY, { env, comp }) : null;
+    },
     // An empty or events-degraded read is a failed read, never a goal being
     // ruled out: see reconcileWire.
     isDetailTrusted: (detail) => detailHasSubstance(detail) && !detail.degraded?.includes("/fixtures/events"),
