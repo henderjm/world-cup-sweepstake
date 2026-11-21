@@ -3,6 +3,7 @@ import { mount } from "svelte";
 import { chosenVersion, isEmbedded } from "./appVersion.js";
 import "./telemetry.js";
 import { captureAttribution } from "./account.js";
+import { setupNative } from "./native.js";
 
 // V2 is the default; V1 loads exactly as before for anyone who chose it. Each
 // is a separate bundle chosen per device (src/appVersion.js), so neither app's styles or global
@@ -11,6 +12,11 @@ import { captureAttribution } from "./account.js";
 // (V1 replaces the hash on its first render) and before any sign-in can
 // happen; see src/attribution.js.
 captureAttribution();
+
+// Native shell setup (push resume, Android back button) belongs to the top
+// frame only: V2 frames V1 for Fantasy/Play/You, and a second copy inside that
+// iframe would register every listener twice.
+if (!isEmbedded()) setupNative().catch(console.error);
 
 const target = document.getElementById("app");
 

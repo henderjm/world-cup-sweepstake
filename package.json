@@ -8,14 +8,26 @@
     "build": "vite build",
     "test": "node --test test/*.test.js",
     "fetch:live": "node scripts/fetch-live-data.mjs",
-    "fetch:fantasy-players": "node scripts/fetch-fantasy-players.mjs"
+    "fetch:fantasy-players": "node scripts/fetch-fantasy-players.mjs",
+    "mobile:sync": "node scripts/check-native-config.mjs && npm run build && cap sync",
+    "mobile:android": "npm run mobile:sync && cap open android",
+    "mobile:ios": "npm run mobile:sync && cap open ios",
+    "mobile:apk": "npm run mobile:sync && node scripts/build-mobile.mjs android",
+    "mobile:ios:simulator": "npm run mobile:sync && node scripts/build-mobile.mjs ios-simulator"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
+    "@capacitor-firebase/authentication": "^8.5.1",
+    "@capacitor-firebase/messaging": "^8.5.1",
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/core": "^8.5.1",
+    "@capacitor/ios": "^8.5.1",
     "@pushforge/builder": "^2.0.5",
     "posthog-js": "^1.407.2"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.1",
     "@sveltejs/vite-plugin-svelte": "^7.2.0",
     "svelte": "^5.56.7",
     "vite": "^8.1.5"

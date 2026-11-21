@@ -3,6 +3,7 @@ import { renderWireList, renderWirePanel, renderWirePulse } from "./liveWireView
 import { createScoreFeeds, combinedScoreModel } from "./scoreFeeds.js";
 import { knockoutRounds, selectedKnockoutRound } from "./knockout.js";
 import { createLocalFollows, uniqueFollows, followsTeam, LOCAL_FOLLOWS_KEY } from "./teamFollows.js";
+import { isNative, shareBaseUrl } from "./native.js";
 import { SCORES_TABS, localDateKey, readScoreRoute, scoreRouteHash, shiftScoreDate, validScoreDate } from "./scoreDates.js";
 import { trackGameweek } from "./fantasyGameweekTracker.js";
 import { confettiBurst } from "./interactions.js";
@@ -4041,7 +4042,7 @@ function beginDemoSimToEnd() {
 function shareDemoResult(button) {
   const d = state.demo;
   if (!d.reportCard) return;
-  const link = `${window.location.origin}${window.location.pathname}#demo`;
+  const link = `${shareBaseUrl()}#demo`;
   const text = composeDemoShareText(d.reportCard, link);
   sharePaperRun(text).then((status) => {
     d.shareStatus =
@@ -4123,9 +4124,9 @@ async function updatePushControls(note = "") {
   const current = await pushState();
   if (!elements.layout.querySelector("[data-push-controls]")) return; // re-rendered meanwhile
   if (current === "unsupported") {
-    slot.innerHTML = `<span class="note">Not supported in this browser.</span>`;
+    slot.innerHTML = `<span class="note">${isNative ? "Notifications are not configured in this build." : "Not supported in this browser."}</span>`;
   } else if (current === "denied") {
-    slot.innerHTML = `<span class="note">Blocked in browser settings.</span>`;
+    slot.innerHTML = `<span class="note">${isNative ? "Blocked in device notification settings." : "Blocked in browser settings."}</span>`;
   } else if (current === "off") {
     slot.innerHTML = `${note ? `<span class="note">${note}</span> ` : ""}<button class="seg" type="button" data-push-enable>Enable on this device</button>`;
   } else {
@@ -4792,7 +4793,10 @@ function wireLayoutControls() {
       return;
     }
     if (event.target.closest("[data-sign-out]")) {
-      signOut();
+      signOut().catch(() => {
+        const button = document.querySelector("[data-sign-out]");
+        if (button) button.textContent = "Couldn't sign out. Try again.";
+      });
       return;
     }
     if (event.target.closest("[data-push-enable]")) {
@@ -4806,7 +4810,7 @@ function wireLayoutControls() {
       return;
     }
     if (event.target.closest("[data-push-disable]")) {
-      disablePush().finally(() => updatePushControls());
+      disablePush().then(() => updatePushControls()).catch(() => updatePushControls("Couldn't disable. Try again."));
       return;
     }
     const testButton = event.target.closest("[data-push-test]");
@@ -4815,7 +4819,7 @@ function wireLayoutControls() {
       testButton.textContent = "Sending…";
       sendTestPush()
         .then((result) => {
-          testButton.textContent = result.sent ? "Sent ✓" : "No devices";
+          testButton.textContent = result.sent ? "Sent — check this device" : result.devices ? "Delivery not accepted" : "Device not registered";
         })
         .catch(() => {
           testButton.textContent = "Failed";

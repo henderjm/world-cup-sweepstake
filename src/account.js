@@ -9,6 +9,15 @@ import {
   parseStoredAttribution,
   serializeAttribution,
 } from "./attribution.js";
+import { isNative, nativePlugin, pluginAvailable } from "./native.js";
+
+const nativeAuth = () => nativePlugin("FirebaseAuthentication");
+
+async function resumeNotifications() {
+  if (!isNative) return;
+  const { resumeNativePush } = await import("./nativePush.js");
+  await resumeNativePush().catch(() => {});
+}
 
 // Accounts: Google sign-in via Google Identity Services, an opaque bearer session
 // from the Worker kept in localStorage, followed clubs and notification prefs.
@@ -146,6 +155,7 @@ export async function restoreAccount() {
     // id (see worker/worker.js), so email is the stable identity to key on here,
     // and it is also the identity the product wants users assigned by.
     identifyUser(account.user.email, { name: account.user.name, email: account.user.email });
+    await resumeNotifications();
     emit();
     return account;
   } catch (error) {
@@ -179,23 +189,37 @@ function loadGis() {
 
 export async function mountSignIn(container, { onSignedIn, onError, surface = null }) {
   if (!container) return;
+  if (isNative) {
+    if (!pluginAvailable("FirebaseAuthentication")) {
+      container.innerHTML = '<p>Sign-in and notifications are not configured in this build. Use <a href="https://kickoffdraft.com/#you" target="_blank" rel="noopener noreferrer">Kickoff Draft in your browser</a> for your account and leagues.</p>';
+      return;
+    }
+    const button = document.createElement("button");
+    button.className = "seg";
+    button.textContent = "Continue with Google";
+    button.onclick = async () => {
+      button.disabled = true;
+      try {
+        const result = await nativeAuth().signInWithGoogle();
+        if (!result.credential?.idToken) throw new Error("Google did not return an identity token");
+        await finishSignIn(result.credential.idToken, surface);
+        onSignedIn?.(account);
+      } catch (error) {
+        onError?.(error);
+      } finally {
+        button.disabled = false;
+      }
+    };
+    container.replaceChildren(button);
+    return;
+  }
   try {
     await loadGis();
     window.google.accounts.id.initialize({
       client_id: GOOGLE_CLIENT_ID,
       callback: async (response) => {
         try {
-          const attribution = normalizeAttribution(readAttribution());
-          const result = await api("/auth/google", {
-            method: "POST",
-            body: JSON.stringify({ credential: response.credential, attribution }),
-          });
-          storeSession(result.token);
-          consumeAttribution();
-          account = { user: result.user, follows: result.follows };
-          identifyUser(result.user.email, { name: result.user.name, email: result.user.email });
-          track(FUNNEL_EVENTS.USER_SIGNED_IN, signInProperties(result, attribution, surface));
-          emit();
+          await finishSignIn(response.credential, surface);
           onSignedIn?.(account);
         } catch (error) {
           onError?.(error);
@@ -214,7 +238,28 @@ export async function mountSignIn(container, { onSignedIn, onError, surface = nu
   }
 }
 
+async function finishSignIn(credential, surface) {
+  const attribution = normalizeAttribution(readAttribution());
+  const result = await api("/auth/google", {
+    method: "POST",
+    body: JSON.stringify({ credential, attribution }),
+  });
+  storeSession(result.token);
+  consumeAttribution();
+  account = { user: result.user, follows: result.follows };
+  identifyUser(result.user.email, { name: result.user.name, email: result.user.email });
+  track(FUNNEL_EVENTS.USER_SIGNED_IN, signInProperties(result, attribution, surface));
+  await resumeNotifications();
+  emit();
+}
+
 export async function signOut() {
+  if (isNative) {
+    const { nativePush, nativePushAvailable } = await import("./nativePush.js");
+    // Keep the session available for retry if the device cannot be detached.
+    if (nativePushAvailable()) await nativePush().disable();
+    if (pluginAvailable("FirebaseAuthentication")) await nativeAuth().signOut();
+  }
   try {
     if (session) await api("/auth/logout", { method: "POST" });
   } catch {
