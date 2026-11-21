@@ -214,6 +214,23 @@ export async function pickMatchTargets(db, competition, match) {
   return targets;
 }
 
+// The cached targets narrowed to those whose `wireShoutout` is STILL on. The
+// target list is cached for the life of the brief (12h), so without this a
+// fan who switches the toggle off mid-match could still be named, and quoted,
+// on the public Wire. Any read failure names nobody.
+export async function stillOptedIn(db, targets) {
+  if (!targets.length) return [];
+  try {
+    const rows = (await db.prepare(`SELECT id FROM users
+      WHERE id IN (${targets.map(() => "?").join(",")}) AND json_extract(prefs, '$.wireShoutout') = 1`)
+      .bind(...targets.map(t => t.userId)).all()).results ?? [];
+    const on = new Set(rows.map(row => row.id));
+    return targets.filter(t => on.has(t.userId));
+  } catch {
+    return [];
+  }
+}
+
 // What the match's targets have said in its banter, newest last, hidden
 // (moderated) messages excluded. Already public on the match page; on the Wire
 // it is quoted material the model may follow up on, never instructions.
@@ -265,7 +282,7 @@ async function writeAiLines({ db, createClient, model, now, context, allLive, br
     try {
       if (!item || !entry) throw Error("match no longer watched");
       const brief = await readWireBrief(briefStore, entry.match.id);
-      const targets = brief?.targets ?? [];
+      const targets = await stillOptedIn(db, brief?.targets ?? []);
       const banter = await targetBanter(db, entry.match.id, targets);
       const payload = buildWirePrompt({
         item,

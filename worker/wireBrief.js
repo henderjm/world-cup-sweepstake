@@ -73,6 +73,13 @@ export function cleanBrief(text) {
   return kept.length ? kept.join("\n") : null;
 }
 
+// With web search on, the reply arrives as many text blocks, split wherever a
+// citation starts or ends, often mid-sentence. They must be concatenated as
+// written: joining them with newlines cut every cited bullet into fragments.
+export function briefText(content) {
+  return (content ?? []).filter(block => block.type === "text").map(block => block.text ?? "").join("");
+}
+
 export function briefDue(match, now) {
   const kickoff = Date.parse(match?.utcDate ?? "");
   return Number.isFinite(kickoff) && now >= kickoff - WIRE_BRIEF_LEAD_MS;
@@ -111,7 +118,7 @@ export async function ensureWireBriefs({ store, matches, createClient, pickTarge
           content: `${competitionName}: ${match.homeTeam} v ${match.awayTeam}, ${day}. Today is ${new Date(now).toISOString().slice(0, 10)}.`,
         }],
       });
-      const raw = response.content.filter(block => block.type === "text").map(block => block.text).join("\n");
+      const raw = briefText(response.content);
       text = cleanBrief(raw);
       log.log?.(`wire: brief ${text ? "written" : "empty"} for ${match.id} (in ${response.usage?.input_tokens ?? "?"}, out ${response.usage?.output_tokens ?? "?"}, searches ${response.usage?.server_tool_use?.web_search_requests ?? "?"})`);
     } catch (error) {

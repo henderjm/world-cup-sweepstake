@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { pickShoutout, storySide } from "../src/liveWireFans.js";
 import { payloadFacts, buildWirePrompt, wireLineAcceptable } from "../src/liveWirePrompt.js";
-import { cleanBrief } from "../worker/wireBrief.js";
+import { briefText, cleanBrief } from "../worker/wireBrief.js";
+import { stillOptedIn } from "../worker/liveWireStore.js";
 
 const match = { id: 1, homeTeam: "Arsenal", awayTeam: "Chelsea", score: { home: 1, away: 0 } };
 const fans = [
@@ -56,4 +57,29 @@ test("brief numbers are allowed, brief cleanup keeps bullets only", () => {
   assert.equal(cleanBrief("Here you go\n- Manager on 5 straight defeats — under pressure\n- none"), "- Manager on 5 straight defeats , under pressure\n- none");
   const payload = buildWirePrompt({ item: { kind: "goal", team: "Arsenal", competition: "PL" }, match, brief: "- 5 straight defeats" });
   assert.equal(wireLineAcceptable("That ends 5 straight defeats.", payloadFacts(payload)), "That ends 5 straight defeats.");
+});
+
+test("cited text blocks are rejoined into whole bullets", () => {
+  const content = [
+    { type: "server_tool_use" },
+    { type: "text", text: "- Bournemouth go for a ninth straight win in all competitions, and " },
+    { type: "text", text: "Liam Delap", citations: [{}] },
+    { type: "text", text: " is back.\n- Forest are without " },
+    { type: "text", text: "two first-choice defenders.", citations: [{}] },
+  ];
+  assert.equal(cleanBrief(briefText(content)),
+    "- Bournemouth go for a ninth straight win in all competitions, and Liam Delap is back.\n- Forest are without two first-choice defenders.");
+});
+
+const fakeDb = (rows, fail = false) => ({
+  prepare: () => ({ bind: () => ({ all: async () => { if (fail) throw Error("down"); return { results: rows }; } }) }),
+});
+
+test("a cached target who has since opted out is never named", async () => {
+  const kept = await stillOptedIn(fakeDb([{ id: 1 }]), fans);
+  assert.deepEqual(kept.map(f => f.name), ["Ana"]);
+});
+
+test("an unreadable opt-in check names nobody", async () => {
+  assert.deepEqual(await stillOptedIn(fakeDb([], true), fans), []);
 });
