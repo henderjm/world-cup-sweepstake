@@ -23,7 +23,7 @@
     mountSignIn(signInBox, { surface: "home_preview", onError: () => (signInFailed = true) });
   });
 
-  const CARD_LABELS = { fantasyNext: "This week", fantasyLast: "Last gameweek", clubs: "Your clubs", headlines: "Around the leagues" };
+  const CARD_LABELS = { fantasyNext: "This week", fantasyLast: "Last gameweek", clubs: "Following", headlines: "Around the leagues" };
 
   const shown = key => sample || briefingPref(prefs, key);
   const hidden = $derived(Object.keys(CARD_LABELS).filter(key => !shown(key)));

@@ -41,7 +41,6 @@
     return [...new Set(named)];
   });
 
-  const isFollowed = match => followsTeam(follows, code, match.homeTeam) || followsTeam(follows, code, match.awayTeam);
   const dayTitle = day => (day === today ? "Today" : new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" }).format(new Date(`${day}T12:00:00`)));
 
   // Stats: fetched when the tab is first opened for a competition, kept for
@@ -109,7 +108,7 @@
     {#each view.shown as group (group.day)}
       <div class="day-h label strong">{dayTitle(group.day)}</div>
       {#each group.matches as match (match.id)}
-        <MatchRow {match} flash={flashed.has(match.id)} followed={isFollowed(match)} aside={isFollowed(match) ? "Your club" : (match.matchday ? `Matchday ${match.matchday}` : "")} {onopen} />
+        <MatchRow {match} flash={flashed.has(match.id)} followHome={followsTeam(follows, code, match.homeTeam)} followAway={followsTeam(follows, code, match.awayTeam)} aside={match.matchday ? `Matchday ${match.matchday}` : ""} {onopen} />
       {/each}
     {:else}
       <p class="empty">{tab === "fixtures" ? "No upcoming fixtures in the feed." : "No results yet."}</p>
