@@ -661,6 +661,7 @@ const PREF_LABELS = [
   ["analysis", "Match analysis ready"],
   ["draft", "Draft reminders"],
   ["recap", "Weekly league recap"],
+  ["wireShoutout", "Name me on The Wire"],
 ];
 
 // Signed-out: the design's sign-in card. GIS renders the real Google button into

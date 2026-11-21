@@ -31,9 +31,13 @@ import {
   WIRE_SCHEMA,
   WIRE_SYSTEM_PROMPT,
   buildWirePrompt,
+  payloadFacts,
   wireLineAcceptable,
 } from "../src/liveWirePrompt.js";
-import { isLive } from "../src/format.js";
+import { isFinished, isLive } from "../src/format.js";
+import { competitionFor } from "../src/competitions.js";
+import { WIRE_BRIEF_DEFAULT_MODEL, ensureWireBriefs, readWireBrief } from "./wireBrief.js";
+import { pickShoutout } from "../src/liveWireFans.js";
 
 export const WIRE_DEFAULT_MODEL = "claude-haiku-5-5";
 export const WIRE_AI_PER_TICK = 6;
@@ -65,10 +69,12 @@ export async function runLiveWirePass({
   isDetailTrusted,
   createClient = null,
   model = WIRE_DEFAULT_MODEL,
+  briefStore = null,
+  briefModel = WIRE_BRIEF_DEFAULT_MODEL,
   now = Date.now(),
   log = console,
 }) {
-  const summary = { watched: 0, inserted: 0, updated: 0, retired: 0, ai: 0 };
+  const summary = { watched: 0, inserted: 0, updated: 0, retired: 0, ai: 0, briefs: 0 };
   if (!db) return summary;
 
   const feeds = [];
@@ -101,7 +107,24 @@ export async function runLiveWirePass({
     .bind(iso(now - WIRE_RETENTION_DAYS * 86_400_000).slice(0, 10)).run();
 
   if (createClient) {
-    summary.ai = await writeAiLines({ db, createClient, model, now, context, allLive, log });
+    // Briefs before lines, so a goal in the tick a brief lands already reads it.
+    // Errors are contained: no brief only means plainer commentary.
+    try {
+      summary.briefs = await ensureWireBriefs({
+        store: briefStore,
+        createClient,
+        model: briefModel,
+        now,
+        log,
+        pickTargets: (match, code) => pickMatchTargets(db, code, match),
+        matches: feeds.flatMap(({ comp, live }) => (live.matches ?? [])
+          .filter(match => !isFinished(match.status))
+          .map(match => ({ match, code: comp.code, competitionName: competitionFor(comp.code).name }))),
+      });
+    } catch (error) {
+      log.error?.(`wire: briefs failed: ${error?.message ?? error}`);
+    }
+    summary.ai = await writeAiLines({ db, createClient, model, now, context, allLive, briefStore, log });
   }
   return summary;
 }
@@ -167,7 +190,53 @@ async function syncMatch({ db, comp, match, table, fetchDetail, isDetailTrusted,
   return { inserted: inserts.length, updated: updates.length, retired: retire.length };
 }
 
-async function writeAiLines({ db, createClient, model, now, context, allLive, log }) {
+// WIRE_TARGETS_PER_TEAM opted-in followers of each club, picked once per match
+// when its brief is built. The `wireShoutout` pref defaults OFF: /wire is
+// public, so a name appears there only because its owner switched this on.
+// Bots are excluded (a bot seat is nobody's to shout out). First names only.
+export const WIRE_TARGETS_PER_TEAM = 2;
+const FIRST_NAME = /^[\p{L}][\p{L}'-]{0,23}$/u;
+
+export async function pickMatchTargets(db, competition, match) {
+  const targets = [];
+  for (const team of [match.homeTeam, match.awayTeam].filter(Boolean)) {
+    const rows = (await db.prepare(`SELECT u.id, u.name FROM follows f JOIN users u ON u.id = f.user_id
+      WHERE f.competition = ? AND f.team = ?
+        AND COALESCE(u.is_bot, 0) = 0 AND json_extract(u.prefs, '$.wireShoutout') = 1
+      ORDER BY RANDOM() LIMIT ?`).bind(competition, team, WIRE_TARGETS_PER_TEAM * 3).all()).results ?? [];
+    for (const row of rows) {
+      const name = String(row.name ?? "").trim().split(/\s+/)[0] ?? "";
+      if (!FIRST_NAME.test(name)) continue;
+      targets.push({ userId: row.id, name, team });
+      if (targets.filter(t => t.team === team).length >= WIRE_TARGETS_PER_TEAM) break;
+    }
+  }
+  return targets;
+}
+
+// What the match's targets have said in its banter, newest last, hidden
+// (moderated) messages excluded. Already public on the match page; on the Wire
+// it is quoted material the model may follow up on, never instructions.
+export const WIRE_BANTER_PER_TARGET = 3;
+async function targetBanter(db, matchId, targets) {
+  if (!targets.length) return [];
+  try {
+    const rows = (await db.prepare(`SELECT b.user_id, b.text, b.created_at FROM banter_messages b
+      LEFT JOIN talk_hidden h ON h.message_id = b.id
+      WHERE b.match_id = ? AND h.message_id IS NULL AND b.user_id IN (${targets.map(() => "?").join(",")})
+      ORDER BY b.id DESC LIMIT ?`).bind(matchId, ...targets.map(t => t.userId), targets.length * WIRE_BANTER_PER_TARGET).all()).results ?? [];
+    return rows.reverse();
+  } catch {
+    return [];
+  }
+}
+
+function withBanter(fan, banter) {
+  if (!fan) return null;
+  return { ...fan, said: banter.filter(row => row.user_id === fan.userId).slice(-WIRE_BANTER_PER_TARGET).map(row => row.text) };
+}
+
+async function writeAiLines({ db, createClient, model, now, context, allLive, briefStore, log }) {
   const cutoff = iso(now - WIRE_AI_MAX_AGE_MS);
   await db.prepare("UPDATE live_wire_items SET ai_state = 'expired', updated_at = ? WHERE ai_state IN ('pending', 'sending') AND created_at < ?")
     .bind(iso(now), cutoff).run();
@@ -195,9 +264,14 @@ async function writeAiLines({ db, createClient, model, now, context, allLive, lo
     let line = null;
     try {
       if (!item || !entry) throw Error("match no longer watched");
+      const brief = await readWireBrief(briefStore, entry.match.id);
+      const targets = brief?.targets ?? [];
+      const banter = await targetBanter(db, entry.match.id, targets);
       const payload = buildWirePrompt({
         item,
         match: entry.match,
+        brief: brief?.text ?? null,
+        fan: withBanter(pickShoutout(targets, item, entry.match, banter), banter),
         recent: entry.items.filter(other => other.key !== item.key && Date.parse(other.at) <= Date.parse(item.at)),
         elsewhere: allLive.filter(other => other.id !== entry.match.id && isLive(other.status)),
       });
@@ -210,7 +284,9 @@ async function writeAiLines({ db, createClient, model, now, context, allLive, lo
       });
       if (response.stop_reason === "refusal") throw Error("refused");
       const text = response.content.find(block => block.type === "text")?.text ?? "";
-      line = wireLineAcceptable(JSON.parse(text).line, payload);
+      // Fan banter is user text: its digits are not facts, so they are not
+      // allowed through the figure check.
+      line = wireLineAcceptable(JSON.parse(text).line, payloadFacts(payload));
       state = line ? "done" : "rejected";
       log.log?.(`wire: line ${state} for ${item.key} (in ${response.usage?.input_tokens ?? "?"}, out ${response.usage?.output_tokens ?? "?"})`);
     } catch (error) {
