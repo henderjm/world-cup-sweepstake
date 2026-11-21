@@ -66,7 +66,7 @@
         </div>
         {#each table.rows.slice(0, limit) as row (row.team)}
           {@const mine = followsTeam(follows, selected.competition.code, row.team)}
-          <div class="trow zone-{row.zone?.tone ?? 'none'}" class:mine role="row" title={row.zone?.label ?? ""}>
+          <div class="trow zone-{row.zone?.tone ?? 'none'}" class:mine role="row">
             <span class="pos" role="cell">{row.position}</span>
             <Crest team={row.team} size={18} />
             <span class="name" role="cell">
@@ -100,7 +100,7 @@
 {/if}
 
 <style>
-  .club-link { font: inherit; color: inherit; text-align: left; padding: 0; min-height: 32px; width: 100%; }
+  .club-link { font: inherit; color: inherit; text-align: left; padding: 0; min-height: 32px; width: 100%; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .club-link:hover { text-decoration: underline; }
   .tables { padding: 8px 16px 0; }
   :global(.right) .tables, :global(.desktop) .tables { padding: 8px 0 0; }
