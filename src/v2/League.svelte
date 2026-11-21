@@ -96,7 +96,7 @@
     <h1>{COMPETITIONS[code]?.name ?? code}</h1>
   </header>
 
-  <nav class="comps" aria-label="Competition">
+  <nav class="comps pills" aria-label="Competition">
     {#each COMPETITION_CODES as entry}
       <button class="toggle" class:on={entry === code} aria-pressed={entry === code} onclick={() => oncompetition(entry)}>{COMPETITIONS[entry].shortName}</button>
     {/each}
@@ -137,7 +137,7 @@
     {:else if !current.available}
       <p class="empty">Player stats are unavailable right now{current.failed ? ". Try again shortly" : ""}.</p>
     {:else}
-      <div class="cats" role="group" aria-label="Leaderboard">
+      <div class="cats pills" role="group" aria-label="Leaderboard">
         {#each current.categories as entry (entry.key)}
           <button class="toggle" class:on={entry === category} aria-pressed={entry === category} onclick={() => (statsCategory = entry.key)}>{entry.label}</button>
         {/each}
@@ -213,9 +213,7 @@
   .lhead { display: flex; align-items: center; gap: 4px; min-height: 52px; }
   .lhead h1 { margin: 0; font-size: 22px; font-weight: 900; font-style: italic; text-transform: uppercase; letter-spacing: -0.01em; }
   .back { width: 44px; height: 44px; margin-left: -12px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
-  .comps, .cats { display: flex; gap: 20px; overflow-x: auto; scrollbar-width: none; }
-  .comps::-webkit-scrollbar, .cats::-webkit-scrollbar { display: none; }
-  .comps .toggle, .cats .toggle { flex: none; white-space: nowrap; }
+  .comps, .cats { padding: 8px 0; }
   .tabs { display: flex; border-bottom: 1px solid var(--line); margin-bottom: 4px; position: sticky; top: 52px; background: var(--bg); z-index: 5; }
   .desktop .tabs { top: 56px; }
   .tab { flex: 1; min-height: 44px; font-size: 14px; font-weight: 600; color: var(--muted); }

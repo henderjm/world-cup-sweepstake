@@ -47,8 +47,13 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .hero-num .sep { color: var(--faint); font-weight: 400; font-style: normal; font-size: 32px; }
 .card { background: var(--surface); border-radius: 12px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 6px; font-size: 11px; font-weight: 600; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
-.toggle { font-size: 13px; color: var(--muted); min-height: 44px; display: inline-flex; align-items: center; }
-.toggle.on { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+/* Every in-page choice (league, filter, view, sort) is a pill. A row of them
+   scrolls sideways rather than wrapping: put them in a .pills container. */
+.toggle { flex: none; display: inline-flex; align-items: center; height: 34px; padding: 0 14px; border-radius: 17px; font-size: 13px; font-weight: 600; white-space: nowrap; color: var(--muted); background: var(--surface-2); }
+.toggle:hover { color: var(--text); }
+.toggle.on { color: var(--accent-ink); background: var(--accent); }
+.pills { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+.pills::-webkit-scrollbar { display: none; }
 .btn { display: inline-flex; align-items: center; justify-content: center; height: 44px; padding: 0 16px; font-weight: 700; font-size: 14px; background: var(--accent); color: var(--accent-ink); border-radius: 8px; }
 .btn.ghost { background: transparent; color: var(--text); box-shadow: inset 0 0 0 1px var(--line-2); }
 .rating { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 18px; padding: 0 5px; border-radius: 4px; font-size: 11px; font-weight: 700; background: var(--surface-2); color: var(--text); }
