@@ -14,7 +14,7 @@
     clubForm, freshness, matchPhase, minuteText, momentumBars, moments, playerOfMatch, redCards, scorerLines, statRows, untilKickoff,
   } from "./matchCentre.js";
 
-  let { match, feed, follows, now, desktop, onclose, onfollow, ontalksignin, onteam = null } = $props();
+  let { match, feed, follows, now, desktop, onclose, onfollow, ontalksignin, onteam = null, covered = false } = $props();
 
   const phase = $derived(matchPhase(match));
   const home = $derived(displayTeamName(match.homeTeam));
@@ -118,7 +118,7 @@
   }
 
   function onKey(event) {
-    if (event.key === "Escape") onclose();
+    if (event.key === "Escape" && !covered) onclose();
   }
 
   const isFollowed = team => followsTeam(follows, match.competitionCode, team);

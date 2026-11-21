@@ -64,17 +64,46 @@
   const follows = $derived(uniqueFollows([...(account?.follows ?? []), ...localList]));
   const openMatch = $derived(route.matchId == null ? null : matches.find(match => String(match.id) === route.matchId) ?? null);
   const anyLive = $derived(matches.some(match => isLive(match.status)));
-  // A club opened from inside an open match. It sits on top of the match, so
-  // closing it returns there; a fixture picked from it replaces the match.
-  // It belongs to the match it was opened from and goes when that does.
-  let matchClub = $state(null);
-  $effect(() => {
-    if (!openMatch || (matchClub && matchClub.from !== openMatch.id)) matchClub = null;
-  });
-  function openFromMatchClub(match) {
-    matchClub = null;
-    open(match);
+  // The one club sheet, from the table, a league page or an open match. It
+  // lives in history.state on its own entry (same URL), so back closes the
+  // club alone, and a match opened from it closes back onto it, on the tab
+  // that was showing. It sits on top of an open match.
+  let club = $state(history.state?.club ?? null);
+  function syncClub() {
+    club = history.state?.club ?? null;
   }
+  function openClub(code, team, view = null) {
+    const next = { code, team, view };
+    history.pushState({ club: next }, "", location.href);
+    club = next;
+    track("v2_club_opened", { competition: code });
+  }
+  function closeClub() {
+    if (history.state?.club) history.back();
+    else club = null;
+  }
+  function clubView(view) {
+    if (!club || club.view === view || !history.state?.club) return;
+    history.replaceState({ club: { ...history.state.club, view } }, "", location.href);
+  }
+
+  // A forward move to another page starts at the top; back and forward keep
+  // the browser's own restoration. A match is an overlay, not a page.
+  // A back/forward is recognised by the URL it landed on, so one that only
+  // closed a club (no page change) cannot leave a flag set for the next move.
+  // Following a "#" link or setting location.hash ALSO fires popstate, so a
+  // forward move announces its target first (forwardTo) and is not mistaken
+  // for a traversal.
+  let traversedTo = null;
+  let forwardTo = null;
+  const pageKey = $derived(`${route.section}|${route.league ?? ""}|${route.tab ?? ""}`);
+  let lastPage = "";
+  $effect(() => {
+    const key = pageKey;
+    if (lastPage && key !== lastPage && traversedTo !== location.href) scrollTo(0, 0);
+    lastPage = key;
+    traversedTo = null;
+  });
   const fresh = $derived(feedsFreshness(feeds, now, isLive));
 
   function readRoute() {
@@ -90,6 +119,7 @@
   }
 
   function go(hash) {
+    forwardTo = hash;
     if (location.hash !== hash) location.hash = hash;
     else route = readRoute();
   }
@@ -105,6 +135,8 @@
   let openedInApp = false;
   function open(match) {
     track("v2_match_opened", { competition: match.competitionCode, status: match.status });
+    // The club it came from stays one step back in history, not on screen.
+    club = null;
     const hash = route.league ? leagueHash(route.league, route.tab, match.id) : `#match/${match.id}`;
     if (route.matchId) {
       history.replaceState(null, "", hash);
@@ -284,7 +316,17 @@
     desktop = media.matches;
     const onMedia = event => (desktop = event.matches);
     media.addEventListener("change", onMedia);
-    const onHash = () => (route = readRoute());
+    const onHash = () => { route = readRoute(); syncClub(); };
+    const onPop = () => {
+      if (forwardTo !== location.hash) traversedTo = location.href;
+      forwardTo = null;
+      syncClub();
+    };
+    const onLink = event => {
+      const link = event.target.closest?.('a[href^="#"]');
+      if (link) forwardTo = link.getAttribute("href");
+    };
+    document.addEventListener("click", onLink, true);
     // A link inside a framed V1 screen that leads to another section (Fantasy's
     // "Go to sign in", You's "Follow teams") is handed up and opened as the
     // V2 section, instead of loading that V1 screen under the wrong tab.
@@ -295,6 +337,7 @@
     };
     addEventListener("message", onFrameNav);
     addEventListener("hashchange", onHash);
+    addEventListener("popstate", onPop);
     const onStorage = () => { localFollows.reload(); localList = localFollows.all(); };
     addEventListener("storage", onStorage);
     const offAccount = onAccountChange(next => {
@@ -314,6 +357,8 @@
     return () => {
       media.removeEventListener("change", onMedia);
       removeEventListener("hashchange", onHash);
+      removeEventListener("popstate", onPop);
+      document.removeEventListener("click", onLink, true);
       removeEventListener("message", onFrameNav);
       removeEventListener("storage", onStorage);
       document.removeEventListener("visibilitychange", onHide);
@@ -367,17 +412,19 @@
   {:else if route.section === "live"}
     <div class="live-wrap" class:with-panel={desktop && openMatch}>
       {#if route.league}
-        <League code={route.league} tab={route.tab} {feeds} {follows} {flashed} {desktop} {now} onopen={open} onfollow={follow}
+        <League code={route.league} tab={route.tab} {feeds} {follows} {flashed} {desktop} {now} onopen={open} onfollow={follow} onclub={openClub}
           ontab={tab => leagueNav(route.league, tab)} oncompetition={code => leagueNav(code, route.tab)} />
       {:else}
-        <Home {matches} {feeds} {follows} {wire} {flashed} {desktop} {now} {matchup} openId={openMatch?.id ?? null} initialDay={deepLinkDay} onopen={open} onfollow={follow} />
+        <Home {matches} {feeds} {follows} {wire} {flashed} {desktop} {now} {matchup} openId={openMatch?.id ?? null} initialDay={deepLinkDay} onopen={open} onfollow={follow} onclub={openClub} />
       {/if}
       {#if openMatch}
         <MatchSheet match={openMatch} feed={openFeed} {follows} {now} {desktop} onclose={close} onfollow={follow} ontalksignin={() => go("#you")}
-          onteam={(code, team) => (matchClub = { code, team, from: openMatch.id })} />
+          onteam={openClub} covered={Boolean(club)} />
       {/if}
-      {#if matchClub}
-        <ClubSheet club={matchClub} {matches} {follows} {desktop} onclose={() => (matchClub = null)} onopen={openFromMatchClub} onfollow={follow} />
+      {#if club}
+        {#key `${club.code}:${club.team}`}
+          <ClubSheet {club} {matches} {follows} {desktop} initialView={club.view} onclose={closeClub} onopen={open} onfollow={follow} onview={clubView} />
+        {/key}
       {/if}
     </div>
   {:else}
