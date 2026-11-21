@@ -11,7 +11,7 @@
 <div class="shell">
   <header class="topnav">
     <button class="brand" type="button" data-section-nav="scores">
-      <span class="brand__mark">KD</span>
+      <img class="brand__mark" src="assets/favicon.svg" alt="" width="28" height="28" />
       <span class="brand__stack">
         <strong class="brand__name">Kickoff Draft</strong>
         <span class="brand__sub">Draft · Waivers · Head-to-Head</span>

@@ -115,15 +115,8 @@ button { font-family: inherit; cursor: pointer; }
 .brand__mark {
   width: 28px;
   height: 28px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 900;
-  font-size: 12px;
-  font-style: italic;
+  flex: none;
+  display: block;
 }
 
 .brand__stack { display: flex; flex-direction: column; align-items: flex-start; line-height: 1; }
@@ -966,7 +959,7 @@ button { font-family: inherit; cursor: pointer; }
 .you { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
 
 .you--signin { max-width: 430px; margin: 9vh auto 0; text-align: center; align-items: center; gap: 0; }
-.you__mark { width: 46px; height: 46px; border-radius: 12px; font-size: 18px; }
+.you__mark { width: 46px; height: 46px; }
 .you__title {
   margin: 16px 0 8px;
   font-size: 22px;

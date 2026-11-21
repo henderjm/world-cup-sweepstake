@@ -261,7 +261,7 @@
 
 <div class="app" class:desktop>
   <header class="top">
-    <a class="mark" href="#live" aria-label="Kickoff Draft home">KD</a>
+    <a class="mark" href="#live" aria-label="Kickoff Draft home"><img src="assets/favicon.svg" alt="" width="32" height="32" /></a>
     {#if desktop}
       <nav class="topnav" aria-label="Sections">
         {#each SECTIONS as section}

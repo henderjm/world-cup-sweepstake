@@ -673,7 +673,7 @@ export function renderSignedOut({ available, configured }) {
       : `<div class="you__gis" id="gisButton"></div>`;
   return `
     <div class="you you--signin">
-      <span class="brand__mark you__mark">KD</span>
+      <img class="brand__mark you__mark" src="assets/favicon.svg" alt="" />
       <h2 class="you__title">Sign in to Kickoff Draft</h2>
       <p class="note">Get goal alerts, save followed teams to your account, and run your fantasy squad. One tap with Google.</p>
       ${cta}
