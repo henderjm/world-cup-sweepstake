@@ -1,13 +1,14 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { App } from "@capacitor/app";
 import { isEmbedded } from "./appVersion.js";
-import { NATIVE_HOST_KEY, createNativeHost, createPluginRouter } from "./nativePlugins.js";
+import { NATIVE_HOST_KEY, createNativeHost, createPluginRouter, restoreWebNetworking } from "./nativePlugins.js";
 
 export const isNative = Capacitor.isNativePlatform();
 
 // True inside V2's iframe (Fantasy, Play, You): the top page owns notification
 // taps, the foreground banner and the Android back button.
 export const isFramed = isNative && isEmbedded();
+if (isFramed) restoreWebNetworking(window);
 
 if (isNative && !isFramed) {
   window[NATIVE_HOST_KEY] = createNativeHost({ registerPlugin, isPluginAvailable: name => Capacitor.isPluginAvailable(name) });

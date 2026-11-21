@@ -10,6 +10,11 @@ if (POSTHOG_KEY && POSTHOG_HOST) {
   posthog.init(POSTHOG_KEY, {
     api_host: POSTHOG_HOST,
     defaults: "2026-05-30",
+    // In the native app every request goes through Capacitor's native HTTP,
+    // which mangles PostHog's compressed bodies: each event came back 400
+    // "missing event name attribute" on the Android emulator. Read off the
+    // global the native bridge sets, so this module keeps no Capacitor import.
+    disable_compression: Boolean(globalThis.Capacitor?.isNativePlatform?.()),
   });
 } else if (env.DEV) {
   console.error(

@@ -119,6 +119,10 @@ iframe, and Capacitor registers plugins in the top page only, so the frame
 borrows the top page's plugins (`src/nativePlugins.js`); verified in the iOS
 Simulator, where `App.getInfo()` fails from the frame without it and answers
 with it. Only the top page handles notification taps and the foreground banner.
+On Android, Capacitor's native HTTP also refuses calls from the frame, so a
+framed screen restores the WebView's own fetch and XMLHttpRequest
+(`restoreWebNetworking`). PostHog runs uncompressed in the app, because native
+HTTP mangled its compressed bodies (every event was a 400).
 
 The APK is `mobile-builds/kickoff-draft-debug.apk`. Share it directly for Android
 testing; the recipient must allow installation from their download source. It

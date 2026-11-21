@@ -62,3 +62,27 @@ export function createPluginRouter({ host, registerLocal, availableLocal }) {
     },
   };
 }
+
+// Capacitor's native HTTP patches fetch and XMLHttpRequest in every frame, but
+// Android refuses the plugin call from anything but the top page ("Plugin
+// execution is allowed in Main Frame only", measured on the emulator), so a
+// framed screen's requests never complete. Capacitor keeps the WebView's own
+// implementations on the window; a frame puts them back and uses ordinary
+// browser networking (the Worker already allows the app's origins for CORS).
+const XHR_METHODS = ["abort", "getAllResponseHeaders", "getResponseHeader", "open", "send", "setRequestHeader"];
+
+export function restoreWebNetworking(win) {
+  let restored = false;
+  if (typeof win.CapacitorWebFetch === "function" && win.fetch !== win.CapacitorWebFetch) {
+    win.fetch = win.CapacitorWebFetch;
+    restored = true;
+  }
+  const xhr = win.CapacitorWebXMLHttpRequest;
+  if (xhr?.prototype) {
+    for (const method of XHR_METHODS) {
+      if (typeof xhr[method] === "function") xhr.prototype[method] = xhr[method];
+    }
+    restored = true;
+  }
+  return restored;
+}
