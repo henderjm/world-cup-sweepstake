@@ -1,6 +1,7 @@
 <script>
   import { onMount } from "svelte";
   import Briefing from "./Briefing.svelte";
+  import ClubSheet from "./ClubSheet.svelte";
   import Home from "./Home.svelte";
   import League from "./League.svelte";
   import MatchSheet from "./MatchSheet.svelte";
@@ -63,6 +64,17 @@
   const follows = $derived(uniqueFollows([...(account?.follows ?? []), ...localList]));
   const openMatch = $derived(route.matchId == null ? null : matches.find(match => String(match.id) === route.matchId) ?? null);
   const anyLive = $derived(matches.some(match => isLive(match.status)));
+  // A club opened from inside an open match. It sits on top of the match, so
+  // closing it returns there; a fixture picked from it replaces the match.
+  // It belongs to the match it was opened from and goes when that does.
+  let matchClub = $state(null);
+  $effect(() => {
+    if (!openMatch || (matchClub && matchClub.from !== openMatch.id)) matchClub = null;
+  });
+  function openFromMatchClub(match) {
+    matchClub = null;
+    open(match);
+  }
   const fresh = $derived(feedsFreshness(feeds, now, isLive));
 
   function readRoute() {
@@ -361,7 +373,11 @@
         <Home {matches} {feeds} {follows} {wire} {flashed} {desktop} {now} {matchup} openId={openMatch?.id ?? null} initialDay={deepLinkDay} onopen={open} onfollow={follow} />
       {/if}
       {#if openMatch}
-        <MatchSheet match={openMatch} feed={openFeed} {follows} {now} {desktop} onclose={close} onfollow={follow} ontalksignin={() => go("#you")} />
+        <MatchSheet match={openMatch} feed={openFeed} {follows} {now} {desktop} onclose={close} onfollow={follow} ontalksignin={() => go("#you")}
+          onteam={(code, team) => (matchClub = { code, team, from: openMatch.id })} />
+      {/if}
+      {#if matchClub}
+        <ClubSheet club={matchClub} {matches} {follows} {desktop} onclose={() => (matchClub = null)} onopen={openFromMatchClub} onfollow={follow} />
       {/if}
     </div>
   {:else}
