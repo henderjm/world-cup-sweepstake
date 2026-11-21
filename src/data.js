@@ -142,6 +142,9 @@ export function modelSignature(model) {
 // by the fetch script. Keep this supplementary file's wait short because scores
 // and stats share a model load; a stalled CDN must not hold fresh scores for 8s.
 async function loadScorers(comp) {
+  // Sportmonks leagues have no baked scorers file (their leaderboards come from
+  // GET /:comp/stats), so asking for one is a guaranteed 404 on every load.
+  if (competitionFor(comp).provider === "sportmonks") return { scorers: [], unavailable: true };
   try {
     const response = await fetch(`./data/${encodeURIComponent(comp)}/scorers.json?cache=${Date.now()}`, {
       cache: "no-store",

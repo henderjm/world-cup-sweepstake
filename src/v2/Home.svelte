@@ -15,7 +15,7 @@
     defaultMatchDay, groupByCompetition, hasScore, latestKeyMoment, matchesOnDay, minuteText, redCards, untilKickoff,
   } from "./matchCentre.js";
 
-  let { matches, feeds, follows, wire, flashed, desktop, matchup = null, openId = null, initialDay = null, now, onopen, onfollow = null, onclub } = $props();
+  let { matches, feeds, follows, wire, flashed, desktop, matchup = null, stakePending = false, openId = null, initialDay = null, now, onopen, onfollow = null, onclub } = $props();
 
   const openClub = (code, team) => onclub(code, team);
 
@@ -195,6 +195,8 @@
 
     {#if matchup?.me && selectedDay === today}
       <StakeStrip {matchup} {now} />
+    {:else if stakePending && selectedDay === today}
+      <StakeStrip matchup={null} {now} />
     {/if}
 
     {#if tableFirst}
