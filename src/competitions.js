@@ -53,6 +53,19 @@ export const COMPETITIONS = {
       { from: 18, to: 20, tone: "out", label: "Relegation" },
     ],
   },
+  BL1: {
+    code: "BL1",
+    provider: "sportmonks",
+    sportmonksLeagueId: 82,
+    name: "Bundesliga",
+    shortName: "Bundesliga",
+    zones: [
+      { from: 1, to: 4, tone: "safe", label: "Champions League" },
+      { from: 5, to: 6, tone: "edge", label: "Europa and Conference League" },
+      { from: 16, to: 16, tone: "edge", label: "Relegation play-off" },
+      { from: 17, to: 18, tone: "out", label: "Relegation" },
+    ],
+  },
   // Sportmonks-served like SA/PD (the Euro Club Tournaments plan). Both
   // league phases are one 36-team table, the same bands as the CL.
   EL: {
