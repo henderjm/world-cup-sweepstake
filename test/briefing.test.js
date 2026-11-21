@@ -14,6 +14,7 @@ import {
   hasNews,
   headlines,
   managerForm,
+  noteFactsKey,
   previewBriefing,
   settledSince,
   shouldLand,
@@ -198,4 +199,12 @@ test("previewBriefing: real results from the polled feeds, sample fantasy, never
   assert.equal(preview.headlines.live, 1);
   assert.deepEqual(preview.headlines.results.map((row) => row.matchId), [1, 2]);
   assert.equal(preview.fantasy.length, 1);
+});
+
+test("noteFactsKey: changes when a blank starter is fixed or the squad locks, not on order", () => {
+  const next = { locked: false, blankStarters: [{ playerId: 7 }, { playerId: 3 }] };
+  assert.equal(noteFactsKey(next), noteFactsKey({ locked: false, blankStarters: [{ playerId: 3 }, { playerId: 7 }] }));
+  assert.notEqual(noteFactsKey(next), noteFactsKey({ locked: false, blankStarters: [{ playerId: 3 }] }));
+  assert.notEqual(noteFactsKey(next), noteFactsKey({ ...next, locked: true }));
+  assert.equal(noteFactsKey(null), "none");
 });

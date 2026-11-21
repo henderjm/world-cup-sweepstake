@@ -245,6 +245,17 @@ export function settledSince(lastKickoff, since) {
   return Number.isFinite(lastKickoff) && lastKickoff >= since - RESULT_GRACE_MS;
 }
 
+// What a briefing note was written from that can change during the week: the
+// starters with no match, and whether the squad has locked. A note is shown
+// only while this still matches, so "swap Mitoma out" disappears once he is
+// swapped or the deadline passes, instead of nagging above cards that no
+// longer agree with it. Opponent and last result cannot change mid-week.
+export function noteFactsKey(next) {
+  if (!next) return "none";
+  const blanks = (next.blankStarters ?? []).map((player) => player.playerId).sort((a, b) => a - b);
+  return `${next.locked ? "locked" : "open"}:${blanks.join(",")}`;
+}
+
 // The signed-out Home: REAL results (league-wide, plus any clubs followed on
 // this device) from the feeds the page already polls, with the fantasy cards
 // filled by a fixed sample, so a visitor sees the actual screen they would

@@ -731,6 +731,7 @@ CREATE TABLE IF NOT EXISTS briefing_notes (
   state TEXT NOT NULL,          -- sending | done | rejected | failed
   line TEXT,                    -- set only when state = done
   prompt_version INTEGER,
+  facts_key TEXT,               -- noteFactsKey at writing time; shown only while it still matches
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (league_id, user_id, gameweek)
 );

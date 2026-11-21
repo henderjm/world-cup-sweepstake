@@ -48,6 +48,7 @@ import {
   fantasyResult,
   hasNews,
   headlines,
+  noteFactsKey,
   settledSince,
 } from "../src/briefing.js";
 import {
@@ -1627,18 +1628,22 @@ async function briefingFantasy(env, userId, plMatches, now, since) {
 
   const week = await briefingWeek(env, plMatches, now);
   const notes = await env.DB.prepare(
-    `SELECT league_id, line FROM briefing_notes WHERE user_id = ?1 AND gameweek = ?2 AND state = 'done'`,
+    `SELECT league_id, line, facts_key FROM briefing_notes WHERE user_id = ?1 AND gameweek = ?2 AND state = 'done'`,
   )
     .bind(userId, week.gameweek)
     .all()
-    .then((rows) => new Map((rows.results ?? []).map((row) => [row.league_id, row.line])))
+    .then((rows) => new Map((rows.results ?? []).map((row) => [row.league_id, row])))
     .catch(() => new Map()); // migration 016 not applied yet: no notes
 
   return Promise.all(
-    leagues.results.map(async (league) => ({
-      ...(await briefingLeagueEntry(env, league, userId, week, since)),
-      note: notes.get(league.id) ?? null,
-    })),
+    leagues.results.map(async (league) => {
+      const entry = await briefingLeagueEntry(env, league, userId, week, since);
+      const stored = notes.get(league.id);
+      // A note whose facts have since changed (a blank starter swapped, the
+      // deadline passed) is withheld rather than shown stale.
+      const note = stored && stored.facts_key === noteFactsKey(entry.next) ? stored.line : null;
+      return { ...entry, note };
+    }),
   );
 }
 
@@ -1777,9 +1782,11 @@ async function runScheduledBriefingNotes(env) {
     if (!claim.meta?.changes) continue;
     let state = "failed";
     let line = null;
+    let factsKey = null;
     try {
       const { last, next } = await briefingLeagueEntry(env, { id: row.league_id, name: row.name }, row.user_id, week, now);
       const payload = buildBriefingNotePrompt({ last, next });
+      factsKey = noteFactsKey(next);
       const response = await client.messages.create({
         model,
         max_tokens: 1000,
@@ -1796,9 +1803,9 @@ async function runScheduledBriefingNotes(env) {
       console.error(`briefing-note failed league ${row.league_id}: ${error?.message ?? error}`);
     }
     await env.DB.prepare(
-      `UPDATE briefing_notes SET state = ?1, line = ?2 WHERE league_id = ?3 AND user_id = ?4 AND gameweek = ?5`,
+      `UPDATE briefing_notes SET state = ?1, line = ?2, facts_key = ?6 WHERE league_id = ?3 AND user_id = ?4 AND gameweek = ?5`,
     )
-      .bind(state, line, row.league_id, row.user_id, week.gameweek)
+      .bind(state, line, row.league_id, row.user_id, week.gameweek, factsKey)
       .run();
   }
 }
