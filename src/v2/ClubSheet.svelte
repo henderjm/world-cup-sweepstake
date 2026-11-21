@@ -12,7 +12,7 @@
   // One club's fixtures, results and season player stats in one competition.
   // Opened from a table row, a followed club or the league Stats tab
   // (`initialView: "players"`); tapping a match hands it to the match page.
-  let { club, matches, follows = [], desktop = false, initialView = null, onclose, onopen, onfollow } = $props();
+  let { club, matches, follows = [], desktop = false, initialView = null, onclose, onopen, onfollow, onview = null } = $props();
 
   const name = $derived(displayTeamName(club.team));
   const competition = $derived(COMPETITIONS[club.code]?.name ?? "");
@@ -20,6 +20,8 @@
   let view = $state(initialView);
   // Upcoming by default; a club with nothing left to play opens on results.
   const shown = $derived(view ?? (lists.counts.upcoming ? "upcoming" : "results"));
+  // The owner keeps the tab, so returning to this club lands on the same one.
+  $effect(() => onview?.(shown));
 
   // Season player stats, fetched the first time the Players tab is shown.
   let squad = $state(null);

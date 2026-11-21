@@ -1,5 +1,4 @@
 <script>
-  import ClubSheet from "./ClubSheet.svelte";
   import Crest from "./Crest.svelte";
   import MatchRow from "./MatchRow.svelte";
   import StakeStrip from "./StakeStrip.svelte";
@@ -16,15 +15,9 @@
     defaultMatchDay, groupByCompetition, hasScore, latestKeyMoment, matchesOnDay, minuteText, redCards, untilKickoff,
   } from "./matchCentre.js";
 
-  let { matches, feeds, follows, wire, flashed, desktop, matchup = null, openId = null, initialDay = null, now, onopen, onfollow = null } = $props();
+  let { matches, feeds, follows, wire, flashed, desktop, matchup = null, openId = null, initialDay = null, now, onopen, onfollow = null, onclub } = $props();
 
-  // The club sheet: one club's fixtures and results ({ code, team } or null).
-  let club = $state(null);
-  const openClub = (code, team) => (club = { code, team });
-  function openFromClub(match) {
-    club = null;
-    onopen(match);
-  }
+  const openClub = (code, team) => onclub(code, team);
 
   const today = $derived(localDateKey(now));
   const days = $derived(matchDays(matches));
@@ -122,9 +115,6 @@
   }
 </script>
 
-{#if club}
-  <ClubSheet {club} {matches} {follows} {desktop} onclose={() => (club = null)} onopen={openFromClub} {onfollow} />
-{/if}
 
 <div class="home" class:desktop>
   {#if desktop}
